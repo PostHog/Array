@@ -9,8 +9,6 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { TASK_ACTIVITY_QUERY_KEY } from "../task-activity/taskActivityQuery";
 
-const ACTIVITY_POLL_INTERVAL_MS = 60_000;
-
 export { TASK_ACTIVITY_QUERY_KEY } from "../task-activity/taskActivityQuery";
 
 /**
@@ -42,8 +40,7 @@ export function useTaskActivity(options?: { enabled?: boolean }): {
         ? { before: page.next_before, beforeId: page.next_before_id }
         : undefined,
     enabled: !!client && (options?.enabled ?? true),
-    refetchInterval: ACTIVITY_POLL_INTERVAL_MS,
-    staleTime: ACTIVITY_POLL_INTERVAL_MS,
+    staleTime: Number.POSITIVE_INFINITY,
     meta: AUTH_SCOPED_QUERY_META,
   });
   const items = useMemo(

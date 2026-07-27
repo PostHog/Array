@@ -1,14 +1,20 @@
-import type { NotificationBus } from "@posthog/ui/features/notifications/notifications";
-import { QueryClient } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskActivityPage } from "@posthog/shared/domain-types";
+import type {
+  NotificationBus,
+  TaskActivitySignal,
+} from "@posthog/ui/features/notifications/notifications";
+import { type InfiniteData, QueryClient } from "@tanstack/react-query";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskActivityContribution } from "./taskActivity.contribution";
 
-let completionListener: ((taskId?: string) => void) | undefined;
+let activityListener: ((signal: TaskActivitySignal) => void) | undefined;
 const notificationBus = {
-  subscribeToTaskCompletion: vi.fn((listener: (taskId?: string) => void) => {
-    completionListener = listener;
-    return vi.fn();
-  }),
+  subscribeToTaskActivity: vi.fn(
+    (listener: (signal: TaskActivitySignal) => void) => {
+      activityListener = listener;
+      return vi.fn();
+    },
+  ),
 } as unknown as NotificationBus;
 
 describe("TaskActivityContribution", () => {
@@ -16,22 +22,33 @@ describe("TaskActivityContribution", () => {
   let contribution: TaskActivityContribution;
 
   beforeEach(() => {
-    vi.useFakeTimers();
     vi.clearAllMocks();
     queryClient = new QueryClient();
     contribution = new TaskActivityContribution(notificationBus, queryClient);
     contribution.start();
   });
 
-  afterEach(() => vi.useRealTimers());
+  it("shows task activity immediately when its backend projection is not available yet", () => {
+    activityListener?.({
+      taskId: "task-1",
+      taskTitle: "Channel task",
+      activityKind: "awaiting_input",
+      activityAt: "2026-07-27T10:00:00Z",
+    });
 
-  it("refreshes activity immediately and reconciles after session completion", () => {
-    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-
-    completionListener?.("task-1");
-    expect(invalidate).toHaveBeenCalledOnce();
-
-    vi.advanceTimersByTime(2_000);
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    const cached = queryClient.getQueryData<InfiniteData<TaskActivityPage>>([
+      "task-activity",
+    ]);
+    expect(cached?.pages[0]).toMatchObject({
+      unread_count: 1,
+      results: [
+        {
+          task_id: "task-1",
+          task_title: "Channel task",
+          activity_kind: "awaiting_input",
+          is_unread: true,
+        },
+      ],
+    });
   });
 });

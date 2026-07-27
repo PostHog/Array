@@ -122,19 +122,41 @@ describe("notifyPromptComplete", () => {
   it("notifies activity subscribers when a task finishes", () => {
     const { bus } = makeBus({ hasFocus: false });
     const listener = vi.fn();
-    const unsubscribe = bus.subscribeToTaskCompletion(listener);
+    const unsubscribe = bus.subscribeToTaskActivity(listener);
 
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
-    expect(listener).toHaveBeenCalledWith(TASK_ID);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: TASK_ID,
+        taskTitle: "My task",
+        activityKind: "completed",
+      }),
+    );
 
     unsubscribe();
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
     expect(listener).toHaveBeenCalledOnce();
   });
 
+  it("notifies activity subscribers when a task needs input", () => {
+    const { bus } = makeBus({ hasFocus: false });
+    const listener = vi.fn();
+    bus.subscribeToTaskActivity(listener);
+
+    bus.notifyPermissionRequest("My task", TASK_ID);
+
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: TASK_ID,
+        taskTitle: "My task",
+        activityKind: "awaiting_input",
+      }),
+    );
+  });
+
   it("delivers the notification when an activity subscriber fails", () => {
     const { bus, notify } = makeBus({ hasFocus: false });
-    bus.subscribeToTaskCompletion(() => {
+    bus.subscribeToTaskActivity(() => {
       throw new Error("activity refresh failed");
     });
 
