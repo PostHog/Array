@@ -165,6 +165,7 @@ describe("PostHogAPIClient", () => {
         "sandbox-1",
         "old-hash",
         content,
+        "task-run-token",
       ),
     ).resolves.toBe("new-hash");
 
@@ -177,6 +178,7 @@ describe("PostHogAPIClient", () => {
     expect(headers.get("Content-Type")).toBe("application/octet-stream");
     expect(headers.get("If-Match")).toBe('"old-hash"');
     expect(headers.get("X-Sandbox-ID")).toBe("sandbox-1");
+    expect(headers.get("X-Task-Run-Token")).toBe("task-run-token");
   });
 
   it("treats a task session without stored JSONL as empty", async () => {
@@ -216,6 +218,7 @@ describe("PostHogAPIClient", () => {
         "sandbox-1",
         null,
         '{"type":"session"}\n',
+        "task-run-token",
       ),
     ).rejects.toThrow("Failed to sync task session: [504] Gateway Timeout");
     expect(mockFetch).toHaveBeenCalledOnce();

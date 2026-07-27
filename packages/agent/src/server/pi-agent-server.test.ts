@@ -16,6 +16,7 @@ function config(overrides: Partial<AgentServerConfig> = {}): AgentServerConfig {
     taskId: "task-1",
     runId: "run-1",
     sandboxId: "sandbox-1",
+    taskRunSessionToken: "task-run-token",
     ...overrides,
   };
 }
@@ -338,6 +339,7 @@ describe("PiAgentServer", () => {
       "sandbox-1",
       null,
       content,
+      "task-run-token",
     );
     await rm(directory, { recursive: true });
   });

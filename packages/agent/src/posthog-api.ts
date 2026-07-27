@@ -250,6 +250,7 @@ export class PostHogAPIClient {
     sandboxId: string,
     expectedContentSha256: string | null,
     content: string,
+    taskRunToken: string,
   ): Promise<string> {
     const teamId = this.getTeamId();
     const response = await this.performRequestWithRetry(
@@ -260,6 +261,7 @@ export class PostHogAPIClient {
           "Content-Type": "application/octet-stream",
           "If-Match": `"${expectedContentSha256 ?? "none"}"`,
           "X-Sandbox-ID": sandboxId,
+          "X-Task-Run-Token": taskRunToken,
         },
         body: content,
         signal: AbortSignal.timeout(30_000),

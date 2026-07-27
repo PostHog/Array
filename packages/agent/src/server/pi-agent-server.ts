@@ -597,8 +597,10 @@ export class PiAgentServer {
         return;
       }
 
-      if (!this.config.sandboxId) {
-        throw new Error("Pi task session persistence requires a sandbox ID");
+      if (!this.config.sandboxId || !this.config.taskRunSessionToken) {
+        throw new Error(
+          "Pi task session persistence requires sandbox credentials",
+        );
       }
       this.sessionContentSha256 = await this.posthogAPI.syncTaskSession(
         this.config.taskId,
@@ -606,6 +608,7 @@ export class PiAgentServer {
         this.config.sandboxId,
         this.sessionContentSha256,
         content,
+        this.config.taskRunSessionToken,
       );
       this.lastSyncedSessionContent = content;
     });
