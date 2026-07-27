@@ -121,7 +121,7 @@ export function LoopModelFields({
   );
   const adapterField = (
     <Field
-      label="Adapter"
+      label="Agent"
       className={inline ? "w-[180px]" : "min-w-[180px] flex-1"}
     >
       <SettingsOptionSelect
@@ -130,7 +130,7 @@ export function LoopModelFields({
         onValueChange={handleAdapterChange}
         disabled={disabled}
         size="lg"
-        ariaLabel="Adapter"
+        ariaLabel="Agent"
       />
     </Field>
   );
