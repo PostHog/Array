@@ -1,9 +1,9 @@
 import type { TaskActivityPage } from "@posthog/shared/domain-types";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import type {
   NotificationBus,
   TaskActivitySignal,
 } from "@posthog/ui/features/notifications/notifications";
-import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { type InfiniteData, QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskActivityContribution } from "./taskActivity.contribution";
