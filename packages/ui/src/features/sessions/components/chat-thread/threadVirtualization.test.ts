@@ -21,14 +21,15 @@ function sessionUpdate(
   {
     turnComplete = false,
     timestamp,
-  }: { turnComplete?: boolean; timestamp?: number } = {},
+    text,
+  }: { turnComplete?: boolean; timestamp?: number; text?: string } = {},
 ): SessionUpdateItem {
   return {
     type: "session_update",
     id,
     update: {
       sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: `text ${id}` },
+      content: { type: "text", text: text ?? `text ${id}` },
     } as SessionUpdateItem["update"],
     turnContext: {
       toolCalls: new Map(),
@@ -89,6 +90,29 @@ describe("flattenTurnRows", () => {
     ]);
     const flat = flattenTurnRows([done]);
     expect(flat.map((r) => r.turnTimestamp)).toEqual([undefined, 1234]);
+  });
+
+  it("carries the turn's copy text on the same row as its timestamp", () => {
+    const done = agentTurn("d", [
+      sessionUpdate("d1", { text: "first" }),
+      sessionUpdate("d2", {
+        turnComplete: true,
+        timestamp: 1234,
+        text: "last",
+      }),
+    ]);
+    const flat = flattenTurnRows([done]);
+    expect(flat.map((r) => r.turnCopyText)).toEqual([
+      undefined,
+      "first\n\nlast",
+    ]);
+  });
+
+  it("leaves copy text off a turn that is still streaming", () => {
+    const streaming = agentTurn("s", [
+      sessionUpdate("s1", { text: "partial" }),
+    ]);
+    expect(flattenTurnRows([streaming])[0].turnCopyText).toBeUndefined();
   });
 
   it("reads a trailing tool group's timestamp from its last tool", () => {

@@ -1,5 +1,6 @@
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import type { ToolGroupItem } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
+import { buildTurnCopyText } from "@posthog/ui/features/sessions/components/chat-thread/turnCopyText";
 
 /** A row is either a parsed conversation item or a synthesized group of tool calls. */
 export type ThreadItem = ConversationItem | ToolGroupItem;
@@ -74,6 +75,8 @@ export interface FlatThreadRow {
   isTrailingInTurn: boolean;
   /** Set on the last row of a completed turn; renders the turn's hover timestamp under it. */
   turnTimestamp?: number;
+  /** Set alongside {@link turnTimestamp}: the whole turn as plain text, for its copy button. */
+  turnCopyText?: string;
 }
 
 /**
@@ -98,6 +101,10 @@ export function flattenTurnRows(rows: TurnRow[]): FlatThreadRow[] {
   for (const row of rows) {
     if (row.type === "agent_turn") {
       const timestamp = completedTurnTimestamp(row);
+      const copyText =
+        timestamp == null
+          ? undefined
+          : (buildTurnCopyText(row.items) ?? undefined);
       for (let i = 0; i < row.items.length; i++) {
         const item = row.items[i];
         const isTrailing = i === row.items.length - 1;
@@ -107,6 +114,7 @@ export function flattenTurnRows(rows: TurnRow[]): FlatThreadRow[] {
           inTurn: true,
           isTrailingInTurn: isTrailing,
           turnTimestamp: isTrailing ? timestamp : undefined,
+          turnCopyText: isTrailing ? copyText : undefined,
         });
       }
       continue;
