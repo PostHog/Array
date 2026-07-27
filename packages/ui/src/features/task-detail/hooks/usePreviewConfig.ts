@@ -1,5 +1,6 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import {
+  getCapabilityLadder,
   getContextWindowOptions,
   getFastModeOptions,
   getReasoningEffortOptions,
@@ -68,6 +69,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const [configOptions, setConfigOptions] = useState<SessionConfigOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const prevAdapterRef = useRef<Adapter | null>(null);
   const hasHydrated = useSettingsStore((state) => state._hasHydrated);
 
   useEffect(() => {
@@ -80,6 +82,18 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
     // isLoading initializes to true, so the picker stays loading until hydration
     // lands and the fetch below resolves.
     if (!hasHydrated) return;
+
+    // A harness switch resets the saved selections so the new harness starts
+    // on its default preset notch (and the slider face shows).
+    if (prevAdapterRef.current !== null && prevAdapterRef.current !== adapter) {
+      useSettingsStore.setState({
+        lastUsedModel: null,
+        lastUsedReasoningEffort: null,
+        lastUsedContextWindow: null,
+        lastUsedFastMode: null,
+      });
+    }
+    prevAdapterRef.current = adapter;
 
     abortRef.current?.abort();
     const abort = new AbortController();
@@ -161,6 +175,51 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
               lastUsedFastMode,
             },
           });
+        }
+
+        // With no saved picks (fresh install or a harness switch), land on
+        // the ladder's middle notch so the slider face is the default view.
+        if (!lastUsedModel && !lastUsedReasoningEffort) {
+          const ladder = getCapabilityLadder(adapter);
+          const middle = ladder[Math.floor((ladder.length - 1) / 2)];
+          const midModelOpt = getOptionByCategory(initial, "model");
+          if (
+            middle &&
+            midModelOpt?.type === "select" &&
+            flattenConfigValues(midModelOpt).includes(middle.model)
+          ) {
+            const previewSettings = {
+              defaultInitialTaskMode: "",
+              lastUsedInitialTaskMode: undefined,
+              defaultReasoningEffort,
+              lastUsedReasoningEffort,
+              lastUsedContextWindow,
+              lastUsedFastMode,
+            };
+            initial = applyConfigChange(initial, {
+              adapter,
+              configId: midModelOpt.id,
+              value: middle.model,
+              effortOptions:
+                getReasoningEffortOptions(adapter, middle.model) ?? undefined,
+              contextWindowOptions:
+                getContextWindowOptions(adapter, middle.model) ?? undefined,
+              fastModeOptions: fastModeFlagEnabled
+                ? (getFastModeOptions(adapter, middle.model) ?? undefined)
+                : undefined,
+              settings: previewSettings,
+            });
+            const midThoughtOpt = getOptionByCategory(initial, "thought_level");
+            if (midThoughtOpt) {
+              initial = applyConfigChange(initial, {
+                adapter,
+                configId: midThoughtOpt.id,
+                value: middle.effort,
+                effortOptions: undefined,
+                settings: previewSettings,
+              });
+            }
+          }
         }
 
         setConfigOptions(initial);
