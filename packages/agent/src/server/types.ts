@@ -66,8 +66,7 @@ export interface AgentServerConfig {
     | "high"
     | "xhigh"
     | "max"
-    | "ultracode"
-    | "ultrathink";
+    | "ultracode";
   contextWindow?: "200k" | "1m";
   fastMode?: boolean;
   resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;

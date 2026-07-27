@@ -10,7 +10,6 @@ import {
   supportsEffort,
   supportsMcpInjection,
   supportsXhighEffort,
-  toSdkEffort,
   toSdkModelId,
 } from "./models";
 
@@ -164,25 +163,19 @@ describe("getEffortOptions", () => {
 
   it.each([
     ["claude-sonnet-4-6", ["low", "medium", "high"]],
-    [
-      "claude-opus-4-7",
-      ["low", "medium", "high", "xhigh", "max", "ultracode", "ultrathink"],
-    ],
+    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max", "ultracode"]],
     ["@cf/zai-org/glm-5.2", ["high", "max"]],
   ])("returns the exact effort levels for %s", (modelId, expected) => {
     expect(getEffortOptions(modelId)?.map((o) => o.value)).toEqual(expected);
   });
 
-  it("marks the default level and links docs for the ultra tiers", () => {
+  it("marks the default level and links docs for ultracode", () => {
     const options = getEffortOptions("claude-opus-5") ?? [];
     const byValue = new Map(options.map((o) => [o.value, o]));
     expect(isDefaultSelectOption(byValue.get("high")?._meta)).toBe(true);
     expect(isDefaultSelectOption(byValue.get("max")?._meta)).toBe(false);
     expect(selectOptionDocsUrl(byValue.get("ultracode")?._meta)).toContain(
       "workflows",
-    );
-    expect(selectOptionDocsUrl(byValue.get("ultrathink")?._meta)).toContain(
-      "model-config",
     );
     expect(selectOptionDocsUrl(byValue.get("low")?._meta)).toBeUndefined();
   });
@@ -199,20 +192,6 @@ describe("getContextWindowOptions", () => {
     expect(options.map((o) => o.value)).toEqual(["200k", "1m"]);
     expect(isDefaultSelectOption(options[1]?._meta)).toBe(true);
     expect(isDefaultSelectOption(options[0]?._meta)).toBe(false);
-  });
-});
-
-describe("toSdkEffort", () => {
-  it.each([
-    ["low", "low"],
-    ["medium", "medium"],
-    ["high", "high"],
-    ["xhigh", "xhigh"],
-    ["max", "max"],
-    ["ultracode", "ultracode"],
-    ["ultrathink", "max"],
-  ] as const)("toSdkEffort(%s) === %s", (effort, expected) => {
-    expect(toSdkEffort(effort)).toBe(expected);
   });
 });
 

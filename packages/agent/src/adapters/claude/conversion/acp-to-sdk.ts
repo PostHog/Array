@@ -221,23 +221,3 @@ export function promptToClaude(prompt: PromptRequest): SDKUserMessage {
 
   return message;
 }
-
-export const ULTRATHINK_KEYWORD = "ultrathink";
-
-// Claude Code recognizes "ultrathink" as a prompt keyword, so a session pinned
-// to the Ultrathink tier requests deep reasoning by carrying it every turn.
-export function appendUltrathinkKeyword(message: SDKUserMessage): void {
-  const content = message.message.content;
-  if (typeof content === "string") {
-    if (!content.includes(ULTRATHINK_KEYWORD)) {
-      message.message.content = `${content}\n\n${ULTRATHINK_KEYWORD}`;
-    }
-    return;
-  }
-  const hasKeyword = content.some(
-    (block) => block.type === "text" && block.text.includes(ULTRATHINK_KEYWORD),
-  );
-  if (!hasKeyword) {
-    content.push(sdkText(ULTRATHINK_KEYWORD));
-  }
-}

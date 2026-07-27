@@ -12,8 +12,7 @@ import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
 const openUrlInBrowser = vi.hoisted(() => vi.fn());
 vi.mock("@posthog/ui/utils/browser", () => ({ openUrlInBrowser }));
 
-const ultrathinkDocsUrl =
-  "https://code.claude.com/docs/en/model-config#use-ultrathink-for-one-off-deep-reasoning";
+const ultracodeDocsUrl = "https://code.claude.com/docs/en/workflows";
 
 function thoughtOption(
   overrides?: Partial<SessionConfigOption>,
@@ -33,9 +32,9 @@ function thoughtOption(
       },
       { name: "Max", value: "max" },
       {
-        name: "Ultrathink",
-        value: "ultrathink",
-        _meta: { [OPTION_DOCS_URL_META_KEY]: ultrathinkDocsUrl },
+        name: "Ultracode",
+        value: "ultracode",
+        _meta: { [OPTION_DOCS_URL_META_KEY]: ultracodeDocsUrl },
       },
     ],
     ...overrides,
@@ -103,11 +102,11 @@ describe("ReasoningLevelSelector", () => {
 
     await user.click(screen.getByRole("button", { name: "Reasoning: High" }));
     const docsButton = await screen.findByRole("button", {
-      name: "Learn more about Ultrathink",
+      name: "Learn more about Ultracode",
     });
     await user.click(docsButton);
 
-    expect(openUrlInBrowser).toHaveBeenCalledWith(ultrathinkDocsUrl);
+    expect(openUrlInBrowser).toHaveBeenCalledWith(ultracodeDocsUrl);
     expect(onChange).not.toHaveBeenCalled();
   });
 

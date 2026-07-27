@@ -30,7 +30,7 @@ import { type CodeExecutionMode, toSdkPermissionMode } from "../tools";
 import type { EffortLevel } from "../types";
 import { buildAppendedInstructions } from "./instructions";
 import { loadUserClaudeJsonMcpServers } from "./mcp-config";
-import { DEFAULT_MODEL, FALLBACK_MODEL, toSdkEffort } from "./models";
+import { DEFAULT_MODEL, FALLBACK_MODEL } from "./models";
 import { createRtkRewriteHook, resolveRtkPrefix } from "./rtk";
 import type { SettingsManager } from "./settings";
 
@@ -527,7 +527,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
 
   if (params.effort) {
     // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
-    options.effort = toSdkEffort(params.effort);
+    options.effort = params.effort;
   }
 
   clearStatsigCache();

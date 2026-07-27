@@ -71,7 +71,6 @@ const EXTENDED_EFFORT_LEVELS: readonly EffortLevel[] = [
   "xhigh",
   "max",
   "ultracode",
-  "ultrathink",
 ];
 const MODEL_EFFORT_LEVELS: Readonly<Record<string, readonly EffortLevel[]>> = {
   "claude-opus-4-7": EXTENDED_EFFORT_LEVELS,
@@ -156,15 +155,6 @@ export function getEffortOptions(modelId: string): EffortOption[] | null {
       _meta: effortOptionMeta(value),
     })) ?? null
   );
-}
-
-// The SDK's effort union lags the CLI: "ultracode" is accepted at runtime
-// (xhigh plus workflow orchestration) while "ultrathink" is only a prompt
-// keyword, so Ultrathink sessions run at max budget and inject the keyword.
-export function toSdkEffort(
-  effort: EffortLevel,
-): Exclude<EffortLevel, "ultrathink"> {
-  return effort === "ultrathink" ? "max" : effort;
 }
 
 // Model alias resolution — lets callers use human-friendly aliases like

@@ -54,25 +54,17 @@ describe("isSupportedReasoningEffort", () => {
 
   it.each([
     ["claude-opus-4-8", "ultracode", true],
-    ["claude-opus-4-8", "ultrathink", true],
     ["claude-sonnet-4-6", "ultracode", false],
-    ["claude-sonnet-4-6", "ultrathink", false],
     ["@cf/zai-org/glm-5.2", "ultracode", false],
-  ])(
-    "gates the ultra tiers on Claude model %s (%s)",
-    (modelId, effort, expected) => {
-      expect(isSupportedReasoningEffort("claude", modelId, effort)).toBe(
-        expected,
-      );
-    },
-  );
+  ])("gates ultracode on Claude model %s (%s)", (modelId, effort, expected) => {
+    expect(isSupportedReasoningEffort("claude", modelId, effort)).toBe(
+      expected,
+    );
+  });
 
-  it("never offers the ultra tiers on codex models", () => {
+  it("never offers ultracode on codex models", () => {
     expect(
       isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultracode"),
-    ).toBe(false);
-    expect(
-      isSupportedReasoningEffort("codex", "gpt-5.6-sol", "ultrathink"),
     ).toBe(false);
   });
 });

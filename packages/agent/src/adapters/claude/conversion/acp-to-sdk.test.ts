@@ -1,11 +1,9 @@
 import type { PromptRequest } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
 import {
-  appendUltrathinkKeyword,
   isSteerMeta,
   promptToClaude,
   readToolGuidanceForPath,
-  ULTRATHINK_KEYWORD,
   workspacePromptFromFileUri,
 } from "./acp-to-sdk";
 
@@ -254,40 +252,5 @@ describe("promptToClaude", () => {
         text: "https://example.com/report.pdf",
       },
     ]);
-  });
-});
-
-describe("appendUltrathinkKeyword", () => {
-  function messageWithPrompt(text: string) {
-    return promptToClaude({
-      sessionId: "session-1",
-      prompt: [{ type: "text", text }],
-    });
-  }
-
-  it("pushes the keyword as a trailing text block", () => {
-    const message = messageWithPrompt("Fix the flaky test");
-    appendUltrathinkKeyword(message);
-    expect(message.message.content).toEqual([
-      { type: "text", text: "Fix the flaky test" },
-      { type: "text", text: ULTRATHINK_KEYWORD },
-    ]);
-  });
-
-  it("does not duplicate a keyword the user already typed", () => {
-    const message = messageWithPrompt("ultrathink about this bug");
-    appendUltrathinkKeyword(message);
-    expect(message.message.content).toEqual([
-      { type: "text", text: "ultrathink about this bug" },
-    ]);
-  });
-
-  it("appends to string content", () => {
-    const message = messageWithPrompt("placeholder");
-    message.message.content = "Fix the flaky test";
-    appendUltrathinkKeyword(message);
-    expect(message.message.content).toBe(
-      `Fix the flaky test\n\n${ULTRATHINK_KEYWORD}`,
-    );
   });
 });

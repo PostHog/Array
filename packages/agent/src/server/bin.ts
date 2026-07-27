@@ -50,7 +50,6 @@ const envSchema = z.object({
       "xhigh",
       "max",
       "ultracode",
-      "ultrathink",
     ])
     .optional(),
   POSTHOG_CODE_CONTEXT_WINDOW: z.enum(["200k", "1m"]).optional(),
