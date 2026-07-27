@@ -4,11 +4,15 @@ import type {
   PiSessionStatus,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
-import type { AgentConversationEvent } from "@posthog/shared";
+import type {
+  AgentConversationEvent,
+  SessionStatus,
+  TaskRunStatus,
+} from "@posthog/shared";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 export interface PiControllerSessionState {
-  connectionState: "connecting" | "connected" | "failed";
+  connectionState: SessionStatus;
   events: AgentConversationEvent[];
   models: PiNativeModelInfo[];
   modelsLoaded: boolean;
@@ -16,7 +20,10 @@ export interface PiControllerSessionState {
   thinkingLevelsLoaded: boolean;
   commands: PiCommand[];
   status?: PiSessionStatus;
-  error?: string;
+  cloudStatus?: TaskRunStatus;
+  errorTitle?: string;
+  errorMessage?: string;
+  errorRetryable?: boolean;
   isBashRunning: boolean;
 }
 

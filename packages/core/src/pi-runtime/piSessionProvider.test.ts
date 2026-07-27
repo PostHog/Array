@@ -45,6 +45,7 @@ function cloudTaskClient(): CloudTaskClient {
     })),
     watch: vi.fn(async () => {}),
     unwatch: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
     subscribe: vi.fn((taskId, runId, onUpdate) => {
       onUpdate({
         taskId,

@@ -153,7 +153,75 @@ describe("PiSessionController", () => {
       "prompt",
       "Read this\n\nAttached files:\n- /tmp/cloud/input.txt",
       ["artifact-1"],
+      expect.any(String),
     );
+    const messageId = vi.mocked(session.sendUserMessage).mock.calls[0][3];
+    expect(
+      controller.store.getState().sessions["task-1"].events,
+    ).toContainEqual(
+      expect.objectContaining({ type: "user_message", id: messageId }),
+    );
+  });
+
+  it("marks a submitted turn as streaming while the command starts", async () => {
+    let resolveSend: () => void = () => {};
+    const sending = new Promise<void>((resolve) => {
+      resolveSend = resolve;
+    });
+    const session = createSession();
+    session.sendUserMessage = vi.fn(() => sending);
+    const controller = createController(session, {
+      prepareCloudPiMessage: vi.fn(async () => ({
+        content: "hello",
+        artifactIds: [],
+      })),
+    } as unknown as TaskService);
+
+    await controller.connect("task-1", "run-1");
+    const submission = controller.submit("task-1", "hello", false, "steer");
+
+    await vi.waitFor(() => {
+      expect(
+        controller.store.getState().sessions["task-1"].status,
+      ).toMatchObject({ isStreaming: true });
+    });
+
+    resolveSend();
+    await submission;
+  });
+
+  it("retries a cloud session without discarding its transcript", async () => {
+    const initialEvent: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "existing work" },
+    };
+    const session = createSession();
+    session.retry = vi.fn(async () => {});
+    vi.mocked(session.getConversation).mockResolvedValue([initialEvent]);
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    controller.store.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "task-1": {
+          ...state.sessions["task-1"],
+          connectionState: "disconnected",
+          errorMessage: "stream dropped",
+          errorRetryable: true,
+        },
+      },
+    }));
+
+    await controller.retry("task-1");
+
+    expect(session.retry).toHaveBeenCalledOnce();
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      connectionState: "connected",
+      events: [initialEvent],
+      errorMessage: undefined,
+    });
   });
 
   it("uses the live bash operation without reloading native history", async () => {
@@ -214,7 +282,7 @@ describe("PiSessionController", () => {
     expect(controller.store.getState().sessions["task-1"]).toMatchObject({
       connectionState: "connected",
       events: [initialEvent],
-      error: undefined,
+      errorMessage: undefined,
     });
   });
 

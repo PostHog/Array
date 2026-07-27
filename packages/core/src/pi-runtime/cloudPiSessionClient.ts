@@ -77,9 +77,13 @@ export class CloudPiSessionClient implements PiSession {
   });
   private runtimeReady = false;
   private resolveRuntimeReady: () => void = () => {};
-  private readonly runtimeReadyReceived = new Promise<void>((resolve) => {
-    this.resolveRuntimeReady = resolve;
-  });
+  private rejectRuntimeReady: (error: unknown) => void = () => {};
+  private readonly runtimeReadyReceived = new Promise<void>(
+    (resolve, reject) => {
+      this.resolveRuntimeReady = resolve;
+      this.rejectRuntimeReady = reject;
+    },
+  );
   private terminalEventSent = false;
   private resolveTerminalStatus: () => void = () => {};
   private readonly terminalStatusReceived = new Promise<void>((resolve) => {
@@ -95,6 +99,7 @@ export class CloudPiSessionClient implements PiSession {
       this.resolveTerminalStatus();
     }
     void this.snapshotReceived.catch(() => {});
+    void this.runtimeReadyReceived.catch(() => {});
     this.liveClient = new RemotePiRpcClient({
       request: (command) => this.request(command),
     });
@@ -112,6 +117,14 @@ export class CloudPiSessionClient implements PiSession {
 
   get resumeRequired(): boolean {
     return isTerminalStatus(this.runStatus);
+  }
+
+  get cloudStatus(): TaskRunStatus {
+    return this.runStatus;
+  }
+
+  async retry(): Promise<void> {
+    await this.cloudTaskClient.retry(this.context.taskId, this.context.runId);
   }
 
   async sendUserMessage(
@@ -157,14 +170,16 @@ export class CloudPiSessionClient implements PiSession {
   onConversationEvent(
     onEvent: (event: AgentConversationEvent) => void,
     onError: (error: unknown) => void,
+    onCloudStatus?: (status: TaskRunStatus) => void,
   ): () => void {
     let active = true;
     const unsubscribe = this.cloudTaskClient.subscribe(
       this.context.taskId,
       this.context.runId,
-      (update) => this.handleUpdate(update, onEvent, onError),
+      (update) => this.handleUpdate(update, onEvent, onError, onCloudStatus),
       (error) => {
-        if (isTerminalStatus(this.runStatus)) {
+        this.rejectRuntimeReady(error);
+        if (!this.snapshotReady || isTerminalStatus(this.runStatus)) {
           this.rejectSnapshot(error);
         }
         onError(error);
@@ -182,7 +197,8 @@ export class CloudPiSessionClient implements PiSession {
             teamId: this.context.teamId,
           })
           .catch((error) => {
-            if (isTerminalStatus(this.runStatus)) {
+            this.rejectRuntimeReady(error);
+            if (!this.snapshotReady || isTerminalStatus(this.runStatus)) {
               this.rejectSnapshot(error);
             }
             onError(error);
@@ -200,6 +216,7 @@ export class CloudPiSessionClient implements PiSession {
     update: CloudTaskUpdatePayload,
     onEvent: (event: AgentConversationEvent) => void,
     onError: (error: unknown) => void,
+    onCloudStatus?: (status: TaskRunStatus) => void,
   ): void {
     const snapshotCanProveReadiness =
       update.kind === "snapshot" && update.status === "in_progress";
@@ -211,8 +228,12 @@ export class CloudPiSessionClient implements PiSession {
     }
 
     if (update.kind === "error") {
-      const error = new Error(update.errorMessage);
-      if (isTerminalStatus(this.runStatus)) {
+      const error = Object.assign(new Error(update.errorMessage), {
+        title: update.errorTitle,
+        retryable: update.retryable,
+      });
+      this.rejectRuntimeReady(error);
+      if (!this.snapshotReady || isTerminalStatus(this.runStatus)) {
         this.rejectSnapshot(error);
       }
       onError(error);
@@ -260,6 +281,7 @@ export class CloudPiSessionClient implements PiSession {
       update.status
     ) {
       this.runStatus = update.status;
+      onCloudStatus?.(update.status);
     }
 
     if (isTerminalStatus(this.runStatus)) {
@@ -268,6 +290,19 @@ export class CloudPiSessionClient implements PiSession {
         this.terminalEventSent = true;
         onEvent({ type: "turn_completed", timestamp: Date.now() });
       }
+    }
+
+    if (
+      this.runStatus === "failed" &&
+      (update.kind === "snapshot" || update.kind === "status") &&
+      update.errorMessage
+    ) {
+      onError(
+        Object.assign(new Error(update.errorMessage), {
+          title: "Cloud run failed",
+          retryable: true,
+        }),
+      );
     }
   }
 
@@ -399,24 +434,9 @@ export class CloudPiSessionClient implements PiSession {
       return;
     }
 
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new Error("Timed out waiting for the Pi runtime")),
-        30_000,
-      );
-    });
-
-    try {
-      await Promise.race([
-        this.runtimeReadyReceived,
-        this.terminalStatusReceived,
-        timeout,
-      ]);
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
+    await Promise.race([
+      this.runtimeReadyReceived,
+      this.terminalStatusReceived,
+    ]);
   }
 }

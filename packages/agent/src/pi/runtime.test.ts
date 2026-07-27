@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type {
   AgentSessionEvent,
   RpcClient,
@@ -91,6 +91,78 @@ describe("PiRuntime", () => {
       type: "tool_call_updated",
       toolCall: { id: toolCallId, status: "completed" },
     });
+  });
+
+  it("uses the native command id for the echoed user message", async () => {
+    const { client, emit, send } = createClient();
+    const runtime = new PiRuntime(client);
+    const conversationListener = vi.fn();
+    runtime.onConversationEvent(conversationListener);
+    const message: UserMessage = {
+      role: "user",
+      content: "hello",
+      timestamp: 1,
+    };
+    send.mockImplementation(async () => {
+      emit({ type: "message_end", message });
+      return {
+        id: "message-1",
+        type: "response",
+        command: "prompt",
+        success: true,
+      };
+    });
+
+    await runtime.sendCommand({
+      id: "message-1",
+      type: "prompt",
+      message: "hello",
+    });
+
+    expect(conversationListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "user_message",
+        id: "message-1",
+      }),
+    );
+  });
+
+  it("does not apply an extension command id to a later user message", async () => {
+    const { client, emit, send } = createClient();
+    const runtime = new PiRuntime(client);
+    const conversationListener = vi.fn();
+    runtime.onConversationEvent(conversationListener);
+    send.mockImplementation(async (command: { message?: string }) => {
+      if (command.message === "next") {
+        emit({
+          type: "message_end",
+          message: { role: "user", content: "next", timestamp: 1 },
+        });
+      }
+      return {
+        type: "response",
+        command: "prompt",
+        success: true,
+      };
+    });
+
+    await runtime.sendCommand({
+      id: "extension-id",
+      type: "prompt",
+      message: "/extension",
+    });
+    await runtime.sendCommand({
+      id: "message-id",
+      type: "prompt",
+      message: "next",
+    });
+
+    expect(conversationListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "user_message",
+        id: "message-id",
+      }),
+    );
   });
 
   it("normalizes live Pi events before forwarding them", () => {

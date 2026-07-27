@@ -18,6 +18,7 @@ function createCloudTaskClient(autoStart = true) {
     getContext: vi.fn(async () => null),
     watch: vi.fn(async () => {}),
     unwatch: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
     subscribe: vi.fn((_taskId, _runId, handler, errorHandler, started) => {
       onUpdate = handler;
       onError = errorHandler;
@@ -86,6 +87,43 @@ describe("CloudPiSessionClient", () => {
 
     await expect(state).resolves.toMatchObject({ isStreaming: true });
     expect(cloud.client.sendCommand).toHaveBeenCalledOnce();
+  });
+
+  it("does not fail while a sandbox takes longer than 30 seconds to boot", async () => {
+    vi.useFakeTimers();
+    try {
+      const cloud = createCloudTaskClient();
+      vi.mocked(cloud.client.sendCommand).mockResolvedValue({
+        success: true,
+        result: {
+          type: "response",
+          command: "get_state",
+          success: true,
+          data: { isStreaming: false },
+        },
+      });
+      const session = new CloudPiSessionClient(
+        cloud.client,
+        context("in_progress"),
+      );
+      session.onConversationEvent(vi.fn(), vi.fn());
+
+      const state = session.client.getState();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(cloud.client.sendCommand).not.toHaveBeenCalled();
+
+      cloud.sendUpdate({
+        taskId: "task-1",
+        runId: "run-1",
+        kind: "logs",
+        newEntries: [{ type: "pi_run_started" }],
+        totalEntryCount: 1,
+      });
+
+      await expect(state).resolves.toMatchObject({ isStreaming: false });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accepts an in-progress reconnect snapshot as runtime readiness", async () => {
@@ -358,6 +396,32 @@ describe("CloudPiSessionClient", () => {
       expect.objectContaining(snapshotEvent),
     ]);
     expect(cloud.client.sendCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves structured backend failure details", () => {
+    const cloud = createCloudTaskClient();
+    const session = new CloudPiSessionClient(
+      cloud.client,
+      context("in_progress"),
+    );
+    const onError = vi.fn();
+    session.onConversationEvent(vi.fn(), onError);
+
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "status",
+      status: "failed",
+      errorMessage: "Sandbox image does not support Pi",
+    });
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Cloud run failed",
+        message: "Sandbox image does not support Pi",
+        retryable: true,
+      }),
+    );
   });
 
   it("processes reconnect snapshots and clears streaming on terminal status", async () => {

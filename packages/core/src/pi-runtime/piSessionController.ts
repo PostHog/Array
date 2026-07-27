@@ -8,6 +8,7 @@ import type {
   AgentConversationEvent,
   PiMessagingMode,
   PiRuntimeHealth,
+  TaskRunStatus,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { parseCommandLine } from "../message-editor/commands";
@@ -35,16 +36,20 @@ export const LOCAL_PI_SESSION_FACTORY = Symbol.for(
 export interface PiSession {
   client: PiRemoteRpcClient;
   readonly resumeRequired?: boolean;
+  readonly cloudStatus?: TaskRunStatus;
+  retry?(): Promise<void>;
   sendUserMessage?(
     type: "prompt" | "steer" | "follow_up",
     message: string,
     artifactIds: string[],
+    id: string,
   ): Promise<void>;
   health(): Promise<PiRuntimeHealth>;
   getConversation(): Promise<AgentConversationEvent[]>;
   onConversationEvent(
     onEvent: (event: AgentConversationEvent) => void,
     onError: (error: unknown) => void,
+    onCloudStatus?: (status: TaskRunStatus) => void,
   ): () => void;
 }
 
@@ -55,6 +60,23 @@ export interface PiSessionFactory {
 export type PiSessionProvider = PiSessionFactory;
 
 export type PiSubmitResult = "prompt" | "steer" | "followUp" | "compact";
+
+function normalizeSessionError(error: unknown): {
+  title: string;
+  message: string;
+  retryable: boolean;
+} {
+  const value = error as {
+    title?: unknown;
+    message?: unknown;
+    retryable?: unknown;
+  };
+  return {
+    title: typeof value?.title === "string" ? value.title : "Connection failed",
+    message: typeof value?.message === "string" ? value.message : String(error),
+    retryable: value?.retryable !== false,
+  };
+}
 
 @injectable()
 export class PiSessionController {
@@ -84,21 +106,25 @@ export class PiSessionController {
 
     this.updateSession(taskId, {
       connectionState: "connecting",
-      error: undefined,
+      errorTitle: undefined,
+      errorMessage: undefined,
+      errorRetryable: undefined,
     });
     const connectedSessionVersion = this.getSessionVersion(taskId);
     const readiness = this.ensureConnectedInternal(taskId)
       .then(() => {
         if (this.getSessionVersion(taskId) === connectedSessionVersion) {
-          this.updateSession(taskId, { connectionState: "connected" });
+          this.updateSession(taskId, {
+            connectionState: "connected",
+            errorTitle: undefined,
+            errorMessage: undefined,
+            errorRetryable: undefined,
+          });
         }
       })
       .catch((error) => {
         if (this.getSessionVersion(taskId) === connectedSessionVersion) {
-          this.updateSession(taskId, {
-            connectionState: "failed",
-            error: error instanceof Error ? error.message : String(error),
-          });
+          this.applySessionError(taskId, error);
         }
         throw error;
       })
@@ -120,7 +146,11 @@ export class PiSessionController {
       return existing;
     }
 
-    this.updateSession(taskId, { error: undefined });
+    this.updateSession(taskId, {
+      errorTitle: undefined,
+      errorMessage: undefined,
+      errorRetryable: undefined,
+    });
 
     const connection = this.loadSession(taskId).finally(() => {
       if (this.connections.get(taskId) === connection) {
@@ -132,14 +162,69 @@ export class PiSessionController {
   }
 
   disconnect(taskId: string): void {
-    this.advanceSessionVersion(taskId);
-    this.subscriptions.get(taskId)?.();
-    this.subscriptions.delete(taskId);
-    this.sessions.delete(taskId);
+    this.resetTransport(taskId);
     this.taskRunIds.delete(taskId);
     this.liveEvents.delete(taskId);
-    this.connections.delete(taskId);
-    this.readiness.delete(taskId);
+  }
+
+  async retry(taskId: string): Promise<void> {
+    const taskRunId = this.taskRunIds.get(taskId);
+    const session = await this.getPiSession(taskId);
+    this.updateSession(taskId, {
+      connectionState: "connecting",
+      errorTitle: undefined,
+      errorMessage: undefined,
+      errorRetryable: undefined,
+    });
+    try {
+      await session.retry?.();
+      this.resetTransport(taskId);
+      await this.ensureConnected(taskId, taskRunId);
+    } catch (error) {
+      this.applySessionError(taskId, error);
+      throw error;
+    }
+  }
+
+  async restart(taskId: string): Promise<void> {
+    const taskRunId = this.taskRunIds.get(taskId);
+    if (!taskRunId) {
+      await this.retry(taskId);
+      return;
+    }
+
+    this.updateSession(taskId, {
+      connectionState: "connecting",
+      errorTitle: undefined,
+      errorMessage: undefined,
+      errorRetryable: undefined,
+    });
+    try {
+      const resumedRun = await this.taskService.resumeCloudPiRun(
+        taskId,
+        taskRunId,
+      );
+      this.resetTransport(taskId);
+      await this.ensureConnected(taskId, resumedRun.id);
+    } catch (error) {
+      this.applySessionError(taskId, error);
+      throw error;
+    }
+  }
+
+  retryUnhealthyCloudSessions(): void {
+    for (const [taskId, session] of Object.entries(
+      this.store.getState().sessions,
+    )) {
+      if (
+        session.cloudStatus !== undefined &&
+        session.errorRetryable &&
+        (session.connectionState === "disconnected" ||
+          session.connectionState === "error")
+      ) {
+        void this.retry(taskId).catch(() => {});
+      }
+    }
   }
 
   getSubmitAction(
@@ -168,34 +253,57 @@ export class PiSessionController {
     const message = text.trim();
     const action = this.getSubmitAction(message, isStreaming, messagingMode);
 
-    const session = await this.getWritablePiSession(taskId);
+    const currentSession = await this.getPiSession(taskId);
+    const wasStreaming = this.getSession(taskId).status?.isStreaming ?? false;
     if (action === "compact") {
+      const session = await this.getWritablePiSession(taskId);
       const command = parseCommandLine(message);
       const customInstructions = command?.args?.trim() || undefined;
       await session.client.compact(customInstructions);
     } else {
-      const taskRunId = this.taskRunIds.get(taskId);
-      const prepared =
-        taskRunId && session.sendUserMessage
-          ? await this.taskService.prepareCloudPiMessage(
-              taskId,
-              taskRunId,
-              message,
-            )
-          : { content: message, artifactIds: [] };
-      if (session.sendUserMessage) {
-        const commandType = action === "followUp" ? "follow_up" : action;
-        await session.sendUserMessage(
-          commandType,
-          prepared.content,
-          prepared.artifactIds,
-        );
-      } else if (action === "prompt") {
-        await session.client.prompt(prepared.content);
-      } else if (action === "steer") {
-        await session.client.steer(prepared.content);
-      } else {
-        await session.client.followUp(prepared.content);
+      const commandType = action === "followUp" ? "follow_up" : action;
+      const messageId = currentSession.sendUserMessage
+        ? globalThis.crypto.randomUUID()
+        : undefined;
+      if (messageId) {
+        this.appendOptimisticUserMessage(taskId, messageId, message);
+      }
+      this.markTurnPending(taskId);
+      if (currentSession.resumeRequired) {
+        this.updateSession(taskId, { connectionState: "connecting" });
+      }
+
+      try {
+        const session = await this.getWritablePiSession(taskId);
+        this.markTurnPending(taskId);
+        if (session.sendUserMessage && messageId) {
+          const taskRunId = this.taskRunIds.get(taskId);
+          const prepared = taskRunId
+            ? await this.taskService.prepareCloudPiMessage(
+                taskId,
+                taskRunId,
+                message,
+              )
+            : { content: message, artifactIds: [] };
+          await session.sendUserMessage(
+            commandType,
+            prepared.content,
+            prepared.artifactIds,
+            messageId,
+          );
+        } else if (action === "prompt") {
+          await session.client.prompt(message);
+        } else if (action === "steer") {
+          await session.client.steer(message);
+        } else {
+          await session.client.followUp(message);
+        }
+      } catch (error) {
+        if (messageId) {
+          this.removeUserMessage(taskId, messageId);
+        }
+        this.setTurnStreaming(taskId, wasStreaming);
+        throw error;
       }
     }
 
@@ -293,20 +401,14 @@ export class PiSessionController {
         if (disposed) {
           return;
         }
+        this.updateSession(taskId, { cloudStatus: session.cloudStatus });
         unsubscribe = session.onConversationEvent(
           (event) => this.handleEvent(taskId, event),
-          (error) => {
-            this.updateSession(taskId, {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          },
+          (error) => this.applySessionError(taskId, error),
+          (cloudStatus) => this.updateSession(taskId, { cloudStatus }),
         );
       })
-      .catch((error) => {
-        this.updateSession(taskId, {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+      .catch((error) => this.applySessionError(taskId, error));
     this.subscriptions.set(taskId, () => {
       disposed = true;
       unsubscribe?.();
@@ -327,7 +429,22 @@ export class PiSessionController {
       const liveEvents = this.liveEvents.get(taskId) ?? [];
       const newLiveEvents = this.reconcileLiveEvents(events, liveEvents);
       this.liveEvents.set(taskId, newLiveEvents);
-      const reconciledEvents = [...events, ...newLiveEvents];
+      const historyUserMessageIds = new Set(
+        events.flatMap((event) =>
+          event.type === "user_message" ? [event.id] : [],
+        ),
+      );
+      const optimisticEvents = currentSession.events.filter(
+        (event) =>
+          event.sourceId?.startsWith("optimistic:") &&
+          (event.type !== "user_message" ||
+            !historyUserMessageIds.has(event.id)),
+      );
+      const reconciledEvents = [
+        ...events,
+        ...newLiveEvents,
+        ...optimisticEvents,
+      ];
 
       this.setSession(taskId, {
         connectionState: "connected",
@@ -339,7 +456,9 @@ export class PiSessionController {
         thinkingLevelsLoaded: currentSession.thinkingLevelsLoaded,
         commands: currentSession.commands,
         isBashRunning: false,
-        error: undefined,
+        errorTitle: undefined,
+        errorMessage: undefined,
+        errorRetryable: undefined,
       });
 
       await Promise.all([
@@ -364,9 +483,7 @@ export class PiSessionController {
       ]);
     } catch (error) {
       if (this.getSessionVersion(taskId) === connectedSessionVersion) {
-        this.updateSession(taskId, {
-          error: error instanceof Error ? error.message : String(error),
-        });
+        this.applySessionError(taskId, error);
       }
       throw error;
     }
@@ -384,13 +501,40 @@ export class PiSessionController {
         status = { ...status, isCompacting: false };
       }
     }
+    const hasTurnActivity =
+      event.type === "assistant_message_chunk" ||
+      event.type === "assistant_thought_chunk" ||
+      event.type === "tool_call_started" ||
+      event.type === "tool_call_updated";
+    if (status && hasTurnActivity) {
+      status = { ...status, isStreaming: true };
+    }
     if (status && event.type === "turn_completed") {
       status = { ...status, isStreaming: false };
     }
 
+    const existingUserMessageIndex =
+      event.type === "user_message"
+        ? session.events.findIndex(
+            (candidate) =>
+              candidate.type === "user_message" && candidate.id === event.id,
+          )
+        : -1;
+    const events = [...session.events];
+    if (existingUserMessageIndex >= 0) {
+      events[existingUserMessageIndex] = event;
+    } else {
+      events.push(event);
+    }
+
     this.updateSession(taskId, {
-      events: [...session.events, event],
+      connectionState:
+        event.type === "progress" ? session.connectionState : "connected",
+      events,
       status,
+      errorTitle: undefined,
+      errorMessage: undefined,
+      errorRetryable: undefined,
     });
   }
 
@@ -406,6 +550,50 @@ export class PiSessionController {
     return liveEvents.filter(
       (event) => !event.sourceId || !historySourceIds.has(event.sourceId),
     );
+  }
+
+  private markTurnPending(taskId: string): void {
+    this.setTurnStreaming(taskId, true);
+  }
+
+  private setTurnStreaming(taskId: string, isStreaming: boolean): void {
+    const session = this.getSession(taskId);
+    if (!session.status) {
+      return;
+    }
+
+    this.updateSession(taskId, {
+      status: { ...session.status, isStreaming },
+    });
+  }
+
+  private appendOptimisticUserMessage(
+    taskId: string,
+    messageId: string,
+    content: string,
+  ): void {
+    const session = this.getSession(taskId);
+    this.updateSession(taskId, {
+      events: [
+        ...session.events,
+        {
+          type: "user_message",
+          id: messageId,
+          sourceId: `optimistic:${messageId}`,
+          timestamp: Date.now(),
+          content: [{ type: "text", text: content }],
+        },
+      ],
+    });
+  }
+
+  private removeUserMessage(taskId: string, messageId: string): void {
+    const session = this.getSession(taskId);
+    this.updateSession(taskId, {
+      events: session.events.filter(
+        (event) => event.type !== "user_message" || event.id !== messageId,
+      ),
+    });
   }
 
   private async refreshStatus(taskId: string): Promise<void> {
@@ -437,15 +625,19 @@ export class PiSessionController {
     }
 
     if (currentTaskRunId) {
-      this.advanceSessionVersion(taskId);
-      this.subscriptions.get(taskId)?.();
-      this.subscriptions.delete(taskId);
-      this.sessions.delete(taskId);
+      this.resetTransport(taskId);
       this.liveEvents.delete(taskId);
-      this.connections.delete(taskId);
-      this.readiness.delete(taskId);
     }
     this.taskRunIds.set(taskId, taskRunId);
+  }
+
+  private resetTransport(taskId: string): void {
+    this.advanceSessionVersion(taskId);
+    this.subscriptions.get(taskId)?.();
+    this.subscriptions.delete(taskId);
+    this.sessions.delete(taskId);
+    this.connections.delete(taskId);
+    this.readiness.delete(taskId);
   }
 
   private getPiSession(taskId: string): Promise<PiSession> {
@@ -482,6 +674,16 @@ export class PiSessionController {
     this.store.setState((state) => ({
       sessions: { ...state.sessions, [taskId]: session },
     }));
+  }
+
+  private applySessionError(taskId: string, error: unknown): void {
+    const failure = normalizeSessionError(error);
+    this.updateSession(taskId, {
+      connectionState: failure.retryable ? "disconnected" : "error",
+      errorTitle: failure.title,
+      errorMessage: failure.message,
+      errorRetryable: failure.retryable,
+    });
   }
 
   private updateSession(

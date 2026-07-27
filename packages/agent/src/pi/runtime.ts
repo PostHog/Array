@@ -22,6 +22,10 @@ export class PiRuntime {
   private readonly conversationListeners = new Set<
     (event: AgentConversationEvent) => void
   >();
+  private readonly pendingUserMessages: Array<{
+    id: string;
+    message: string;
+  }> = [];
 
   constructor(client: PiRpcClient) {
     this.client = client;
@@ -46,8 +50,29 @@ export class PiRuntime {
   }
 
   async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+    const isUserMessage =
+      command.type === "prompt" ||
+      command.type === "steer" ||
+      command.type === "follow_up";
+    if (isUserMessage && command.id) {
+      this.pendingUserMessages.push({
+        id: command.id,
+        message: command.message,
+      });
+    }
     if (command.type !== "bash") {
-      return sendPiRpcCommand(this.client, command);
+      try {
+        const response = await sendPiRpcCommand(this.client, command);
+        if (!response.success && isUserMessage && command.id) {
+          this.removePendingUserMessageId(command.id);
+        }
+        return response;
+      } catch (error) {
+        if (isUserMessage && command.id) {
+          this.removePendingUserMessageId(command.id);
+        }
+        throw error;
+      }
     }
 
     this.emitConversationEvents(
@@ -76,7 +101,32 @@ export class PiRuntime {
       listener(event);
     }
 
-    this.emitConversationEvents(this.translator.translateEvent(event));
+    const conversationEvents = this.translator.translateEvent(event);
+    for (const conversationEvent of conversationEvents) {
+      if (conversationEvent.type === "user_message") {
+        const text = conversationEvent.content
+          .filter((content) => content.type === "text")
+          .map((content) => content.text)
+          .join("");
+        const pendingIndex = this.pendingUserMessages.findIndex(
+          (pending) => pending.message === text,
+        );
+        if (pendingIndex >= 0) {
+          const [pending] = this.pendingUserMessages.splice(pendingIndex, 1);
+          conversationEvent.id = pending.id;
+        }
+      }
+    }
+    this.emitConversationEvents(conversationEvents);
+  }
+
+  private removePendingUserMessageId(messageId: string): void {
+    const index = this.pendingUserMessages.findIndex(
+      (pending) => pending.id === messageId,
+    );
+    if (index >= 0) {
+      this.pendingUserMessages.splice(index, 1);
+    }
   }
 
   private emitConversationEvents(events: AgentConversationEvent[]): void {

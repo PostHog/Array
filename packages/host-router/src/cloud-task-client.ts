@@ -27,6 +27,10 @@ export class TrpcCloudTaskClient implements CloudTaskClient {
     await this.client.cloudTask.unwatch.mutate({ taskId, runId });
   }
 
+  async retry(taskId: string, runId: string): Promise<void> {
+    await this.client.cloudTask.retry.mutate({ taskId, runId });
+  }
+
   subscribe(
     taskId: string,
     runId: string,

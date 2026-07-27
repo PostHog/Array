@@ -12,6 +12,7 @@ export interface CloudTaskClient {
     teamId: number;
   }): Promise<void>;
   unwatch(taskId: string, runId: string): Promise<void>;
+  retry(taskId: string, runId: string): Promise<void>;
   subscribe(
     taskId: string,
     runId: string,
