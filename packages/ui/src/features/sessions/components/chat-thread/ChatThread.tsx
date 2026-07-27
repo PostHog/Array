@@ -637,7 +637,7 @@ const ThreadRow = memo(function ThreadRow({
     <ChatMessageScrollerItem
       messageId={item.id}
       scrollAnchor={item.type === "user_message"}
-      className="mx-auto w-full px-2.5 py-1 empty:hidden"
+      className="mx-auto w-full py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       <ThreadItemBody
