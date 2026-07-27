@@ -6471,7 +6471,7 @@ describe("SessionService", () => {
       });
     });
 
-    it("uploads attachments before sending cloud follow-ups", async () => {
+    it("reuses attachments uploaded before sending cloud follow-ups", async () => {
       const service = getSessionService();
       mockSessionStoreSetters.getSessionByTaskId.mockReturnValue(
         createMockSession({
@@ -6527,6 +6527,7 @@ describe("SessionService", () => {
         },
       ];
 
+      await service.prepareCloudAttachments("task-123", ["/tmp/test.txt"]);
       const result = await service.sendPrompt("task-123", prompt);
 
       expect(result.stopReason).toBe("queued");
@@ -6538,6 +6539,19 @@ describe("SessionService", () => {
           content: "read this\n\nAttached files: test.txt",
           pinToTop: false,
         }),
+      );
+      expect(mockTrpcFs.readFileAsBase64.query).toHaveBeenCalledTimes(1);
+      expect(
+        mockTrpcFs.readFileAsBase64.query.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        mockSessionStoreSetters.appendOptimisticItem.mock
+          .invocationCallOrder[0],
+      );
+      expect(
+        mockSessionStoreSetters.appendOptimisticItem.mock
+          .invocationCallOrder[0],
+      ).toBeLessThan(
+        mockAuth.fetchAuthState.mock.invocationCallOrder.at(-1) ?? 0,
       );
 
       expect(mockTrpcCloudTask.sendCommand.mutate).toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
+import type { FileAttachment } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -8,6 +9,7 @@ import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -307,6 +309,53 @@ export function SessionView({
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
   const composerSubmissionRef = useRef(0);
+  const attachmentUploadRef = useRef(0);
+  const [attachmentUploadStatuses, setAttachmentUploadStatuses] = useState<
+    Record<string, AttachmentUploadStatus>
+  >({});
+
+  const handleAttachmentsChange = useCallback(
+    (attachments: FileAttachment[]) => {
+      const requestId = ++attachmentUploadRef.current;
+      if (!isCloudRun || !taskId || attachments.length === 0) {
+        setAttachmentUploadStatuses({});
+        return;
+      }
+
+      setAttachmentUploadStatuses(
+        Object.fromEntries(attachments.map(({ id }) => [id, "uploading"])),
+      );
+      void sessionService
+        .prepareCloudAttachments(
+          taskId,
+          attachments.map(({ id }) => id),
+        )
+        .then(() => {
+          if (attachmentUploadRef.current === requestId) {
+            setAttachmentUploadStatuses({});
+          }
+        })
+        .catch((error) => {
+          if (attachmentUploadRef.current !== requestId) return;
+          setAttachmentUploadStatuses(
+            Object.fromEntries(attachments.map(({ id }) => [id, "error"])),
+          );
+          toast.error("Failed to upload attachments", {
+            description:
+              error instanceof Error
+                ? error.message
+                : "Remove and attach the files again to retry.",
+          });
+        });
+    },
+    [isCloudRun, sessionService, taskId],
+  );
+  const attachmentUploadFailed = Object.values(
+    attachmentUploadStatuses,
+  ).includes("error");
+  const attachmentsUploading = Object.values(attachmentUploadStatuses).includes(
+    "uploading",
+  );
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -715,11 +764,20 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline
+                            handoffInProgress ||
+                            !isOnline ||
+                            attachmentsUploading ||
+                            attachmentUploadFailed
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            !isOnline
+                              ? "No internet connection"
+                              : attachmentsUploading
+                                ? "Uploading attachments…"
+                                : attachmentUploadFailed
+                                  ? "Attachment upload failed"
+                                  : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
@@ -753,6 +811,8 @@ export function SessionView({
                             ) : undefined
                           }
                           onToggleMessagingMode={toggleMessagingMode}
+                          onAttachmentsChange={handleAttachmentsChange}
+                          attachmentUploadStatuses={attachmentUploadStatuses}
                           onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
