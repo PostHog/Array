@@ -14,6 +14,7 @@ import {
   getCapabilityLadder,
   getReasoningEffortOptions,
 } from "@posthog/agent/adapters/reasoning-effort";
+import { compareModelsForPicker } from "@posthog/agent/gateway-models";
 import {
   Button,
   DropdownMenu,
@@ -435,17 +436,28 @@ export function ReasoningLevelSelector({
                           ? modelGroups.map((group, index) => (
                               <Fragment key={group.group}>
                                 {index > 0 && <DropdownMenuSeparator />}
-                                {group.options.map((model) => (
-                                  <ModelRadioItem
-                                    key={model.value}
-                                    model={model}
-                                  />
-                                ))}
+                                {[...group.options]
+                                  .sort((a, b) =>
+                                    compareModelsForPicker(a.value, b.value),
+                                  )
+                                  .map((model) => (
+                                    <ModelRadioItem
+                                      key={model.value}
+                                      model={model}
+                                    />
+                                  ))}
                               </Fragment>
                             ))
-                          : modelEntries.map((model) => (
-                              <ModelRadioItem key={model.value} model={model} />
-                            ))}
+                          : [...modelEntries]
+                              .sort((a, b) =>
+                                compareModelsForPicker(a.value, b.value),
+                              )
+                              .map((model) => (
+                                <ModelRadioItem
+                                  key={model.value}
+                                  model={model}
+                                />
+                              ))}
                       </DropdownMenuRadioGroup>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
