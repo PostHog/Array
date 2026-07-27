@@ -33,6 +33,7 @@ interface LoopModelFieldsProps {
     effort: LoopSchemas.LoopReasoningEffortEnum | null,
   ) => void;
   disabled?: boolean;
+  inline?: boolean;
 }
 
 /**
@@ -53,6 +54,7 @@ export function LoopModelFields({
   onModelChange,
   onReasoningEffortChange,
   disabled,
+  inline = false,
 }: LoopModelFieldsProps) {
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const configOptions = useLoopModelConfigOptions(adapter);
@@ -96,52 +98,76 @@ export function LoopModelFields({
     if (clamped !== reasoningEffort) onReasoningEffortChange(clamped);
   };
 
+  const modelField = (
+    <Field
+      label="Model"
+      hint={
+        inline
+          ? undefined
+          : "Default lets PostHog pick the model each run; choose one to pin it."
+      }
+      className={inline ? "min-w-[220px] flex-1" : undefined}
+    >
+      <SettingsOptionSelect
+        value={model || DEFAULT_MODEL_VALUE}
+        options={modelOptions}
+        placeholder="Default (recommended)"
+        onValueChange={handleModelChange}
+        disabled={disabled}
+        size="lg"
+        ariaLabel="Model"
+      />
+    </Field>
+  );
+  const adapterField = (
+    <Field label="Adapter" className="min-w-[180px] flex-1">
+      <SettingsOptionSelect
+        value={adapter}
+        options={ADAPTER_OPTIONS}
+        onValueChange={handleAdapterChange}
+        disabled={disabled}
+        size="lg"
+        ariaLabel="Adapter"
+      />
+    </Field>
+  );
+  const reasoningField = (
+    <Field label="Reasoning effort" className="min-w-[180px] flex-1">
+      <SettingsOptionSelect
+        value={reasoningEffort ?? AUTO_REASONING_VALUE}
+        options={reasoningOptions}
+        placeholder="Auto"
+        onValueChange={(value) =>
+          onReasoningEffortChange(
+            value === AUTO_REASONING_VALUE
+              ? null
+              : (value as LoopSchemas.LoopReasoningEffortEnum),
+          )
+        }
+        disabled={disabled}
+        size="lg"
+        ariaLabel="Reasoning effort"
+      />
+    </Field>
+  );
+
+  if (inline) {
+    return (
+      <Flex gap="3" wrap="wrap" className="w-full">
+        {adapterField}
+        {modelField}
+        {reasoningField}
+      </Flex>
+    );
+  }
+
   return (
     <Flex direction="column" gap="4">
-      <Field
-        label="Model"
-        hint="Default lets PostHog pick the model each run; choose one to pin it."
-      >
-        <SettingsOptionSelect
-          value={model || DEFAULT_MODEL_VALUE}
-          options={modelOptions}
-          placeholder="Default (recommended)"
-          onValueChange={handleModelChange}
-          disabled={disabled}
-          size="lg"
-          ariaLabel="Model"
-        />
-      </Field>
+      {modelField}
 
       <Flex gap="4" wrap="wrap">
-        <Field label="Adapter" className="min-w-[180px] flex-1">
-          <SettingsOptionSelect
-            value={adapter}
-            options={ADAPTER_OPTIONS}
-            onValueChange={handleAdapterChange}
-            disabled={disabled}
-            size="lg"
-            ariaLabel="Adapter"
-          />
-        </Field>
-
-        <Field label="Reasoning effort" className="min-w-[180px] flex-1">
-          <SettingsOptionSelect
-            value={reasoningEffort ?? AUTO_REASONING_VALUE}
-            options={reasoningOptions}
-            placeholder="Auto"
-            onValueChange={(value) =>
-              onReasoningEffortChange(
-                value === AUTO_REASONING_VALUE
-                  ? null
-                  : (value as LoopSchemas.LoopReasoningEffortEnum),
-              )
-            }
-            disabled={disabled}
-            size="lg"
-            ariaLabel="Reasoning effort"
-          />
-        </Field>
+        {adapterField}
+        {reasoningField}
       </Flex>
     </Flex>
   );

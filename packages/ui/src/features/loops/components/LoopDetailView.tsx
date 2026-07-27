@@ -56,8 +56,8 @@ import {
   nextScheduleRun,
   summarizeNotificationDestinations,
 } from "../loopDisplay";
-import { formatLoopModel } from "../loopModels";
 import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
+import { InlineLoopModelEditor } from "./InlineLoopModelEditor";
 import { InlineLoopScheduleEditor } from "./InlineLoopScheduleEditor";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
@@ -388,7 +388,6 @@ function PausedNotice({ loop }: { loop: LoopSchemas.Loop }) {
 }
 
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
-  const displayModel = formatLoopModel(loop.runtime_adapter, loop.model);
   const {
     members,
     isLoading: membersLoading,
@@ -428,14 +427,8 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         gap="3"
         className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
       >
-        <SummaryRow label="Model">
-          {[
-            loop.runtime_adapter,
-            displayModel,
-            loop.reasoning_effort ? `${loop.reasoning_effort} reasoning` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
+        <SummaryRow label="Model configuration">
+          <InlineLoopModelEditor loop={loop} />
         </SummaryRow>
 
         {loopSkillBundles(loop).length > 0 ? (
