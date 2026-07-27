@@ -2228,7 +2228,7 @@ For git operations while detached:
       this.fetchGhLogin(session.repoPath),
     ]);
     if (!wasCreatedRecently(attribution.createdAt, Date.now())) return;
-    if (ghLogin && !wasCreatedByLogin(attribution.author, ghLogin)) return;
+    if (!wasCreatedByLogin(attribution.author, ghLogin)) return;
 
     this.log.info("Detected PR URL created during run", { taskRunId, prUrl });
 
