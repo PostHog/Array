@@ -119,6 +119,8 @@ export function useTabInjection(
             icon = <Scroll size={14} />;
           } else if (tab.data.type === "autoresearch") {
             icon = <ChartLineUp size={14} />;
+          } else if (tab.data.type === "artifact") {
+            icon = <FileIcon filename={tab.label} size={14} />;
           }
         }
 

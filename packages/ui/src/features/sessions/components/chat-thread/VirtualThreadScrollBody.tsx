@@ -5,7 +5,7 @@ import {
   ChatMessageScrollerViewport,
 } from "@posthog/quill";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { VirtualStickyHeader } from "@posthog/ui/features/sessions/components/chat-thread/ThreadStickyHeader";
+import { MessageMinimap } from "@posthog/ui/features/sessions/components/chat-thread/MessageMinimap";
 import {
   computeStickyAnchor,
   type FlatThreadRow,
@@ -14,7 +14,10 @@ import {
   type StickyAnchorState,
   type ThreadScrollResume,
 } from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
-import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
+import {
+  CHAT_CONTENT_GUTTER,
+  CHAT_CONTENT_MAX_WIDTH,
+} from "@posthog/ui/features/sessions/constants";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import {
   type MouseEvent as ReactMouseEvent,
@@ -152,9 +155,10 @@ function useSettleControls(
 }
 
 /**
- * Sticky-header anchor derived from the virtualizer's measurements (estimated for rows that have
+ * Current-turn anchor derived from the virtualizer's measurements (estimated for rows that have
  * never mounted, exact once measured), recomputed at most once per frame. Returns the state plus
- * the scheduler the scroll handler pokes.
+ * the scheduler the scroll handler pokes. The engine's own visibility state only sees mounted
+ * rows, so the minimap reads this instead.
  */
 function useStickyAnchor(
   virtualizer: ThreadVirtualizer,
@@ -162,10 +166,7 @@ function useStickyAnchor(
   userRows: readonly UserRow[],
   totalSize: number,
 ) {
-  const [state, setState] = useState<StickyAnchorState>({
-    anchorId: null,
-    offscreen: false,
-  });
+  const [state, setState] = useState<StickyAnchorState>({ anchorId: null });
 
   const recompute = useCallback(() => {
     const viewport = viewportRef.current;
@@ -182,11 +183,7 @@ function useStickyAnchor(
       viewport.scrollTop,
       SCROLL_PREVIOUS_ITEM_PEEK,
     );
-    setState((prev) =>
-      prev.anchorId === next.anchorId && prev.offscreen === next.offscreen
-        ? prev
-        : next,
-    );
+    setState((prev) => (prev.anchorId === next.anchorId ? prev : next));
   }, [userRows, virtualizer, viewportRef]);
 
   const frameRef = useRef<number | null>(null);
@@ -422,16 +419,19 @@ export function VirtualThreadScrollBody({
         className="group/thread"
         onPointerDownCapture={onUserInteract}
       >
-        <VirtualStickyHeader
+        <MessageMinimap
           items={items}
-          anchorId={stickyState.anchorId}
-          offscreen={stickyState.offscreen}
           onJump={jumpToMessage}
+          anchorId={stickyState.anchorId}
         />
         <ChatMessageScrollerViewport ref={viewportRef} onScroll={handleScroll}>
           {/* `block` overrides the content's flex+gap layout — spacing moves into the rows
               (pb-4) and the virtual paddings, so translateY offsets are the whole layout. */}
-          <ChatMessageScrollerContent className="block" density="default">
+          <ChatMessageScrollerContent
+            className="block"
+            density="default"
+            style={{ paddingInline: CHAT_CONTENT_GUTTER }}
+          >
             <div className="relative w-full" style={{ height: totalSize }}>
               {virtualItems.map((virtualItem) => {
                 const row = flatRows[virtualItem.index];
