@@ -224,7 +224,6 @@ export function ReasoningSliderFace({
     active: boolean;
     disabled?: boolean;
     docsUrl?: string;
-    tooltip?: string;
     onToggle: () => void;
   };
 }) {
@@ -275,9 +274,6 @@ export function ReasoningSliderFace({
               fastToggle.disabled && "invisible",
             )}
           >
-            {fastToggle.docsUrl && (
-              <DocsLink label="fast mode" docsUrl={fastToggle.docsUrl} />
-            )}
             <TooltipProvider delay={300}>
               <Tooltip>
                 <TooltipTrigger
@@ -303,7 +299,22 @@ export function ReasoningSliderFace({
                   }
                 />
                 <TooltipContent>
-                  {fastToggle.tooltip ?? "Fast mode"}
+                  <span className="flex flex-col gap-0.5">
+                    <span>Fast Mode ({fastToggle.active ? "ON" : "OFF"})</span>
+                    {fastToggle.docsUrl && (
+                      <button
+                        type="button"
+                        className="self-start underline"
+                        onClick={() => {
+                          if (fastToggle.docsUrl) {
+                            void openUrlInBrowser(fastToggle.docsUrl);
+                          }
+                        }}
+                      >
+                        Learn more
+                      </button>
+                    )}
+                  </span>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

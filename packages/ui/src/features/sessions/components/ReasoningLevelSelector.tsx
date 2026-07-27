@@ -248,7 +248,6 @@ export function ReasoningLevelSelector({
           active: fastActive,
           disabled: !fastSelect,
           docsUrl: FAST_MODE_DOCS_URLS[adapter],
-          tooltip: "Fast mode: faster responses at higher usage",
           onToggle: () => {
             if (fastSelect) {
               onConfigOptionChange(fastSelect.id, fastActive ? "off" : "on");
