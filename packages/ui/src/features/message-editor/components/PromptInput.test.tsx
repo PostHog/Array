@@ -4,10 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const editorState = vi.hoisted(() => ({
-  isEmpty: false,
-  attachments: [] as Array<{ id: string; label: string }>,
-}));
+const editorState = vi.hoisted(() => ({ isEmpty: false }));
 const settingsState = vi.hoisted(() => ({ slotMachineMode: false }));
 
 vi.mock("../tiptap/useTiptapEditor", () => ({
@@ -26,7 +23,7 @@ vi.mock("../tiptap/useTiptapEditor", () => ({
     insertChip: vi.fn(),
     removeChipById: vi.fn(),
     replaceChipAttrs: vi.fn(),
-    attachments: editorState.attachments,
+    attachments: [],
     addAttachment: vi.fn(),
     removeAttachment: vi.fn(),
   }),
@@ -103,7 +100,6 @@ describe("PromptInput submit/stop affordance", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     editorState.isEmpty = false;
-    editorState.attachments = [];
     settingsState.slotMachineMode = false;
   });
 
@@ -140,22 +136,12 @@ describe("PromptInput submit/stop affordance", () => {
     const send = screen.getByRole("button", { name: "Send message" });
     expect(send).toBeDisabled();
   });
-
-  it("reports attachment changes", () => {
-    const onAttachmentsChange = vi.fn();
-    editorState.attachments = [{ id: "/tmp/report.pdf", label: "report.pdf" }];
-
-    renderInput({ onAttachmentsChange });
-
-    expect(onAttachmentsChange).toHaveBeenCalledWith(editorState.attachments);
-  });
 });
 
 describe("PromptInput escape handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     editorState.isEmpty = false;
-    editorState.attachments = [];
     settingsState.slotMachineMode = false;
   });
 

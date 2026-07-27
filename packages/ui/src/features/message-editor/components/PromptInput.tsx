@@ -200,14 +200,11 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onSubmit,
       onBashCommand,
       onBashModeChange,
+      onAttachmentsChange,
       onEmptyChange,
       onFocus,
       onBlur,
     });
-
-    useEffect(() => {
-      onAttachmentsChange?.(attachments);
-    }, [attachments, onAttachmentsChange]);
 
     useImperativeHandle(
       ref,
