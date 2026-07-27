@@ -106,7 +106,7 @@ export function LoopModelFields({
           ? undefined
           : "Default lets PostHog pick the model each run; choose one to pin it."
       }
-      className={inline ? "min-w-[220px] flex-1" : undefined}
+      className={inline ? "w-[260px]" : undefined}
     >
       <SettingsOptionSelect
         value={model || DEFAULT_MODEL_VALUE}
@@ -120,7 +120,10 @@ export function LoopModelFields({
     </Field>
   );
   const adapterField = (
-    <Field label="Adapter" className="min-w-[180px] flex-1">
+    <Field
+      label="Adapter"
+      className={inline ? "w-[180px]" : "min-w-[180px] flex-1"}
+    >
       <SettingsOptionSelect
         value={adapter}
         options={ADAPTER_OPTIONS}
@@ -132,7 +135,10 @@ export function LoopModelFields({
     </Field>
   );
   const reasoningField = (
-    <Field label="Reasoning effort" className="min-w-[180px] flex-1">
+    <Field
+      label="Reasoning effort"
+      className={inline ? "w-[180px]" : "min-w-[180px] flex-1"}
+    >
       <SettingsOptionSelect
         value={reasoningEffort ?? AUTO_REASONING_VALUE}
         options={reasoningOptions}

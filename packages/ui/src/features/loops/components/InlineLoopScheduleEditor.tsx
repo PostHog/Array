@@ -1,10 +1,6 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { Button, Switch } from "@posthog/quill";
-import { toast } from "@posthog/ui/primitives/toast";
+import { Switch } from "@posthog/quill";
 import { Flex, Text } from "@radix-ui/themes";
-import { useState } from "react";
-import { useUpdateLoop } from "../hooks/useLoopMutations";
-import { emptyLoopScheduleTriggerConfig } from "../loopFormTypes";
 import { ScheduleTriggerFields } from "./LoopTriggerEditor";
 
 function scheduleTrigger(
@@ -41,68 +37,35 @@ export function updatedScheduleTriggers(
 }
 
 export function InlineLoopScheduleEditor({
-  loop,
-  schedule,
+  config,
+  enabled,
+  disabled,
+  onConfigChange,
+  onEnabledChange,
 }: {
-  loop: LoopSchemas.Loop;
-  schedule?: LoopSchemas.LoopTrigger;
+  config: LoopSchemas.LoopScheduleTriggerConfig;
+  enabled: boolean;
+  disabled?: boolean;
+  onConfigChange: (config: LoopSchemas.LoopScheduleTriggerConfig) => void;
+  onEnabledChange: (enabled: boolean) => void;
 }) {
-  const existingSchedule = schedule ?? scheduleTrigger(loop);
-  const [config, setConfig] = useState<LoopSchemas.LoopScheduleTriggerConfig>(
-    () =>
-      existingSchedule
-        ? (existingSchedule.config as LoopSchemas.LoopScheduleTriggerConfig)
-        : emptyLoopScheduleTriggerConfig(),
-  );
-  const [enabled, setEnabled] = useState(existingSchedule?.enabled ?? true);
-  const updateLoop = useUpdateLoop(loop.id);
-
-  const save = async () => {
-    try {
-      await updateLoop.mutateAsync({
-        triggers: updatedScheduleTriggers(
-          loop,
-          config,
-          enabled,
-          existingSchedule?.id,
-        ),
-      });
-      toast.success(existingSchedule ? "Schedule updated" : "Schedule added");
-    } catch (error) {
-      toast.error("Failed to update schedule", {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    }
-  };
-
   return (
     <Flex direction="column" gap="3" className="w-full py-1">
       <Flex align="center" gap="3" wrap="wrap">
         <Text className="font-medium text-[12px] text-gray-11">Schedule</Text>
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
-          disabled={updateLoop.isPending}
+          onCheckedChange={onEnabledChange}
+          disabled={disabled}
           aria-label={enabled ? "Disable schedule" : "Enable schedule"}
         />
       </Flex>
 
       <ScheduleTriggerFields
         config={config}
-        disabled={updateLoop.isPending}
-        onChange={setConfig}
+        disabled={disabled}
+        onChange={onConfigChange}
       />
-
-      <Flex justify="end">
-        <Button
-          variant="primary"
-          size="sm"
-          loading={updateLoop.isPending}
-          onClick={() => void save()}
-        >
-          {existingSchedule ? "Save schedule" : "Add schedule"}
-        </Button>
-      </Flex>
     </Flex>
   );
 }

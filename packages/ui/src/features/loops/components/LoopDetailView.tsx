@@ -56,6 +56,7 @@ import {
   nextScheduleRun,
   summarizeNotificationDestinations,
 } from "../loopDisplay";
+import { emptyLoopScheduleTriggerConfig } from "../loopFormTypes";
 import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
 import { InlineLoopModelEditor } from "./InlineLoopModelEditor";
 import { InlineLoopScheduleEditor } from "./InlineLoopScheduleEditor";
@@ -387,7 +388,35 @@ function PausedNotice({ loop }: { loop: LoopSchemas.Loop }) {
   );
 }
 
+interface ScheduleDraft {
+  id?: string;
+  enabled: boolean;
+  config: LoopSchemas.LoopScheduleTriggerConfig;
+}
+
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
+  const [adapter, setAdapter] = useState(loop.runtime_adapter);
+  const [model, setModel] = useState(loop.model);
+  const [reasoningEffort, setReasoningEffort] = useState(loop.reasoning_effort);
+  const [scheduleDrafts, setScheduleDrafts] = useState<ScheduleDraft[]>(() => {
+    const schedules = loop.triggers
+      .filter((trigger) => trigger.type === "schedule")
+      .map((trigger) => ({
+        id: trigger.id,
+        enabled: trigger.enabled,
+        config: trigger.config as LoopSchemas.LoopScheduleTriggerConfig,
+      }));
+    return schedules.length > 0
+      ? schedules
+      : [
+          {
+            id: undefined,
+            enabled: true,
+            config: emptyLoopScheduleTriggerConfig(),
+          },
+        ];
+  });
+  const updateLoop = useUpdateLoop(loop.id);
   const {
     members,
     isLoading: membersLoading,
@@ -416,6 +445,56 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
     loop.notifications,
   );
 
+  const saveConfiguration = async () => {
+    const draftsById = new Map(
+      scheduleDrafts
+        .filter((draft) => draft.id)
+        .map((draft) => [draft.id, draft]),
+    );
+    const triggers: LoopSchemas.LoopTriggerWrite[] = loop.triggers.map(
+      (trigger) => {
+        const draft = draftsById.get(trigger.id);
+        if (trigger.type === "schedule" && draft) {
+          return {
+            id: trigger.id,
+            type: trigger.type,
+            enabled: draft.enabled,
+            config: draft.config,
+          };
+        }
+        return {
+          id: trigger.id,
+          type: trigger.type,
+          enabled: trigger.enabled,
+          config: trigger.config,
+        };
+      },
+    );
+    for (const draft of scheduleDrafts) {
+      if (!draft.id) {
+        triggers.push({
+          type: "schedule",
+          enabled: draft.enabled,
+          config: draft.config,
+        });
+      }
+    }
+
+    try {
+      await updateLoop.mutateAsync({
+        runtime_adapter: adapter,
+        model,
+        reasoning_effort: reasoningEffort,
+        triggers,
+      });
+      toast.success("Configuration updated");
+    } catch (error) {
+      toast.error("Failed to update configuration", {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
   return (
     <Flex direction="column" gap="3">
       <Text className="font-medium text-[13px] text-gray-12">
@@ -428,7 +507,15 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         className="rounded-(--radius-2) border border-border bg-(--color-panel-solid) p-3"
       >
         <SummaryRow label="Model configuration">
-          <InlineLoopModelEditor loop={loop} />
+          <InlineLoopModelEditor
+            adapter={adapter}
+            model={model}
+            reasoningEffort={reasoningEffort}
+            disabled={updateLoop.isPending}
+            onAdapterChange={setAdapter}
+            onModelChange={setModel}
+            onReasoningEffortChange={setReasoningEffort}
+          />
         </SummaryRow>
 
         {loopSkillBundles(loop).length > 0 ? (
@@ -448,22 +535,38 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
         ) : null}
 
         <SummaryRow label="Triggers">
-          {loop.triggers.length === 0 ? (
-            <InlineLoopScheduleEditor loop={loop} />
-          ) : (
-            <Flex direction="column" gap="1">
-              {loop.triggers.map((trigger) => (
-                <EditableTriggerSummary
-                  key={trigger.id}
-                  loop={loop}
-                  trigger={trigger}
-                />
+          <Flex direction="column" gap="1">
+            {loop.triggers
+              .filter((trigger) => trigger.type !== "schedule")
+              .map((trigger) => (
+                <Text key={trigger.id} className="text-[12.5px] text-gray-12">
+                  <TriggerDescription trigger={trigger} />
+                  {!trigger.enabled ? " (disabled)" : ""}
+                </Text>
               ))}
-              {!loop.triggers.some((trigger) => trigger.type === "schedule") ? (
-                <InlineLoopScheduleEditor loop={loop} />
-              ) : null}
-            </Flex>
-          )}
+            {scheduleDrafts.map((draft, index) => (
+              <InlineLoopScheduleEditor
+                key={draft.id ?? "new-schedule"}
+                config={draft.config}
+                enabled={draft.enabled}
+                disabled={updateLoop.isPending}
+                onConfigChange={(config) =>
+                  setScheduleDrafts((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, config } : item,
+                    ),
+                  )
+                }
+                onEnabledChange={(enabled) =>
+                  setScheduleDrafts((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, enabled } : item,
+                    ),
+                  )
+                }
+              />
+            ))}
+          </Flex>
         </SummaryRow>
 
         {notificationDestinations.length > 0 ? (
@@ -471,27 +574,19 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             {notificationDestinations.join(", ")}
           </SummaryRow>
         ) : null}
+
+        <Flex justify="end">
+          <Button
+            variant="primary"
+            size="sm"
+            loading={updateLoop.isPending}
+            onClick={() => void saveConfiguration()}
+          >
+            Save configuration
+          </Button>
+        </Flex>
       </Flex>
     </Flex>
-  );
-}
-
-function EditableTriggerSummary({
-  loop,
-  trigger,
-}: {
-  loop: LoopSchemas.Loop;
-  trigger: LoopSchemas.LoopTrigger;
-}) {
-  if (trigger.type === "schedule") {
-    return <InlineLoopScheduleEditor loop={loop} schedule={trigger} />;
-  }
-
-  return (
-    <Text className="text-[12.5px] text-gray-12">
-      <TriggerDescription trigger={trigger} />
-      {!trigger.enabled ? " (disabled)" : ""}
-    </Text>
   );
 }
 
