@@ -2,6 +2,10 @@ import { ArrowSquareOut } from "@phosphor-icons/react";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  EFFORT_LEVEL_LABELS,
+  EFFORT_LEVELS,
+} from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   COLLAPSE_MODE_OPTIONS,
@@ -331,13 +335,11 @@ export function GeneralSettings() {
           <Select.Trigger className="min-w-[100px]" />
           <Select.Content>
             <Select.Item value="last_used">Last used</Select.Item>
-            <Select.Item value="low">Low</Select.Item>
-            <Select.Item value="medium">Medium</Select.Item>
-            <Select.Item value="high">High</Select.Item>
-            <Select.Item value="xhigh">Extra High</Select.Item>
-            <Select.Item value="max">Max</Select.Item>
-            <Select.Item value="ultracode">Ultracode</Select.Item>
-            <Select.Item value="ultrathink">Ultrathink</Select.Item>
+            {EFFORT_LEVELS.map((level) => (
+              <Select.Item key={level} value={level}>
+                {EFFORT_LEVEL_LABELS[level]}
+              </Select.Item>
+            ))}
           </Select.Content>
         </Select.Root>
       </SettingRow>

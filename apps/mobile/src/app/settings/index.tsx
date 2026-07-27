@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import {
+  EFFORT_LEVEL_LABELS,
+  EFFORT_LEVELS,
+} from "@posthog/shared/domain-types";
 import { router } from "expo-router";
 import { ArrowSquareOut, CaretRight, SpeakerHigh } from "phosphor-react-native";
 import { useState } from "react";
@@ -103,13 +107,10 @@ const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
     label: "Last used",
     description: "Remember the effort level you picked last time",
   },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "Extra High" },
-  { value: "max", label: "Max" },
-  { value: "ultracode", label: "Ultracode" },
-  { value: "ultrathink", label: "Ultrathink" },
+  ...EFFORT_LEVELS.map((value) => ({
+    value,
+    label: EFFORT_LEVEL_LABELS[value],
+  })),
 ];
 
 function themeLabel(theme: ThemePreference): string {

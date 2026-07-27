@@ -2,6 +2,7 @@ import {
   DEFAULT_OPTION_META_KEY,
   OPTION_DOCS_URL_META_KEY,
 } from "@posthog/shared";
+import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
 import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
@@ -132,16 +133,6 @@ interface EffortOption {
   _meta?: Record<string, unknown>;
 }
 
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High",
-  max: "Max",
-  ultracode: "Ultracode",
-  ultrathink: "Ultrathink",
-};
-
 const EFFORT_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
   ultracode: "https://code.claude.com/docs/en/workflows",
   ultrathink:
@@ -164,7 +155,7 @@ export function getEffortOptions(modelId: string): EffortOption[] | null {
   return (
     levels?.map((value) => ({
       value,
-      name: EFFORT_LABELS[value],
+      name: EFFORT_LEVEL_LABELS[value],
       _meta: effortOptionMeta(value),
     })) ?? null
   );

@@ -1,3 +1,4 @@
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { create } from "zustand";
@@ -40,15 +41,7 @@ export type CompletionSound =
 
 export type InitialTaskMode = "plan" | "last_used";
 
-export type DefaultReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultracode"
-  | "ultrathink"
-  | "last_used";
+export type DefaultReasoningEffort = EffortLevel | "last_used";
 
 interface PreferencesState {
   pingsEnabled: boolean;

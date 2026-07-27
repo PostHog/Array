@@ -1,4 +1,5 @@
 import type { Adapter } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import {
   getContextWindowOptions as getClaudeContextWindowOptions,
   getEffortOptions as getClaudeEffortOptions,
@@ -6,20 +7,7 @@ import {
 } from "./claude/session/models";
 import { getReasoningEffortOptions as getCodexReasoningEffortOptions } from "./codex-app-server/models";
 
-export type SupportedReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultracode"
-  | "ultrathink";
-
-// The loops API only accepts the base tiers, so loop config filters to these.
-export type CloudReasoningEffort = Exclude<
-  SupportedReasoningEffort,
-  "ultracode" | "ultrathink"
->;
+export type SupportedReasoningEffort = EffortLevel;
 
 export interface ReasoningEffortOption {
   value: SupportedReasoningEffort;
@@ -69,16 +57,4 @@ export function getFastModeOptions(
   modelId: string,
 ): SessionToggleOption[] | null {
   return adapter === "codex" ? null : getClaudeFastModeOptions(modelId);
-}
-
-export function isCloudReasoningEffort(
-  value: string,
-): value is CloudReasoningEffort {
-  return (
-    value === "low" ||
-    value === "medium" ||
-    value === "high" ||
-    value === "xhigh" ||
-    value === "max"
-  );
 }

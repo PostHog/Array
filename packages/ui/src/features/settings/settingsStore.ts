@@ -5,6 +5,7 @@ import type {
   ExecutionMode,
   WorkspaceMode,
 } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -22,15 +23,7 @@ export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
-export type DefaultReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultracode"
-  | "ultrathink"
-  | "last_used";
+export type DefaultReasoningEffort = EffortLevel | "last_used";
 
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";

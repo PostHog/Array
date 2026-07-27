@@ -184,12 +184,28 @@ describe("loopReasoningEffortOptions", () => {
     {
       adapter: "claude",
       model: "",
-      expectedValues: ["low", "medium", "high", "xhigh", "max"],
+      expectedValues: [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultracode",
+        "ultrathink",
+      ],
     },
     {
       adapter: "claude",
       model: "claude-sonnet-5",
-      expectedValues: ["low", "medium", "high", "xhigh", "max"],
+      expectedValues: [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultracode",
+        "ultrathink",
+      ],
     },
     {
       adapter: "claude",

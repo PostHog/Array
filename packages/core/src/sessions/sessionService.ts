@@ -42,6 +42,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   type CloudTaskPermissionRequestUpdate,
   type CloudTaskUpdatePayload,
+  EFFORT_LEVEL_LABELS,
   type EffortLevel,
   effortLevelSchema,
   isTerminalStatus,
@@ -5467,15 +5468,7 @@ export class SessionService {
         existingOption?.type === "select"
           ? flattenSelectOptions(existingOption.options)
           : [];
-      const reasoningLabels: Record<string, string> = {
-        low: "Low",
-        medium: "Medium",
-        high: "High",
-        xhigh: "Extra High",
-        max: "Max",
-        ultracode: "Ultracode",
-        ultrathink: "Ultrathink",
-      };
+      const reasoningLabels: Record<string, string> = EFFORT_LEVEL_LABELS;
       const selectedValue = existingValues.find(
         (value) => value.value === preferredValue,
       ) ?? {

@@ -31,6 +31,19 @@ export const effortLevelSchema = z.enum([
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
 
+/** All effort levels in ascending order of depth. */
+export const EFFORT_LEVELS = effortLevelSchema.options;
+
+export const EFFORT_LEVEL_LABELS: Record<EffortLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+  ultracode: "Ultracode",
+  ultrathink: "Ultrathink",
+};
+
 export interface UserBasic {
   id: number;
   uuid: string;

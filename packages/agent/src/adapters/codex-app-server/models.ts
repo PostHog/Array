@@ -3,6 +3,7 @@ import type {
   SessionConfigSelectGroup,
   SessionConfigSelectOption,
 } from "@agentclientprotocol/sdk";
+import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
 
 interface ReasoningEffortOption {
   value: string;
@@ -10,9 +11,9 @@ interface ReasoningEffortOption {
 }
 
 const CODEX_REASONING_EFFORT_OPTIONS: ReasoningEffortOption[] = [
-  { value: "low", name: "Low" },
-  { value: "medium", name: "Medium" },
-  { value: "high", name: "High" },
+  { value: "low", name: EFFORT_LEVEL_LABELS.low },
+  { value: "medium", name: EFFORT_LEVEL_LABELS.medium },
+  { value: "high", name: EFFORT_LEVEL_LABELS.high },
 ];
 
 // OpenAI's `reasoning_effort` exposes an "extra high" tier on the gpt-5.5 and
@@ -32,10 +33,10 @@ export function getReasoningEffortOptions(
 ): ReasoningEffortOption[] {
   const options = [...CODEX_REASONING_EFFORT_OPTIONS];
   if (supportsXhighEffort(modelId)) {
-    options.push({ value: "xhigh", name: "Extra High" });
+    options.push({ value: "xhigh", name: EFFORT_LEVEL_LABELS.xhigh });
   }
   if (supportsMaxEffort(modelId)) {
-    options.push({ value: "max", name: "Max" });
+    options.push({ value: "max", name: EFFORT_LEVEL_LABELS.max });
   }
   return options;
 }

@@ -1,6 +1,7 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import type { Adapter } from "@posthog/shared";
+import { EFFORT_LEVELS } from "@posthog/shared/domain-types";
 
 export interface PreviewSettingsSnapshot {
   defaultInitialTaskMode: string;
@@ -13,15 +14,9 @@ export interface EffortOption {
   value: string;
 }
 
-const EFFORT_RANK: Record<string, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  xhigh: 3,
-  max: 4,
-  ultracode: 5,
-  ultrathink: 6,
-};
+const EFFORT_RANK: Record<string, number> = Object.fromEntries(
+  EFFORT_LEVELS.map((level, rank) => [level, rank]),
+);
 
 export function clampEffortToAvailable(
   desired: string,
