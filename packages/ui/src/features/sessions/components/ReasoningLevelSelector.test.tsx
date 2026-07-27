@@ -326,6 +326,91 @@ describe("ReasoningLevelSelector", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("changes the model from its advanced submenu", async () => {
+    const onModelChange = vi.fn();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption()}
+          modelOption={claudeModelOption()}
+          adapter="claude"
+          onModelChange={onModelChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Model and reasoning/ }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Advanced" }));
+    await openSub(user, /^Model/);
+    fireEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Claude Sonnet 5" }),
+    );
+
+    await pollUntil(() => onModelChange.mock.calls.length > 0);
+    expect(onModelChange).toHaveBeenCalledWith("claude-sonnet-5");
+    expect(onModelChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves the model and effort together on a ladder notch that changes both", async () => {
+    const onChange = vi.fn();
+    const onModelChange = vi.fn();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption({ currentValue: "xhigh" })}
+          modelOption={claudeModelOption("claude-opus-5")}
+          adapter="claude"
+          onChange={onChange}
+          onModelChange={onModelChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Model and reasoning/ }),
+    );
+    const slider = await screen.findByRole("slider");
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+
+    await pollUntil(
+      () =>
+        onChange.mock.calls.length > 0 && onModelChange.mock.calls.length > 0,
+    );
+    expect(onModelChange).toHaveBeenCalledWith("claude-fable-5");
+    expect(onChange).toHaveBeenCalledWith("max");
+  });
+
+  it("resets to the middle ladder notch, moving model and effort together", async () => {
+    const onChange = vi.fn();
+    const onModelChange = vi.fn();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(
+      <Theme>
+        <ReasoningLevelSelector
+          thoughtOption={thoughtOption({ currentValue: "max" })}
+          modelOption={claudeModelOption("claude-fable-5")}
+          adapter="claude"
+          onChange={onChange}
+          onModelChange={onModelChange}
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Model and reasoning/ }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Advanced" }));
+    await user.click(await screen.findByText("Reset to default"));
+
+    await pollUntil(() => onChange.mock.calls.length > 0);
+    expect(onModelChange).toHaveBeenCalledWith("claude-opus-5");
+    expect(onChange).toHaveBeenCalledWith("high");
+  });
+
   it.each([
     ["undefined option", undefined],
     ["non-select type", thoughtOption({ type: "boolean" })],

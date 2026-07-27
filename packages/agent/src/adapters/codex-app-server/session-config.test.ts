@@ -1,4 +1,7 @@
-import { isRestrictedModelOption } from "@posthog/shared";
+import {
+  DEFAULT_OPTION_META_KEY,
+  isRestrictedModelOption,
+} from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   buildCodexModes,
@@ -287,7 +290,7 @@ describe("buildConfigOptions", () => {
       {
         name: "High",
         value: "high",
-        _meta: { "posthog.code/defaultOption": true },
+        _meta: { [DEFAULT_OPTION_META_KEY]: true },
       },
     ]);
   });
