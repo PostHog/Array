@@ -582,7 +582,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
             loading={updateLoop.isPending}
             onClick={() => void saveConfiguration()}
           >
-            Save configuration
+            Save changes
           </Button>
         </Flex>
       </Flex>
