@@ -191,7 +191,7 @@ export function SessionView({
   const contextWindowOption = useConfigOptionForTask(taskId, "_context_window");
   const sessionModelOption = useConfigOptionForTask(taskId, "model");
   const adapter = useAdapterForTask(taskId);
-  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG, true);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
   const liveFastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
   const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);

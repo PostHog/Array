@@ -60,7 +60,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
   const kimiEnabled = useFeatureFlag(KIMI_MODEL_FLAG);
-  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG, true);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
     () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),

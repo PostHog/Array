@@ -142,7 +142,7 @@ export function ReasoningLevelSelector({
   const pendingChangeRef = useRef<(() => void) | null>(null);
   const displayThought = useRetainedConfigOption(thoughtOption);
   const displayModel = useRetainedConfigOption(modelOption);
-  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG, true);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
 
   // Genuinely no reasoning levels for this harness/model: hide. While the
   // preview config reloads (a harness switch) keep showing the last value,
