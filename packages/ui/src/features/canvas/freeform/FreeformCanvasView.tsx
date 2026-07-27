@@ -7,6 +7,7 @@ import {
   SpinnerGapIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
+import { publishedCanvasBuild } from "@posthog/core/canvas/canvasBuildSchemas";
 import type { CanvasAnalyticsConfig } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
@@ -22,6 +23,7 @@ import {
   isCanvasGenerating,
   isCanvasGenerationRunning,
 } from "@posthog/ui/features/canvas/freeform/canvasGenerationStatus";
+import { useCanvasBuilds } from "@posthog/ui/features/canvas/hooks/useCanvasBuilds";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCanvasChatPanelStore } from "@posthog/ui/features/canvas/stores/canvasChatPanelStore";
 import {
@@ -44,6 +46,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { BuiltCanvas } from "./BuiltCanvas";
 import { CanvasBuildStatus } from "./CanvasBuildStatus";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
@@ -237,7 +240,11 @@ export function FreeformCanvasView({
   // Deriving from the record rather than waiting on the seed also means a seed
   // that never runs can't strand the canvas on a spinner.
   const renderCode = code || dashboard?.code || "";
-  const showCanvas = !!renderCode;
+  const { lifecycle } = useCanvasBuilds(dashboardId);
+  const artifactUrl = lifecycle
+    ? publishedCanvasBuild(lifecycle)?.artifactUrl
+    : null;
+  const showCanvas = !!artifactUrl || !!renderCode;
   // `isGenerating` keys off the effective task (the optimistic bridge right after
   // submit, then the polled record) and short-circuits on a terminal run — so a
   // failed/cancelled run can't strand the canvas body on the spinner.
@@ -377,15 +384,25 @@ export function FreeformCanvasView({
             // this placeholder just reserves the viewport box and owns scroll via
             // the host's overlay, so the canvas survives navigation without a reload.
             <Box className="h-full w-full">
-              <CanvasFramePlaceholder
-                dashboardId={dashboardId}
-                code={renderCode}
-                analytics={analytics}
-                onDataRequest={onDataRequest}
-                onError={onError}
-                onRendered={onRendered}
-                onNavigate={onNavigate}
-              />
+              {artifactUrl ? (
+                <BuiltCanvas
+                  artifactUrl={artifactUrl}
+                  onDataRequest={onDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                />
+              ) : (
+                <CanvasFramePlaceholder
+                  dashboardId={dashboardId}
+                  code={renderCode}
+                  analytics={analytics}
+                  onDataRequest={onDataRequest}
+                  onError={onError}
+                  onRendered={onRendered}
+                  onNavigate={onNavigate}
+                />
+              )}
             </Box>
           ) : (
             <ScrollArea className="h-full">

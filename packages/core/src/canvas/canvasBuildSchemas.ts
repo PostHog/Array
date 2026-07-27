@@ -12,11 +12,24 @@ export const canvasBuildRecordSchema = z.object({
   sourceVersionId: z.string(),
   buildStatus: canvasBuildStatusSchema,
   diagnostics: z.array(canvasDiagnosticSchema),
+  artifactUrl: z.string().url().nullable(),
   pinned: z.boolean(),
   createdAt: z.string(),
   finishedAt: z.string().nullable(),
 });
 export type CanvasBuildRecord = z.infer<typeof canvasBuildRecordSchema>;
+
+export function publishedCanvasBuild(
+  lifecycle: CanvasBuildLifecycle,
+): CanvasBuildRecord | null {
+  return (
+    lifecycle.builds.find(
+      (build) =>
+        build.id === lifecycle.publishedBuildId &&
+        build.buildStatus === "ready",
+    ) ?? null
+  );
+}
 
 export const canvasBuildLifecycleSchema = z.object({
   /** The live (last successful, still-eligible) build, null until one completes. */

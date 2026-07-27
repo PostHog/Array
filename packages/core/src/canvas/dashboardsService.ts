@@ -357,6 +357,7 @@ export class DashboardsService {
         source_version_id: string;
         build_status: string;
         diagnostics?: unknown[];
+        artifact_url: string | null;
         pinned: boolean;
         created_at: string;
         finished_at: string | null;
@@ -370,6 +371,7 @@ export class DashboardsService {
         sourceVersionId: build.source_version_id,
         buildStatus: build.build_status,
         diagnostics: build.diagnostics ?? [],
+        artifactUrl: build.artifact_url,
         pinned: build.pinned,
         createdAt: build.created_at,
         finishedAt: build.finished_at,

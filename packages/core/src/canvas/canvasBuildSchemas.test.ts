@@ -4,6 +4,7 @@ import {
   type CanvasBuildRecord,
   hasActiveCanvasBuild,
   latestFinishedCanvasBuild,
+  publishedCanvasBuild,
 } from "./canvasBuildSchemas";
 import { DashboardsService } from "./dashboardsService";
 import type { DesktopFsClient } from "./desktopFsClient";
@@ -17,6 +18,8 @@ function build(
     sourceVersionId: `sv-${id}`,
     buildStatus,
     diagnostics: [],
+    artifactUrl:
+      buildStatus === "ready" ? "https://usercontent.example/index.html" : null,
     pinned: false,
     createdAt: "2026-07-26T00:00:00Z",
     finishedAt:
@@ -61,6 +64,14 @@ describe("canvas build lifecycle", () => {
     expect(finished?.id).toBe("b1");
   });
 
+  it("selects only the ready build named by the published pointer", () => {
+    const ready = build("b0", "ready");
+    const value = lifecycle([build("b1", "failed"), ready]);
+    value.publishedBuildId = "b0";
+
+    expect(publishedCanvasBuild(value)).toBe(ready);
+  });
+
   it("maps the builds endpoint's snake_case body to the client shape", async () => {
     const fetchMock = vi.fn(
       async () =>
@@ -80,6 +91,7 @@ describe("canvas build lifecycle", () => {
                     message: "no lodash",
                   },
                 ],
+                artifact_url: null,
                 pinned: false,
                 created_at: "2026-07-26T00:00:00Z",
                 finished_at: "2026-07-26T00:01:00Z",
