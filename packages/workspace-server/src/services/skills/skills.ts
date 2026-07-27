@@ -527,14 +527,24 @@ export class SkillsService {
         realPath: await fs.promises.realpath(path.resolve(folder.path)),
       })),
     );
-    const owningFolder = foldersWithRealPaths.find(
-      ({ folder, realPath }) =>
-        path.resolve(path.join(folder.path, ".claude", "skills")) === parent ||
-        realSkill === realPath ||
-        realSkill.startsWith(realPath + path.sep),
+    const lexicalOwner = foldersWithRealPaths.find(
+      ({ folder }) =>
+        path.resolve(path.join(folder.path, ".claude", "skills")) === parent,
     );
-    if (!owningFolder) return;
-    if (!realSkill.startsWith(owningFolder.realPath + path.sep)) {
+    if (lexicalOwner) {
+      if (!realSkill.startsWith(lexicalOwner.realPath + path.sep)) {
+        throw new Error(
+          "Access denied: repository skill resolves outside its repository",
+        );
+      }
+      return;
+    }
+
+    const resolvedOwner = foldersWithRealPaths.find(
+      ({ realPath }) =>
+        realSkill === realPath || realSkill.startsWith(realPath + path.sep),
+    );
+    if (resolvedOwner && realSkill === resolvedOwner.realPath) {
       throw new Error(
         "Access denied: repository skill resolves outside its repository",
       );

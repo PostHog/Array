@@ -32,12 +32,16 @@ let pluginPath: string;
 let folderPath: string;
 let repoSkillsDir: string;
 
-function makeService(): SkillsService {
+function makeService(openFolders: string[] = [folderPath]): SkillsService {
   const plugin = {
     getPluginPath: () => pluginPath,
   } as unknown as PosthogPluginService;
   const folders = {
-    getFolders: async () => [{ path: folderPath, name: "my-repo" }],
+    getFolders: async () =>
+      openFolders.map((folder, index) => ({
+        path: folder,
+        name: `repo-${index}`,
+      })),
   } as unknown as FoldersService;
   return new SkillsService(plugin, folders, new WatcherService());
 }
@@ -516,6 +520,23 @@ describe("write-path guard", () => {
     await rm(repoSkillsDir, { recursive: true, force: true });
     await symlink(outside, repoSkillsDir, "dir");
     const service = makeService();
+
+    await expect(
+      service.bundleLocalSkill({
+        name: "escapee",
+        source: "repo",
+        path: path.join(repoSkillsDir, "escapee"),
+      }),
+    ).rejects.toThrow("resolves outside its repository");
+  });
+
+  it("rejects a repo skill that resolves into another open repository", async () => {
+    const targetRepo = path.join(root, "target-repo");
+    const targetSkillsDir = path.join(targetRepo, ".claude", "skills");
+    await createSkill(targetSkillsDir, "escapee");
+    await rm(repoSkillsDir, { recursive: true, force: true });
+    await symlink(targetSkillsDir, repoSkillsDir, "dir");
+    const service = makeService([targetRepo, folderPath]);
 
     await expect(
       service.bundleLocalSkill({
