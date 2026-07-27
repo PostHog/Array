@@ -1,6 +1,8 @@
 // Shared types for MCP server installations and marketplace templates.
 // Mirrors the PostHog cloud REST schema (see `apps/code/src/renderer/api/generated.ts`).
 
+import type { McpUiResourceCsp } from "@modelcontextprotocol/ext-apps/app-bridge";
+
 export type McpAuthType = "api_key" | "oauth" | "none";
 
 export type McpApprovalState = "approved" | "needs_approval" | "do_not_use";
@@ -105,8 +107,7 @@ export interface UpdateMcpServerInstallationOptions {
 export interface McpUiResource {
   uri: string;
   html: string;
-  /** Opaque CSP descriptor handed straight to AppBridge (`McpUiResourceCsp`). */
-  csp?: Record<string, unknown>;
+  csp?: McpUiResourceCsp;
   permissions?: Record<string, Record<string, unknown>>;
 }
 
