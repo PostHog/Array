@@ -1,5 +1,6 @@
 import {
   getToolUiResourceUri,
+  type McpUiResourceCsp,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -67,7 +68,7 @@ export function useMcpUiResource({
       const permissions =
         (ui.permissions as Record<string, Record<string, unknown>>) ??
         undefined;
-      const csp = (ui.csp as Record<string, unknown> | undefined) ?? undefined;
+      const csp = ui.csp as McpUiResourceCsp | undefined;
 
       return {
         resource: { uri, html: text, csp, permissions },
