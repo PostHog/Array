@@ -2400,6 +2400,8 @@ export class SessionService {
     session.model = model;
     session.executionMode = executionMode;
     session.reasoningLevel = reasoningLevel;
+    session.contextWindow = contextWindow;
+    session.fastMode = fastMode;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.

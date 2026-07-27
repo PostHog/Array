@@ -708,6 +708,7 @@ function StageFields({
         {effortOptions.length > 0 && (
           <StageEffortDropdown
             className="w-28 justify-between"
+            label={`${legend} effort`}
             noneLabel="Default effort"
             value={effort}
             options={effortOptions}

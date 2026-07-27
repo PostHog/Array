@@ -134,6 +134,8 @@ import {
   buildSystemPrompt,
   type GatewayEnv,
   type ProcessSpawnedInfo,
+  toEffortFlagSettings,
+  toSdkEffort,
 } from "./session/options";
 import { SettingsManager } from "./session/settings";
 import {
@@ -1760,12 +1762,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     } else if (params.configId === "effort") {
       const newEffort = resolvedValue as EffortLevel;
       this.session.effort = newEffort;
-      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
-      this.session.queryOptions.effort = newEffort;
-      await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
-        effortLevel: newEffort,
-      });
+      this.session.queryOptions.effort = toSdkEffort(newEffort);
+      await this.session.query.applyFlagSettings(
+        toEffortFlagSettings(newEffort),
+      );
     } else if (params.configId === "context_window") {
       const enable1M = resolvedValue === "1m";
       // queryOptions is read per prompt, so this applies from the next turn.
@@ -2269,7 +2269,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     modelOptions.currentModelId = resolvedModelId;
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
-      this.getContextWindowForModel(resolvedModelId);
+      meta?.contextWindow === "200k"
+        ? CONTEXT_WINDOW_200K_TOKENS
+        : this.getContextWindowForModel(resolvedModelId);
 
     const resolvedSdkModel = toSdkModelId(resolvedModelId);
 
@@ -2284,14 +2286,17 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // Keep thinking enabled by default for effort-capable models (see
     // DEFAULT_EFFORT).
     const resolvedEffort = resolveEffortForModel(resolvedModelId, effort);
-    if (resolvedEffort && resolvedEffort !== effort) {
+    // Ultracode re-applies even when the requested effort stands: the flag
+    // only reaches the session through applyFlagSettings.
+    if (
+      resolvedEffort &&
+      (resolvedEffort !== effort || resolvedEffort === "ultracode")
+    ) {
       this.session.effort = resolvedEffort;
-      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
-      this.session.queryOptions.effort = resolvedEffort;
-      await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
-        effortLevel: resolvedEffort,
-      });
+      this.session.queryOptions.effort = toSdkEffort(resolvedEffort);
+      await this.session.query.applyFlagSettings(
+        toEffortFlagSettings(resolvedEffort),
+      );
     }
 
     if (supports1MContext(resolvedModelId) && meta?.contextWindow !== "200k") {
@@ -2628,6 +2633,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.queryOptions.effort = undefined;
         void this.session.query.applyFlagSettings({
           effortLevel: undefined,
+          ultracode: false,
         });
       }
       return;
@@ -2642,13 +2648,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // Set the default when none is chosen yet (see DEFAULT_EFFORT), or re-apply
     // when the prior level is invalid for the newly selected model.
     if (!this.session.effort || resolvedValue !== currentValue) {
-      this.session.effort = resolvedValue as EffortLevel;
-      // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
-      this.session.queryOptions.effort = resolvedValue as EffortLevel;
-      void this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max"/"ultracode" but runtime accepts them
-        effortLevel: resolvedValue,
-      });
+      const resolvedEffort = resolvedValue as EffortLevel;
+      this.session.effort = resolvedEffort;
+      this.session.queryOptions.effort = toSdkEffort(resolvedEffort);
+      void this.session.query.applyFlagSettings(
+        toEffortFlagSettings(resolvedEffort),
+      );
     }
 
     const effortConfig: SessionConfigOption = {

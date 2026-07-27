@@ -47,6 +47,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -1638,7 +1639,16 @@ export class AgentServer {
               // adapter uses the @openai/codex vendored binary.
               binaryPath: process.env.POSTHOG_CODEX_BINARY_PATH,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
-              reasoningEffort: this.config.reasoningEffort,
+              // Claude-only levels like ultracode must not leak into codex.
+              reasoningEffort:
+                this.config.reasoningEffort &&
+                isSupportedReasoningEffort(
+                  "codex",
+                  this.config.model ?? DEFAULT_CODEX_MODEL,
+                  this.config.reasoningEffort,
+                )
+                  ? this.config.reasoningEffort
+                  : undefined,
               developerInstructions: codexInstructions,
               httpHeaders: gatewayEnv.openaiCustomHeaders,
             }

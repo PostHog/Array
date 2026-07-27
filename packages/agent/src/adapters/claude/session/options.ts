@@ -7,6 +7,8 @@ import type {
   McpServerConfig,
   Options,
   OutputFormat,
+  EffortLevel as SdkEffortLevel,
+  Settings,
   SpawnedProcess,
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -526,12 +528,25 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
   }
 
   if (params.effort) {
-    // @ts-expect-error SDK Options.effort omits "ultracode" but the CLI accepts it
-    options.effort = params.effort;
+    options.effort = toSdkEffort(params.effort);
   }
 
   clearStatsigCache();
   return options;
+}
+
+export function toSdkEffort(effort: EffortLevel): SdkEffortLevel {
+  return effort === "ultracode" ? "xhigh" : effort;
+}
+
+// The SDK models ultracode as xhigh effort plus a session-scoped flag, not as
+// an effortLevel value.
+export function toEffortFlagSettings(effort: EffortLevel): Partial<Settings> {
+  return {
+    // @ts-expect-error SDK Settings.effortLevel omits "max" but the runtime accepts it
+    effortLevel: toSdkEffort(effort),
+    ultracode: effort === "ultracode",
+  };
 }
 
 function clearStatsigCache(): void {

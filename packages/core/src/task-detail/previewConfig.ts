@@ -3,6 +3,9 @@ import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import type { Adapter } from "@posthog/shared";
 import { EFFORT_LEVELS } from "@posthog/shared/domain-types";
 
+export const CONTEXT_WINDOW_OPTION_CATEGORY = "_context_window";
+export const FAST_MODE_OPTION_CATEGORY = "_fast_mode";
+
 export interface PreviewSettingsSnapshot {
   defaultInitialTaskMode: string;
   lastUsedInitialTaskMode: string | null | undefined;
@@ -264,7 +267,7 @@ export function applyConfigChange(
   updated = syncToggleOption(updated, {
     id: "context_window",
     name: "Context Window",
-    category: "_context_window",
+    category: CONTEXT_WINDOW_OPTION_CATEGORY,
     description: "Choose the context window size for this session",
     options: contextWindowOptions,
     defaultValue: settings.lastUsedContextWindow ?? "1m",
@@ -272,7 +275,7 @@ export function applyConfigChange(
   updated = syncToggleOption(updated, {
     id: "fast",
     name: "Fast Mode",
-    category: "_fast_mode",
+    category: FAST_MODE_OPTION_CATEGORY,
     description: "Faster responses on supported models",
     options: fastModeOptions,
     defaultValue:

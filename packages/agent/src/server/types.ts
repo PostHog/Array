@@ -1,4 +1,5 @@
 import type { Adapter } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import type { AgentMode } from "../types";
 import type { RtkSavingsSummary } from "./rtk-savings";
 import type { RemoteMcpServer } from "./schemas";
@@ -58,15 +59,7 @@ export interface AgentServerConfig {
   piRpcHostPath?: string;
   runtimeAdapter?: Adapter;
   model?: string;
-  reasoningEffort?:
-    | "off"
-    | "minimal"
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max"
-    | "ultracode";
+  reasoningEffort?: EffortLevel | "off" | "minimal";
   contextWindow?: "200k" | "1m";
   fastMode?: boolean;
   resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;

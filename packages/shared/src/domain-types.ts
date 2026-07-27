@@ -273,7 +273,7 @@ export interface TaskRun {
   branch: string | null;
   runtime_adapter?: Adapter | null;
   model?: string | null;
-  reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  reasoning_effort?: EffortLevel | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
   environment?: TaskRunEnvironment;
   status: TaskRunStatus;

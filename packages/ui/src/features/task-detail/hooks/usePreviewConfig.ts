@@ -8,7 +8,9 @@ import {
 import { flattenConfigValues } from "@posthog/core/task-detail/configOptions";
 import {
   applyConfigChange,
+  CONTEXT_WINDOW_OPTION_CATEGORY,
   deriveInitialConfig,
+  FAST_MODE_OPTION_CATEGORY,
 } from "@posthog/core/task-detail/previewConfig";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
@@ -293,9 +295,12 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const thoughtOption = getOptionByCategory(configOptions, "thought_level");
   const contextWindowOption = getOptionByCategory(
     configOptions,
-    "_context_window",
+    CONTEXT_WINDOW_OPTION_CATEGORY,
   );
-  const fastModeOption = getOptionByCategory(configOptions, "_fast_mode");
+  const fastModeOption = getOptionByCategory(
+    configOptions,
+    FAST_MODE_OPTION_CATEGORY,
+  );
 
   return {
     configOptions,

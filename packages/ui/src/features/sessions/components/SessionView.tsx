@@ -5,6 +5,10 @@ import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "@posthog/core/task-detail/previewConfig";
 import { useService } from "@posthog/di/react";
 import { type AcpMessage, FAST_MODE_FLAG } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
@@ -51,6 +55,7 @@ import {
   useAdapterForTask,
   useConfigOptionForTask,
   useModeConfigOptionForTask,
+  useModelConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
   useThoughtLevelConfigOptionForTask,
@@ -188,11 +193,17 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
-  const contextWindowOption = useConfigOptionForTask(taskId, "_context_window");
-  const sessionModelOption = useConfigOptionForTask(taskId, "model");
+  const contextWindowOption = useConfigOptionForTask(
+    taskId,
+    CONTEXT_WINDOW_OPTION_CATEGORY,
+  );
+  const sessionModelOption = useModelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
   const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
-  const liveFastModeOption = useConfigOptionForTask(taskId, "_fast_mode");
+  const liveFastModeOption = useConfigOptionForTask(
+    taskId,
+    FAST_MODE_OPTION_CATEGORY,
+  );
   const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();

@@ -333,6 +333,7 @@ function StageRow({
         />
         {effortOptions.length > 0 && (
           <StageEffortDropdown
+            label={`${legend} effort`}
             noneLabel="Default effort"
             value={effort}
             options={effortOptions}

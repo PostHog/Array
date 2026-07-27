@@ -64,6 +64,7 @@ export function StageEffortDropdown({
   value,
   options,
   onChange,
+  label,
   noneLabel,
   className,
   disabled,
@@ -71,6 +72,7 @@ export function StageEffortDropdown({
   value: string | null;
   options: AutoresearchModelOption[];
   onChange: (value: string | null) => void;
+  label: string;
   noneLabel: string;
   className?: string;
   disabled?: boolean;
@@ -82,6 +84,7 @@ export function StageEffortDropdown({
       onChange={(next) => onChange(stageModelFromSelectValue(next))}
       disabled={disabled}
       side="bottom"
+      label={label}
       triggerVariant="outline"
       triggerClassName={className}
     />

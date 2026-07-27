@@ -1140,6 +1140,8 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(contextWindow && { contextWindow }),
+            ...(fastMode !== undefined && { fastMode }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
