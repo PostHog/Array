@@ -298,7 +298,7 @@ export function ReasoningSliderFace({
                     </button>
                   }
                 />
-                <TooltipContent className="border border-(--gray-6) bg-(--gray-2) text-foreground">
+                <TooltipContent className="border border-(--gray-6) bg-(--gray-2)! text-foreground! [&_.quill-tooltip__arrow]:hidden">
                   <span className="flex flex-col items-center gap-0.5 text-center">
                     <span>Fast Mode ({fastToggle.active ? "ON" : "OFF"})</span>
                     {fastToggle.docsUrl && (
