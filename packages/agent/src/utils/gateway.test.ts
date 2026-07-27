@@ -207,7 +207,7 @@ describe("resolveGatewayTarget", () => {
         posthogHost: PY_HOST,
         env: SIGNALS_ENV,
       }),
-    ).toEqual({ baseUrl: GO, slugless: true, aiProduct: "signals_scout" });
+    ).toEqual({ baseUrl: GO, isAiGateway: true, aiProduct: "signals_scout" });
   });
 
   it("leaves an unlisted signals stage on the Python gateway", () => {
@@ -220,7 +220,7 @@ describe("resolveGatewayTarget", () => {
       }),
     ).toEqual({
       baseUrl: "https://gateway.us.posthog.com/signals",
-      slugless: false,
+      isAiGateway: false,
       aiProduct: "signals_implementation",
     });
   });
@@ -233,7 +233,7 @@ describe("resolveGatewayTarget", () => {
         posthogHost: PY_HOST,
         env: SIGNALS_ENV,
       });
-      expect(target.slugless).toBe(false);
+      expect(target.isAiGateway).toBe(false);
       expect(target.baseUrl).toBe(`https://gateway.us.posthog.com/${product}`);
     },
   );
@@ -245,7 +245,7 @@ describe("resolveGatewayTarget", () => {
         aiStage: "scout",
         posthogHost: PY_HOST,
         env: { AI_GATEWAY_PRODUCTS: "signals_scout" },
-      }).slugless,
+      }).isAiGateway,
     ).toBe(false);
   });
 
@@ -256,7 +256,7 @@ describe("resolveGatewayTarget", () => {
         aiStage: "scout",
         posthogHost: PY_HOST,
         env: { AI_GATEWAY_URL: GO },
-      }).slugless,
+      }).isAiGateway,
     ).toBe(false);
   });
 
@@ -267,7 +267,7 @@ describe("resolveGatewayTarget", () => {
         aiStage: "scout",
         posthogHost: PY_HOST,
         env: { AI_GATEWAY_URL: GO, AI_GATEWAY_PRODUCTS: " , signals_scout , " },
-      }).slugless,
+      }).isAiGateway,
     ).toBe(true);
   });
 

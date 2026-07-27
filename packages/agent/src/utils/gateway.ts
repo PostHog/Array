@@ -151,8 +151,8 @@ export function getGatewayUsageUrl(
 export interface GatewayTarget {
   /** Base URL: slugless for the Go gateway, product-slugged for the Python one. */
   baseUrl: string;
-  /** True when the Go gateway is selected, which changes the header format. */
-  slugless: boolean;
+  /** True when the Go gateway is selected, which also changes the header format. */
+  isAiGateway: boolean;
   /** Product tag; only the Go gateway needs it sent explicitly. */
   aiProduct: string;
 }
@@ -191,13 +191,13 @@ export function resolveGatewayTarget({
       baseUrl: resolveLlmGatewayUrl(aiGatewayUrl, posthogHost, product, {
         slugless: true,
       }),
-      slugless: true,
+      isAiGateway: true,
       aiProduct,
     };
   }
   return {
     baseUrl: resolveLlmGatewayUrl(env.LLM_GATEWAY_URL, posthogHost, product),
-    slugless: false,
+    isAiGateway: false,
     aiProduct,
   };
 }

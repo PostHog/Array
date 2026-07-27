@@ -3665,7 +3665,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     const product = resolveGatewayProduct({ isInternal, originProduct });
     const {
       baseUrl: gatewayUrl,
-      slugless,
+      isAiGateway,
       aiProduct,
     } = resolveGatewayTarget({ product, aiStage, posthogHost: apiUrl });
     const openaiBaseUrl = gatewayUrl.endsWith("/v1")
@@ -3691,7 +3691,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     // record here to keep team attribution working for both adapters.
     let customHeaders: string;
     let openaiCustomHeaders: Record<string, string>;
-    if (slugless) {
+    if (isAiGateway) {
       // The Go gateway reads one X-PostHog-Properties JSON blob and ignores
       // per-property headers, and it has no product route, so `ai_product`
       // has to travel in the blob or the spend lands unattributed. `team_id`
