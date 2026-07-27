@@ -123,6 +123,7 @@ const REVIEW_CSP = { connectDomains: ["https://us.posthog.com"] };
 
 function makeClient() {
   return {
+    close: vi.fn(async () => {}),
     listTools: vi.fn(async () => ({
       tools: [
         {
@@ -175,9 +176,37 @@ describe("McpAppsService lazy discovery", () => {
 
     await service.hasUiForTool("mcp__posthog__loops-review");
 
-    expect(onComplete).toHaveBeenCalledWith({
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith({
       toolKeys: ["mcp__posthog__loops-review"],
     });
+  });
+
+  it("dedupes concurrent lazy discoveries and emits once", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = connectClient(service);
+    const onComplete = vi.fn();
+    service.on(McpAppsServiceEvent.DiscoveryComplete, onComplete);
+
+    const [reviewHasUi, listHasUi] = await Promise.all([
+      service.hasUiForTool("mcp__posthog__loops-review"),
+      service.hasUiForTool("mcp__posthog__loops-list"),
+    ]);
+
+    expect(reviewHasUi).toBe(true);
+    expect(listHasUi).toBe(false);
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not emit DiscoveryComplete when lazy discovery fails", async () => {
+    service.setConfigResolver(vi.fn(async () => {}));
+    const onComplete = vi.fn();
+    service.on(McpAppsServiceEvent.DiscoveryComplete, onComplete);
+
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-review"),
+    ).rejects.toThrow();
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -189,6 +218,19 @@ describe("McpAppsService lazy discovery", () => {
     await expect(service.hasUiForTool(toolKey)).resolves.toBe(false);
     expect(createConnection).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["a non-MCP tool", "Bash"],
+    ["a malformed MCP key", "mcp__posthog"],
+  ])(
+    "getUiResourceForTool returns null for %s without connecting",
+    async (_label, toolKey) => {
+      const createConnection = vi.spyOn(internals(service), "createConnection");
+
+      await expect(service.getUiResourceForTool(toolKey)).resolves.toBeNull();
+      expect(createConnection).not.toHaveBeenCalled();
+    },
+  );
 
   it("answers UI-less tools from the discovered cache without re-listing", async () => {
     service.setServerConfigs([config("posthog")]);
@@ -214,6 +256,57 @@ describe("McpAppsService lazy discovery", () => {
     expect(resolver).toHaveBeenCalledTimes(1);
   });
 
+  it("retries discovery after the failure backoff expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const resolver = vi.fn(async () => {});
+      service.setConfigResolver(resolver);
+
+      await expect(
+        service.hasUiForTool("mcp__posthog__loops-review"),
+      ).rejects.toThrow("No server config for: posthog");
+      vi.advanceTimersByTime(61_000);
+      await expect(
+        service.hasUiForTool("mcp__posthog__loops-review"),
+      ).rejects.toThrow("No server config for: posthog");
+      expect(resolver).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips re-listing when handleDiscovery already discovered the server", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = connectClient(service);
+
+    await service.handleDiscovery(["posthog"]);
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-list"),
+    ).resolves.toBe(false);
+    expect(client.listTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-lists on handleDiscovery even when already discovered", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = connectClient(service);
+
+    await service.hasUiForTool("mcp__posthog__loops-review");
+    await service.handleDiscovery(["posthog"]);
+    expect(client.listTools).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-discovers after disconnectServer clears server state", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = connectClient(service);
+
+    await service.hasUiForTool("mcp__posthog__loops-review");
+    await service.disconnectServer("posthog");
+    await expect(
+      service.hasUiForTool("mcp__posthog__loops-review"),
+    ).resolves.toBe(true);
+    expect(client.listTools).toHaveBeenCalledTimes(2);
+  });
+
   it("resolves lazily-discovered UI resources for a tool", async () => {
     service.setServerConfigs([config("posthog")]);
     connectClient(service);
@@ -233,5 +326,20 @@ describe("McpAppsService lazy discovery", () => {
 
     const resource = await service.getUiResourceByUri("posthog", REVIEW_URI);
     expect(resource?.csp).toEqual(REVIEW_CSP);
+  });
+
+  it("returns an uncached resource when the metadata warm-up fails", async () => {
+    service.setServerConfigs([config("posthog")]);
+    const client = makeClient();
+    client.listTools.mockRejectedValue(new Error("listTools broken"));
+    connectClient(service, client);
+
+    const first = await service.getUiResourceByUri("posthog", REVIEW_URI);
+    expect(first?.html).toBe("<html></html>");
+    expect(first?.csp).toBeUndefined();
+
+    const second = await service.getUiResourceByUri("posthog", REVIEW_URI);
+    expect(second?.html).toBe("<html></html>");
+    expect(client.readResource).toHaveBeenCalledTimes(2);
   });
 });

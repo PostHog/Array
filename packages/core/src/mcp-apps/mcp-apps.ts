@@ -254,7 +254,11 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private async ensureServerDiscovered(serverName: string): Promise<void> {
     if (this.discoveredServers.has(serverName)) return;
 
-    if (!this.pendingDiscoveries.has(serverName)) {
+    // Only the caller that starts the discovery emits DiscoveryComplete —
+    // joiners would otherwise re-emit once per caller and stampede the
+    // renderer's query invalidations.
+    const startedHere = !this.pendingDiscoveries.has(serverName);
+    if (startedHere) {
       const failedAt = this.discoveryFailedAt.get(serverName);
       if (failedAt && Date.now() - failedAt < DISCOVERY_FAILURE_BACKOFF_MS) {
         throw new Error(`UI tool discovery recently failed for: ${serverName}`);
@@ -262,9 +266,25 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     }
 
     await this.discoverServer(serverName);
-    this.emit(McpAppsServiceEvent.DiscoveryComplete, {
-      toolKeys: [...this.toolAssociations.keys()],
-    } satisfies McpAppsDiscoveryCompleteEvent);
+    if (startedHere) {
+      this.emit(McpAppsServiceEvent.DiscoveryComplete, {
+        toolKeys: [...this.toolAssociations.keys()],
+      } satisfies McpAppsDiscoveryCompleteEvent);
+    }
+  }
+
+  /**
+   * Look up a tool's UI association, lazily discovering its server on a miss.
+   */
+  private async resolveAssociation(
+    toolKey: string,
+  ): Promise<McpToolUiAssociation | undefined> {
+    const existing = this.toolAssociations.get(toolKey);
+    if (existing) return existing;
+    const mcp = parseMcpToolName(toolKey);
+    if (!mcp) return undefined;
+    await this.ensureServerDiscovered(mcp.server);
+    return this.toolAssociations.get(toolKey);
   }
 
   /**
@@ -351,13 +371,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
    * Fetch the UI resource for a registration-discovered tool, by its tool key.
    */
   async getUiResourceForTool(toolKey: string): Promise<McpUiResource | null> {
-    let association = this.toolAssociations.get(toolKey);
-    if (!association) {
-      const mcp = parseMcpToolName(toolKey);
-      if (!mcp) return null;
-      await this.ensureServerDiscovered(mcp.server);
-      association = this.toolAssociations.get(toolKey);
-    }
+    const association = await this.resolveAssociation(toolKey);
     if (!association) {
       this.log.debug("getUiResourceForTool: no association found", { toolKey });
       return null;
@@ -436,7 +450,17 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     // Best-effort warm of resourceMetaCache so CSP/permissions attach on paths
     // where handleDiscovery never ran (cloud runs fetching by result URI). The
     // read below decides success on its own.
-    await this.ensureServerDiscovered(serverName).catch(() => undefined);
+    const warmed = await this.ensureServerDiscovered(serverName).then(
+      () => true,
+      (err) => {
+        this.log.warn("UI resource metadata warm-up failed", {
+          serverName,
+          uri: resourceUri,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      },
+    );
 
     let resourceResult: Awaited<ReturnType<Client["readResource"]>>;
     try {
@@ -489,23 +513,25 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       serverName,
     };
 
-    this.resourceCache.set(resourceUri, resource);
-    this.log.info("Lazily fetched and cached UI resource", {
+    // A failed warm-up with no known metadata may have produced a CSP-less
+    // copy; leave it uncached so a later fetch can attach the real CSP.
+    const cacheable = warmed || resourceMeta !== undefined;
+    if (cacheable) {
+      this.resourceCache.set(resourceUri, resource);
+    }
+    this.log.info("Lazily fetched UI resource", {
       serverName,
       uri: resourceUri,
       htmlLength: textContent.text.length,
       hasCsp: !!resource.csp,
+      cached: cacheable,
     });
 
     return resource;
   }
 
   async hasUiForTool(toolKey: string): Promise<boolean> {
-    if (this.toolAssociations.has(toolKey)) return true;
-    const mcp = parseMcpToolName(toolKey);
-    if (!mcp) return false;
-    await this.ensureServerDiscovered(mcp.server);
-    const has = this.toolAssociations.has(toolKey);
+    const has = !!(await this.resolveAssociation(toolKey));
     this.log.debug("hasUiForTool", { toolKey, result: has });
     return has;
   }
@@ -631,6 +657,16 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   }
 
   async disconnectServer(serverName: string): Promise<void> {
+    // Let an in-flight lazy discovery land its connection first so it is
+    // closed here instead of lingering as a stray reconnect after teardown.
+    const pendingDiscovery = this.pendingDiscoveries.get(serverName);
+    if (pendingDiscovery) {
+      await pendingDiscovery.catch(() => undefined);
+    }
+
+    this.discoveredServers.delete(serverName);
+    this.discoveryFailedAt.delete(serverName);
+
     const conn = this.connections.get(serverName);
     if (!conn) return;
 
@@ -643,8 +679,6 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       });
     }
     this.connections.delete(serverName);
-    this.discoveredServers.delete(serverName);
-    this.discoveryFailedAt.delete(serverName);
 
     // Clean up associations and cached resources for this server
     const urisToEvict = new Set<string>();
@@ -667,7 +701,12 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   }
 
   async cleanup(): Promise<void> {
-    const serverNames = [...this.connections.keys()];
+    // Include servers whose lazy discovery is still connecting — they have no
+    // entry in `connections` yet but will land one that must be closed.
+    const serverNames = new Set([
+      ...this.connections.keys(),
+      ...this.pendingDiscoveries.keys(),
+    ]);
     for (const name of serverNames) {
       await this.disconnectServer(name);
     }
