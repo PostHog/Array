@@ -285,8 +285,11 @@ export default function TaskDetailScreen() {
   // creates a fresh run that resumes from the previous one and queues the
   // message as pending_user_message.
   const handleSendAfterTerminal = useCallback(
-    async (text: string, attachments: PendingAttachment[]) => {
-      if (!taskId || !task) return;
+    async (
+      text: string,
+      attachments: PendingAttachment[],
+    ): Promise<boolean> => {
+      if (!taskId || !task) return false;
       // Optimistically echo into the chat before tearing down the old session
       // and waiting for the resume run's SSE stream to come up.
       const echoAttachments = attachments.map((a) => ({
@@ -324,6 +327,7 @@ export default function TaskDetailScreen() {
         setTask(updatedTask);
         await connectToTask(updatedTask);
         updateTaskInCache(updatedTask);
+        return true;
       } catch (err) {
         log.error("Failed to send after terminal", err);
         pendingTaskPromptStoreApi.clear(taskId);
@@ -332,6 +336,7 @@ export default function TaskDetailScreen() {
           "Failed to send",
           "Could not continue this task. Please try again.",
         );
+        return false;
       }
     },
     [
@@ -361,8 +366,11 @@ export default function TaskDetailScreen() {
   );
 
   const handleSendPrompt = useCallback(
-    (text: string, attachments: PendingAttachment[]) => {
-      if (!taskId) return;
+    async (
+      text: string,
+      attachments: PendingAttachment[],
+    ): Promise<boolean> => {
+      if (!taskId) return false;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       // Saving an in-place edit: overwrite the queued message and release the
@@ -374,38 +382,37 @@ export default function TaskDetailScreen() {
         queue.update(taskId, editingId, { content: text, attachments });
         queue.clearEditing(taskId);
         flushQueuedMessagesIfIdle(taskId);
-        return;
+        return true;
       }
 
       if (session?.terminalStatus) {
-        handleSendAfterTerminal(text, attachments);
-        return;
+        return handleSendAfterTerminal(text, attachments);
       }
 
-      const onSendFailed = (err: unknown) => {
+      // A turn is running. Queue holds the message locally until it ends;
+      // Steer interrupts the turn and resends right away.
+      const isSteer = !!session?.isPromptPending;
+      if (isSteer && messagingMode === "queue") {
+        useMessageQueueStore.getState().enqueue(taskId, text, attachments);
+        return true;
+      }
+
+      try {
+        if (isSteer) {
+          await sendInterrupting(taskId, text, attachments);
+        } else {
+          await sendPrompt(taskId, text, attachments);
+        }
+        trackPromptSent(text, isSteer);
+        return true;
+      } catch (err) {
         log.error("Failed to send prompt", err);
         Alert.alert(
           "Failed to send",
           "Your message could not be delivered. Please try again.",
         );
-      };
-
-      // A turn is running. Queue holds the message locally until it ends;
-      // Steer interrupts the turn and resends right away.
-      if (session?.isPromptPending) {
-        if (messagingMode === "queue") {
-          useMessageQueueStore.getState().enqueue(taskId, text, attachments);
-          return;
-        }
-        sendInterrupting(taskId, text, attachments)
-          .then(() => trackPromptSent(text, true))
-          .catch(onSendFailed);
-        return;
+        return false;
       }
-
-      sendPrompt(taskId, text, attachments)
-        .then(() => trackPromptSent(text, false))
-        .catch(onSendFailed);
     },
     [
       taskId,
