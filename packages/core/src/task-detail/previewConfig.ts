@@ -8,6 +8,8 @@ export interface PreviewSettingsSnapshot {
   lastUsedInitialTaskMode: string | null | undefined;
   defaultReasoningEffort: string;
   lastUsedReasoningEffort: string | null | undefined;
+  lastUsedContextWindow?: "200k" | "1m" | null;
+  lastUsedFastMode?: boolean | null;
 }
 
 export interface EffortOption {
@@ -83,6 +85,25 @@ export function deriveInitialConfig(
   );
 
   return withMode.map((opt) => {
+    if (opt.type === "select" && opt.id === "context_window") {
+      const desired = settings.lastUsedContextWindow;
+      if (desired && flattenConfigValues(opt).includes(desired)) {
+        return { ...opt, currentValue: desired } as SessionConfigOption;
+      }
+      return opt;
+    }
+    if (opt.type === "select" && opt.id === "fast") {
+      const desired =
+        settings.lastUsedFastMode == null
+          ? undefined
+          : settings.lastUsedFastMode
+            ? "on"
+            : "off";
+      if (desired && flattenConfigValues(opt).includes(desired)) {
+        return { ...opt, currentValue: desired } as SessionConfigOption;
+      }
+      return opt;
+    }
     if (opt.category !== "thought_level" || opt.type !== "select") {
       return opt;
     }
@@ -246,7 +267,7 @@ export function applyConfigChange(
     category: "_context_window",
     description: "Choose the context window size for this session",
     options: contextWindowOptions,
-    defaultValue: "1m",
+    defaultValue: settings.lastUsedContextWindow ?? "1m",
   });
   updated = syncToggleOption(updated, {
     id: "fast",
@@ -254,7 +275,12 @@ export function applyConfigChange(
     category: "_fast_mode",
     description: "Faster responses on supported models",
     options: fastModeOptions,
-    defaultValue: "off",
+    defaultValue:
+      settings.lastUsedFastMode == null
+        ? "off"
+        : settings.lastUsedFastMode
+          ? "on"
+          : "off",
   });
 
   return updated;

@@ -12,7 +12,6 @@ import {
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
-  defaultEligibleModel,
   FAST_MODE_FLAG,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
@@ -110,6 +109,8 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
           lastUsedInitialTaskMode,
           defaultReasoningEffort,
           lastUsedReasoningEffort,
+          lastUsedContextWindow,
+          lastUsedFastMode,
           lastUsedModel,
         } = useSettingsStore.getState();
 
@@ -120,6 +121,8 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
             lastUsedInitialTaskMode,
             defaultReasoningEffort,
             lastUsedReasoningEffort,
+            lastUsedContextWindow,
+            lastUsedFastMode,
           },
           adapter,
         );
@@ -129,7 +132,9 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         // refetch/remount. Restore it through applyConfigChange so the
         // dependent effort options are recomputed for the restored model.
         const modelOpt = getOptionByCategory(initial, "model");
-        const restorableModel = defaultEligibleModel(lastUsedModel);
+        // The user's explicit last pick always restores, premium families
+        // included — a fresh launch must not silently downgrade the model.
+        const restorableModel = lastUsedModel ?? undefined;
         if (
           restorableModel &&
           modelOpt?.type === "select" &&
@@ -152,6 +157,8 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
               lastUsedInitialTaskMode: undefined,
               defaultReasoningEffort,
               lastUsedReasoningEffort,
+              lastUsedContextWindow,
+              lastUsedFastMode,
             },
           });
         }
@@ -191,8 +198,15 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
         isModelChange && fastModeFlagEnabled
           ? (getFastModeOptions(adapter, value) ?? undefined)
           : undefined;
-      const { lastUsedReasoningEffort, defaultReasoningEffort } =
-        useSettingsStore.getState();
+      const settingsStore = useSettingsStore.getState();
+      if (
+        configId === "context_window" &&
+        (value === "200k" || value === "1m")
+      ) {
+        settingsStore.setLastUsedContextWindow(value);
+      } else if (configId === "fast") {
+        settingsStore.setLastUsedFastMode(value === "on");
+      }
       setConfigOptions((prev) =>
         applyConfigChange(prev, {
           adapter,
@@ -204,8 +218,10 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
           settings: {
             defaultInitialTaskMode: "",
             lastUsedInitialTaskMode: undefined,
-            defaultReasoningEffort,
-            lastUsedReasoningEffort,
+            defaultReasoningEffort: settingsStore.defaultReasoningEffort,
+            lastUsedReasoningEffort: settingsStore.lastUsedReasoningEffort,
+            lastUsedContextWindow: settingsStore.lastUsedContextWindow,
+            lastUsedFastMode: settingsStore.lastUsedFastMode,
           },
         }),
       );
