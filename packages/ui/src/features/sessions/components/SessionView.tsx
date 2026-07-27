@@ -325,30 +325,28 @@ export function SessionView({
       setAttachmentUploadStatuses(
         Object.fromEntries(attachments.map(({ id }) => [id, "uploading"])),
       );
-      for (const attachment of attachments) {
-        void sessionService
-          .prepareCloudAttachments(taskId, [attachment.id])
-          .then(() => {
-            if (attachmentUploadRef.current !== requestId) return;
-            setAttachmentUploadStatuses((statuses) => {
-              const { [attachment.id]: _, ...rest } = statuses;
-              return rest;
-            });
-          })
-          .catch((error) => {
-            if (attachmentUploadRef.current !== requestId) return;
-            setAttachmentUploadStatuses((statuses) => ({
-              ...statuses,
-              [attachment.id]: "error",
-            }));
-            toast.error(`Failed to upload ${attachment.label}`, {
-              description:
-                error instanceof Error
-                  ? error.message
-                  : "Remove and attach the file again to retry.",
-            });
+      void sessionService
+        .prepareCloudAttachments(
+          taskId,
+          attachments.map(({ id }) => id),
+        )
+        .then(() => {
+          if (attachmentUploadRef.current === requestId) {
+            setAttachmentUploadStatuses({});
+          }
+        })
+        .catch((error) => {
+          if (attachmentUploadRef.current !== requestId) return;
+          setAttachmentUploadStatuses(
+            Object.fromEntries(attachments.map(({ id }) => [id, "error"])),
+          );
+          toast.error("Failed to upload attachments", {
+            description:
+              error instanceof Error
+                ? error.message
+                : "Remove and attach the files again to retry.",
           });
-      }
+        });
     },
     [isCloudRun, sessionService, taskId],
   );
