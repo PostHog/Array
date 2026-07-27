@@ -30,7 +30,7 @@ import { LOOPS_FLAG } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
-import { NewTaskFab } from "@posthog/ui/features/canvas/components/NewTaskFab";
+import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
@@ -375,7 +375,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </Empty>
           )}
         </div>
-        <NewTaskFab channelId={channelId} />
+        <ChannelsFab channelId={channelId} />
       </div>
     </div>
   );

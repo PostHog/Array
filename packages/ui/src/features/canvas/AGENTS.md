@@ -45,6 +45,10 @@ The root `AGENTS.md` architecture rules still apply.
   channel you're in (`ChannelSidebar`, headed by `ChannelBackRow`). Both panes
   stay mounted — the offscreen one is `inert` — so the slide has something to
   slide and returning to the list doesn't rebuild every row.
+- One `ChannelsFab` serves both panes: given a `channelId` it creates inside
+  that channel (task, canvas), and either way it can create a channel. Off the
+  layout it keeps its original two-item menu. Archived moves out of the sidebar
+  and into the account menu (`ProjectSwitcher`), beside Settings.
 - **Which pane shows is view state, not a route.** `channelPaneStore` holds it,
   separately from the scoped channel (`currentChannelStore`): "back to channels"
   browses the list while the route, the main pane and the scoped channel stay

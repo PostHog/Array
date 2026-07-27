@@ -176,14 +176,14 @@ describe("ChannelsSidebar", () => {
       mocks.archivedTaskIds = new Set(["archived-1"]);
     });
 
-    // The layout puts an Archive action on every item row, so hiding the
-    // destination leaves archived tasks with nowhere to be seen —
-    // navigateToArchived has no other caller in the app.
-    it("is present under the channels layout", () => {
+    // The layout puts an Archive action on every item row, so the destination
+    // still has to exist — it moved into the account menu (ProjectSwitcher),
+    // which is where navigateToArchived is called from now.
+    it("leaves the sidebar body under the channels layout", () => {
       mocks.channelsLayout = true;
       mocks.channels = [ME];
       renderSidebar();
-      expect(screen.getByText("Archived")).toBeTruthy();
+      expect(screen.queryByText("Archived")).toBeNull();
     });
 
     it("is present with neither channels world on", () => {
