@@ -3434,17 +3434,26 @@ export class SessionService {
     filePaths: string[],
   ): Promise<string[]> {
     if (filePaths.length === 0) return Promise.resolve([]);
-    const key = `${session.taskRunId}:${JSON.stringify(filePaths)}`;
+    return Promise.all(
+      filePaths.map((filePath) =>
+        this.getPreparedCloudFileUpload(session, client, filePath),
+      ),
+    ).then((artifactIds) => artifactIds.flat());
+  }
+
+  private getPreparedCloudFileUpload(
+    session: AgentSession,
+    client: CloudArtifactClient,
+    filePath: string,
+  ): Promise<string[]> {
+    const key = `${session.taskRunId}:${filePath}`;
     const existing = this.preparedCloudAttachmentUploads.get(key);
     if (existing) return existing;
 
     const upload = this.d.h
-      .uploadRunAttachments(
-        client,
-        session.taskId,
-        session.taskRunId,
-        filePaths,
-      )
+      .uploadRunAttachments(client, session.taskId, session.taskRunId, [
+        filePath,
+      ])
       .catch((error) => {
         this.preparedCloudAttachmentUploads.delete(key);
         throw error;

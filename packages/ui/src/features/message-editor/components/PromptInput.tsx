@@ -20,7 +20,7 @@ import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { AttachmentMenu } from "./AttachmentMenu";
-import { AttachmentsBar } from "./AttachmentsBar";
+import { AttachmentsBar, type AttachmentUploadStatus } from "./AttachmentsBar";
 import { SlotMachineSubmit } from "./SlotMachineSubmit";
 
 export type { EditorHandle };
@@ -96,6 +96,7 @@ export interface PromptInputProps {
   onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
   onAttachmentsChange?: (attachments: FileAttachment[]) => void;
+  attachmentUploadStatuses?: Record<string, AttachmentUploadStatus>;
   onEmptyChange?: (isEmpty: boolean) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -144,6 +145,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onToggleMessagingMode,
       onAttachFiles,
       onAttachmentsChange,
+      attachmentUploadStatuses,
       onEmptyChange,
       onFocus,
       onBlur,
@@ -413,6 +415,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                 <AttachmentsBar
                   attachments={attachments}
                   onRemove={removeAttachment}
+                  uploadStatuses={attachmentUploadStatuses}
                 />
               </InputGroupAddon>
             )}

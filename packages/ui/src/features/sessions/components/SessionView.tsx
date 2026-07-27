@@ -9,6 +9,7 @@ import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -309,41 +310,53 @@ export function SessionView({
   const sendInFlightRef = useRef(false);
   const composerSubmissionRef = useRef(0);
   const attachmentUploadRef = useRef(0);
-  const [attachmentUploadStatus, setAttachmentUploadStatus] = useState<
-    "idle" | "uploading" | "ready" | "error"
-  >("idle");
+  const [attachmentUploadStatuses, setAttachmentUploadStatuses] = useState<
+    Record<string, AttachmentUploadStatus>
+  >({});
 
   const handleAttachmentsChange = useCallback(
     (attachments: FileAttachment[]) => {
       const requestId = ++attachmentUploadRef.current;
       if (!isCloudRun || !taskId || attachments.length === 0) {
-        setAttachmentUploadStatus("idle");
+        setAttachmentUploadStatuses({});
         return;
       }
 
-      setAttachmentUploadStatus("uploading");
-      void sessionService
-        .prepareCloudAttachments(
-          taskId,
-          attachments.map(({ id }) => id),
-        )
-        .then(() => {
-          if (attachmentUploadRef.current === requestId) {
-            setAttachmentUploadStatus("ready");
-          }
-        })
-        .catch((error) => {
-          if (attachmentUploadRef.current !== requestId) return;
-          setAttachmentUploadStatus("error");
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Failed to upload attachments",
-            { description: "Remove and attach the files again to retry." },
-          );
-        });
+      setAttachmentUploadStatuses(
+        Object.fromEntries(attachments.map(({ id }) => [id, "uploading"])),
+      );
+      for (const attachment of attachments) {
+        void sessionService
+          .prepareCloudAttachments(taskId, [attachment.id])
+          .then(() => {
+            if (attachmentUploadRef.current !== requestId) return;
+            setAttachmentUploadStatuses((statuses) => {
+              const { [attachment.id]: _, ...rest } = statuses;
+              return rest;
+            });
+          })
+          .catch((error) => {
+            if (attachmentUploadRef.current !== requestId) return;
+            setAttachmentUploadStatuses((statuses) => ({
+              ...statuses,
+              [attachment.id]: "error",
+            }));
+            toast.error(`Failed to upload ${attachment.label}`, {
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "Remove and attach the file again to retry.",
+            });
+          });
+      }
     },
     [isCloudRun, sessionService, taskId],
+  );
+  const attachmentUploadFailed = Object.values(
+    attachmentUploadStatuses,
+  ).includes("error");
+  const attachmentsUploading = Object.values(attachmentUploadStatuses).includes(
+    "uploading",
   );
 
   const latestPlanTrackerRef = useRef<ReturnType<
@@ -755,16 +768,16 @@ export function SessionView({
                           submitDisabledExternal={
                             handoffInProgress ||
                             !isOnline ||
-                            attachmentUploadStatus === "uploading" ||
-                            attachmentUploadStatus === "error"
+                            attachmentsUploading ||
+                            attachmentUploadFailed
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={
                             !isOnline
                               ? "No internet connection"
-                              : attachmentUploadStatus === "uploading"
+                              : attachmentsUploading
                                 ? "Uploading attachments…"
-                                : attachmentUploadStatus === "error"
+                                : attachmentUploadFailed
                                   ? "Attachment upload failed"
                                   : undefined
                           }
@@ -801,6 +814,7 @@ export function SessionView({
                           }
                           onToggleMessagingMode={toggleMessagingMode}
                           onAttachmentsChange={handleAttachmentsChange}
+                          attachmentUploadStatuses={attachmentUploadStatuses}
                           onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
