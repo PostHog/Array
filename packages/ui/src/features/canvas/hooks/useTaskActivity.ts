@@ -2,14 +2,30 @@ import {
   type TaskActivityItem,
   toTaskActivityItems,
 } from "@posthog/core/canvas/taskActivity";
+import { useServiceOptional } from "@posthog/di/react";
 import type { TaskActivityPage } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { NotificationBus } from "@posthog/ui/features/notifications/notifications";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
 const ACTIVITY_POLL_INTERVAL_MS = 60_000;
 export const TASK_ACTIVITY_QUERY_KEY = ["task-activity"] as const;
+
+export function TaskActivityNotificationSync(): null {
+  const notificationBus = useServiceOptional<NotificationBus>(NotificationBus);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!notificationBus) return;
+    return notificationBus.subscribeToTaskCompletion(() => {
+      void queryClient.invalidateQueries({ queryKey: TASK_ACTIVITY_QUERY_KEY });
+    });
+  }, [notificationBus, queryClient]);
+
+  return null;
+}
 
 /**
  * Tasks the current user is involved in — created, @-mentioned in, or messaged

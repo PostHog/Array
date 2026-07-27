@@ -13,6 +13,7 @@ import { ScopeReauthPrompt } from "@posthog/ui/features/auth/components/ScopeRea
 import { useAuthSession } from "@posthog/ui/features/auth/useAuthSession";
 import { useIsOrgAdmin } from "@posthog/ui/features/auth/useOrgRole";
 import { CanvasGenerationToaster } from "@posthog/ui/features/canvas/freeform/useCanvasGenerationToasts";
+import { TaskActivityNotificationSync } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { AddDirectoryDialog } from "@posthog/ui/features/folder-picker/AddDirectoryDialog";
 import { ErrorDetailsDialog } from "@posthog/ui/features/notifications/ErrorDetailsDialog";
 import { OnboardingFlow } from "@posthog/ui/features/onboarding/components/OnboardingFlow";
@@ -186,6 +187,7 @@ function App({ devToolbar }: AppProps) {
             from anywhere in the app. Sibling of the router so it stays mounted
             across every route (not just the canvas space). Renders null. */}
         <CanvasGenerationToaster />
+        <TaskActivityNotificationSync />
         <PendingPromptRecovery />
       </motion.div>
     );

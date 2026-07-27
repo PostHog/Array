@@ -118,6 +118,19 @@ describe("notifyPromptComplete", () => {
       expect(notify).toHaveBeenCalledTimes(delivered ? 1 : 0);
     },
   );
+
+  it("notifies activity subscribers when a task finishes", () => {
+    const { bus } = makeBus({ hasFocus: false });
+    const listener = vi.fn();
+    const unsubscribe = bus.subscribeToTaskCompletion(listener);
+
+    bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
+    expect(listener).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    bus.notifyPromptComplete("My task", "end_turn", TASK_ID);
+    expect(listener).toHaveBeenCalledOnce();
+  });
 });
 
 describe("native tier settings gating (app unfocused)", () => {

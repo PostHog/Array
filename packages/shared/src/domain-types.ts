@@ -142,6 +142,7 @@ export interface TaskMention {
 /** Which signal produced an activity row; mirrors the backend `activity_kind`. */
 export type TaskActivityKind =
   | "awaiting_input"
+  | "completed"
   | "message"
   | "mention"
   | "created";

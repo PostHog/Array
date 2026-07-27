@@ -1,6 +1,9 @@
-import { BellIcon, LinkIcon } from "@phosphor-icons/react";
+import { BellIcon, LinkIcon, RobotIcon } from "@phosphor-icons/react";
 import type { TaskActivityItem } from "@posthog/core/canvas/taskActivity";
 import {
+  Avatar,
+  AvatarFallback,
+  Badge,
   Button,
   Empty,
   EmptyDescription,
@@ -11,6 +14,7 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
@@ -43,20 +47,39 @@ function ChannelSuffix({ channelName }: { channelName: string | null }) {
 }
 
 /** The lead line describing what happened, chosen by the row's activity kind. */
-function activityHeadline(item: TaskActivityItem): ReactNode {
+export function activityHeadline(
+  item: TaskActivityItem,
+  currentUserEmail?: string | null,
+): ReactNode {
   switch (item.activityKind) {
     case "awaiting_input":
       return (
         <>
-          {userDisplayName(item.author) || "The agent"} is waiting for your
-          reply
+          The agent is waiting for your reply
+          <ChannelSuffix channelName={item.channelName} />
+        </>
+      );
+    case "completed":
+      return (
+        <>
+          The agent completed this task
           <ChannelSuffix channelName={item.channelName} />
         </>
       );
     case "message":
+      if (!item.author) {
+        return (
+          <>
+            The agent replied
+            <ChannelSuffix channelName={item.channelName} />
+          </>
+        );
+      }
       return (
         <>
-          You replied
+          {item.author.email === currentUserEmail
+            ? "You replied"
+            : `${userDisplayName(item.author)} replied`}
           <ChannelSuffix channelName={item.channelName} />
         </>
       );
@@ -79,14 +102,18 @@ function ActivityRow({
   item,
   folderChannelId,
   onOpen,
-  currentUserEmail,
+  currentUser,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
   onOpen: (item: TaskActivityItem) => void;
-  currentUserEmail?: string | null;
+  currentUser?: UserBasic | null;
 }) {
+  const isAgentActivity =
+    item.activityKind === "awaiting_input" ||
+    item.activityKind === "completed" ||
+    (item.activityKind === "message" && !item.author);
   const openTask = () => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "open_task",
@@ -109,10 +136,18 @@ function ActivityRow({
       <button
         type="button"
         onClick={openTask}
-        className="flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary"
+        className={`flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary ${item.isUnread ? "bg-fill-secondary" : ""}`}
       >
         <span className="relative mt-0.5 shrink-0">
-          <UserAvatar user={item.author} size="xs" />
+          {isAgentActivity ? (
+            <Avatar size="xs">
+              <AvatarFallback>
+                <RobotIcon size={12} />
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <UserAvatar user={item.author ?? currentUser} size="xs" />
+          )}
           {item.isUnread && (
             <span
               className="-top-0.5 -right-0.5 absolute h-2 w-2 rounded-full bg-(--red-9)"
@@ -122,9 +157,14 @@ function ActivityRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
-            <Text size="1" className="truncate">
-              {activityHeadline(item)}
+            <Text
+              size="1"
+              weight={item.isUnread ? "medium" : "regular"}
+              className="truncate"
+            >
+              {activityHeadline(item, currentUser?.email)}
             </Text>
+            {item.isUnread && <Badge variant="info">New</Badge>}
             <Text size="1" className="shrink-0 text-muted-foreground">
               {formatRelativeTimeShort(item.activityAt)}
             </Text>
@@ -135,7 +175,7 @@ function ActivityRow({
           {item.snippet && (
             <MentionText
               content={item.snippet}
-              currentUserEmail={currentUserEmail}
+              currentUserEmail={currentUser?.email}
               className="mt-1 block whitespace-pre-wrap break-words text-xs"
             />
           )}
@@ -234,7 +274,7 @@ export function ActivityView() {
                   item={item}
                   folderChannelId={folderChannelIdFor(item.channelName)}
                   onOpen={markRead}
-                  currentUserEmail={currentUser?.email}
+                  currentUser={currentUser}
                 />
               ))}
               {hasNextPage && (

@@ -3,7 +3,7 @@ import type {
   TaskActivityPage,
 } from "@posthog/shared/domain-types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,13 +11,21 @@ const mockClient = vi.hoisted(() => ({
   getTaskActivity: vi.fn(),
   markTaskActivityRead: vi.fn(),
 }));
+const subscribeToTaskCompletion = vi.hoisted(() => vi.fn());
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => mockClient,
 }));
+vi.mock("@posthog/di/react", () => ({
+  useServiceOptional: () => ({ subscribeToTaskCompletion }),
+}));
 
 import { useMarkTaskActivityRead } from "./useMarkTaskActivityRead";
-import { TASK_ACTIVITY_QUERY_KEY, useTaskActivity } from "./useTaskActivity";
+import {
+  TASK_ACTIVITY_QUERY_KEY,
+  TaskActivityNotificationSync,
+  useTaskActivity,
+} from "./useTaskActivity";
 
 function activity(overrides: Partial<TaskActivity>): TaskActivity {
   return {
@@ -47,6 +55,19 @@ describe("task activity hooks", () => {
         queries: { retry: false },
         mutations: { retry: false },
       },
+    });
+    subscribeToTaskCompletion.mockReturnValue(vi.fn());
+  });
+
+  it("invalidates activity when a task completion notification fires", () => {
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    render(<TaskActivityNotificationSync />, { wrapper });
+    const listener = subscribeToTaskCompletion.mock.calls[0]?.[0];
+
+    listener();
+
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: TASK_ACTIVITY_QUERY_KEY,
     });
   });
 

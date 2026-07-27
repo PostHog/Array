@@ -56,6 +56,8 @@ export interface NotificationDescriptor {
 // only appears while the app is focused).
 @injectable()
 export class NotificationBus {
+  private readonly taskCompletionListeners = new Set<() => void>();
+
   constructor(
     @inject(NOTIFICATIONS_SERVICE)
     private readonly notifications: INotifications,
@@ -122,12 +124,18 @@ export class NotificationBus {
     durationMs?: number,
   ): void {
     if (stopReason !== "end_turn") return;
+    for (const listener of this.taskCompletionListeners) listener();
     this.notify({
       body: `"${this.truncateTitle(taskTitle)}" finished`,
       target: taskId ? { kind: "task", taskId } : undefined,
       toast: { level: "success" },
       soundDurationMs: durationMs,
     });
+  }
+
+  subscribeToTaskCompletion(listener: () => void): () => void {
+    this.taskCompletionListeners.add(listener);
+    return () => this.taskCompletionListeners.delete(listener);
   }
 
   notifyPermissionRequest(taskTitle: string, taskId?: string): void {
