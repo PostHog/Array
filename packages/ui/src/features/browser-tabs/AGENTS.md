@@ -2,7 +2,8 @@
 
 A browser-style tab strip in the Channels title bar (`/website/*`), each tab
 fronting an open **canvas, task, or channel sub-section** (a `TabIdentity`:
-`dashboardId | taskId | channel(+section) | blank`).
+`dashboardId | taskId | channel(+section) | appView | blank`). Generated file
+previews use an `artifact:` app-view identity and render in a sandboxed iframe.
 This file documents the UX and the model; edit it when the behaviour changes.
 
 Canvases and tasks are equal citizens: navigating to either
@@ -91,7 +92,8 @@ differ. Desktop ships first.
 ### Opening, replacing, the new-tab page
 - **Navigating while a tab is active replaces that tab's target in place**
   (in-tab navigation) — it does *not* open or dedup-focus another tab.
-- **New tabs come only from `+`.** `+` opens a **blank tab** (no target); the
+- **New tabs normally come from `+`.** Clicking a generated output artifact
+  also opens or focuses a dedicated preview tab. `+` opens a **blank tab** (no target); the
   content pane renders a quill `<Empty>` "new tab page" (`BlankTabView`).
   Navigating to a canvas/task while the blank tab is active fills it in.
 - `openOrFocusTab` **dedups per window** on the full target (canvas or task);

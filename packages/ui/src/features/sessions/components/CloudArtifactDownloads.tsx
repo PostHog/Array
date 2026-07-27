@@ -16,6 +16,7 @@ import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { toast } from "@posthog/ui/primitives/toast";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 
 function formatFileSize(size: number | undefined): string | null {
@@ -33,6 +34,8 @@ export function CloudArtifactDownloads({
   task: Task | undefined;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const navigate = useNavigate();
+  const { channelId } = useParams({ strict: false }) as { channelId?: string };
   const sessionArtifacts = useSessionSelector(
     taskId,
     (session) => session?.cloudArtifacts,
@@ -98,6 +101,34 @@ export function CloudArtifactDownloads({
     [runId, sessionService, taskId],
   );
 
+  const previewArtifact = useCallback(
+    (artifact: TaskRunArtifact): void => {
+      if (!taskId || !runId || !artifact.id) return;
+      const search = { name: artifact.name };
+      const state = (previous: object) => ({
+        ...previous,
+        tabId: undefined,
+        openArtifactInNewTab: true,
+      });
+      if (channelId) {
+        navigate({
+          to: "/website/$channelId/tasks/$taskId/artifacts/$runId/$artifactId",
+          params: { channelId, taskId, runId, artifactId: artifact.id },
+          search,
+          state,
+        });
+        return;
+      }
+      navigate({
+        to: "/code/tasks/$taskId/artifacts/$runId/$artifactId",
+        params: { taskId, runId, artifactId: artifact.id },
+        search,
+        state,
+      });
+    },
+    [channelId, navigate, runId, taskId],
+  );
+
   if (!runId || artifacts.length === 0) return null;
 
   return (
@@ -115,7 +146,12 @@ export function CloudArtifactDownloads({
               gap="3"
               className="min-w-0 rounded-md bg-background px-2 py-1.5"
             >
-              <Flex align="center" gap="2" className="min-w-0">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                disabled={!canDownload}
+                onClick={() => previewArtifact(artifact)}
+              >
                 <FileIcon filename={artifact.name} size={16} />
                 <Text className="truncate text-[13px]">{artifact.name}</Text>
                 {size !== null && (
@@ -123,7 +159,7 @@ export function CloudArtifactDownloads({
                     {size}
                   </Text>
                 )}
-              </Flex>
+              </button>
               <Button
                 size="sm"
                 variant="outline"
