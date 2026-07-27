@@ -290,7 +290,7 @@ describe("ReasoningLevelSelector", () => {
       <Theme>
         <ReasoningLevelSelector
           thoughtOption={thoughtOption()}
-          modelOption={claudeModelOption()}
+          modelOption={claudeModelOption("claude-sonnet-5")}
           adapter="claude"
         />
       </Theme>,
@@ -333,7 +333,7 @@ describe("ReasoningLevelSelector", () => {
       <Theme>
         <ReasoningLevelSelector
           thoughtOption={thoughtOption()}
-          modelOption={claudeModelOption()}
+          modelOption={claudeModelOption("claude-sonnet-5")}
           adapter="claude"
           onModelChange={onModelChange}
         />
@@ -346,11 +346,11 @@ describe("ReasoningLevelSelector", () => {
     await user.click(await screen.findByRole("button", { name: "Advanced" }));
     await openSub(user, /^Model/);
     fireEvent.click(
-      await screen.findByRole("menuitemradio", { name: "Claude Sonnet 5" }),
+      await screen.findByRole("menuitemradio", { name: "Claude Opus 5" }),
     );
 
     await pollUntil(() => onModelChange.mock.calls.length > 0);
-    expect(onModelChange).toHaveBeenCalledWith("claude-sonnet-5");
+    expect(onModelChange).toHaveBeenCalledWith("claude-opus-5");
     expect(onModelChange).toHaveBeenCalledTimes(1);
   });
 
@@ -408,7 +408,7 @@ describe("ReasoningLevelSelector", () => {
 
     await pollUntil(() => onChange.mock.calls.length > 0);
     expect(onModelChange).toHaveBeenCalledWith("claude-opus-5");
-    expect(onChange).toHaveBeenCalledWith("high");
+    expect(onChange).toHaveBeenCalledWith("medium");
   });
 
   it.each([
