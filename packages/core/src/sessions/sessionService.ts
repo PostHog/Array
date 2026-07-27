@@ -1602,6 +1602,8 @@ export class SessionService {
     string,
     Promise<TaskRunArtifact[]>
   >();
+  /** Uploads started from the composer before a cloud message is submitted. */
+  private preparedCloudAttachmentUploads = new Map<string, Promise<string[]>>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -3406,6 +3408,51 @@ export class SessionService {
 
   // --- Prompt Handling ---
 
+  async prepareCloudAttachments(
+    taskId: string,
+    filePaths: string[],
+  ): Promise<void> {
+    if (filePaths.length === 0) return;
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session?.isCloud) return;
+
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      throw new Error("Authentication required to upload attachments");
+    }
+
+    await this.getPreparedCloudAttachmentUpload(
+      session,
+      authStatus.auth.client,
+      filePaths,
+    );
+  }
+
+  private getPreparedCloudAttachmentUpload(
+    session: AgentSession,
+    client: CloudArtifactClient,
+    filePaths: string[],
+  ): Promise<string[]> {
+    if (filePaths.length === 0) return Promise.resolve([]);
+    const key = `${session.taskRunId}:${JSON.stringify(filePaths)}`;
+    const existing = this.preparedCloudAttachmentUploads.get(key);
+    if (existing) return existing;
+
+    const upload = this.d.h
+      .uploadRunAttachments(
+        client,
+        session.taskId,
+        session.taskRunId,
+        filePaths,
+      )
+      .catch((error) => {
+        this.preparedCloudAttachmentUploads.delete(key);
+        throw error;
+      });
+    this.preparedCloudAttachmentUploads.set(key, upload);
+    return upload;
+  }
+
   /**
    * Send a prompt to the agent.
    * Queues if a prompt is already pending.
@@ -4113,18 +4160,30 @@ export class SessionService {
       session.adapter ?? "claude",
     );
 
-    const artifactIds = await this.d.h
-      .uploadRunAttachments(
-        auth.client,
-        session.taskId,
-        session.taskRunId,
-        transport.filePaths,
-        transport.skillBundles,
-      )
-      .catch((error) => {
-        this.d.store.clearTailOptimisticItems(session.taskRunId);
-        throw error;
-      });
+    const fileArtifactIds = await this.getPreparedCloudAttachmentUpload(
+      session,
+      auth.client,
+      transport.filePaths,
+    ).catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
+    const skillArtifactIds =
+      transport.skillBundles.length === 0
+        ? []
+        : await this.d.h
+            .uploadRunAttachments(
+              auth.client,
+              session.taskId,
+              session.taskRunId,
+              [],
+              transport.skillBundles,
+            )
+            .catch((error) => {
+              this.d.store.clearTailOptimisticItems(session.taskRunId);
+              throw error;
+            });
+    const artifactIds = [...fileArtifactIds, ...skillArtifactIds];
     const params: Record<string, unknown> = {};
     if (transport.messageText) {
       params.content = transport.messageText;

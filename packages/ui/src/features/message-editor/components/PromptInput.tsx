@@ -1,6 +1,7 @@
 import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { ArrowUp, StopCircle } from "@phosphor-icons/react";
+import type { FileAttachment } from "@posthog/core/message-editor/content";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
@@ -94,6 +95,7 @@ export interface PromptInputProps {
   onCancelEdit?: () => void;
   onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
+  onAttachmentsChange?: (attachments: FileAttachment[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -141,6 +143,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onCancelEdit,
       onToggleMessagingMode,
       onAttachFiles,
+      onAttachmentsChange,
       onEmptyChange,
       onFocus,
       onBlur,
@@ -199,6 +202,10 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onFocus,
       onBlur,
     });
+
+    useEffect(() => {
+      onAttachmentsChange?.(attachments);
+    }, [attachments, onAttachmentsChange]);
 
     useImperativeHandle(
       ref,

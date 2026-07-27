@@ -1,4 +1,5 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
+import type { FileAttachment } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -307,6 +308,43 @@ export function SessionView({
   const editorRef = useRef<PromptInputHandle>(null);
   const sendInFlightRef = useRef(false);
   const composerSubmissionRef = useRef(0);
+  const attachmentUploadRef = useRef(0);
+  const [attachmentUploadStatus, setAttachmentUploadStatus] = useState<
+    "idle" | "uploading" | "ready" | "error"
+  >("idle");
+
+  const handleAttachmentsChange = useCallback(
+    (attachments: FileAttachment[]) => {
+      const requestId = ++attachmentUploadRef.current;
+      if (!isCloudRun || !taskId || attachments.length === 0) {
+        setAttachmentUploadStatus("idle");
+        return;
+      }
+
+      setAttachmentUploadStatus("uploading");
+      void sessionService
+        .prepareCloudAttachments(
+          taskId,
+          attachments.map(({ id }) => id),
+        )
+        .then(() => {
+          if (attachmentUploadRef.current === requestId) {
+            setAttachmentUploadStatus("ready");
+          }
+        })
+        .catch((error) => {
+          if (attachmentUploadRef.current !== requestId) return;
+          setAttachmentUploadStatus("error");
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to upload attachments",
+            { description: "Remove and attach the files again to retry." },
+          );
+        });
+    },
+    [isCloudRun, sessionService, taskId],
+  );
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -715,11 +753,20 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline
+                            handoffInProgress ||
+                            !isOnline ||
+                            attachmentUploadStatus === "uploading" ||
+                            attachmentUploadStatus === "error"
                           }
                           clearOnSubmit={false}
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            !isOnline
+                              ? "No internet connection"
+                              : attachmentUploadStatus === "uploading"
+                                ? "Uploading attachments…"
+                                : attachmentUploadStatus === "error"
+                                  ? "Attachment upload failed"
+                                  : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
@@ -753,6 +800,7 @@ export function SessionView({
                             ) : undefined
                           }
                           onToggleMessagingMode={toggleMessagingMode}
+                          onAttachmentsChange={handleAttachmentsChange}
                           onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}
