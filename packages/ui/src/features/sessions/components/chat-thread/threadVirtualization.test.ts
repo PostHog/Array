@@ -148,32 +148,27 @@ describe("computeStickyAnchor", () => {
     const below: StickyAnchorEntry[] = [{ id: "u1", start: 300, end: 400 }];
     expect(computeStickyAnchor(below, 0, 64)).toEqual({
       anchorId: null,
-      offscreen: false,
     });
   });
 
   it("keeps the anchor visible while its row is still on screen", () => {
     expect(computeStickyAnchor(entries, 40, 64)).toEqual({
       anchorId: "u1",
-      offscreen: false,
     });
   });
 
-  it("marks the anchor offscreen once its bottom clears the viewport top", () => {
+  it("keeps the anchor once its bottom clears the viewport top", () => {
     expect(computeStickyAnchor(entries, 120, 64)).toEqual({
       anchorId: "u1",
-      offscreen: true,
     });
   });
 
   it("picks the last user row above the peek band", () => {
     expect(computeStickyAnchor(entries, 900, 64)).toEqual({
       anchorId: "u2",
-      offscreen: true,
     });
     expect(computeStickyAnchor(entries, 2000, 64)).toEqual({
       anchorId: "u3",
-      offscreen: false,
     });
   });
 
@@ -182,7 +177,6 @@ describe("computeStickyAnchor", () => {
     // top, inside the 64px band.
     expect(computeStickyAnchor(entries, 440, 64)).toEqual({
       anchorId: "u2",
-      offscreen: false,
     });
   });
 });
