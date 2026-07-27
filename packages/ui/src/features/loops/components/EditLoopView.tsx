@@ -2,7 +2,13 @@ import { useLoop } from "../hooks/useLoop";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopForm } from "./LoopForm";
 
-export function EditLoopView({ loopId }: { loopId: string }) {
+export function EditLoopView({
+  loopId,
+  returnChannelId,
+}: {
+  loopId: string;
+  returnChannelId?: string;
+}) {
   const { data: loop, isLoading, isError } = useLoop(loopId);
 
   if (isLoading) {
@@ -17,5 +23,5 @@ export function EditLoopView({ loopId }: { loopId: string }) {
     return <LoopLoadError />;
   }
 
-  return <LoopForm loop={loop} />;
+  return <LoopForm loop={loop} returnChannelId={returnChannelId} />;
 }

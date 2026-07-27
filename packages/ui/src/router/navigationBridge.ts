@@ -151,25 +151,37 @@ export function navigateToScoutFindings(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
 }
 
-export function navigateToLoops(): void {
+export function navigateToLoops(channelId?: string): void {
+  if (channelId) {
+    void getRouterOrNull()?.navigate({
+      to: "/website/$channelId/loops",
+      params: { channelId },
+    });
+    return;
+  }
   void getRouterOrNull()?.navigate({ to: "/code/loops" });
 }
 
-export function navigateToNewLoop(): void {
-  void getRouterOrNull()?.navigate({ to: "/code/loops/new" });
-}
-
-export function navigateToLoopDetail(loopId: string): void {
+export function navigateToNewLoop(channelId?: string): void {
   void getRouterOrNull()?.navigate({
-    to: "/code/loops/$loopId",
-    params: { loopId },
+    to: "/code/loops/new",
+    search: channelId ? { channelId } : {},
   });
 }
 
-export function navigateToEditLoop(loopId: string): void {
+export function navigateToLoopDetail(loopId: string, channelId?: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/loops/$loopId",
+    params: { loopId },
+    search: channelId ? { channelId } : {},
+  });
+}
+
+export function navigateToEditLoop(loopId: string, channelId?: string): void {
   void getRouterOrNull()?.navigate({
     to: "/code/loops/$loopId/edit",
     params: { loopId },
+    search: channelId ? { channelId } : {},
   });
 }
 

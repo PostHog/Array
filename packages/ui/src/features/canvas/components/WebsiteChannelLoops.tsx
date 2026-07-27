@@ -72,7 +72,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         outputs: defaultLoopContextOutputs(),
       },
     });
-    navigateToNewLoop();
+    navigateToNewLoop(channelId);
   };
 
   return (
@@ -139,7 +139,11 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Text>
               <Flex direction="column" gap="2">
                 {attachedLoops.map((loop) => (
-                  <LoopRow key={loop.id} loop={loop} />
+                  <LoopRow
+                    key={loop.id}
+                    loop={loop}
+                    returnChannelId={channelId}
+                  />
                 ))}
               </Flex>
             </Flex>

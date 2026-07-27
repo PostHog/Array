@@ -61,7 +61,13 @@ import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
-export function LoopDetailView({ loopId }: { loopId: string }) {
+export function LoopDetailView({
+  loopId,
+  returnChannelId,
+}: {
+  loopId: string;
+  returnChannelId?: string;
+}) {
   const { data: loop, isLoading, isError } = useLoop(loopId);
   const updateLoop = useUpdateLoop(loopId);
   const deleteLoop = useDeleteLoop();
@@ -177,7 +183,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           consecutive_failures: loop.consecutive_failures,
         });
         toast.success("Loop deleted");
-        navigateToLoops();
+        navigateToLoops(returnChannelId);
       },
       onError: (error) =>
         toast.error("Failed to delete loop", { description: error.message }),
@@ -207,7 +213,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           <Button
             variant="link-muted"
             size="sm"
-            onClick={navigateToLoops}
+            onClick={() => navigateToLoops(returnChannelId)}
             className="w-fit px-0"
           >
             <ArrowLeftIcon size={15} />
@@ -243,7 +249,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigateToEditLoop(loop.id)}
+                onClick={() => navigateToEditLoop(loop.id, returnChannelId)}
               >
                 Edit
               </Button>

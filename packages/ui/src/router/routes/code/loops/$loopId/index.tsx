@@ -7,5 +7,6 @@ export const Route = createFileRoute("/code/loops/$loopId/")({
 
 function LoopDetailRoute() {
   const { loopId } = Route.useParams();
-  return <LoopDetailView loopId={loopId} />;
+  const { channelId } = Route.useSearch();
+  return <LoopDetailView loopId={loopId} returnChannelId={channelId} />;
 }

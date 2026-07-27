@@ -72,9 +72,11 @@ const STEPS = ["Prompt", "When", "Options", "Review"] as const;
 interface LoopFormProps {
   /** Present in edit mode; absent when creating a new loop. */
   loop?: LoopSchemas.Loop;
+  /** Return the user to this channel's loops surface after a channel-scoped flow. */
+  returnChannelId?: string;
 }
 
-export function LoopForm({ loop }: LoopFormProps) {
+export function LoopForm({ loop, returnChannelId }: LoopFormProps) {
   const isEdit = !!loop;
   const projectId = useAuthStateValue((state) => state.currentProjectId);
   const [values, setValues] = useState<LoopFormValues>(() => {
@@ -149,9 +151,9 @@ export function LoopForm({ loop }: LoopFormProps) {
 
   const handleCancel = () => {
     if (isEdit) {
-      navigateToLoopDetail(loop.id);
+      navigateToLoopDetail(loop.id, returnChannelId);
     } else {
-      navigateToLoops();
+      navigateToLoops(returnChannelId);
     }
   };
 
@@ -223,7 +225,7 @@ export function LoopForm({ loop }: LoopFormProps) {
           return;
         }
       }
-      navigateToLoopDetail(saved.id);
+      navigateToLoopDetail(saved.id, returnChannelId);
     } catch (error) {
       const safetyLimit =
         error instanceof LoopsApiError ? error.safetyLimit : null;

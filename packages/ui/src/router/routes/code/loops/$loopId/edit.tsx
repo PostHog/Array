@@ -7,5 +7,6 @@ export const Route = createFileRoute("/code/loops/$loopId/edit")({
 
 function EditLoopRoute() {
   const { loopId } = Route.useParams();
-  return <EditLoopView loopId={loopId} />;
+  const { channelId } = Route.useSearch();
+  return <EditLoopView loopId={loopId} returnChannelId={channelId} />;
 }
