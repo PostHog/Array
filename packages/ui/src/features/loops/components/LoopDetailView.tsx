@@ -394,29 +394,38 @@ interface ScheduleDraft {
   config: LoopSchemas.LoopScheduleTriggerConfig;
 }
 
+function scheduleDraftsForLoop(loop: LoopSchemas.Loop): ScheduleDraft[] {
+  const schedules = loop.triggers
+    .filter((trigger) => trigger.type === "schedule")
+    .map((trigger) => ({
+      id: trigger.id,
+      enabled: trigger.enabled,
+      config: trigger.config as LoopSchemas.LoopScheduleTriggerConfig,
+    }));
+  if (schedules.length > 0) return schedules;
+  return [
+    {
+      id: undefined,
+      enabled: true,
+      config: emptyLoopScheduleTriggerConfig(),
+    },
+  ];
+}
+
 function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
   const [adapter, setAdapter] = useState(loop.runtime_adapter);
   const [model, setModel] = useState(loop.model);
   const [reasoningEffort, setReasoningEffort] = useState(loop.reasoning_effort);
-  const [scheduleDrafts, setScheduleDrafts] = useState<ScheduleDraft[]>(() => {
-    const schedules = loop.triggers
-      .filter((trigger) => trigger.type === "schedule")
-      .map((trigger) => ({
-        id: trigger.id,
-        enabled: trigger.enabled,
-        config: trigger.config as LoopSchemas.LoopScheduleTriggerConfig,
-      }));
-    return schedules.length > 0
-      ? schedules
-      : [
-          {
-            id: undefined,
-            enabled: true,
-            config: emptyLoopScheduleTriggerConfig(),
-          },
-        ];
-  });
+  const [scheduleDrafts, setScheduleDrafts] = useState<ScheduleDraft[]>(() =>
+    scheduleDraftsForLoop(loop),
+  );
   const updateLoop = useUpdateLoop(loop.id);
+  const hasChanges =
+    adapter !== loop.runtime_adapter ||
+    model !== loop.model ||
+    reasoningEffort !== loop.reasoning_effort ||
+    JSON.stringify(scheduleDrafts) !==
+      JSON.stringify(scheduleDraftsForLoop(loop));
   const {
     members,
     isLoading: membersLoading,
@@ -481,12 +490,16 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
     }
 
     try {
-      await updateLoop.mutateAsync({
+      const saved = await updateLoop.mutateAsync({
         runtime_adapter: adapter,
         model,
         reasoning_effort: reasoningEffort,
         triggers,
       });
+      setAdapter(saved.runtime_adapter);
+      setModel(saved.model);
+      setReasoningEffort(saved.reasoning_effort);
+      setScheduleDrafts(scheduleDraftsForLoop(saved));
       toast.success("Configuration updated");
     } catch (error) {
       toast.error("Failed to update configuration", {
@@ -575,16 +588,18 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
           </SummaryRow>
         ) : null}
 
-        <Flex justify="end">
-          <Button
-            variant="primary"
-            size="sm"
-            loading={updateLoop.isPending}
-            onClick={() => void saveConfiguration()}
-          >
-            Save changes
-          </Button>
-        </Flex>
+        {hasChanges ? (
+          <Flex justify="end">
+            <Button
+              variant="primary"
+              size="sm"
+              loading={updateLoop.isPending}
+              onClick={() => void saveConfiguration()}
+            >
+              Save changes
+            </Button>
+          </Flex>
+        ) : null}
       </Flex>
     </Flex>
   );
