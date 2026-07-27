@@ -268,7 +268,10 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           <PausedNotice loop={loop} />
         </Flex>
 
-        <ConfigSummarySection loop={loop} />
+        <ConfigSummarySection
+          key={`${loop.id}:${loop.updated_at}`}
+          loop={loop}
+        />
 
         <InstructionsSection loop={loop} />
 
@@ -419,6 +422,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
   const [scheduleDrafts, setScheduleDrafts] = useState<ScheduleDraft[]>(() =>
     scheduleDraftsForLoop(loop),
   );
+  const [scheduleChanged, setScheduleChanged] = useState(false);
   const updateLoop = useUpdateLoop(loop.id);
   const hasChanges =
     adapter !== loop.runtime_adapter ||
@@ -480,7 +484,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
       },
     );
     for (const draft of scheduleDrafts) {
-      if (!draft.id) {
+      if (!draft.id && scheduleChanged) {
         triggers.push({
           type: "schedule",
           enabled: draft.enabled,
@@ -500,6 +504,7 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
       setModel(saved.model);
       setReasoningEffort(saved.reasoning_effort);
       setScheduleDrafts(scheduleDraftsForLoop(saved));
+      setScheduleChanged(false);
       toast.success("Configuration updated");
     } catch (error) {
       toast.error("Failed to update configuration", {
@@ -563,20 +568,22 @@ function ConfigSummarySection({ loop }: { loop: LoopSchemas.Loop }) {
                 config={draft.config}
                 enabled={draft.enabled}
                 disabled={updateLoop.isPending}
-                onConfigChange={(config) =>
+                onConfigChange={(config) => {
+                  setScheduleChanged(true);
                   setScheduleDrafts((current) =>
                     current.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, config } : item,
                     ),
-                  )
-                }
-                onEnabledChange={(enabled) =>
+                  );
+                }}
+                onEnabledChange={(enabled) => {
+                  setScheduleChanged(true);
                   setScheduleDrafts((current) =>
                     current.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, enabled } : item,
                     ),
-                  )
-                }
+                  );
+                }}
               />
             ))}
           </Flex>
