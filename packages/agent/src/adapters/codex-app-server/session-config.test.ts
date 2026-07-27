@@ -284,7 +284,11 @@ describe("buildConfigOptions", () => {
     expect(effort.options).toEqual([
       { name: "Low", value: "low" },
       { name: "Medium", value: "medium" },
-      { name: "High", value: "high" },
+      {
+        name: "High",
+        value: "high",
+        _meta: { "posthog.code/defaultOption": true },
+      },
     ]);
   });
 
