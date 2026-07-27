@@ -21,25 +21,27 @@ import { Route as CodeIndexRouteImport } from './routes/code/index'
 import { Route as WebsiteSkillsRouteImport } from './routes/website/skills'
 import { Route as WebsiteNewRouteImport } from './routes/website/new'
 import { Route as WebsiteMcpServersRouteImport } from './routes/website/mcp-servers'
-import { Route as WebsiteHomeRouteImport } from './routes/website/home'
 import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
 import { Route as WebsiteActivityRouteImport } from './routes/website/activity'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodePrRouteImport } from './routes/code/pr'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
-import { Route as CodeHomeRouteImport } from './routes/code/home'
 import { Route as CodeArchivedRouteImport } from './routes/code/archived'
 import { Route as CodeAgentsRouteImport } from './routes/code/agents'
 import { Route as WebsiteChannelIdIndexRouteImport } from './routes/website/$channelId/index'
+import { Route as CodeLoopsIndexRouteImport } from './routes/code/loops/index'
 import { Route as CodeInboxIndexRouteImport } from './routes/code/inbox/index'
 import { Route as CodeAgentsIndexRouteImport } from './routes/code/agents/index'
 import { Route as WebsiteChannelIdNewRouteImport } from './routes/website/$channelId/new'
+import { Route as WebsiteChannelIdLoopsRouteImport } from './routes/website/$channelId/loops'
 import { Route as WebsiteChannelIdHistoryRouteImport } from './routes/website/$channelId/history'
 import { Route as WebsiteChannelIdContextRouteImport } from './routes/website/$channelId/context'
 import { Route as WebsiteChannelIdCanvasesRouteImport } from './routes/website/$channelId/canvases'
 import { Route as WebsiteChannelIdArtifactsRouteImport } from './routes/website/$channelId/artifacts'
 import { Route as CodeTasksTaskIdRouteImport } from './routes/code/tasks/$taskId'
+import { Route as CodeLoopsNewRouteImport } from './routes/code/loops/new'
+import { Route as CodeLoopsLoopIdRouteImport } from './routes/code/loops/$loopId'
 import { Route as CodeInboxRunsRouteImport } from './routes/code/inbox/runs'
 import { Route as CodeInboxReportsRouteImport } from './routes/code/inbox/reports'
 import { Route as CodeInboxPullsRouteImport } from './routes/code/inbox/pulls'
@@ -47,6 +49,7 @@ import { Route as CodeInboxDismissedRouteImport } from './routes/code/inbox/dism
 import { Route as CodeInboxAgentsRouteImport } from './routes/code/inbox/agents'
 import { Route as CodeAgentsScoutsRouteImport } from './routes/code/agents/scouts'
 import { Route as CodeAgentsApplicationsRouteImport } from './routes/code/agents/applications'
+import { Route as CodeLoopsLoopIdIndexRouteImport } from './routes/code/loops/$loopId/index'
 import { Route as CodeInboxRunsIndexRouteImport } from './routes/code/inbox/runs.index'
 import { Route as CodeInboxReportsIndexRouteImport } from './routes/code/inbox/reports.index'
 import { Route as CodeInboxPullsIndexRouteImport } from './routes/code/inbox/pulls.index'
@@ -56,6 +59,7 @@ import { Route as CodeAgentsApplicationsIndexRouteImport } from './routes/code/a
 import { Route as WebsiteChannelIdTasksTaskIdRouteImport } from './routes/website/$channelId/tasks/$taskId'
 import { Route as WebsiteChannelIdDashboardsDashboardIdRouteImport } from './routes/website/$channelId/dashboards/$dashboardId'
 import { Route as CodeTasksPendingKeyRouteImport } from './routes/code/tasks/pending.$key'
+import { Route as CodeLoopsLoopIdEditRouteImport } from './routes/code/loops/$loopId/edit'
 import { Route as CodeInboxRunsReportIdRouteImport } from './routes/code/inbox/runs.$reportId'
 import { Route as CodeInboxReportsReportIdRouteImport } from './routes/code/inbox/reports.$reportId'
 import { Route as CodeInboxPullsReportIdRouteImport } from './routes/code/inbox/pulls.$reportId'
@@ -136,11 +140,6 @@ const WebsiteMcpServersRoute = WebsiteMcpServersRouteImport.update({
   path: '/mcp-servers',
   getParentRoute: () => WebsiteRoute,
 } as any)
-const WebsiteHomeRoute = WebsiteHomeRouteImport.update({
-  id: '/home',
-  path: '/home',
-  getParentRoute: () => WebsiteRoute,
-} as any)
 const WebsiteCommandCenterRoute = WebsiteCommandCenterRouteImport.update({
   id: '/command-center',
   path: '/command-center',
@@ -171,11 +170,6 @@ const CodeInboxRoute = CodeInboxRouteImport.update({
   path: '/code/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CodeHomeRoute = CodeHomeRouteImport.update({
-  id: '/code/home',
-  path: '/code/home',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CodeArchivedRoute = CodeArchivedRouteImport.update({
   id: '/code/archived',
   path: '/code/archived',
@@ -191,6 +185,11 @@ const WebsiteChannelIdIndexRoute = WebsiteChannelIdIndexRouteImport.update({
   path: '/$channelId/',
   getParentRoute: () => WebsiteRoute,
 } as any)
+const CodeLoopsIndexRoute = CodeLoopsIndexRouteImport.update({
+  id: '/code/loops/',
+  path: '/code/loops/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CodeInboxIndexRoute = CodeInboxIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -204,6 +203,11 @@ const CodeAgentsIndexRoute = CodeAgentsIndexRouteImport.update({
 const WebsiteChannelIdNewRoute = WebsiteChannelIdNewRouteImport.update({
   id: '/$channelId/new',
   path: '/$channelId/new',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteChannelIdLoopsRoute = WebsiteChannelIdLoopsRouteImport.update({
+  id: '/$channelId/loops',
+  path: '/$channelId/loops',
   getParentRoute: () => WebsiteRoute,
 } as any)
 const WebsiteChannelIdHistoryRoute = WebsiteChannelIdHistoryRouteImport.update({
@@ -231,6 +235,16 @@ const WebsiteChannelIdArtifactsRoute =
 const CodeTasksTaskIdRoute = CodeTasksTaskIdRouteImport.update({
   id: '/code/tasks/$taskId',
   path: '/code/tasks/$taskId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeLoopsNewRoute = CodeLoopsNewRouteImport.update({
+  id: '/code/loops/new',
+  path: '/code/loops/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CodeLoopsLoopIdRoute = CodeLoopsLoopIdRouteImport.update({
+  id: '/code/loops/$loopId',
+  path: '/code/loops/$loopId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CodeInboxRunsRoute = CodeInboxRunsRouteImport.update({
@@ -267,6 +281,11 @@ const CodeAgentsApplicationsRoute = CodeAgentsApplicationsRouteImport.update({
   id: '/applications',
   path: '/applications',
   getParentRoute: () => CodeAgentsRoute,
+} as any)
+const CodeLoopsLoopIdIndexRoute = CodeLoopsLoopIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CodeLoopsLoopIdRoute,
 } as any)
 const CodeInboxRunsIndexRoute = CodeInboxRunsIndexRouteImport.update({
   id: '/',
@@ -315,6 +334,11 @@ const CodeTasksPendingKeyRoute = CodeTasksPendingKeyRouteImport.update({
   id: '/code/tasks/pending/$key',
   path: '/code/tasks/pending/$key',
   getParentRoute: () => rootRouteImport,
+} as any)
+const CodeLoopsLoopIdEditRoute = CodeLoopsLoopIdEditRouteImport.update({
+  id: '/edit',
+  path: '/edit',
+  getParentRoute: () => CodeLoopsLoopIdRoute,
 } as any)
 const CodeInboxRunsReportIdRoute = CodeInboxRunsReportIdRouteImport.update({
   id: '/$reportId',
@@ -438,14 +462,12 @@ export interface FileRoutesByFullPath {
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
-  '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
-  '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
@@ -459,14 +481,18 @@ export interface FileRoutesByFullPath {
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
+  '/code/loops/$loopId': typeof CodeLoopsLoopIdRouteWithChildren
+  '/code/loops/new': typeof CodeLoopsNewRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
+  '/code/loops/': typeof CodeLoopsIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
@@ -477,6 +503,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
+  '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
@@ -486,6 +513,7 @@ export interface FileRoutesByFullPath {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/loops/$loopId/': typeof CodeLoopsLoopIdIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
@@ -504,13 +532,11 @@ export interface FileRoutesByTo {
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
   '/code/archived': typeof CodeArchivedRoute
-  '/code/home': typeof CodeHomeRoute
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
-  '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
@@ -518,14 +544,17 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
   '/code/inbox/agents': typeof CodeInboxAgentsRoute
+  '/code/loops/new': typeof CodeLoopsNewRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents': typeof CodeAgentsIndexRoute
   '/code/inbox': typeof CodeInboxIndexRoute
+  '/code/loops': typeof CodeLoopsIndexRoute
   '/website/$channelId': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
   '/code/agents/scouts/findings': typeof CodeAgentsScoutsFindingsRoute
@@ -534,6 +563,7 @@ export interface FileRoutesByTo {
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
+  '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
@@ -543,6 +573,7 @@ export interface FileRoutesByTo {
   '/code/inbox/pulls': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs': typeof CodeInboxRunsIndexRoute
+  '/code/loops/$loopId': typeof CodeLoopsLoopIdIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
@@ -564,14 +595,12 @@ export interface FileRoutesById {
   '/website': typeof WebsiteRouteWithChildren
   '/code/agents': typeof CodeAgentsRouteWithChildren
   '/code/archived': typeof CodeArchivedRoute
-  '/code/home': typeof CodeHomeRoute
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/code/pr': typeof CodePrRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
   '/website/activity': typeof WebsiteActivityRoute
   '/website/command-center': typeof WebsiteCommandCenterRoute
-  '/website/home': typeof WebsiteHomeRoute
   '/website/mcp-servers': typeof WebsiteMcpServersRoute
   '/website/new': typeof WebsiteNewRoute
   '/website/skills': typeof WebsiteSkillsRoute
@@ -585,14 +614,18 @@ export interface FileRoutesById {
   '/code/inbox/pulls': typeof CodeInboxPullsRouteWithChildren
   '/code/inbox/reports': typeof CodeInboxReportsRouteWithChildren
   '/code/inbox/runs': typeof CodeInboxRunsRouteWithChildren
+  '/code/loops/$loopId': typeof CodeLoopsLoopIdRouteWithChildren
+  '/code/loops/new': typeof CodeLoopsNewRoute
   '/code/tasks/$taskId': typeof CodeTasksTaskIdRoute
   '/website/$channelId/artifacts': typeof WebsiteChannelIdArtifactsRoute
   '/website/$channelId/canvases': typeof WebsiteChannelIdCanvasesRoute
   '/website/$channelId/context': typeof WebsiteChannelIdContextRoute
   '/website/$channelId/history': typeof WebsiteChannelIdHistoryRoute
+  '/website/$channelId/loops': typeof WebsiteChannelIdLoopsRoute
   '/website/$channelId/new': typeof WebsiteChannelIdNewRoute
   '/code/agents/': typeof CodeAgentsIndexRoute
   '/code/inbox/': typeof CodeInboxIndexRoute
+  '/code/loops/': typeof CodeLoopsIndexRoute
   '/website/$channelId/': typeof WebsiteChannelIdIndexRoute
   '/code/agents/applications/$idOrSlug': typeof CodeAgentsApplicationsIdOrSlugRouteWithChildren
   '/code/agents/applications/approvals': typeof CodeAgentsApplicationsApprovalsRoute
@@ -603,6 +636,7 @@ export interface FileRoutesById {
   '/code/inbox/pulls/$reportId': typeof CodeInboxPullsReportIdRoute
   '/code/inbox/reports/$reportId': typeof CodeInboxReportsReportIdRoute
   '/code/inbox/runs/$reportId': typeof CodeInboxRunsReportIdRoute
+  '/code/loops/$loopId/edit': typeof CodeLoopsLoopIdEditRoute
   '/code/tasks/pending/$key': typeof CodeTasksPendingKeyRoute
   '/website/$channelId/dashboards/$dashboardId': typeof WebsiteChannelIdDashboardsDashboardIdRoute
   '/website/$channelId/tasks/$taskId': typeof WebsiteChannelIdTasksTaskIdRoute
@@ -612,6 +646,7 @@ export interface FileRoutesById {
   '/code/inbox/pulls/': typeof CodeInboxPullsIndexRoute
   '/code/inbox/reports/': typeof CodeInboxReportsIndexRoute
   '/code/inbox/runs/': typeof CodeInboxRunsIndexRoute
+  '/code/loops/$loopId/': typeof CodeLoopsLoopIdIndexRoute
   '/code/agents/applications/$idOrSlug/approvals': typeof CodeAgentsApplicationsIdOrSlugApprovalsRoute
   '/code/agents/applications/$idOrSlug/chat': typeof CodeAgentsApplicationsIdOrSlugChatRoute
   '/code/agents/applications/$idOrSlug/configuration': typeof CodeAgentsApplicationsIdOrSlugConfigurationRoute
@@ -634,14 +669,12 @@ export interface FileRouteTypes {
     | '/website'
     | '/code/agents'
     | '/code/archived'
-    | '/code/home'
     | '/code/inbox'
     | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
-    | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
     | '/website/skills'
@@ -655,14 +688,18 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/loops/$loopId'
+    | '/code/loops/new'
     | '/code/tasks/$taskId'
     | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
+    | '/code/loops/'
     | '/website/$channelId/'
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/applications/approvals'
@@ -673,6 +710,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
+    | '/code/loops/$loopId/edit'
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
@@ -682,6 +720,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/loops/$loopId/'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
@@ -700,13 +739,11 @@ export interface FileRouteTypes {
     | '/skills'
     | '/usage'
     | '/code/archived'
-    | '/code/home'
     | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
-    | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
     | '/website/skills'
@@ -714,14 +751,17 @@ export interface FileRouteTypes {
     | '/settings'
     | '/website'
     | '/code/inbox/agents'
+    | '/code/loops/new'
     | '/code/tasks/$taskId'
     | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents'
     | '/code/inbox'
+    | '/code/loops'
     | '/website/$channelId'
     | '/code/agents/applications/approvals'
     | '/code/agents/scouts/findings'
@@ -730,6 +770,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
+    | '/code/loops/$loopId/edit'
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
@@ -739,6 +780,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/loops/$loopId'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
@@ -759,14 +801,12 @@ export interface FileRouteTypes {
     | '/website'
     | '/code/agents'
     | '/code/archived'
-    | '/code/home'
     | '/code/inbox'
     | '/code/pr'
     | '/folders/$folderId'
     | '/settings/$category'
     | '/website/activity'
     | '/website/command-center'
-    | '/website/home'
     | '/website/mcp-servers'
     | '/website/new'
     | '/website/skills'
@@ -780,14 +820,18 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls'
     | '/code/inbox/reports'
     | '/code/inbox/runs'
+    | '/code/loops/$loopId'
+    | '/code/loops/new'
     | '/code/tasks/$taskId'
     | '/website/$channelId/artifacts'
     | '/website/$channelId/canvases'
     | '/website/$channelId/context'
     | '/website/$channelId/history'
+    | '/website/$channelId/loops'
     | '/website/$channelId/new'
     | '/code/agents/'
     | '/code/inbox/'
+    | '/code/loops/'
     | '/website/$channelId/'
     | '/code/agents/applications/$idOrSlug'
     | '/code/agents/applications/approvals'
@@ -798,6 +842,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/$reportId'
     | '/code/inbox/reports/$reportId'
     | '/code/inbox/runs/$reportId'
+    | '/code/loops/$loopId/edit'
     | '/code/tasks/pending/$key'
     | '/website/$channelId/dashboards/$dashboardId'
     | '/website/$channelId/tasks/$taskId'
@@ -807,6 +852,7 @@ export interface FileRouteTypes {
     | '/code/inbox/pulls/'
     | '/code/inbox/reports/'
     | '/code/inbox/runs/'
+    | '/code/loops/$loopId/'
     | '/code/agents/applications/$idOrSlug/approvals'
     | '/code/agents/applications/$idOrSlug/chat'
     | '/code/agents/applications/$idOrSlug/configuration'
@@ -828,14 +874,16 @@ export interface RootRouteChildren {
   WebsiteRoute: typeof WebsiteRouteWithChildren
   CodeAgentsRoute: typeof CodeAgentsRouteWithChildren
   CodeArchivedRoute: typeof CodeArchivedRoute
-  CodeHomeRoute: typeof CodeHomeRoute
   CodeInboxRoute: typeof CodeInboxRouteWithChildren
   CodePrRoute: typeof CodePrRoute
   FoldersFolderIdRoute: typeof FoldersFolderIdRoute
   SettingsCategoryRoute: typeof SettingsCategoryRoute
   CodeIndexRoute: typeof CodeIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
+  CodeLoopsLoopIdRoute: typeof CodeLoopsLoopIdRouteWithChildren
+  CodeLoopsNewRoute: typeof CodeLoopsNewRoute
   CodeTasksTaskIdRoute: typeof CodeTasksTaskIdRoute
+  CodeLoopsIndexRoute: typeof CodeLoopsIndexRoute
   CodeTasksPendingKeyRoute: typeof CodeTasksPendingKeyRoute
 }
 
@@ -925,13 +973,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteMcpServersRouteImport
       parentRoute: typeof WebsiteRoute
     }
-    '/website/home': {
-      id: '/website/home'
-      path: '/home'
-      fullPath: '/website/home'
-      preLoaderRoute: typeof WebsiteHomeRouteImport
-      parentRoute: typeof WebsiteRoute
-    }
     '/website/command-center': {
       id: '/website/command-center'
       path: '/command-center'
@@ -974,13 +1015,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CodeInboxRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/code/home': {
-      id: '/code/home'
-      path: '/code/home'
-      fullPath: '/code/home'
-      preLoaderRoute: typeof CodeHomeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/code/archived': {
       id: '/code/archived'
       path: '/code/archived'
@@ -1002,6 +1036,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteChannelIdIndexRouteImport
       parentRoute: typeof WebsiteRoute
     }
+    '/code/loops/': {
+      id: '/code/loops/'
+      path: '/code/loops'
+      fullPath: '/code/loops/'
+      preLoaderRoute: typeof CodeLoopsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/code/inbox/': {
       id: '/code/inbox/'
       path: '/'
@@ -1021,6 +1062,13 @@ declare module '@tanstack/react-router' {
       path: '/$channelId/new'
       fullPath: '/website/$channelId/new'
       preLoaderRoute: typeof WebsiteChannelIdNewRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/$channelId/loops': {
+      id: '/website/$channelId/loops'
+      path: '/$channelId/loops'
+      fullPath: '/website/$channelId/loops'
+      preLoaderRoute: typeof WebsiteChannelIdLoopsRouteImport
       parentRoute: typeof WebsiteRoute
     }
     '/website/$channelId/history': {
@@ -1056,6 +1104,20 @@ declare module '@tanstack/react-router' {
       path: '/code/tasks/$taskId'
       fullPath: '/code/tasks/$taskId'
       preLoaderRoute: typeof CodeTasksTaskIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code/loops/new': {
+      id: '/code/loops/new'
+      path: '/code/loops/new'
+      fullPath: '/code/loops/new'
+      preLoaderRoute: typeof CodeLoopsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/code/loops/$loopId': {
+      id: '/code/loops/$loopId'
+      path: '/code/loops/$loopId'
+      fullPath: '/code/loops/$loopId'
+      preLoaderRoute: typeof CodeLoopsLoopIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/code/inbox/runs': {
@@ -1106,6 +1168,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/agents/applications'
       preLoaderRoute: typeof CodeAgentsApplicationsRouteImport
       parentRoute: typeof CodeAgentsRoute
+    }
+    '/code/loops/$loopId/': {
+      id: '/code/loops/$loopId/'
+      path: '/'
+      fullPath: '/code/loops/$loopId/'
+      preLoaderRoute: typeof CodeLoopsLoopIdIndexRouteImport
+      parentRoute: typeof CodeLoopsLoopIdRoute
     }
     '/code/inbox/runs/': {
       id: '/code/inbox/runs/'
@@ -1169,6 +1238,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/tasks/pending/$key'
       preLoaderRoute: typeof CodeTasksPendingKeyRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/code/loops/$loopId/edit': {
+      id: '/code/loops/$loopId/edit'
+      path: '/edit'
+      fullPath: '/code/loops/$loopId/edit'
+      preLoaderRoute: typeof CodeLoopsLoopIdEditRouteImport
+      parentRoute: typeof CodeLoopsLoopIdRoute
     }
     '/code/inbox/runs/$reportId': {
       id: '/code/inbox/runs/$reportId'
@@ -1309,7 +1385,6 @@ declare module '@tanstack/react-router' {
 interface WebsiteRouteChildren {
   WebsiteActivityRoute: typeof WebsiteActivityRoute
   WebsiteCommandCenterRoute: typeof WebsiteCommandCenterRoute
-  WebsiteHomeRoute: typeof WebsiteHomeRoute
   WebsiteMcpServersRoute: typeof WebsiteMcpServersRoute
   WebsiteNewRoute: typeof WebsiteNewRoute
   WebsiteSkillsRoute: typeof WebsiteSkillsRoute
@@ -1318,6 +1393,7 @@ interface WebsiteRouteChildren {
   WebsiteChannelIdCanvasesRoute: typeof WebsiteChannelIdCanvasesRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
   WebsiteChannelIdHistoryRoute: typeof WebsiteChannelIdHistoryRoute
+  WebsiteChannelIdLoopsRoute: typeof WebsiteChannelIdLoopsRoute
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
   WebsiteChannelIdIndexRoute: typeof WebsiteChannelIdIndexRoute
   WebsiteChannelIdDashboardsDashboardIdRoute: typeof WebsiteChannelIdDashboardsDashboardIdRoute
@@ -1327,7 +1403,6 @@ interface WebsiteRouteChildren {
 const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteActivityRoute: WebsiteActivityRoute,
   WebsiteCommandCenterRoute: WebsiteCommandCenterRoute,
-  WebsiteHomeRoute: WebsiteHomeRoute,
   WebsiteMcpServersRoute: WebsiteMcpServersRoute,
   WebsiteNewRoute: WebsiteNewRoute,
   WebsiteSkillsRoute: WebsiteSkillsRoute,
@@ -1336,6 +1411,7 @@ const WebsiteRouteChildren: WebsiteRouteChildren = {
   WebsiteChannelIdCanvasesRoute: WebsiteChannelIdCanvasesRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,
   WebsiteChannelIdHistoryRoute: WebsiteChannelIdHistoryRoute,
+  WebsiteChannelIdLoopsRoute: WebsiteChannelIdLoopsRoute,
   WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,
   WebsiteChannelIdIndexRoute: WebsiteChannelIdIndexRoute,
   WebsiteChannelIdDashboardsDashboardIdRoute:
@@ -1527,6 +1603,20 @@ const CodeInboxRouteWithChildren = CodeInboxRoute._addFileChildren(
   CodeInboxRouteChildren,
 )
 
+interface CodeLoopsLoopIdRouteChildren {
+  CodeLoopsLoopIdEditRoute: typeof CodeLoopsLoopIdEditRoute
+  CodeLoopsLoopIdIndexRoute: typeof CodeLoopsLoopIdIndexRoute
+}
+
+const CodeLoopsLoopIdRouteChildren: CodeLoopsLoopIdRouteChildren = {
+  CodeLoopsLoopIdEditRoute: CodeLoopsLoopIdEditRoute,
+  CodeLoopsLoopIdIndexRoute: CodeLoopsLoopIdIndexRoute,
+}
+
+const CodeLoopsLoopIdRouteWithChildren = CodeLoopsLoopIdRoute._addFileChildren(
+  CodeLoopsLoopIdRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
@@ -1536,14 +1626,16 @@ const rootRouteChildren: RootRouteChildren = {
   WebsiteRoute: WebsiteRouteWithChildren,
   CodeAgentsRoute: CodeAgentsRouteWithChildren,
   CodeArchivedRoute: CodeArchivedRoute,
-  CodeHomeRoute: CodeHomeRoute,
   CodeInboxRoute: CodeInboxRouteWithChildren,
   CodePrRoute: CodePrRoute,
   FoldersFolderIdRoute: FoldersFolderIdRoute,
   SettingsCategoryRoute: SettingsCategoryRoute,
   CodeIndexRoute: CodeIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
+  CodeLoopsLoopIdRoute: CodeLoopsLoopIdRouteWithChildren,
+  CodeLoopsNewRoute: CodeLoopsNewRoute,
   CodeTasksTaskIdRoute: CodeTasksTaskIdRoute,
+  CodeLoopsIndexRoute: CodeLoopsIndexRoute,
   CodeTasksPendingKeyRoute: CodeTasksPendingKeyRoute,
 }
 export const routeTree = rootRouteImport

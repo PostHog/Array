@@ -79,9 +79,7 @@ void preloadHighlighter({
   }
 }
 
-document.title = import.meta.env.DEV
-  ? "PostHog Code (Development)"
-  : "PostHog Code";
+document.title = import.meta.env.DEV ? "PostHog (Development)" : "PostHog";
 
 const bootstrapSessionId = window.__posthogBootstrap?.sessionId;
 if (bootstrapSessionId) {

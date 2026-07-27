@@ -61,6 +61,7 @@ function isInteractiveElementInDifferentCell(
  * `onSelect(<rejectOptionId>, feedback)`.
  */
 export function PlanApprovalSelector({
+  toolCall,
   options,
   onSelect,
   onCancel,
@@ -80,6 +81,11 @@ export function PlanApprovalSelector({
 
   // Resolution order: the mode last approved with (remembered preference),
   // then "auto", then manual-approve, then any single-use mode, then the first.
+  // Settings persist asynchronously (an IPC round trip on desktop), so
+  // `lastApprovalMode` can still be its pre-hydration default on mount — e.g.
+  // resuming a task with an already-pending plan approval. Recomputing this
+  // via `useMemo` (rather than seeding a `useState` once) means it stays
+  // correct once the store finishes hydrating.
   const initialMode = useMemo(() => {
     const has = (id: string) => approveOptions.some((o) => o.optionId === id);
     return (
@@ -93,7 +99,23 @@ export function PlanApprovalSelector({
     );
   }, [approveOptions, lastApprovalMode]);
 
-  const [selectedMode, setSelectedMode] = useState(initialMode);
+  // Only the user's own pick lives in state; everything else derives from
+  // `initialMode` so it tracks `lastApprovalMode` live instead of freezing it
+  // at mount — derive it, don't duplicate it.
+  const [explicitMode, setExplicitMode] = useState<string | undefined>(
+    undefined,
+  );
+  // This component can survive to a later approval request without
+  // remounting, so a pick made for the previous request must not leak into
+  // (and potentially not exist in) this one. Reset during render rather than
+  // in an effect: it takes effect before this render paints instead of one
+  // render later, avoiding a flash of the stale mode.
+  const lastToolCallIdRef = useRef(toolCall.toolCallId);
+  if (lastToolCallIdRef.current !== toolCall.toolCallId) {
+    lastToolCallIdRef.current = toolCall.toolCallId;
+    setExplicitMode(undefined);
+  }
+  const selectedMode = explicitMode ?? initialMode;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -285,7 +307,7 @@ export function PlanApprovalSelector({
                   <Box onClick={(e) => e.stopPropagation()}>
                     <ModeSelector
                       modeOption={modeConfigOption}
-                      onChange={(value) => setSelectedMode(value)}
+                      onChange={(value) => setExplicitMode(value)}
                       allowBypassPermissions
                     />
                   </Box>

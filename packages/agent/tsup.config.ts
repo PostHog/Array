@@ -87,6 +87,8 @@ const sharedOptions = {
     "@posthog/shared",
     "@posthog/git",
     "@posthog/enricher",
+    "@posthog/harness",
+    /^@opentelemetry\//,
     "fflate",
   ],
   external: [
@@ -112,6 +114,10 @@ export default defineConfig([
       "src/posthog-api.ts",
       "src/posthog-products.ts",
       "src/pr-url-detector.ts",
+      "src/pi/rpc-client.ts",
+      "src/pi/runtime.ts",
+      "src/pi/types.ts",
+      "src/pi/conversation/translatePiConversation.ts",
       "src/resume.ts",
       "src/types.ts",
       "src/adapters/claude/questions/utils.ts",
@@ -130,7 +136,7 @@ export default defineConfig([
       "src/server/agent-server.ts",
     ],
     format: ["esm"],
-    dts: true,
+    dts: false,
     clean: false,
     // noExternal inlines CJS deps (e.g. simple-git via @posthog/git) whose
     // dynamic `require(...)` calls throw in ESM output unless a real require
@@ -166,5 +172,17 @@ export default defineConfig([
     dts: false,
     clean: false,
     ...sharedOptions,
+  },
+  {
+    entry: { "pi/rpc-host": "src/pi/rpc-host.ts" },
+    format: ["esm"],
+    dts: false,
+    clean: false,
+    banner: {
+      js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+    },
+    ...sharedOptions,
+    noExternal: [/^(?!node:)/],
+    external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
   },
 ]);

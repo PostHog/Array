@@ -110,6 +110,7 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
           onTaskCreated={onTaskCreated}
           channelContext={channelContext}
           channelName={channelName}
+          channelContextId={channelId}
           allowNoRepo
           suggestions={CHANNEL_TASK_SUGGESTIONS}
           onSuggestionSelect={(label) =>

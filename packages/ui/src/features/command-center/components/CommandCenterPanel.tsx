@@ -17,6 +17,7 @@ import { destroyShellTerminal } from "@posthog/ui/features/terminal/destroyShell
 import { ShellTerminal } from "@posthog/ui/features/terminal/ShellTerminal";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
+import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { secureRandomString } from "@posthog/ui/utils/random";
 import { Flex, Spinner, Text } from "@radix-ui/themes";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -110,6 +111,8 @@ function EnvironmentBadge({ mode }: { mode: WorkspaceMode | null }) {
 
 function EmptyCell({ cellIndex }: { cellIndex: number }) {
   const [selectorOpen, setSelectorOpen] = useState(false);
+  // The command-center terminal is unavailable on cloud-only hosts.
+  const { localWorkspaces } = useHostCapabilities();
   const isCreating = useCommandCenterStore((s) =>
     s.creatingCells.includes(cellIndex),
   );
@@ -198,7 +201,7 @@ function EmptyCell({ cellIndex }: { cellIndex: number }) {
           open={selectorOpen}
           onOpenChange={setSelectorOpen}
           onNewTask={() => startCreating(cellIndex)}
-          onNewTerminal={handleNewTerminal}
+          onNewTerminal={localWorkspaces ? handleNewTerminal : undefined}
           onBrainrot={brainrotMode ? handleBrainrot : undefined}
         >
           <button

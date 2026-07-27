@@ -15,6 +15,7 @@ import type {
   RequestPermissionResponse,
   ResumeSessionRequest,
   ResumeSessionResponse,
+  SessionNotification,
   SetSessionConfigOptionRequest,
   SetSessionConfigOptionResponse,
   StopReason,
@@ -29,7 +30,14 @@ import {
   type NativeGoalState,
   POSTHOG_NOTIFICATIONS,
 } from "../../acp-extensions";
+import type { ModelInfo } from "../../gateway-models";
 import { DEFAULT_CODEX_MODEL } from "../../gateway-models";
+import {
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+  resolvePostHogExecPermissionRegex,
+} from "../../posthog-exec-permission";
 import type { ProcessSpawnedCallback } from "../../types";
 import { ALLOW_BYPASS } from "../../utils/common";
 import { Logger } from "../../utils/logger";
@@ -48,6 +56,7 @@ import { resolveSpokenNarration } from "../session-meta";
 import {
   AppServerClient,
   type AppServerClientHandlers,
+  AppServerRequestError,
   type AppServerRpc,
 } from "./app-server-client";
 import { handleServerRequest } from "./approvals";
@@ -72,7 +81,11 @@ import {
   APP_SERVER_NOTIFICATIONS,
   APP_SERVER_REQUESTS,
 } from "./protocol";
-import { type CodexSandboxPolicy, SessionConfigState } from "./session-config";
+import {
+  type CodexSandboxPolicy,
+  type RawModel,
+  SessionConfigState,
+} from "./session-config";
 import {
   type CodexAppServerProcess,
   type CodexAppServerProcessOptions,
@@ -81,6 +94,16 @@ import {
 import { parseStructuredOutput } from "./structured-output";
 import { TurnController } from "./turn-controller";
 import { UsageTracker } from "./usage-tracker";
+
+function isStaleTurnSteerError(error: unknown): boolean {
+  if (!(error instanceof AppServerRequestError) || error.code !== -32600) {
+    return false;
+  }
+  return (
+    error.message === "no active turn to steer" ||
+    /^expected active turn id `.*` but found `.*`$/.test(error.message)
+  );
+}
 
 type AppServerSessionMeta = {
   // The host sends either a plain string or the Claude-style `{ append }` form.
@@ -94,6 +117,7 @@ type AppServerSessionMeta = {
   channelMode?: boolean;
   spokenNarration?: boolean;
   baseBranch?: string;
+  posthogExecPermissionRegex?: string;
   nativeGoal?: NativeGoalState;
 };
 
@@ -114,6 +138,8 @@ type GoalCommand =
   | { kind: "pause" }
   | { kind: "resume" }
   | { kind: "set"; objective: string };
+
+const MAX_PLAN_PROPOSAL_CHARS = 100_000;
 
 type CodexSkill = {
   name?: string;
@@ -203,6 +229,7 @@ export interface CodexAppServerAgentOptions {
   processOptions: CodexAppServerProcessOptions;
   model?: string;
   reasoningEffort?: string;
+  gatewayModels?: ReadonlyArray<ModelInfo>;
   processCallbacks?: ProcessSpawnedCallback;
   logger?: Logger;
   onStructuredOutput?: (output: Record<string, unknown>) => Promise<void>;
@@ -212,7 +239,7 @@ export interface CodexAppServerAgentOptions {
 
 /**
  * ACP Agent backed by the native Codex `app-server` JSON-RPC protocol,
- * presenting the ACP surface PostHog Code expects.
+ * presenting the ACP surface PostHog expects.
  */
 export class CodexAppServerAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
@@ -235,13 +262,23 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   private taskRunId?: string;
   /** Deployment environment; on "cloud" a non-danger sandbox would panic, so we skip the override. */
   private environment?: "local" | "cloud";
+  /** Gates PostHog exec sub-tools; set per session, defaults to the destructive-verbs regex. */
+  private posthogExecPermissionRegex =
+    resolvePostHogExecPermissionRegex(undefined);
   private readonly commandOutputs = new Map<string, string>();
+  private readonly subagentParents = new Map<string, string>();
+  private readonly pendingSubagentNotifications = new Map<
+    string,
+    SessionNotification[]
+  >();
   /** Extra writable roots for this session, folded into workspaceWrite sandbox turns. */
   private additionalDirectories?: string[];
   /** The session workspace stays writable when extra roots are applied per turn. */
   private workspaceDirectory?: string;
   /** The in-flight turn's <proposed_plan>, streamed or completed (drives the implement handoff). */
   private planProposal?: { itemId: string; text: string };
+  /** Structured plan tool call already emitted while the proposal streams. */
+  private streamedPlanToolCallId?: string;
   /** Idle signal deferred while the plan handoff keeps this prompt busy. */
   private deferredTurnComplete?: { usage: PromptResponse["usage"] };
   /** Settles the pending plan-approval race on cancel/close/preempting prompt. */
@@ -265,6 +302,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.config = new SessionConfigState(
       options.model ?? DEFAULT_CODEX_MODEL,
       options.reasoningEffort,
+      options.gatewayModels,
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
@@ -308,7 +346,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     await this.rpc.request(APP_SERVER_METHODS.INITIALIZE, {
       clientInfo: {
         name: "posthog-code",
-        title: "PostHog Code",
+        title: "PostHog",
         version: "0.1.0",
       },
       // Opt into codex's experimental API so experimental turn/start fields are honored.
@@ -460,6 +498,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   ): Promise<{ threadId: string; thread: AppServerThread | undefined }> {
     this.cancelNextGoalTurn = false;
     this.nativeGoalTurnId = undefined;
+    this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
     this.jsonSchema = params.meta?.jsonSchema ?? undefined;
     this.taskRunId = params.meta?.taskRunId;
     this.environment = params.meta?.environment;
@@ -492,10 +532,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         { error: String(err) },
       );
     }
-    const mcpServers = toCodexMcpServers([
-      ...(params.mcpServers ?? []),
-      ...(localTools ? [localTools] : []),
-    ]);
+    this.posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      params.meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
+    );
+    const mcpServers = toCodexMcpServers(
+      [...(params.mcpServers ?? []), ...(localTools ? [localTools] : [])],
+      { gatePosthogExec: true },
+    );
     const config = buildThreadConfig(mcpServers, params.additionalDirectories);
 
     const result = await this.rpc.request<{ thread?: AppServerThread }>(
@@ -515,6 +563,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     this.threadId = threadId;
     this.sessionId = threadId;
+    this.restoreSubagentRelationships(thread);
     if (method === APP_SERVER_METHODS.THREAD_START && params.meta?.nativeGoal) {
       await this.restoreGoal(params.meta.nativeGoal);
     }
@@ -590,7 +639,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   private async loadModelConfig(): Promise<void> {
     try {
-      const res = await this.rpc.request<{ data?: any[] }>(
+      const res = await this.rpc.request<{ data?: RawModel[] }>(
         APP_SERVER_METHODS.MODEL_LIST,
         {},
       );
@@ -733,32 +782,43 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     if (dropped > 0) {
       this.logger.warn("Dropped non-text/non-image prompt blocks", { dropped });
     }
-    // Echo the user prompt (codex emits none), for fresh turns and steering alike.
-    this.broadcastUserInput(params.prompt);
-
     if (this.turns.isRunning) {
       // A turn is already running: fold the message in via turn/steer (precondition: the
       // active turnId). Refresh from the response's rotated turnId so a later steer/interrupt
       // still targets the live turn (no turn/started is re-emitted for a steer).
-      const steerRes = await this.rpc
-        .request<{ turnId?: string }>(APP_SERVER_METHODS.TURN_STEER, {
-          threadId: this.threadId,
-          input,
-          expectedTurnId: this.turns.activeTurnId,
-        })
-        .catch((err) => {
-          this.logger.warn("turn/steer failed", err);
-          return undefined;
-        });
+      let steerRes: { turnId?: string };
+      try {
+        steerRes = await this.rpc.request<{ turnId?: string }>(
+          APP_SERVER_METHODS.TURN_STEER,
+          {
+            threadId: this.threadId,
+            input,
+            expectedTurnId: this.turns.activeTurnId,
+          },
+        );
+      } catch (error) {
+        if (
+          (params._meta as { steer?: unknown } | undefined)?.steer === true &&
+          isStaleTurnSteerError(error)
+        ) {
+          return { stopReason: "end_turn", _meta: { steer: false } };
+        }
+        throw error;
+      }
       this.turns.onSteered(steerRes?.turnId);
-      const response = await this.turns.awaitCompletion();
-      return { stopReason: response.stopReason };
+      this.broadcastUserInput(params.prompt);
+      return { stopReason: "end_turn", _meta: { steer: true } };
+    }
+    if ((params._meta as { steer?: unknown } | undefined)?.steer === true) {
+      return { stopReason: "end_turn", _meta: { steer: false } };
     }
     if (this.turns.isPending) {
       // A turn is pending but has no turnId yet, so we can't steer; fail fast.
       throw new Error("prompt() called while a turn is already in progress");
     }
 
+    // Codex does not echo user input, so emit it only once delivery can proceed.
+    this.broadcastUserInput(params.prompt);
     const response = await this.runTurn(input);
     return this.maybeOfferPlanImplementation(response);
   }
@@ -879,6 +939,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     this.lastAgentMessage = "";
     this.resetUsage();
     this.planProposal = undefined;
+    this.streamedPlanToolCallId = undefined;
     // A new turn owns the idle boundary; its own completion emits the signal.
     this.deferredTurnComplete = undefined;
     const { completion, turn } = this.turns.begin();
@@ -936,13 +997,22 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         // Re-check after the await: a cancel that raced the response wins, so a
         // late accept can never start implementation on a cancelled prompt.
         if (this.session.cancelled) {
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
           result = { ...result, stopReason: "cancelled" };
           break;
         }
         // A picker change while approval was open owns the mode. Never let a
         // stale approval overwrite it with a broader implementation mode.
-        if (this.config.mode !== "plan") break;
+        if (this.config.mode !== "plan") {
+          if (outcome.kind === "implement") {
+            this.completePlanApprovalToolCall(outcome.toolCallId, "failed");
+          }
+          break;
+        }
         if (outcome.kind === "implement") {
+          this.completePlanApprovalToolCall(outcome.toolCallId, "completed");
           this.config.setOption("mode", outcome.mode);
           this.emitCurrentMode(outcome.mode);
           this.emitConfigOptions();
@@ -994,23 +1064,17 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     itemId: string;
     text: string;
   }): Promise<
-    | { kind: "implement"; mode: "auto" | "full-access" }
+    | {
+        kind: "implement";
+        mode: "auto" | "full-access";
+        toolCallId: string;
+      }
     | { kind: "feedback"; feedback: string }
     | { kind: "stay" }
   > {
     const toolCallId = `${proposal.itemId}:implement`;
-    const toolCall = {
-      toolCallId,
-      title: "Ready to code?",
-      kind: "switch_mode",
-      content: [
-        {
-          type: "content" as const,
-          content: { type: "text" as const, text: proposal.text },
-        },
-      ],
-      rawInput: { plan: proposal.text },
-    };
+    const toolCall = this.buildPlanApprovalToolCall(proposal);
+    this.emitPlanProposal(toolCall, proposal.text);
     const options = [
       {
         optionId: "auto",
@@ -1053,8 +1117,12 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     });
     const settled = await Promise.race([permission, cancelled]);
     this.planHandoffCancel = undefined;
-    if (!settled) return { kind: "stay" };
+    if (!settled) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
     if (settled.failed) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       this.logger.warn("plan implementation prompt failed; staying in plan", {
         error: String(settled.err),
       });
@@ -1066,23 +1134,136 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     }
     const response = settled.res;
     if (this.session.cancelled || response.outcome.outcome !== "selected") {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
       return { kind: "stay" };
     }
     const optionId = response.outcome.optionId;
-    if (!offered.has(optionId)) return { kind: "stay" };
-    if (optionId === "auto") return { kind: "implement", mode: "auto" };
+    if (!offered.has(optionId)) {
+      this.completePlanApprovalToolCall(toolCallId, "failed");
+      return { kind: "stay" };
+    }
+    if (optionId === "auto") {
+      return { kind: "implement", mode: "auto", toolCallId };
+    }
     // Double-gated: only ever offered under ALLOW_BYPASS, and re-checked here.
     if (optionId === "full-access" && ALLOW_BYPASS) {
-      return { kind: "implement", mode: "full-access" };
+      return { kind: "implement", mode: "full-access", toolCallId };
     }
     if (optionId === "reject_with_feedback") {
       const feedback = (response as { _meta?: { customInput?: unknown } })._meta
         ?.customInput;
       if (typeof feedback === "string" && feedback.trim()) {
+        this.completePlanApprovalToolCall(toolCallId, "failed");
         return { kind: "feedback", feedback: feedback.trim() };
       }
     }
+    this.completePlanApprovalToolCall(toolCallId, "failed");
     return { kind: "stay" };
+  }
+
+  private buildPlanApprovalToolCall(proposal: {
+    itemId: string;
+    text: string;
+  }): {
+    toolCallId: string;
+    title: string;
+    kind: "switch_mode";
+    content: Array<{
+      type: "content";
+      content: { type: "text"; text: string };
+    }>;
+    rawInput: { plan: string };
+  } {
+    return {
+      toolCallId: `${proposal.itemId}:implement`,
+      title: "Ready to code?",
+      kind: "switch_mode",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: proposal.text },
+        },
+      ],
+      rawInput: { plan: proposal.text },
+    };
+  }
+
+  private emitPlanProposal(
+    toolCall: ReturnType<CodexAppServerAgent["buildPlanApprovalToolCall"]>,
+    text: string,
+  ): void {
+    if (this.streamedPlanToolCallId === toolCall.toolCallId) {
+      this.emitPlanApprovalToolCall({
+        sessionUpdate: "tool_call_update",
+        toolCallId: toolCall.toolCallId,
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text } }],
+        rawInput: { plan: text },
+      });
+      return;
+    }
+    this.streamedPlanToolCallId = toolCall.toolCallId;
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call",
+      ...toolCall,
+      status: "in_progress",
+    });
+  }
+
+  private completePlanApprovalToolCall(
+    toolCallId: string,
+    status: "completed" | "failed",
+  ): void {
+    this.emitPlanApprovalToolCall({
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status,
+    });
+  }
+
+  private emitPlanApprovalToolCall(update: Record<string, unknown>): void {
+    const notification = {
+      sessionId: this.sessionId,
+      update,
+    } as unknown as Parameters<AgentSideConnection["sessionUpdate"]>[0];
+    this.appendPlanApprovalNotification(notification);
+    void this.client.sessionUpdate(notification).catch((error) => {
+      this.logger.warn("Failed to emit plan approval tool call update", {
+        error: String(error),
+        sessionUpdate: update.sessionUpdate,
+        toolCallId: update.toolCallId,
+      });
+    });
+  }
+
+  private appendPlanApprovalNotification(
+    notification: Parameters<AgentSideConnection["sessionUpdate"]>[0],
+  ): void {
+    const update = notification.update as Record<string, unknown>;
+    if (
+      update.sessionUpdate === "tool_call_update" &&
+      update.status === "in_progress" &&
+      typeof update.toolCallId === "string"
+    ) {
+      for (
+        let index = this.session.notificationHistory.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const previous = this.session.notificationHistory[index] as unknown as {
+          update?: Record<string, unknown>;
+        };
+        if (
+          previous.update?.sessionUpdate === "tool_call_update" &&
+          previous.update.status === "in_progress" &&
+          previous.update.toolCallId === update.toolCallId
+        ) {
+          this.session.notificationHistory[index] = notification;
+          return;
+        }
+      }
+    }
+    this.appendNotification(this.sessionId, notification);
   }
 
   /** Emit a plain agent message (user-facing status the model didn't produce). */
@@ -1159,6 +1340,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   async closeSession(): Promise<void> {
     this.commandOutputs.clear();
+    this.subagentParents.clear();
+    this.pendingSubagentNotifications.clear();
     this.nativeGoalTurnId = undefined;
     this.session.abortController.abort();
     this.session.cancelled = true;
@@ -1178,23 +1361,38 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     const notificationThreadId = readNotificationThreadId(params);
     const isMainThread =
       !notificationThreadId || notificationThreadId === this.threadId;
+    const relatedSubagentThreadIds = this.captureSubagentRelationship(
+      method,
+      params,
+      notificationThreadId,
+    );
     const mappedParams = isMainThread
       ? this.withBufferedCommandOutput(method, params)
       : params;
 
     if (this.sessionId && !this.session.cancelled) {
-      if (isMainThread) {
-        const notification = mapAppServerNotification(
-          this.sessionId,
-          method,
-          mappedParams,
-        );
-        if (notification) {
-          void this.client
-            .sessionUpdate(notification)
-            .catch((err) => this.logger.warn("sessionUpdate failed", err));
-          this.appendNotification(this.sessionId, notification);
-        }
+      const notification = mapAppServerNotification(
+        this.sessionId,
+        method,
+        mappedParams,
+      );
+      const visibleNotification = isMainThread
+        ? notification
+        : this.mapSubagentNotification(notification, notificationThreadId);
+      if (visibleNotification) {
+        this.emitSessionNotification(visibleNotification);
+      } else if (
+        notification &&
+        notificationThreadId &&
+        isSubagentActivityNotification(notification)
+      ) {
+        const pending =
+          this.pendingSubagentNotifications.get(notificationThreadId) ?? [];
+        pending.push(notification);
+        this.pendingSubagentNotifications.set(notificationThreadId, pending);
+      }
+      for (const threadId of relatedSubagentThreadIds) {
+        this.flushSubagentNotifications(threadId);
       }
     }
 
@@ -1302,9 +1500,135 @@ export class CodexAppServerAgent extends BaseAcpAgent {
           this.turns.fail(RequestError.internalError(undefined, message));
           return;
         }
+        if (
+          message.includes("413") ||
+          message.toLowerCase().includes("request body too large")
+        ) {
+          this.turns.fail(
+            RequestError.internalError(
+              undefined,
+              "This conversation is too large to continue. Start a new task and carry over a text summary instead of image or tool output.",
+            ),
+          );
+          return;
+        }
         void this.finalizeTurn("refusal");
       }
     }
+  }
+
+  private captureSubagentRelationship(
+    method: string,
+    params: unknown,
+    senderThreadId: string | undefined,
+  ): string[] {
+    if (
+      method !== APP_SERVER_NOTIFICATIONS.ITEM_STARTED &&
+      method !== APP_SERVER_NOTIFICATIONS.ITEM_COMPLETED
+    ) {
+      return [];
+    }
+    const item = (params as { item?: AppServerItem })?.item;
+    return this.captureSubagentRelationshipItem(item, senderThreadId);
+  }
+
+  private restoreSubagentRelationships(
+    thread: AppServerThread | undefined,
+  ): void {
+    for (const turn of thread?.turns ?? []) {
+      for (const item of turn.items ?? []) {
+        this.captureSubagentRelationshipItem(item, item.senderThreadId);
+      }
+    }
+  }
+
+  private captureSubagentRelationshipItem(
+    item: AppServerItem | undefined,
+    senderThreadId: string | undefined,
+  ): string[] {
+    if (
+      item?.type !== "collabAgentToolCall" ||
+      (item.tool !== "spawnAgent" &&
+        item.tool !== "resumeAgent" &&
+        item.tool !== "sendInput") ||
+      !item.id ||
+      !item.receiverThreadIds?.length
+    ) {
+      return [];
+    }
+    const parentToolCallId =
+      senderThreadId && senderThreadId !== this.threadId
+        ? subagentToolCallId(senderThreadId, item.id)
+        : item.id;
+    for (const receiverThreadId of item.receiverThreadIds) {
+      this.subagentParents.set(receiverThreadId, parentToolCallId);
+    }
+    return item.receiverThreadIds;
+  }
+
+  private emitSessionNotification(notification: SessionNotification): void {
+    if (!this.sessionId) return;
+    void this.client
+      .sessionUpdate(notification)
+      .catch((err) => this.logger.warn("sessionUpdate failed", err));
+    this.appendNotification(this.sessionId, notification);
+  }
+
+  private flushSubagentNotifications(threadId: string): void {
+    const pending = this.pendingSubagentNotifications.get(threadId);
+    if (!pending) return;
+    this.pendingSubagentNotifications.delete(threadId);
+    for (const notification of pending) {
+      const visibleNotification = this.mapSubagentNotification(
+        notification,
+        threadId,
+      );
+      if (visibleNotification) {
+        this.emitSessionNotification(visibleNotification);
+      }
+    }
+  }
+
+  private mapSubagentNotification(
+    notification: SessionNotification | null,
+    threadId: string | undefined,
+  ): SessionNotification | null {
+    if (!notification || !threadId) return null;
+    const parentToolCallId = this.subagentParents.get(threadId);
+    if (!parentToolCallId) return null;
+    if (!isSubagentActivityNotification(notification)) return null;
+    const update = notification.update;
+    const toolCallId = update.toolCallId
+      ? subagentToolCallId(threadId, update.toolCallId)
+      : undefined;
+    if (update.sessionUpdate === "tool_call_update") {
+      return {
+        ...notification,
+        update: { ...update, ...(toolCallId ? { toolCallId } : {}) },
+      } as SessionNotification;
+    }
+    const existingPosthog = (update._meta?.posthog ?? {}) as Record<
+      string,
+      unknown
+    >;
+    return {
+      ...notification,
+      update: {
+        ...update,
+        ...(toolCallId ? { toolCallId } : {}),
+        _meta: {
+          ...update._meta,
+          posthog: {
+            toolName:
+              typeof existingPosthog.toolName === "string"
+                ? existingPosthog.toolName
+                : "subagent_activity",
+            ...existingPosthog,
+            parentToolCallId,
+          },
+        },
+      },
+    } as SessionNotification;
   }
 
   private withBufferedCommandOutput(method: string, params: unknown): unknown {
@@ -1366,7 +1690,16 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       params as { item?: { type?: string; id?: string; text?: string } }
     )?.item;
     if (item?.type === "plan" && typeof item.text === "string" && item.text) {
-      this.planProposal = { itemId: item.id ?? "codex-plan", text: item.text };
+      this.planProposal = {
+        itemId: item.id ?? "codex-plan",
+        text: item.text.slice(0, MAX_PLAN_PROPOSAL_CHARS),
+      };
+      if (this.config.mode === "plan" && this.streamedPlanToolCallId) {
+        this.emitPlanProposal(
+          this.buildPlanApprovalToolCall(this.planProposal),
+          this.planProposal.text,
+        );
+      }
     }
   }
 
@@ -1383,7 +1716,18 @@ export class CodexAppServerAgent extends BaseAcpAgent {
         : (this.planProposal?.itemId ?? "codex-plan");
     const previousText =
       this.planProposal?.itemId === proposalId ? this.planProposal.text : "";
-    this.planProposal = { itemId: proposalId, text: previousText + delta };
+    const remainingChars = MAX_PLAN_PROPOSAL_CHARS - previousText.length;
+    if (remainingChars <= 0) return;
+    this.planProposal = {
+      itemId: proposalId,
+      text: previousText + delta.slice(0, remainingChars),
+    };
+    if (this.config.mode === "plan") {
+      this.emitPlanProposal(
+        this.buildPlanApprovalToolCall(this.planProposal),
+        this.planProposal.text,
+      );
+    }
   }
 
   /** Compaction started: emit `_posthog/status` so the host sets `isCompacting` (gates steer/queue). */
@@ -1541,6 +1885,36 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   /**
+   * Sub-tool policy for a gated PostHog exec call. Codex's `approval_mode:
+   * "prompt"` gates the whole exec tool, so this is where the configured regex
+   * actually filters: non-matching sub-tools never prompt, and matching ones
+   * stay hands-off in local auto/full-access modes (parity with the Claude
+   * adapter's `!cloudMode && (auto || bypassPermissions)` branch). Cloud
+   * sessions always relay matching sub-tools so AgentServer routes them by the
+   * run's effective mode.
+   */
+  private shouldAutoAcceptPostHogExec(mcp: {
+    server: string;
+    tool: string;
+    args: unknown;
+  }): boolean {
+    if (!isPostHogExecDescriptor({ server: mcp.server, tool: mcp.tool })) {
+      return false;
+    }
+    const subTool = extractPostHogSubTool(mcp.args);
+    if (
+      !subTool ||
+      !matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+    ) {
+      return true;
+    }
+    return (
+      this.environment !== "cloud" &&
+      (this.config.mode === "auto" || this.config.mode === "full-access")
+    );
+  }
+
+  /**
    * Server-initiated requests. Simple approvals resolve to a `{ decision }` envelope (a bare
    * string is rejected); richer ones (AskUserQuestion / permission profile / elicitation) go
    * to `handleServerRequest`. Whatever we return is sent back as the JSON-RPC result.
@@ -1553,6 +1927,8 @@ export class CodexAppServerAgent extends BaseAcpAgent {
       sessionId: this.sessionId,
       logger: this.logger,
       resolveMcpToolCall: (serverName) => this.mcp.byServer(serverName),
+      shouldAutoAcceptMcpToolCall: (mcp) =>
+        this.shouldAutoAcceptPostHogExec(mcp),
     });
     if (richer.handled) {
       return richer.response;
@@ -1600,6 +1976,9 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     // Codex has no MCP-specific approval; a known MCP call surfaces the real server/tool/args
     // so the host renders the proper MCP permission (incl. PostHog `exec` unwrapping).
     const mcp = this.mcp.byItemId(detail.itemId);
+    if (mcp && this.shouldAutoAcceptPostHogExec(mcp)) {
+      return { decision: "accept" };
+    }
     // kind + content route plain command/file approvals to Execute/EditPermission (not the fallback).
     const toolCall = mcp
       ? {
@@ -1716,6 +2095,27 @@ function readNotificationThreadId(params: unknown): string | undefined {
   if (!params || typeof params !== "object") return undefined;
   const threadId = (params as { threadId?: unknown }).threadId;
   return typeof threadId === "string" ? threadId : undefined;
+}
+
+function subagentToolCallId(threadId: string, toolCallId: string): string {
+  return `subagent:${threadId}:${toolCallId}`;
+}
+
+function isSubagentActivityNotification(
+  notification: SessionNotification,
+): notification is SessionNotification & {
+  update: SessionNotification["update"] & {
+    _meta?: Record<string, unknown>;
+    toolCallId?: string;
+  };
+} {
+  const { sessionUpdate } = notification.update;
+  return (
+    sessionUpdate === "agent_message_chunk" ||
+    sessionUpdate === "agent_thought_chunk" ||
+    sessionUpdate === "tool_call" ||
+    sessionUpdate === "tool_call_update"
+  );
 }
 
 /** The codex thread config override map: folds in MCP servers + makes extra workspace roots writable. Undefined when empty. */

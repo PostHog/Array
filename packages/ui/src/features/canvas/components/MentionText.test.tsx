@@ -1,6 +1,19 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MentionText } from "./MentionText";
+
+const navigateToChannelDashboard = vi.fn();
+
+vi.mock("@posthog/ui/router/navigationBridge", () => ({
+  navigateToChannel: vi.fn(),
+  navigateToChannelDashboard: (...args: unknown[]) =>
+    navigateToChannelDashboard(...args),
+  navigateToChannelTask: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("MentionText", () => {
   it("uses the shared mention styles and emphasizes the current user", () => {
@@ -40,6 +53,28 @@ describe("MentionText", () => {
       screen.getByRole("link", { name: "My @agent report" }),
     ).toHaveAttribute("href", "https://posthog.com/report");
     expect(screen.queryByText("@agent")).not.toBeInTheDocument();
+  });
+
+  it("navigates in-app instead of the browser for a canvas share link", () => {
+    render(
+      <MentionText content="[Signups](https://us.posthog.com/code/canvas/chan1/dash1) has been created" />,
+    );
+
+    const link = screen.getByRole("link", { name: "Signups" });
+    const defaultAllowed = fireEvent.click(link);
+
+    expect(defaultAllowed).toBe(false);
+    expect(navigateToChannelDashboard).toHaveBeenCalledWith("chan1", "dash1");
+  });
+
+  it("leaves an external link opening in the browser", () => {
+    render(<MentionText content="[Docs](https://example.com/guide) is here" />);
+
+    const link = screen.getByRole("link", { name: "Docs" });
+    const defaultAllowed = fireEvent.click(link);
+
+    expect(defaultAllowed).toBe(true);
+    expect(navigateToChannelDashboard).not.toHaveBeenCalled();
   });
 
   it("inherits the surrounding message text size", () => {

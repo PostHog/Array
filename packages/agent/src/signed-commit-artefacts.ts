@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { SignedCommitResult } from "@posthog/git/signed-commit";
 import { PostHogAPIClient } from "./posthog-api";
-import { SANDBOX_ENV_FILE } from "./utils/github-token";
+
+const SANDBOX_ENV_FILE = "/tmp/agent-env";
 
 /**
  * Best-effort "commit hook": after a successful signed-commit push, record one `commit`
@@ -57,7 +58,7 @@ export function resolveSandboxPosthogApi(
   return { apiUrl, apiKey, projectId };
 }
 
-function createSandboxPosthogClient(
+export function createSandboxPosthogClient(
   env?: Record<string, string | undefined>,
   envFilePath?: string,
 ): PostHogAPIClient | undefined {

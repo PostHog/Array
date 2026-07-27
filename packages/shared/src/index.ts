@@ -1,4 +1,24 @@
 export * from "./adapter";
+export type {
+  AgentAudioContent,
+  AgentBlobResource,
+  AgentContent,
+  AgentConversationEvent,
+  AgentEmbeddedResourceContent,
+  AgentImageContent,
+  AgentResourceLinkContent,
+  AgentTextContent,
+  AgentTextResource,
+  AgentToolCall,
+  AgentToolCallContent,
+  AgentToolCallContentBlock,
+  AgentToolCallDiff,
+  AgentToolCallLocation,
+  AgentToolCallStatus,
+  AgentToolCallTerminal,
+  AgentToolKind,
+} from "./agent-conversation";
+export * from "./agent-runtime";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -125,7 +145,20 @@ export {
   parseImageDataUrl,
 } from "./image";
 export { buildDiscussReportPrompt } from "./inbox-prompts";
-export type { AvailableSuggestedReviewer, SourceProduct } from "./inbox-types";
+export type {
+  AvailableSuggestedReviewer,
+  ExternalInboxSource,
+  ExternalInboxSourceProduct,
+  SignalRecordKind,
+  SourceProduct,
+  SourceType,
+  ToggleableSourceProduct,
+} from "./inbox-types";
+export {
+  EXTERNAL_INBOX_SOURCE_BY_PRODUCT,
+  EXTERNAL_INBOX_SOURCES,
+  sourceNeedsFullRefresh,
+} from "./inbox-types";
 export { EXTERNAL_LINKS } from "./links";
 export type {
   CloudMcpServerImport,
@@ -165,6 +198,10 @@ export {
   pathToFileUri,
   toRelativePath,
 } from "./path";
+export type {
+  PiMessagingMode,
+  PiRuntimeHealth,
+} from "./pi-session";
 export {
   buildPrOutput,
   mergePrUrls,
@@ -211,6 +248,7 @@ export {
   flattenSelectOptions,
   getConfigOptionByCategory,
   getCurrentModeFromConfigOptions,
+  isPersistedOptionSupported,
   isSelectGroup,
   mergeConfigOptions,
   type OptimisticItem,
@@ -252,6 +290,7 @@ export type {
   TaskCreationOutput,
 } from "./task-creation-domain";
 export {
+  formatClockTime,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
@@ -265,9 +304,10 @@ export {
   readAgentToolName,
   readMcpToolDescriptor,
   readMcpToolName,
+  readParentToolCallId,
 } from "./tool-meta";
 export { TypedEventEmitter } from "./typed-event-emitter";
-export { isSafeExternalUrl } from "./url";
+export { isSafeExternalUrl, isSafePostHogUrl } from "./url";
 export { getCloudUrlFromRegion } from "./urls";
 export {
   ALLOWED_VIDEO_MIME_TYPES,

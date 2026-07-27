@@ -1595,6 +1595,37 @@ describe("hydrateSessionJsonl", () => {
     };
   }
 
+  it("returns the selected conversation when hydrating from logs", async () => {
+    const posthogAPI = {
+      getTaskRun: vi.fn().mockResolvedValue({ log_url: "https://logs.test" }),
+      fetchTaskRunLogs: vi.fn().mockResolvedValue([
+        entry("user_message", {
+          content: { type: "text", text: "previous request" },
+        }),
+      ]),
+    } as unknown as PostHogAPIClient;
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    const result = await hydrateSessionJsonl({
+      sessionId,
+      cwd,
+      taskId: "t1",
+      runId: "r1",
+      posthogAPI,
+      log,
+    });
+
+    expect(result).toEqual({
+      hasSession: true,
+      conversation: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "previous request" }],
+        },
+      ],
+    });
+  });
+
   it("sanitizes an existing file and skips S3 hydration", async () => {
     const file = await writeSessionFile();
     const { posthogAPI, log } = makeDeps();
@@ -1608,7 +1639,7 @@ describe("hydrateSessionJsonl", () => {
       log,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ hasSession: true });
     expect(
       (posthogAPI as unknown as { getTaskRun: ReturnType<typeof vi.fn> })
         .getTaskRun,
@@ -1635,7 +1666,7 @@ describe("hydrateSessionJsonl", () => {
       log,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ hasSession: true });
     expect(log.warn).toHaveBeenCalledWith(
       "Failed to sanitize existing session JSONL",
       expect.anything(),

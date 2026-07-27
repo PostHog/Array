@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  compareModelsForPicker,
   fetchGatewayModels,
   fetchModelsList,
   formatGatewayModelName,
@@ -34,7 +35,7 @@ describe("formatGatewayModelName", () => {
     ).toBe("Claude Opus 4.8");
   });
 
-  it("formats OpenAI models as raw lowercase model ids", () => {
+  it("uppercases the GPT acronym in OpenAI model ids", () => {
     expect(
       formatGatewayModelName({
         id: "GPT-5.5",
@@ -44,23 +45,23 @@ describe("formatGatewayModelName", () => {
         supports_vision: true,
         allowed: true,
       }),
-    ).toBe("gpt-5.5");
+    ).toBe("GPT-5.5");
   });
 
-  it("strips the openai/ prefix from OpenAI model ids", () => {
+  it("strips the openai/ prefix, uppercases GPT, and title-cases the suffix", () => {
     expect(
       formatGatewayModelName({
-        id: "openai/gpt-5.5",
+        id: "openai/gpt-5.6-sol",
         owned_by: "openai",
         context_window: 200000,
         supports_streaming: true,
         supports_vision: true,
         allowed: true,
       }),
-    ).toBe("gpt-5.5");
+    ).toBe("GPT-5.6 Sol");
   });
 
-  it("formats Cloudflare models as the lowercase final path segment", () => {
+  it("formats Cloudflare models as the final path segment with GLM uppercased", () => {
     expect(
       formatGatewayModelName({
         id: "@cf/zai-org/glm-5.2",
@@ -70,7 +71,20 @@ describe("formatGatewayModelName", () => {
         supports_vision: false,
         allowed: true,
       }),
-    ).toBe("glm-5.2");
+    ).toBe("GLM-5.2");
+  });
+
+  it("leaves non-acronym Cloudflare models lowercase", () => {
+    expect(
+      formatGatewayModelName({
+        id: "@cf/meta/llama-3.1-8b-instruct",
+        owned_by: "cloudflare",
+        context_window: 128000,
+        supports_streaming: true,
+        supports_vision: false,
+        allowed: true,
+      }),
+    ).toBe("llama-3.1-8b-instruct");
   });
 
   it("blocks deprecated Claude gateway models", () => {
@@ -97,6 +111,7 @@ describe("getClaudeModelRecency", () => {
     ["claude-sonnet-4-6", 4006],
     ["claude-opus-4-7", 4007],
     ["claude-opus-4-8", 4008],
+    ["claude-opus-5", 5000],
     ["claude-sonnet-5", 5000],
     ["claude-fable-5", 5000],
   ])("ranks %s by its embedded version (%i)", (modelId, rank) => {
@@ -115,27 +130,29 @@ describe("getClaudeModelRecency", () => {
       getClaudeModelRecency("claude-fable-5"),
     );
   });
+});
 
-  it("produces the full picker display order, oldest to newest", () => {
+describe("compareModelsForPicker", () => {
+  it("groups models by family least capable first, newest version first", () => {
+    // The picker opens upward, so least-capable-first DOM order puts the most
+    // capable family (Fable) nearest the trigger — the visual top of the menu.
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
-      "claude-opus-4-8",
+      "claude-opus-4-7",
       "claude-mystery",
+      "claude-sonnet-5",
       "claude-haiku-4-5",
       "claude-sonnet-4-6",
-      "claude-opus-4-7",
+      "claude-opus-4-8",
     ];
-    const displayed = [...gatewayOrder].sort(
-      (a, b) => getClaudeModelRecency(a) - getClaudeModelRecency(b),
-    );
-    // The menu opens upward, so the newest model (last here) sits closest to
-    // the trigger. Unknown/unversioned models rank newest and trail the list.
+    const displayed = [...gatewayOrder].sort(compareModelsForPicker);
     expect(displayed).toEqual([
       "claude-haiku-4-5",
+      "claude-sonnet-5",
       "claude-sonnet-4-6",
-      "claude-opus-4-7",
       "claude-opus-4-8",
+      "claude-opus-4-7",
       "claude-fable-5",
       "claude-mystery",
     ]);
@@ -224,6 +241,32 @@ describe("gateway models cache", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(cached[0]?.allowed).toBe(false);
+  });
+
+  it("corrects stale GLM 5.2 context-window metadata", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [
+            {
+              id: "@cf/zai-org/glm-5.2",
+              owned_by: "cloudflare",
+              context_window: 128_000,
+              supports_streaming: true,
+              supports_vision: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const models = await fetchGatewayModels({
+      gatewayUrl: "https://gateway.glm-context-test",
+    });
+
+    expect(models[0]?.context_window).toBe(1_000_000);
   });
 });
 

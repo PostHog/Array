@@ -98,7 +98,7 @@ async function getAvailablePort(): Promise<number> {
 }
 
 describe("buildAuthorizeUrl", () => {
-  it("targets the same authorize endpoint and client as PostHog Code", () => {
+  it("targets the same authorize endpoint and client as the desktop app", () => {
     const url = buildAuthorizeUrl("us", "challenge123", getRedirectUri(8237));
 
     expect(url.origin + url.pathname).toBe(
@@ -109,7 +109,7 @@ describe("buildAuthorizeUrl", () => {
     );
   });
 
-  it("uses PKCE S256 and the PostHog Code scope + access level", () => {
+  it("uses PKCE S256 and the desktop app scope + access level", () => {
     const url = buildAuthorizeUrl("eu", "challenge123", getRedirectUri());
 
     expect(url.searchParams.get("response_type")).toBe("code");

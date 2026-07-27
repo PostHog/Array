@@ -11,7 +11,7 @@ export const speakSchema = {
     .describe(
       "The message to say out loud — just the content, one short sentence. Do " +
         "NOT add a task-name prefix or the user's name yourself; the app " +
-        "prepends the current task (\"PostHog Code task '…' —\") and, for " +
+        "prepends the current task (\"PostHog task '…' —\") and, for " +
         "needsUser lines, addresses the user by their real name automatically. " +
         'So say e.g. "moving on to search the database" or "I need your call ' +
         'on which branch to use". Use expressive audio tags in [square ' +

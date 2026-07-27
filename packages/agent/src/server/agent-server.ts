@@ -16,11 +16,13 @@ import {
 import { type ServerType, serve } from "@hono/node-server";
 import { execGh } from "@posthog/git/gh";
 import { getCurrentBranch } from "@posthog/git/queries";
+import { ghTokenEnv } from "@posthog/git/signed-commit";
 import {
   type Adapter,
   buildPrOutput,
   getErrorMessage,
   mergePrUrls,
+  parseMcpToolName,
   readMcpToolDescriptor,
   readPrUrls,
 } from "@posthog/shared";
@@ -54,8 +56,16 @@ import {
 import type { PermissionMode } from "../execution-mode";
 import { DEFAULT_CODEX_MODEL, fetchGatewayModels } from "../gateway-models";
 import { HandoffCheckpointTracker } from "../handoff-checkpoint";
+import { OtelRunTelemetry } from "../otel-telemetry";
 import { configurePersistentAgentState } from "../persistent-agent-state";
 import { PostHogAPIClient } from "../posthog-api";
+import {
+  compilePostHogExecPermissionRegex,
+  DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE,
+  extractPostHogSubTool,
+  isPostHogExecDescriptor,
+  matchesPostHogExecPermission,
+} from "../posthog-exec-permission";
 import {
   findPrUrls,
   wasCreatedByLogin,
@@ -85,6 +95,7 @@ import {
   resolveGatewayProduct,
   resolveLlmGatewayUrl,
 } from "../utils/gateway";
+import { resolveGithubToken } from "../utils/github-token";
 import { Logger } from "../utils/logger";
 import { logAgentshRuntimeInfo } from "./agentsh-runtime";
 import {
@@ -94,6 +105,10 @@ import {
 import { TaskRunEventStreamSender } from "./event-stream-sender";
 import { type JwtPayload, JwtValidationError, validateJwt } from "./jwt";
 import { type McpRelayResponse, McpRelayServer } from "./mcp-relay-server";
+import {
+  checkoutExistingPullRequest,
+  type ExistingPrCheckoutResult,
+} from "./pr-checkout";
 import { resolveRtkSavings } from "./rtk-savings";
 import { RunUsageAccumulator } from "./run-usage";
 import {
@@ -265,6 +280,8 @@ interface ActiveSession {
   sseController: SseController | null;
   deviceInfo: DeviceInfo;
   logWriter: SessionLogWriter;
+  /** Ships run telemetry (logs + spans) to PostHog; unset when the sandbox has no OTLP config */
+  telemetry?: OtelRunTelemetry;
   /** Current permission mode, tracked for relay decisions */
   permissionMode: PermissionMode;
   /** Whether a desktop client has ever connected via SSE during this session */
@@ -296,6 +313,15 @@ function hiddenTextBlock(text: string): ContentBlock {
 
 function isManualCompactPrompt(prompt: ContentBlock[]): boolean {
   return /^\/compact(?:\s|$)/.test(promptBlocksToText(prompt).trimStart());
+}
+
+function extractSteeringCapability(result: unknown): string | undefined {
+  const steering = (
+    result as {
+      agentCapabilities?: { _meta?: { posthog?: { steering?: unknown } } };
+    }
+  )?.agentCapabilities?._meta?.posthog?.steering;
+  return typeof steering === "string" ? steering : undefined;
 }
 
 interface LocalSkillPromptContext {
@@ -377,6 +403,8 @@ export class AgentServer {
   private preSessionEvents: Record<string, unknown>[] = [];
   private deliveredMessageIds = new Set<string>();
   private pendingCompactContinuationMessageIds = new Set<string>();
+  private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
+  private activeOwnedTurnCount = 0;
   private pendingPermissions = new Map<
     string,
     {
@@ -385,8 +413,17 @@ export class AgentServer {
         _meta?: Record<string, unknown>;
       }) => void;
       toolCallId?: string;
+      optionIds: Set<string>;
+      /**
+       * Question responses carry synthetic `option_<idx>`/submit ids built by
+       * the client from the question `_meta`, not from the relayed options, so
+       * the offered-option check must not apply to them.
+       */
+      validateOptionIds: boolean;
     }
   >();
+  private readonly posthogExecPermissionRegex: RegExp;
+  private readonly posthogExecPermissionRegexSource: string;
   private mcpRelayServer: McpRelayServer | null = null;
 
   /**
@@ -448,6 +485,12 @@ export class AgentServer {
 
   constructor(config: AgentServerConfig) {
     this.config = config;
+    this.posthogExecPermissionRegexSource =
+      config.posthogExecPermissionRegex ??
+      DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE;
+    this.posthogExecPermissionRegex = compilePostHogExecPermissionRegex(
+      this.posthogExecPermissionRegexSource,
+    );
     this.logger = new Logger({ debug: true, prefix: "[AgentServer]" });
     this.posthogAPI = new PostHogAPIClient({
       apiUrl: config.apiUrl,
@@ -477,6 +520,47 @@ export class AgentServer {
 
   private getEffectiveMode(payload: JwtPayload): AgentMode {
     return payload.mode ?? this.config.mode;
+  }
+
+  /**
+   * Ships run telemetry to PostHog when the sandbox provides an OTLP endpoint
+   * + token (POSTHOG_AGENT_OTEL_LOGS_URL/_TOKEN): metadata log records, plus an
+   * APM trace per run when POSTHOG_AGENT_OTEL_TRACES_URL is also set. Resource
+   * attributes carry the run/user identifiers so cloud runs are filterable per
+   * user, task, and run in the Logs UI. Returns undefined when unconfigured or
+   * on failure — telemetry must never block session startup.
+   */
+  private createRunTelemetry(
+    payload: JwtPayload,
+    deviceInfo: DeviceInfo,
+    adapter: "claude" | "codex",
+  ): OtelRunTelemetry | undefined {
+    const { otelLogsUrl, otelLogsToken } = this.config;
+    if (!otelLogsUrl || !otelLogsToken) return undefined;
+    try {
+      return new OtelRunTelemetry(
+        {
+          url: otelLogsUrl,
+          token: otelLogsToken,
+          tracesUrl: this.config.otelTracesUrl,
+        },
+        {
+          taskId: payload.task_id,
+          runId: payload.run_id,
+          deviceType: deviceInfo.type,
+          teamId: payload.team_id,
+          userId: payload.user_id,
+          distinctId: payload.distinct_id,
+          adapter,
+          mode: this.getEffectiveMode(payload),
+          agentVersion: this.config.version ?? packageJson.version,
+        },
+        new Logger({ debug: false, prefix: "[OtelRunTelemetry]" }),
+      );
+    } catch (error) {
+      this.logger.warn("Failed to initialize OTel run telemetry", error);
+      return undefined;
+    }
   }
 
   private getSessionPermissionMode(): PermissionMode {
@@ -803,7 +887,7 @@ export class AgentServer {
     }
 
     try {
-      const hasSession = await hydrateSessionJsonl({
+      const { hasSession } = await hydrateSessionJsonl({
         sessionId: priorSessionId,
         cwd,
         taskId: payload.task_id,
@@ -901,6 +985,33 @@ export class AgentServer {
         stopError,
       );
     }
+
+    // Mirror the crash into run telemetry and shut it down (ends the root
+    // span as errored and flushes) - the process is about to die, so nothing
+    // else will get this record out.
+    try {
+      const session = this.session;
+      if (session?.telemetry) {
+        session.telemetry.append(session.payload.run_id, {
+          type: "notification",
+          timestamp: new Date().toISOString(),
+          notification: {
+            jsonrpc: "2.0",
+            method: POSTHOG_NOTIFICATIONS.ERROR,
+            params: {
+              source: "agent_server_crash",
+              error: `Agent server crashed: ${errorMessage}`,
+            },
+          },
+        });
+        await session.telemetry.shutdown();
+      }
+    } catch (telemetryError) {
+      this.logger.error(
+        "Failed to flush telemetry after fatal error",
+        telemetryError,
+      );
+    }
   }
 
   private authenticateRequest(
@@ -937,49 +1048,51 @@ export class AgentServer {
     switch (method) {
       case POSTHOG_NOTIFICATIONS.USER_MESSAGE:
       case "user_message": {
-        this.logger.debug("Received user_message command", {
-          hasContent:
-            typeof params.content === "string"
-              ? params.content.trim().length > 0
-              : Array.isArray(params.content) && params.content.length > 0,
-          artifactCount: Array.isArray(params.artifacts)
-            ? params.artifacts.length
-            : 0,
-        });
-        const builtPrompt = await this.buildPromptFromContentAndArtifacts({
-          content: params.content as string | ContentBlock[] | undefined,
-          artifacts: Array.isArray(params.artifacts)
-            ? (params.artifacts as TaskRunArtifact[])
-            : [],
-          taskId: this.session.payload.task_id,
-          runId: this.session.payload.run_id,
-        });
-        const prompt = builtPrompt.prompt;
-        if (prompt.length === 0) {
-          throw new Error("User message cannot be empty");
-        }
-
+        const commandSession = this.session;
         const messageId =
           typeof params.messageId === "string" && params.messageId
             ? params.messageId
             : undefined;
+        const inFlightDelivery = messageId
+          ? this.inFlightMessageDeliveries.get(messageId)
+          : undefined;
+        if (inFlightDelivery) {
+          this.logger.info("Awaiting in-flight user_message delivery", {
+            messageId,
+          });
+          return await inFlightDelivery;
+        }
+
         let retryCompactContinuation = false;
-        if (messageId) {
-          if (this.deliveredMessageIds.has(messageId)) {
-            if (this.pendingCompactContinuationMessageIds.has(messageId)) {
-              retryCompactContinuation = true;
-              this.logger.info("Retrying pending compact continuation", {
-                messageId,
-              });
-            } else {
-              this.logger.info("Duplicate user_message delivery ignored", {
-                messageId,
-              });
-              return { stopReason: "duplicate_delivery", duplicate: true };
-            }
+        if (messageId && this.deliveredMessageIds.has(messageId)) {
+          if (this.pendingCompactContinuationMessageIds.has(messageId)) {
+            retryCompactContinuation = true;
+            this.logger.info("Retrying pending compact continuation", {
+              messageId,
+            });
           } else {
-            this.deliveredMessageIds.add(messageId);
+            this.logger.info("Duplicate user_message delivery ignored", {
+              messageId,
+            });
+            return { stopReason: "duplicate_delivery", duplicate: true };
           }
+        }
+
+        let resolveDelivery: (result: unknown) => void = () => {};
+        let rejectDelivery: (error: unknown) => void = () => {};
+        const deliveryOutcome = new Promise<unknown>((resolve, reject) => {
+          resolveDelivery = resolve;
+          rejectDelivery = reject;
+        });
+        void deliveryOutcome.catch(() => {});
+        if (messageId) {
+          this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
+        }
+        let deliveryCommitted = retryCompactContinuation;
+        const commitDelivery = (): void => {
+          deliveryCommitted = true;
+          if (!messageId) return;
+          this.deliveredMessageIds.add(messageId);
           if (this.deliveredMessageIds.size > 500) {
             const oldest = this.deliveredMessageIds.values().next().value;
             if (oldest !== undefined) {
@@ -987,135 +1100,213 @@ export class AgentServer {
               this.pendingCompactContinuationMessageIds.delete(oldest);
             }
           }
-        }
-        this.logger.debug("Built user_message prompt", {
-          blockTypes: prompt.map((block) => block.type),
-        });
-        const promptPreview = promptBlocksToText(prompt);
-
-        this.logger.debug(
-          `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
-        );
-
-        this.session.logWriter.resetTurnMessages(this.session.payload.run_id);
-
-        // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
-        // also flips the detected-PR context to its push variant.
-        const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
-        const hostContext = [
-          ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
-          ...(this.detectedPrUrl
-            ? [this.buildDetectedPrContext(this.detectedPrUrl)]
-            : []),
-        ];
-        const promptMeta: Record<string, unknown> = {
-          ...(builtPrompt.meta ?? {}),
-          ...(hostContext.length > 0
-            ? { prContext: hostContext.join("\n\n") }
-            : {}),
         };
 
-        const manualCompactPrompt = isManualCompactPrompt(prompt);
-        const acpSessionId = this.session.acpSessionId;
-        const continueAfterCompaction = (): Promise<PromptResponse> =>
-          this.promptWithUpstreamRetry({
-            sessionId: acpSessionId,
-            prompt: [
-              hiddenTextBlock(
-                "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
-              ),
-            ],
-          });
-
-        let compactCommandCompleted = retryCompactContinuation;
-        let result: PromptResponse;
-        this.suppressAdapterTurnComplete =
-          manualCompactPrompt || retryCompactContinuation;
         try {
-          if (retryCompactContinuation) {
-            result = await continueAfterCompaction();
-            if (messageId) {
-              this.pendingCompactContinuationMessageIds.delete(messageId);
+          this.logger.debug("Received user_message command", {
+            hasContent:
+              typeof params.content === "string"
+                ? params.content.trim().length > 0
+                : Array.isArray(params.content) && params.content.length > 0,
+            artifactCount: Array.isArray(params.artifacts)
+              ? params.artifacts.length
+              : 0,
+          });
+          const builtPrompt = await this.buildPromptFromContentAndArtifacts({
+            content: params.content as string | ContentBlock[] | undefined,
+            artifacts: Array.isArray(params.artifacts)
+              ? (params.artifacts as TaskRunArtifact[])
+              : [],
+            taskId: commandSession.payload.task_id,
+            runId: commandSession.payload.run_id,
+          });
+          const prompt = builtPrompt.prompt;
+          if (prompt.length === 0) {
+            throw new Error("User message cannot be empty");
+          }
+
+          this.logger.debug("Built user_message prompt", {
+            blockTypes: prompt.map((block) => block.type),
+          });
+          const promptPreview = promptBlocksToText(prompt);
+
+          this.logger.debug(
+            `Processing user message (detectedPrUrl=${this.detectedPrUrl ?? "none"}): ${promptPreview.substring(0, 100)}...`,
+          );
+
+          // Resolve before buildDetectedPrContext so a warm auto-publish upgrade
+          // also flips the detected-PR context to its push variant.
+          const autoPublishUpgrade = await this.resolveWarmAutoPublishUpgrade();
+          const hostContext = [
+            ...(autoPublishUpgrade ? [autoPublishUpgrade] : []),
+            ...(this.detectedPrUrl
+              ? [this.buildDetectedPrContext(this.detectedPrUrl)]
+              : []),
+          ];
+          const promptMeta: Record<string, unknown> = {
+            ...(builtPrompt.meta ?? {}),
+            ...(hostContext.length > 0
+              ? { prContext: hostContext.join("\n\n") }
+              : {}),
+          };
+
+          if (params.steer === true) {
+            if (this.activeOwnedTurnCount > 0) {
+              const result = await commandSession.clientConnection.prompt({
+                sessionId: commandSession.acpSessionId,
+                prompt,
+                _meta: { ...promptMeta, steer: true },
+              });
+              const accepted =
+                (result._meta as { steer?: unknown } | undefined)?.steer ===
+                true;
+              if (accepted) {
+                commitDelivery();
+                const outcome = { stopReason: "steered", steered: true };
+                resolveDelivery(outcome);
+                return outcome;
+              }
             }
-          } else {
-            result = await this.session.clientConnection.prompt({
-              sessionId: this.session.acpSessionId,
-              prompt,
-              ...(Object.keys(promptMeta).length > 0
-                ? { _meta: promptMeta }
-                : {}),
+            const outcome = {
+              stopReason: "steer_declined",
+              steered: false,
+            };
+            resolveDelivery(outcome);
+            return outcome;
+          }
+
+          commandSession.logWriter.resetTurnMessages(
+            commandSession.payload.run_id,
+          );
+
+          const manualCompactPrompt = isManualCompactPrompt(prompt);
+          const acpSessionId = commandSession.acpSessionId;
+          const continueAfterCompaction = (): Promise<PromptResponse> =>
+            this.promptWithUpstreamRetry({
+              sessionId: acpSessionId,
+              prompt: [
+                hiddenTextBlock(
+                  "Compaction is complete. Continue working on the task from the compacted context, following the user's instructions from the /compact command.",
+                ),
+              ],
             });
 
-            if (result.stopReason === "end_turn" && manualCompactPrompt) {
-              compactCommandCompleted = true;
-              if (messageId) {
-                this.pendingCompactContinuationMessageIds.add(messageId);
-              }
-              // `/compact` is an SDK-local command, so without a follow-up the
-              // cloud run reports completion before the model resumes the task.
-              this.recordTurnUsage(result.usage);
-              result = await continueAfterCompaction();
+          let result: PromptResponse;
+          this.suppressAdapterTurnComplete =
+            manualCompactPrompt || retryCompactContinuation;
+          try {
+            if (retryCompactContinuation) {
+              result = await this.runOwnedTurn(continueAfterCompaction);
               if (messageId) {
                 this.pendingCompactContinuationMessageIds.delete(messageId);
               }
+            } else {
+              result = await this.runOwnedTurn(() => {
+                const promptResult = commandSession.clientConnection.prompt({
+                  sessionId: commandSession.acpSessionId,
+                  prompt,
+                  ...(Object.keys(promptMeta).length > 0
+                    ? { _meta: promptMeta }
+                    : {}),
+                });
+                if (!promptResult) {
+                  throw new Error("Agent connection did not accept the prompt");
+                }
+                return promptResult;
+              });
+
+              if (result.stopReason === "end_turn" && manualCompactPrompt) {
+                commitDelivery();
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.add(messageId);
+                }
+                // `/compact` is an SDK-local command, so without a follow-up the
+                // cloud run reports completion before the model resumes the task.
+                this.recordTurnUsage(result.usage);
+                result = await this.runOwnedTurn(continueAfterCompaction);
+                if (messageId) {
+                  this.pendingCompactContinuationMessageIds.delete(messageId);
+                }
+              }
             }
+          } catch (error) {
+            await commandSession.logWriter.flushAll();
+            const { recoverable } = await this.handleTurnFailure(
+              commandSession.payload,
+              "followup",
+              error,
+            );
+            if (!recoverable) {
+              throw error;
+            }
+            commitDelivery();
+            const outcome = { stopReason: "error_recoverable" };
+            resolveDelivery(outcome);
+            return outcome;
+          } finally {
+            this.suppressAdapterTurnComplete = false;
           }
+          commitDelivery();
+
+          this.logger.debug("User message completed", {
+            stopReason: result.stopReason,
+          });
+
+          if (result.stopReason === "end_turn") {
+            void this.syncCloudBranchMetadata(commandSession.payload);
+          }
+
+          this.recordTurnUsage(result.usage);
+          this.broadcastTurnComplete(result.stopReason);
+
+          if (result.stopReason === "end_turn") {
+            // Relay the response to Slack. For follow-ups this is the primary
+            // delivery path — the HTTP caller only handles reactions. Echo the
+            // initiating message's id so the backend can attribute the answer.
+            this.relayAgentResponse(commandSession.payload, messageId).catch(
+              (err) =>
+                this.logger.debug("Failed to relay follow-up response", err),
+            );
+          }
+
+          // Flush logs and include the assistant's response text so callers
+          // (e.g. Slack follow-up forwarding) can extract it without racing
+          // against async log persistence to object storage.
+          let assistantMessage: string | undefined;
+          try {
+            await commandSession.logWriter.flush(
+              commandSession.payload.run_id,
+              {
+                coalesce: true,
+              },
+            );
+            assistantMessage = commandSession.logWriter.getFullAgentResponse(
+              commandSession.payload.run_id,
+            );
+          } catch {
+            this.logger.debug("Failed to extract assistant message from logs");
+          }
+
+          const outcome = {
+            stopReason: result.stopReason,
+            ...(assistantMessage && { assistant_message: assistantMessage }),
+          };
+          resolveDelivery(outcome);
+          return outcome;
         } catch (error) {
-          if (messageId && !compactCommandCompleted) {
+          if (messageId && !deliveryCommitted) {
             this.deliveredMessageIds.delete(messageId);
           }
-          await this.session.logWriter.flushAll();
-          const { recoverable } = await this.handleTurnFailure(
-            this.session.payload,
-            "followup",
-            error,
-          );
-          if (!recoverable) {
-            throw error;
-          }
-          return { stopReason: "error_recoverable" };
+          rejectDelivery(error);
+          throw error;
         } finally {
-          this.suppressAdapterTurnComplete = false;
+          if (
+            messageId &&
+            this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
+          ) {
+            this.inFlightMessageDeliveries.delete(messageId);
+          }
         }
-
-        this.logger.debug("User message completed", {
-          stopReason: result.stopReason,
-        });
-
-        if (result.stopReason === "end_turn") {
-          void this.syncCloudBranchMetadata(this.session.payload);
-        }
-
-        this.recordTurnUsage(result.usage);
-        this.broadcastTurnComplete(result.stopReason);
-
-        if (result.stopReason === "end_turn") {
-          // Relay the response to Slack. For follow-ups this is the primary
-          // delivery path — the HTTP caller only handles reactions.
-          this.relayAgentResponse(this.session.payload).catch((err) =>
-            this.logger.debug("Failed to relay follow-up response", err),
-          );
-        }
-
-        // Flush logs and include the assistant's response text so callers
-        // (e.g. Slack follow-up forwarding) can extract it without racing
-        // against async log persistence to object storage.
-        let assistantMessage: string | undefined;
-        try {
-          await this.session.logWriter.flush(this.session.payload.run_id, {
-            coalesce: true,
-          });
-          assistantMessage = this.session.logWriter.getFullAgentResponse(
-            this.session.payload.run_id,
-          );
-        } catch {
-          this.logger.debug("Failed to extract assistant message from logs");
-        }
-
-        return {
-          stopReason: result.stopReason,
-          ...(assistantMessage && { assistant_message: assistantMessage }),
-        };
       }
 
       case POSTHOG_NOTIFICATIONS.CANCEL:
@@ -1228,9 +1419,14 @@ export class AgentServer {
           customInput,
           answers,
         );
-        if (!resolved) {
+        if (resolved === "not_found") {
           throw new Error(
             `No pending permission request found for id: ${requestId}`,
+          );
+        }
+        if (resolved === "invalid_option") {
+          throw new Error(
+            `Option "${optionId}" was not offered for permission request ${requestId}`,
           );
         }
         return { resolved: true };
@@ -1400,9 +1596,16 @@ export class AgentServer {
       userAgent: `posthog/cloud.hog.dev; version: ${this.config.version ?? packageJson.version}`,
     });
 
+    const telemetry = this.createRunTelemetry(
+      payload,
+      deviceInfo,
+      runtimeAdapter,
+    );
+
     const logWriter = new SessionLogWriter({
       posthogAPI,
       logger: new Logger({ debug: true, prefix: "[SessionLogWriter]" }),
+      sinks: telemetry ? [telemetry] : undefined,
     });
 
     const acpConnection = createAcpConnection({
@@ -1465,10 +1668,11 @@ export class AgentServer {
       clientStream,
     );
 
-    await clientConnection.initialize({
+    const initializeResult = await clientConnection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    const steering = extractSteeringCapability(initializeResult);
 
     const runState = preTaskRun?.state as Record<string, unknown> | undefined;
     // Preserve native Codex modes for cloud runs so they behave the same as
@@ -1493,38 +1697,67 @@ export class AgentServer {
       taskRunId: payload.run_id,
       taskId: payload.task_id,
       environment: "cloud",
+      mode: this.getEffectiveMode(payload),
       systemPrompt: sessionSystemPrompt,
       ...(this.config.model && { model: this.config.model }),
       allowedDomains: this.config.allowedDomains,
       jsonSchema: preTask?.json_schema ?? null,
       permissionMode: initialPermissionMode,
+      posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
 
     await this.waitForRepoReady();
-    await this.installSkillBundleArtifacts(
-      payload.task_id,
-      payload.run_id,
-      this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
-    );
-
-    const nativeResume = await this.prepareNativeResume(
-      payload,
-      posthogAPI,
-      preTaskRun,
-      runtimeAdapter,
-      sessionCwd,
-      initialPermissionMode,
-    );
+    const existingPrCheckoutPromise =
+      this.buildExistingPrCheckoutPromise(prUrl);
+    // Overlap the best-effort PR checkout with the rest of session setup. The
+    // checkout promise is always awaited in `finally` so a throw from
+    // installSkillBundleArtifacts / prepareNativeResume / startMcpRelayServer
+    // can never abandon an in-flight `gh pr checkout` that would keep mutating
+    // the working tree after session start has been abandoned — the awaited
+    // settle (plus the checkout's own abort-on-return) cancels it. The overlap
+    // is safe despite both touching repositoryPath: skill bundles install under
+    // `.posthog/skills/<runId>/...`, which is gitignored (untracked) in target
+    // repos, so `git checkout` — which only updates tracked files — cannot
+    // conflict with those writes or leave them associated with the wrong branch.
+    let nativeResume: { sessionId: string; warm: boolean } | null;
     let effectiveSessionMeta: typeof sessionMeta & {
       nativeGoal?: NonNullable<ResumeState["nativeGoal"]>;
     } = sessionMeta;
+    let sessionMcpServers: RemoteMcpServer[];
+    try {
+      await this.installSkillBundleArtifacts(
+        payload.task_id,
+        payload.run_id,
+        this.getArtifactsById(preTaskRun?.artifacts, pendingUserArtifactIds),
+      );
 
-    const sessionMcpServers = [
-      ...(this.config.mcpServers ?? []),
-      ...(await this.startMcpRelayServer()),
-    ];
+      nativeResume = await this.prepareNativeResume(
+        payload,
+        posthogAPI,
+        preTaskRun,
+        runtimeAdapter,
+        sessionCwd,
+        initialPermissionMode,
+      );
+
+      sessionMcpServers = [
+        ...(this.config.mcpServers ?? []),
+        ...(await this.startMcpRelayServer()),
+      ];
+    } finally {
+      // Always consume the checkout result — on the success path this is the
+      // intended await; on a throw it ensures the in-flight checkout settles
+      // (and aborts its children) instead of mutating the tree in the
+      // background. checkoutExistingPullRequest never rejects.
+      if (existingPrCheckoutPromise) {
+        this.logExistingPrCheckoutResult(
+          prUrl,
+          await existingPrCheckoutPromise,
+        );
+      }
+    }
 
     let acpSessionId: string | null = null;
     if (nativeResume) {
@@ -1580,6 +1813,7 @@ export class AgentServer {
       sseController,
       deviceInfo,
       logWriter,
+      telemetry,
       permissionMode: initialPermissionMode,
       hasDesktopConnected: sseController !== null,
       pendingHandoffGitState: undefined,
@@ -1622,6 +1856,7 @@ export class AgentServer {
         runId: payload.run_id,
         taskId: payload.task_id,
         agentVersion: this.config.version ?? packageJson.version,
+        ...(steering ? { steering } : {}),
       },
     };
     this.broadcastEvent({
@@ -1682,6 +1917,15 @@ export class AgentServer {
     }
 
     return { classification: classifyAgentError(message), message };
+  }
+
+  private async runOwnedTurn<T>(operation: () => Promise<T>): Promise<T> {
+    this.activeOwnedTurnCount += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeOwnedTurnCount -= 1;
+    }
   }
 
   /**
@@ -1898,12 +2142,18 @@ export class AgentServer {
       });
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: initialPrompt,
-        ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: initialPrompt,
+          ...(initialPromptMeta ? { _meta: initialPromptMeta } : {}),
+        }),
+      );
 
       this.logger.debug("Initial task message completed", {
         stopReason: result.stopReason,
@@ -1921,6 +2171,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error("Failed to send initial task message", error);
       if (this.session) {
@@ -2110,12 +2362,18 @@ export class AgentServer {
       const builtPrompt = await buildPrompt();
 
       this.session.logWriter.resetTurnMessages(payload.run_id);
+      const acpSessionId = this.session.acpSessionId;
+      if (!acpSessionId) {
+        throw new Error("Agent session is missing its ACP session ID");
+      }
 
-      const result = await this.promptWithUpstreamRetry({
-        sessionId: this.session.acpSessionId,
-        prompt: builtPrompt.prompt,
-        ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
-      });
+      const result = await this.runOwnedTurn(() =>
+        this.promptWithUpstreamRetry({
+          sessionId: acpSessionId,
+          prompt: builtPrompt.prompt,
+          ...(builtPrompt.meta ? { _meta: builtPrompt.meta } : {}),
+        }),
+      );
 
       this.logger.debug(`${logLabel} completed`, {
         stopReason: result.stopReason,
@@ -2137,6 +2395,8 @@ export class AgentServer {
       if (result.stopReason === "end_turn") {
         await this.relayAgentResponse(payload);
       }
+
+      await this.finalizeRunTelemetry(payload);
     } catch (error) {
       this.logger.error(`Failed to send ${logLabel.toLowerCase()}`, error);
       if (this.session) {
@@ -3137,6 +3397,58 @@ export class AgentServer {
     ].join("\n");
   }
 
+  private buildExistingPrCheckoutInstruction(prUrl: string): string {
+    return `Continue working on the existing PR branch. If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\`. Do not check it out again when it is already active.`;
+  }
+
+  /**
+   * Fire-and-overlap: starts the best-effort PR-branch checkout so it runs
+   * concurrently with the rest of session setup, returning the promise (or
+   * null when there is nothing to check out). Only runs when auto-publishing,
+   * matching the system-prompt fallback's gate: a review-first run must not
+   * silently check out a branch the prompt told the agent to leave alone.
+   */
+  private buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null {
+    if (!prUrl || !this.config.repositoryPath) {
+      return null;
+    }
+    if (!this.shouldAutoPublishCloudChanges()) {
+      return null;
+    }
+    return checkoutExistingPullRequest({
+      repositoryPath: this.config.repositoryPath,
+      prUrl,
+    });
+  }
+
+  /**
+   * Consume a pre-checkout result without throwing — a transient `gh` failure
+   * must fall back to the agent's own checkout (via the system-prompt
+   * instruction), never abort session start.
+   */
+  private logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void {
+    if (result.status === "failed") {
+      this.logger.warn(
+        "Existing PR pre-checkout failed; agent will retry if needed",
+        {
+          prUrl,
+          error: result.error,
+        },
+      );
+    } else {
+      this.logger.debug("Existing PR branch prepared before session start", {
+        prUrl,
+        branch: result.branch,
+        alreadyActive: result.status === "already_active",
+      });
+    }
+  }
+
   private buildDetectedPrContext(prUrl: string): string {
     if (!this.shouldAutoPublishCloudChanges()) {
       return (
@@ -3149,10 +3461,10 @@ export class AgentServer {
     return (
       `IMPORTANT — OVERRIDE PREVIOUS INSTRUCTIONS ABOUT CREATING BRANCHES/PRs.\n` +
       `You already have an open pull request: ${prUrl}\n` +
-      `You MUST:\n` +
-      `1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`\n` +
+      `Unless the user explicitly asks for a new branch or separate PR, you MUST:\n` +
+      `1. ${this.buildExistingPrCheckoutInstruction(prUrl)}\n` +
       `2. Make changes, commit, and push to that branch\n` +
-      `You MUST NOT create a new branch, close the existing PR, or create a new PR.`
+      `By default, do not create a new branch, close the existing PR, or create a new PR — continue on the existing PR. If the user explicitly asks you to create a new branch or a separate PR, follow their instruction instead.`
     );
   }
 
@@ -3270,7 +3582,7 @@ Do the requested work, but stop with local changes ready for review.
 
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
       }
@@ -3281,7 +3593,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 This task already has an open pull request: ${prUrl}
 
 After completing the requested changes:
-1. Check out the existing PR branch with \`gh pr checkout ${prUrl}\`
+1. ${this.buildExistingPrCheckoutInstruction(prUrl)}
 2. Stage your changes with \`git add\`, then call the \`git_signed_commit\` tool with a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). This commits to the existing PR branch.
    - If the branch is behind its base, call the \`git_signed_merge\` tool first — it merges the base in server-side with a Verified merge commit. Only if it reports a conflict: fetch and rebase locally (\`git fetch origin <base>\`, \`git rebase origin/<base>\`, resolve, \`git rebase --continue\`), then call the \`git_signed_rewrite\` tool to force-update this same PR branch.
 3. For every PR review comment or review thread you addressed, treat the thread as done only after BOTH of these:
@@ -3290,7 +3602,7 @@ After completing the requested changes:
    List unresolved threads first with \`gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{body}}}}}}}'\` so you can resolve each one you fixed.
 
 Important:
-- Do NOT create a new branch or a new pull request.
+- Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
 ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
 `;
@@ -3428,6 +3740,25 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
+  /**
+   * Ends the run's telemetry (root span + final flush) at the in-sandbox
+   * terminal point of a background run. Sandbox teardown cannot be relied on
+   * for this: agent-server is an exec'd process inside the sandbox, so
+   * `docker stop` signals only the container's PID 1 and Modal terminate is
+   * immediate — the SIGTERM handler (and thus cleanupSession) never runs, and
+   * an unended root span would never export. Once the background prompt
+   * settles the run is over in-sandbox; the workflow marks the terminal
+   * status and destroys the sandbox right after.
+   */
+  private async finalizeRunTelemetry(payload: JwtPayload): Promise<void> {
+    if (this.getEffectiveMode(payload) !== "background") return;
+    try {
+      await this.session?.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.debug("Failed to finalize run telemetry", error);
+    }
+  }
+
   private async signalTaskComplete(
     payload: JwtPayload,
     stopReason: string,
@@ -3473,6 +3804,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     } finally {
       await this.emitRtkSavings();
       await this.eventStreamSender?.stop();
+      // The run is terminal and the sandbox is torn down right after — and
+      // teardown kills this exec'd process without SIGTERM, so this is the
+      // last chance to end the root span and drain the OTel queues. The
+      // error mirror was appended above, so the root span exports as ERROR.
+      await this.session?.telemetry?.shutdown().catch(() => {});
     }
   }
 
@@ -3482,15 +3818,20 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       | typeof POSTHOG_NOTIFICATIONS.ERROR,
     params: Record<string, unknown>,
   ): void {
-    this.eventStreamSender?.enqueue({
-      type: "notification",
+    const entry = {
+      type: "notification" as const,
       timestamp: new Date().toISOString(),
       notification: {
-        jsonrpc: "2.0",
+        jsonrpc: "2.0" as const,
         method,
         params,
       },
-    });
+    };
+    this.eventStreamSender?.enqueue(entry);
+    // Terminal events bypass the SessionLogWriter (and its sinks), so mirror
+    // them onto the OTel writer directly — a failed run is exactly what the
+    // telemetry must record.
+    this.session?.telemetry?.append(this.session.payload.run_id, entry);
   }
 
   private configureEnvironment({
@@ -3618,6 +3959,33 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     );
   }
 
+  private readPermissionMcpDescriptor(
+    params: RequestPermissionRequest,
+  ): { server: string; tool: string } | undefined {
+    const descriptor = readMcpToolDescriptor(params.toolCall?._meta);
+    if (descriptor) return descriptor;
+
+    const rawInput = params.toolCall?.rawInput as
+      | { toolName?: unknown }
+      | undefined;
+    return typeof rawInput?.toolName === "string"
+      ? parseMcpToolName(rawInput.toolName)
+      : undefined;
+  }
+
+  private matchesPostHogExecPermissionRequest(
+    params: RequestPermissionRequest,
+  ): string | null {
+    const descriptor = this.readPermissionMcpDescriptor(params);
+    if (!descriptor || !isPostHogExecDescriptor(descriptor)) return null;
+
+    const subTool = extractPostHogSubTool(params.toolCall?.rawInput);
+    return subTool &&
+      matchesPostHogExecPermission(subTool, this.posthogExecPermissionRegex)
+      ? subTool
+      : null;
+  }
+
   private createCloudClient(payload: JwtPayload) {
     const mode = this.getEffectiveMode(payload);
     const interactionOrigin =
@@ -3666,15 +4034,8 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
           // falling back to Claude's `rawInput.toolName`. Keying off only the
           // Claude channel would silently skip this gate for codex and let a
           // relayed tool auto-run in non-asking modes.
-          const rawInput = params.toolCall?.rawInput as
-            | { toolName?: string }
-            | undefined;
           const mcpServerName =
-            readMcpToolDescriptor(params.toolCall?._meta)?.server ??
-            (typeof rawInput?.toolName === "string" &&
-            rawInput.toolName.startsWith("mcp__")
-              ? rawInput.toolName.split("__")[1]
-              : undefined);
+            this.readPermissionMcpDescriptor(params)?.server;
           if (
             mcpServerName &&
             (this.config.relayMcpServers ?? []).includes(mcpServerName)
@@ -3692,6 +4053,27 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
               },
             };
           }
+        }
+
+        const posthogExecSubTool =
+          this.matchesPostHogExecPermissionRequest(params);
+        if (mode !== "background" && posthogExecSubTool) {
+          const isClaudeCodeRequest = Boolean(
+            params.toolCall?._meta?.claudeCode,
+          );
+          const relayParams = {
+            ...params,
+            options: isClaudeCodeRequest
+              ? params.options
+              : params.options.filter(
+                  (option) => option.kind !== "allow_always",
+                ),
+          };
+          this.logger.debug("Relaying configured PostHog exec permission", {
+            subTool: posthogExecSubTool,
+            sessionPermissionMode: this.getSessionPermissionMode(),
+          });
+          return this.relayPermissionToClient(relayParams);
         }
 
         // Relay permission requests to the connected client when:
@@ -3818,7 +4200,10 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     };
   }
 
-  private async relayAgentResponse(payload: JwtPayload): Promise<void> {
+  private async relayAgentResponse(
+    payload: JwtPayload,
+    messageId?: string,
+  ): Promise<void> {
     if (!this.session) {
       return;
     }
@@ -3862,6 +4247,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
         payload.run_id,
         message,
         messageParts,
+        messageId,
       );
     } catch (error) {
       this.logger.debug("Failed to relay initial agent response to Slack", {
@@ -4021,6 +4407,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     }
   }
 
+  /** Env for a `gh` call that must run as the *current* actor. Prefers the live
+   *  sandbox token (rewritten on an actor transition) over the process env
+   *  (frozen at launch); returns undefined when unmanaged (local/desktop) so
+   *  execGh falls back to the process env. */
+  private ghActorEnv(): Record<string, string> | undefined {
+    const token = resolveGithubToken();
+    return token === undefined ? undefined : ghTokenEnv(token);
+  }
+
   private async fetchPrAttribution(
     prUrl: string,
   ): Promise<{ createdAt: string | null; author: string | null }> {
@@ -4029,6 +4424,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       {
         cwd: this.config.repositoryPath,
         timeoutMs: 10_000,
+        env: this.ghActorEnv(),
       },
     );
     if (res.exitCode !== 0) return { createdAt: null, author: null };
@@ -4047,11 +4443,21 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }
 
   private ghLoginPromise: Promise<string | null> | null = null;
+  private ghLoginToken: string | undefined;
 
   private fetchGhLogin(): Promise<string | null> {
-    this.ghLoginPromise ??= execGh(["api", "user", "--jq", ".login"], {
+    // Key the memoized login on the live token: an actor transition rebinds
+    // /tmp/agent-env, so a cached login would otherwise attribute the new actor's
+    // work to the previous one (or reject their PR).
+    const token = resolveGithubToken();
+    if (this.ghLoginPromise !== null && this.ghLoginToken === token) {
+      return this.ghLoginPromise;
+    }
+    this.ghLoginToken = token;
+    this.ghLoginPromise = execGh(["api", "user", "--jq", ".login"], {
       cwd: this.config.repositoryPath,
       timeoutMs: 10_000,
+      env: token === undefined ? undefined : ghTokenEnv(token),
     })
       .then((res) => {
         const login = res.exitCode === 0 ? res.stdout.trim() : "";
@@ -4091,6 +4497,15 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     if (this.mcpRelayServer) {
       await this.mcpRelayServer.stop();
       this.mcpRelayServer = null;
+    }
+
+    // Shutdown ends open spans and flushes batched records; without it,
+    // sandbox teardown races the OTel batch delay and drops the tail of the
+    // run's telemetry.
+    try {
+      await this.session.telemetry?.shutdown();
+    } catch (error) {
+      this.logger.error("Failed to shut down OTel run telemetry", error);
     }
 
     // Drain pending permissions before ACP cleanup to avoid deadlocks —
@@ -4353,8 +4768,16 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       toolCall: params.toolCall,
     });
 
+    const toolCallMeta = params.toolCall?._meta as
+      | { codeToolKind?: unknown }
+      | undefined;
     return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { resolve, toolCallId });
+      this.pendingPermissions.set(requestId, {
+        resolve,
+        toolCallId,
+        optionIds: new Set(params.options.map((option) => option.optionId)),
+        validateOptionIds: toolCallMeta?.codeToolKind !== "question",
+      });
     });
   }
 
@@ -4376,9 +4799,14 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     optionId: string,
     customInput?: string,
     answers?: Record<string, string>,
-  ): boolean {
+  ): "resolved" | "not_found" | "invalid_option" {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return false;
+    if (!pending) return "not_found";
+    // The request stays parked and resolvable — a corrected response with an
+    // offered option can still settle it.
+    if (pending.validateOptionIds && !pending.optionIds.has(optionId)) {
+      return "invalid_option";
+    }
 
     this.pendingPermissions.delete(requestId);
 
@@ -4396,6 +4824,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       outcome: { outcome: "selected" as const, optionId },
       ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
     });
-    return true;
+    return "resolved";
   }
 }

@@ -15,6 +15,12 @@ const mockNewSession = vi.hoisted(() =>
     configOptions: [],
   }),
 );
+const mockResumeSession = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ configOptions: [] }),
+);
+const mockPrompt = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ stopReason: "end_turn" }),
+);
 
 const mockAcpClient = vi.hoisted(() => ({
   current: undefined as
@@ -40,7 +46,8 @@ const mockClientSideConnection = vi.hoisted(() =>
     this.initialize = vi.fn().mockResolvedValue({});
     this.newSession = mockNewSession;
     this.loadSession = vi.fn().mockResolvedValue({ configOptions: [] });
-    this.resumeSession = vi.fn().mockResolvedValue({ configOptions: [] });
+    this.resumeSession = mockResumeSession;
+    this.prompt = mockPrompt;
     this.setSessionConfigOption = vi.fn(
       async ({ value }: { value: string }) => ({
         configOptions: [
@@ -68,6 +75,12 @@ const mockAgentRun = vi.hoisted(() =>
       },
     }),
   ),
+);
+
+const mockResumeFromLog = vi.hoisted(() => vi.fn());
+const mockFormatConversationForResume = vi.hoisted(() => vi.fn());
+const mockHydrateSessionJsonl = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ hasSession: false }),
 );
 
 const mockAgentConstructor = vi.hoisted(() =>
@@ -103,6 +116,11 @@ vi.mock("@posthog/agent/posthog-api", () => ({
   getLlmGatewayUrl: vi.fn(() => "https://gateway.example.com"),
 }));
 
+vi.mock("@posthog/agent/resume", () => ({
+  resumeFromLog: mockResumeFromLog,
+  formatConversationForResume: mockFormatConversationForResume,
+}));
+
 vi.mock("@posthog/agent/gateway-models", () => ({
   DEFAULT_GATEWAY_MODEL: "claude-opus-4-8",
   DEFAULT_CODEX_MODEL: "gpt-5.5",
@@ -113,7 +131,7 @@ vi.mock("@posthog/agent/gateway-models", () => ({
 }));
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
-  hydrateSessionJsonl: vi.fn().mockResolvedValue(undefined),
+  hydrateSessionJsonl: mockHydrateSessionJsonl,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -164,6 +182,7 @@ function createMockDependencies() {
       getPluginPath: vi.fn(() => "/mock/plugin"),
     },
     agentAuthAdapter: {
+      getCurrentCredentials: vi.fn().mockResolvedValue(null),
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
       configureProcessEnv: vi.fn().mockResolvedValue(undefined),
       createPosthogConfig: vi.fn((credentials) => ({
@@ -187,6 +206,8 @@ function createMockDependencies() {
     },
     mcpAppsService: {
       setServerConfigs: vi.fn(),
+      addServerConfigs: vi.fn(),
+      setConfigResolver: vi.fn(),
       handleDiscovery: vi.fn().mockResolvedValue(undefined),
       cleanup: vi.fn().mockResolvedValue(undefined),
       notifyToolInput: vi.fn(),
@@ -273,6 +294,204 @@ describe("AgentService", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("mcp-apps config resolver", () => {
+    function registeredResolver(): (serverName: string) => Promise<void> {
+      const call = deps.mcpAppsService.setConfigResolver.mock.calls[0];
+      expect(call).toBeDefined();
+      return call[0];
+    }
+
+    it("registers server configs from the current credentials", async () => {
+      deps.agentAuthAdapter.getCurrentCredentials.mockResolvedValue({
+        apiHost: "https://app.posthog.com",
+        projectId: 1,
+      });
+      deps.agentAuthAdapter.buildMcpServers.mockResolvedValue({
+        servers: [
+          {
+            name: "posthog",
+            type: "http",
+            url: "https://mcp.posthog.com/mcp",
+            headers: [
+              { name: "Authorization", value: "Bearer token" },
+              { name: "x-posthog-mcp-consumer", value: "posthog-code" },
+            ],
+          },
+        ],
+        toolApprovals: {},
+        toolInstallations: {},
+      });
+
+      await registeredResolver()("posthog");
+
+      expect(deps.agentAuthAdapter.buildMcpServers).toHaveBeenCalledWith({
+        apiHost: "https://app.posthog.com",
+        projectId: 1,
+      });
+      expect(deps.mcpAppsService.addServerConfigs).toHaveBeenCalledWith([
+        {
+          name: "posthog",
+          url: "https://mcp.posthog.com/mcp",
+          headers: {
+            Authorization: "Bearer token",
+            "x-posthog-mcp-consumer": "posthog-code",
+          },
+        },
+      ]);
+    });
+
+    it("no-ops when there are no current credentials", async () => {
+      deps.agentAuthAdapter.getCurrentCredentials.mockResolvedValue(null);
+
+      await registeredResolver()("posthog");
+
+      expect(deps.agentAuthAdapter.buildMcpServers).not.toHaveBeenCalled();
+      expect(deps.mcpAppsService.addServerConfigs).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reconnect", () => {
+    it("preserves conversation context when native reconnect fails", async () => {
+      const apiClient = {};
+      mockAgentConstructor.mockImplementationOnce(function (
+        this: Record<string, unknown>,
+      ) {
+        this.run = mockAgentRun;
+        this.cleanup = vi.fn().mockResolvedValue(undefined);
+        this.getPosthogAPI = vi.fn(() => apiClient);
+        this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+      });
+      mockResumeFromLog.mockResolvedValue({ conversation: [{ role: "user" }] });
+      mockFormatConversationForResume.mockReturnValue("User: previous request");
+      mockResumeSession.mockRejectedValueOnce(new Error("not found"));
+      await service.reconnectSession({
+        ...baseSessionParams,
+        adapter: "codex",
+        sessionId: "old-session",
+      });
+
+      await service.prompt("run-1", [{ type: "text", text: "next request" }]);
+      await service.prompt("run-1", [{ type: "text", text: "later request" }]);
+
+      expect(mockPrompt.mock.calls[0][0].prompt).toEqual([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("previous request"),
+        }),
+        { type: "text", text: "next request" },
+      ]);
+      expect(mockPrompt.mock.calls[1][0].prompt).toEqual([
+        { type: "text", text: "later request" },
+      ]);
+    });
+
+    it("preserves conversation context when reconnect has no session ID", async () => {
+      mockAgentConstructor.mockImplementationOnce(function (
+        this: Record<string, unknown>,
+      ) {
+        this.run = mockAgentRun;
+        this.cleanup = vi.fn().mockResolvedValue(undefined);
+        this.getPosthogAPI = vi.fn(() => ({}));
+        this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+      });
+      mockResumeFromLog.mockResolvedValue({ conversation: [{ role: "user" }] });
+      mockFormatConversationForResume.mockReturnValue("User: previous request");
+
+      await service.reconnectSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+      await service.prompt("run-1", [{ type: "text", text: "next request" }]);
+
+      expect(mockPrompt.mock.calls[0][0].prompt[0].text).toContain(
+        "previous request",
+      );
+    });
+
+    it("reuses hydrated conversation when Claude resume fails", async () => {
+      mockAgentConstructor.mockImplementationOnce(function (
+        this: Record<string, unknown>,
+      ) {
+        this.run = mockAgentRun;
+        this.cleanup = vi.fn().mockResolvedValue(undefined);
+        this.getPosthogAPI = vi.fn(() => ({}));
+        this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+      });
+      mockHydrateSessionJsonl.mockResolvedValueOnce({
+        hasSession: true,
+        conversation: [{ role: "user", content: [] }],
+      });
+      mockFormatConversationForResume.mockReturnValue("User: hydrated request");
+      mockResumeSession.mockRejectedValueOnce(new Error("not found"));
+
+      await service.reconnectSession({
+        ...baseSessionParams,
+        adapter: "claude",
+        sessionId: "old-session",
+      });
+      await service.prompt("run-1", [{ type: "text", text: "next request" }]);
+
+      expect(mockResumeFromLog).not.toHaveBeenCalled();
+      expect(mockPrompt.mock.calls[0][0].prompt[0].text).toContain(
+        "hydrated request",
+      );
+    });
+
+    it("does not resend hydrated conversation after native resume succeeds", async () => {
+      mockAgentConstructor.mockImplementationOnce(function (
+        this: Record<string, unknown>,
+      ) {
+        this.run = mockAgentRun;
+        this.cleanup = vi.fn().mockResolvedValue(undefined);
+        this.getPosthogAPI = vi.fn(() => ({}));
+        this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+      });
+      mockHydrateSessionJsonl.mockResolvedValueOnce({
+        hasSession: true,
+        conversation: [{ role: "user", content: [] }],
+      });
+      mockFormatConversationForResume.mockReturnValue("User: hydrated request");
+
+      await service.reconnectSession({
+        ...baseSessionParams,
+        adapter: "claude",
+        sessionId: "old-session",
+      });
+      await service.prompt("run-1", [{ type: "text", text: "next request" }]);
+
+      expect(mockPrompt.mock.calls[0][0].prompt).toEqual([
+        { type: "text", text: "next request" },
+      ]);
+    });
+
+    it("retries recovered context after prompt failure", async () => {
+      mockAgentConstructor.mockImplementationOnce(function (
+        this: Record<string, unknown>,
+      ) {
+        this.run = mockAgentRun;
+        this.cleanup = vi.fn().mockResolvedValue(undefined);
+        this.getPosthogAPI = vi.fn(() => ({}));
+        this.flushAllLogs = vi.fn().mockResolvedValue(undefined);
+      });
+      mockResumeFromLog.mockResolvedValue({ conversation: [{ role: "user" }] });
+      mockFormatConversationForResume.mockReturnValue("User: previous request");
+      mockPrompt.mockRejectedValueOnce(new Error("connection lost"));
+
+      await service.reconnectSession({
+        ...baseSessionParams,
+        adapter: "codex",
+      });
+      await expect(
+        service.prompt("run-1", [{ type: "text", text: "first attempt" }]),
+      ).rejects.toThrow("connection lost");
+      await service.prompt("run-1", [{ type: "text", text: "retry" }]);
+
+      expect(mockPrompt.mock.calls[1][0].prompt[0].text).toContain(
+        "previous request",
+      );
+    });
   });
 
   describe("MCP servers", () => {
@@ -784,6 +1003,29 @@ describe("AgentService", () => {
 
       expect(prompt).not.toContain(FOLDERS_HEADER);
       expect(prompt).toContain("If the user names a folder or path");
+    });
+  });
+
+  describe("system prompt questions", () => {
+    it("requires blocking questions to use a structured user-input tool", () => {
+      const prompt = (
+        service as unknown as {
+          buildSystemPrompt: (
+            credentials: { apiHost: string; projectId: number },
+            taskId: string,
+          ) => { append: string };
+        }
+      ).buildSystemPrompt(
+        { apiHost: "https://app.posthog.com", projectId: 1 },
+        "task-1",
+      ).append;
+
+      expect(prompt).toContain(
+        "use the structured user-input tool available in your current mode",
+      );
+      expect(prompt).toContain(
+        "plain-text questions mark the task as finished",
+      );
     });
   });
 });

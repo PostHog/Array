@@ -227,4 +227,29 @@ describe("OAuthService deep-link callback handler", () => {
     expect(mainWindow.restore).toHaveBeenCalled();
     expect(mainWindow.focus).toHaveBeenCalled();
   });
+
+  it("accepts a short-lived impersonated session without a refresh token", async () => {
+    const { service, getCallbackHandler } = createDeps();
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        access_token: "at",
+        expires_in: 1800,
+        token_type: "Bearer",
+        scope: "",
+      }),
+    );
+
+    const login = service.startFlow("us");
+    getCallbackHandler()?.("callback", new URLSearchParams("code=abc"));
+
+    await expect(login).resolves.toEqual({
+      success: true,
+      data: {
+        access_token: "at",
+        expires_in: 1800,
+        token_type: "Bearer",
+        scope: "",
+      },
+    });
+  });
 });

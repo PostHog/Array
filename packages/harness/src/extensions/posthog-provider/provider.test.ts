@@ -51,6 +51,26 @@ describe("buildPosthogProvider", () => {
     expect(config.apiKey).toBe("pha_static");
   });
 
+  it("routes every provider model through an explicit gateway override", () => {
+    const config = buildPosthogProvider(models, {
+      region: "us",
+      apiKey: "proxy-key",
+      baseUrl: "http://127.0.0.1:1234",
+    });
+
+    expect(config.baseUrl).toBe("http://127.0.0.1:1234");
+    expect(
+      (config.models ?? [])
+        .filter((model) => model.api === "anthropic-messages")
+        .every((model) => model.baseUrl === "http://127.0.0.1:1234"),
+    ).toBe(true);
+    expect(
+      (config.models ?? [])
+        .filter((model) => model.api === "openai-responses")
+        .every((model) => model.baseUrl === "http://127.0.0.1:1234/v1"),
+    ).toBe(true);
+  });
+
   it("omits apiKey entirely when none is provided", () => {
     const config = buildPosthogProvider(models);
     expect(config.apiKey).toBeUndefined();
@@ -132,6 +152,25 @@ describe("oauth.modifyModels", () => {
     });
 
     expect(result?.[0]?.baseUrl).toBe(`${getLlmGatewayUrl("eu")}/v1`);
+  });
+
+  it("keeps an explicit gateway override when OAuth credentials have another region", () => {
+    const config = buildPosthogProvider(models, {
+      region: "us",
+      baseUrl: "http://127.0.0.1:1234",
+    });
+    const runtimeModels = [
+      makeModel({ id: "claude-opus-4-8", api: "anthropic-messages" }),
+    ];
+
+    const result = config.oauth?.modifyModels?.(runtimeModels, {
+      access: "a",
+      refresh: "r",
+      expires: 0,
+      region: "eu",
+    });
+
+    expect(result?.[0]?.baseUrl).toBe("http://127.0.0.1:1234");
   });
 
   it("leaves other providers' models untouched", () => {

@@ -76,6 +76,7 @@ export interface UseTiptapEditorOptions {
   onSubmit?: (text: string) => void;
   onBashCommand?: (command: string) => void;
   onBashModeChange?: (isBashMode: boolean) => void;
+  onAttachmentsChange?: (attachments: FileAttachment[]) => void;
   onEmptyChange?: (isEmpty: boolean) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -266,6 +267,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onSubmit,
     onBashCommand,
     onBashModeChange,
+    onAttachmentsChange,
     onEmptyChange,
     onFocus,
     onBlur,
@@ -282,6 +284,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onSubmit,
     onBashCommand,
     onBashModeChange,
+    onAttachmentsChange,
     onEmptyChange,
     onFocus,
     onBlur,
@@ -291,6 +294,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     onSubmit,
     onBashCommand,
     onBashModeChange,
+    onAttachmentsChange,
     onEmptyChange,
     onFocus,
     onBlur,
@@ -331,6 +335,20 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const [isReady, setIsReady] = useState(false);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const attachmentsRef = useRef<FileAttachment[]>([]);
+  const updateAttachments = useCallback(
+    (
+      update:
+        | FileAttachment[]
+        | ((current: FileAttachment[]) => FileAttachment[]),
+    ) => {
+      const next =
+        typeof update === "function" ? update(attachmentsRef.current) : update;
+      attachmentsRef.current = next;
+      setAttachments(next);
+      callbackRefs.current.onAttachmentsChange?.(next);
+    },
+    [],
+  );
 
   const editor = useEditor(
     {
@@ -494,7 +512,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
           event.preventDefault();
 
           resolveAndAttachDroppedFiles(files, (a) => {
-            setAttachments((prev) => {
+            updateAttachments((prev) => {
               if (prev.some((existing) => existing.id === a.id)) return prev;
               return [...prev, a];
             });
@@ -608,7 +626,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
                 try {
                   const result = await persistImageFile(file);
 
-                  setAttachments((prev) => {
+                  updateAttachments((prev) => {
                     if (prev.some((a) => a.id === result.path)) return prev;
                     return [...prev, { id: result.path, label: result.name }];
                   });
@@ -759,10 +777,10 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
 
   // Restore attachments from draft on mount
   useEffect(() => {
-    setAttachments(draft.restoredAttachments);
+    updateAttachments(draft.restoredAttachments);
     // Only run on mount / session change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.restoredAttachments]);
+  }, [draft.restoredAttachments, updateAttachments]);
 
   const submit = useCallback(() => {
     if (!editor) return;
@@ -780,7 +798,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
       editor.commands.clearContent();
       prevBashModeRef.current = false;
       pasteCountRef.current = 0;
-      setAttachments([]);
+      updateAttachments([]);
       draft.clearDraft();
     };
 
@@ -817,6 +835,7 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     clearOnSubmit,
     attachments,
     enableBashMode,
+    updateAttachments,
   ]);
 
   submitRef.current = submit;
@@ -832,18 +851,28 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
   const clear = useCallback(() => {
     editor?.commands.clearContent();
     prevBashModeRef.current = false;
-    setAttachments([]);
+    updateAttachments([]);
     draft.clearDraft();
-  }, [editor, draft]);
+  }, [editor, draft, updateAttachments]);
   const getText = useCallback(() => editor?.getText() ?? "", [editor]);
   const setContent = useCallback(
-    (text: string) => {
+    (content: string | EditorContent) => {
       if (!editor) return;
-      editor.commands.setContent(text);
+      editor.commands.setContent(
+        typeof content === "string"
+          ? content
+          : editorContentToTiptapJson(content),
+      );
+      if (typeof content !== "string") {
+        updateAttachments(content.attachments ?? []);
+      }
       editor.commands.focus("end", { scrollIntoView: false });
-      draft.saveDraft(editor, attachments);
+      draft.saveDraft(
+        editor,
+        typeof content === "string" ? attachments : (content.attachments ?? []),
+      );
     },
-    [editor, draft, attachments],
+    [editor, draft, attachments, updateAttachments],
   );
   const insertEditorContent = useCallback(
     (content: EditorContent) => {
@@ -900,16 +929,22 @@ export function useTiptapEditor(options: UseTiptapEditorOptions) {
     [editor, draft, attachments],
   );
 
-  const addAttachment = useCallback((attachment: FileAttachment) => {
-    setAttachments((prev) => {
-      if (prev.some((a) => a.id === attachment.id)) return prev;
-      return [...prev, attachment];
-    });
-  }, []);
+  const addAttachment = useCallback(
+    (attachment: FileAttachment) => {
+      updateAttachments((prev) => {
+        if (prev.some((a) => a.id === attachment.id)) return prev;
+        return [...prev, attachment];
+      });
+    },
+    [updateAttachments],
+  );
 
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const removeAttachment = useCallback(
+    (id: string) => {
+      updateAttachments((prev) => prev.filter((a) => a.id !== id));
+    },
+    [updateAttachments],
+  );
 
   const isEmpty = !editor || (isEmptyState && attachments.length === 0);
   const isBashMode =

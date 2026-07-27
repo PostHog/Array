@@ -76,6 +76,11 @@ const components: Components = {
       {children}
     </a>
   ),
+  img: ({ alt }) => (
+    <Text className="text-muted-foreground text-sm">
+      Remote image blocked{alt ? `: ${alt}` : ""}
+    </Text>
+  ),
   ul: ({ children }) => (
     <ul className="list-disc space-y-0.5 ps-4">{children}</ul>
   ),

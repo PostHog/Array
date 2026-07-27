@@ -111,7 +111,11 @@ export class SetupRunServiceImpl implements ISetupRunService {
       repoPath: input.repoPath,
       apiHost: input.apiHost,
       projectId: input.projectId,
-      permissionMode: "bypassPermissions",
+      permissionMode: "plan",
+      // Nothing answers a permission prompt on an auto-launched run.
+      disallowedTools: ["EnterPlanMode", "ExitPlanMode", "AskUserQuestion"],
+      // Never the repo's own .claude settings: they can carry hooks.
+      settingSources: ["user"],
       jsonSchema: input.jsonSchema,
     });
   }

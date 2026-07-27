@@ -24,6 +24,7 @@ import {
   isJsonRpcNotification,
   isJsonRpcRequest,
   isJsonRpcResponse,
+  isPersistedOptionSupported,
   isRateLimitError,
   isTransientUpstreamError,
   mergeConfigOptions,
@@ -34,6 +35,7 @@ import {
   type StoredLogEntry,
   sendableQueuePrefixLength,
   sessionSupportsNativeSteer,
+  type TaskRunArtifact,
   type TaskRunStatus,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -84,6 +86,7 @@ import {
   convertStoredEntriesToEvents,
   createUserShellExecuteEvent,
   extractPromptText,
+  getStoredLogEventPosition,
   getUserShellExecutesSinceLastPrompt,
   hasSessionPromptEvent,
   isTurnCompleteEvent,
@@ -150,6 +153,26 @@ type TrpcSubscription = {
     handlers: { onData: (data: any) => void; onError?: (err: unknown) => void },
   ) => { unsubscribe: () => void };
 };
+
+interface CloudHydrationResult {
+  historyEntryCount: number;
+  liveStreamLineCount: number;
+}
+
+interface CloudTaskWatcher {
+  runId: string;
+  apiHost: string;
+  teamId: number;
+  startToken: number;
+  resumeFromEntryCount?: number;
+  resumeHistoryCountOffset?: number;
+  resumeHydrationToken: number;
+  bufferResumeUpdates: boolean;
+  bufferedResumeUpdates: CloudTaskUpdatePayload[];
+  processCloudUpdate: (update: CloudTaskUpdatePayload) => void;
+  subscription: { unsubscribe: () => void };
+  onStatusChange?: () => void;
+}
 
 export interface SessionTrpc {
   agent: {
@@ -528,6 +551,906 @@ function entriesScopedToTaskRun(
   });
 }
 
+function suffixPrefixOverlap(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) return 0;
+
+  const separator = Symbol("resume-chain-separator");
+  const patternAndTail: (string | symbol)[] = [
+    ...right,
+    separator,
+    ...left.slice(-right.length),
+  ];
+  const prefixLengths = new Array<number>(patternAndTail.length).fill(0);
+  for (let index = 1; index < patternAndTail.length; index += 1) {
+    let prefixLength = prefixLengths[index - 1];
+    while (
+      prefixLength > 0 &&
+      patternAndTail[index] !== patternAndTail[prefixLength]
+    ) {
+      prefixLength = prefixLengths[prefixLength - 1];
+    }
+    if (patternAndTail[index] === patternAndTail[prefixLength]) {
+      prefixLength += 1;
+    }
+    prefixLengths[index] = prefixLength;
+  }
+  return prefixLengths[prefixLengths.length - 1];
+}
+
+function appendHydrationHash(hash: number, value: string): number {
+  let nextHash = hash;
+  for (let index = 0; index < value.length; index += 1) {
+    nextHash ^= value.charCodeAt(index);
+    nextHash = Math.imul(nextHash, 16_777_619);
+  }
+  return nextHash >>> 0;
+}
+
+function hashHydrationValue(value: unknown, hash = 2_166_136_261): number {
+  if (value === null) return appendHydrationHash(hash, "null");
+  if (Array.isArray(value)) {
+    let nextHash = appendHydrationHash(hash, "[");
+    for (const item of value) {
+      nextHash = hashHydrationValue(item, nextHash);
+      nextHash = appendHydrationHash(nextHash, ",");
+    }
+    return appendHydrationHash(nextHash, "]");
+  }
+  switch (typeof value) {
+    case "boolean":
+      return appendHydrationHash(hash, value ? "true" : "false");
+    case "number":
+      return appendHydrationHash(hash, `number:${value}`);
+    case "string":
+      return appendHydrationHash(hash, `string:${value}`);
+    case "undefined":
+      return appendHydrationHash(hash, "undefined");
+    case "object": {
+      let nextHash = appendHydrationHash(hash, "{");
+      const record = value as Record<string, unknown>;
+      for (const key of Object.keys(record).sort()) {
+        nextHash = appendHydrationHash(nextHash, key);
+        nextHash = hashHydrationValue(record[key], nextHash);
+      }
+      return appendHydrationHash(nextHash, "}");
+    }
+    default:
+      return appendHydrationHash(hash, typeof value);
+  }
+}
+
+function hydrationValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== typeof right) {
+    return false;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return (
+      left.length === right.length &&
+      left.every((value, index) => hydrationValuesEqual(value, right[index]))
+    );
+  }
+  if (typeof left !== "object" || typeof right !== "object") return false;
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(rightRecord, key) &&
+        hydrationValuesEqual(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
+
+function cloudHydrationMessageHash(event: AcpMessage): number {
+  return hashHydrationValue(event.message);
+}
+
+function cloudHydrationMessagesEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  if (leftPosition && rightPosition) {
+    return (
+      leftPosition.taskRunId === rightPosition.taskRunId &&
+      leftPosition.entryIndex === rightPosition.entryIndex
+    );
+  }
+  return hydrationValuesEqual(left.message, right.message);
+}
+
+function cloudHydrationPositionsEqual(
+  left: AcpMessage,
+  right: AcpMessage,
+): boolean {
+  const leftPosition = getStoredLogEventPosition(left);
+  const rightPosition = getStoredLogEventPosition(right);
+  return (
+    leftPosition !== undefined &&
+    rightPosition !== undefined &&
+    leftPosition.taskRunId === rightPosition.taskRunId &&
+    leftPosition.entryIndex === rightPosition.entryIndex
+  );
+}
+
+interface HydrationTurn {
+  events: AcpMessage[];
+  eventHashes: number[];
+  promptEvent?: AcpMessage;
+  promptHash?: number;
+  taskRunId?: string;
+}
+
+interface HydrationPromptPositions {
+  all: number[];
+  unscoped: number[];
+  byTaskRunId: Map<string, number[]>;
+}
+
+function sessionEventTaskRunMarker(event: AcpMessage): string | undefined {
+  if (!isJsonRpcNotification(event.message)) return undefined;
+  const params = (event.message.params ?? {}) as {
+    runId?: unknown;
+    taskRunId?: unknown;
+  };
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.SDK_SESSION) &&
+    typeof params.taskRunId === "string"
+  ) {
+    return params.taskRunId;
+  }
+  if (
+    isNotification(event.message.method, POSTHOG_NOTIFICATIONS.RUN_STARTED) &&
+    typeof params.runId === "string"
+  ) {
+    return params.runId;
+  }
+  return undefined;
+}
+
+function splitHydrationTurns(events: AcpMessage[]): HydrationTurn[] {
+  const turns: HydrationTurn[] = [];
+  let taskRunId: string | undefined;
+  let currentEvents: AcpMessage[] = [];
+  let currentPromptEvent: AcpMessage | undefined;
+  const finishCurrent = (): void => {
+    if (currentEvents.length === 0) return;
+    turns.push({
+      events: currentEvents,
+      eventHashes: currentEvents.map(cloudHydrationMessageHash),
+      promptEvent: currentPromptEvent,
+      promptHash: currentPromptEvent
+        ? cloudHydrationMessageHash(currentPromptEvent)
+        : undefined,
+      taskRunId,
+    });
+  };
+
+  for (const event of events) {
+    const marker = sessionEventTaskRunMarker(event);
+    if (marker) {
+      finishCurrent();
+      taskRunId = marker;
+      currentEvents = [event];
+      currentPromptEvent = undefined;
+      continue;
+    }
+
+    if (isSessionPromptEvent(event)) {
+      finishCurrent();
+      currentEvents = [event];
+      currentPromptEvent = event;
+      continue;
+    }
+    currentEvents.push(event);
+  }
+  finishCurrent();
+  return turns;
+}
+
+function hydrationTurnScopesMatch(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  return (
+    liveTurn.taskRunId === undefined ||
+    hydratedTurn.taskRunId === undefined ||
+    liveTurn.taskRunId === hydratedTurn.taskRunId
+  );
+}
+
+function indexHydratedPromptTurns(
+  hydratedTurns: HydrationTurn[],
+): Map<number, HydrationPromptPositions> {
+  const positionsByPrompt = new Map<number, HydrationPromptPositions>();
+  for (let index = 0; index < hydratedTurns.length; index += 1) {
+    const turn = hydratedTurns[index];
+    if (turn.promptHash === undefined) continue;
+    let positions = positionsByPrompt.get(turn.promptHash);
+    if (!positions) {
+      positions = {
+        all: [],
+        unscoped: [],
+        byTaskRunId: new Map(),
+      };
+      positionsByPrompt.set(turn.promptHash, positions);
+    }
+    positions.all.push(index);
+    if (turn.taskRunId === undefined) {
+      positions.unscoped.push(index);
+      continue;
+    }
+    const scopedPositions = positions.byTaskRunId.get(turn.taskRunId) ?? [];
+    scopedPositions.push(index);
+    positions.byTaskRunId.set(turn.taskRunId, scopedPositions);
+  }
+  return positionsByPrompt;
+}
+
+function latestPositionIndexAtOrBefore(
+  positions: number[] | undefined,
+  maximum: number,
+): number {
+  if (!positions || positions.length === 0) return -1;
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle] <= maximum) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findPromptHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  positionsByPrompt: Map<number, HydrationPromptPositions>,
+  maximum: number,
+): number {
+  const livePrompt = liveTurn.promptEvent;
+  if (livePrompt === undefined || liveTurn.promptHash === undefined) {
+    return -1;
+  }
+  const positions = positionsByPrompt.get(liveTurn.promptHash);
+  if (!positions) return -1;
+  const matchingPosition = (
+    candidatePositions: number[] | undefined,
+  ): number => {
+    if (!candidatePositions) return -1;
+    let candidateIndex = latestPositionIndexAtOrBefore(
+      candidatePositions,
+      maximum,
+    );
+    while (candidateIndex >= 0) {
+      const position = candidatePositions[candidateIndex];
+      const hydratedPrompt = hydratedTurns[position].promptEvent;
+      if (
+        hydratedPrompt &&
+        cloudHydrationMessagesEqual(livePrompt, hydratedPrompt)
+      ) {
+        return position;
+      }
+      candidateIndex -= 1;
+    }
+    return -1;
+  };
+  if (liveTurn.taskRunId === undefined) {
+    return matchingPosition(positions.all);
+  }
+  return Math.max(
+    matchingPosition(positions.byTaskRunId.get(liveTurn.taskRunId)),
+    matchingPosition(positions.unscoped),
+  );
+}
+
+interface PromptlessHydrationMatch {
+  hydratedTurnIndex: number;
+  liveMessageIndexOffset: number;
+}
+
+interface HydrationEventOverlap {
+  hydratedEventIndex: number;
+  liveEventIndex: number;
+}
+
+interface HydrationEventPosition {
+  turnIndex: number;
+  eventIndex: number;
+}
+
+type HydrationEventIndex = Map<number, HydrationEventPosition[]>;
+
+function indexHydratedTurnEvents(
+  hydratedTurns: HydrationTurn[],
+): HydrationEventIndex {
+  const positionsByHash: HydrationEventIndex = new Map();
+  for (let turnIndex = 0; turnIndex < hydratedTurns.length; turnIndex += 1) {
+    const turn = hydratedTurns[turnIndex];
+    for (let eventIndex = 0; eventIndex < turn.events.length; eventIndex += 1) {
+      if (!isStrongPromptlessOverlapEvent(turn.events[eventIndex])) continue;
+      const hash = turn.eventHashes[eventIndex];
+      const positions = positionsByHash.get(hash) ?? [];
+      positions.push({ turnIndex, eventIndex });
+      positionsByHash.set(hash, positions);
+    }
+  }
+  return positionsByHash;
+}
+
+function isStrongPromptlessOverlapEvent(event: AcpMessage): boolean {
+  if (!isJsonRpcNotification(event.message)) return false;
+  if (event.message.method !== "session/update") return false;
+  const update = (
+    event.message.params as { update?: { sessionUpdate?: unknown } } | undefined
+  )?.update;
+  return (
+    typeof update?.sessionUpdate === "string" &&
+    agentMessageUpdateKind(event) !== "ignored"
+  );
+}
+
+function findHydrationEventOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  allowWeakOverlap: boolean,
+): HydrationEventOverlap | undefined {
+  if (!hydrationTurnScopesMatch(liveTurn, hydratedTurn)) return undefined;
+  const hydratedPositions = new Map<number, number[]>();
+  for (
+    let hydratedIndex = 0;
+    hydratedIndex < hydratedTurn.events.length;
+    hydratedIndex += 1
+  ) {
+    const event = hydratedTurn.events[hydratedIndex];
+    if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(event)) {
+      continue;
+    }
+    const hash = hydratedTurn.eventHashes[hydratedIndex];
+    const positions = hydratedPositions.get(hash) ?? [];
+    positions.push(hydratedIndex);
+    hydratedPositions.set(hash, positions);
+  }
+  const findMatch = (
+    kind: "stable" | "boundary" | "any",
+  ): HydrationEventOverlap | undefined => {
+    for (
+      let liveIndex = liveTurn.events.length - 1;
+      liveIndex >= 0;
+      liveIndex -= 1
+    ) {
+      const liveEvent = liveTurn.events[liveIndex];
+      if (!allowWeakOverlap && !isStrongPromptlessOverlapEvent(liveEvent)) {
+        continue;
+      }
+      if (
+        kind === "boundary" &&
+        (!isStrongPromptlessOverlapEvent(liveEvent) ||
+          agentMessageUpdateKind(liveEvent) != null)
+      ) {
+        continue;
+      }
+      const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+      if (!positions) continue;
+      for (
+        let positionIndex = positions.length - 1;
+        positionIndex >= 0;
+        positionIndex -= 1
+      ) {
+        const hydratedEventIndex = positions[positionIndex];
+        const hydratedEvent = hydratedTurn.events[hydratedEventIndex];
+        if (
+          kind === "stable" &&
+          !cloudHydrationPositionsEqual(liveEvent, hydratedEvent)
+        ) {
+          continue;
+        }
+        if (cloudHydrationMessagesEqual(liveEvent, hydratedEvent)) {
+          return { hydratedEventIndex, liveEventIndex: liveIndex };
+        }
+      }
+    }
+    return undefined;
+  };
+  return findMatch("stable") ?? findMatch("boundary") ?? findMatch("any");
+}
+
+function agentMessageIndexBeforeEvent(
+  events: AcpMessage[],
+  eventIndex: number,
+): number {
+  const position: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (let index = 0; index < eventIndex; index += 1) {
+    const updateKind = agentMessageUpdateKind(events[index]);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return position.messageIndex;
+}
+
+function indexAgentMessagePositions(
+  events: AcpMessage[],
+  startingIndex: number,
+): WeakMap<AcpMessage, number> {
+  const positions = new WeakMap<AcpMessage, number>();
+  const position: AgentMessagePosition = {
+    messageIndex: startingIndex,
+    chunkRunActive: false,
+  };
+  for (const event of events) {
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "chunk") {
+      positions.set(event, position.messageIndex);
+      position.chunkRunActive = true;
+    } else if (updateKind === "final") {
+      positions.set(event, position.messageIndex);
+      position.messageIndex += 1;
+      position.chunkRunActive = false;
+    } else if (updateKind !== "ignored") {
+      finishAgentMessageChunkRun(position);
+    }
+  }
+  return positions;
+}
+
+function promptlessTailStrictlyPredatesPrompt(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+): boolean {
+  const promptTimestamp = hydratedTurn.promptEvent?.ts;
+  return (
+    promptTimestamp === undefined ||
+    liveTurn.events.every((event) => event.ts < promptTimestamp)
+  );
+}
+
+function hasLaterUnmatchedAssistantBoundary(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  overlap: HydrationEventOverlap,
+): boolean {
+  if (agentMessageUpdateKind(liveTurn.events[overlap.liveEventIndex]) == null) {
+    return false;
+  }
+  return hydratedTurn.events
+    .slice(overlap.hydratedEventIndex + 1)
+    .some(
+      (event) =>
+        isStrongPromptlessOverlapEvent(event) &&
+        agentMessageUpdateKind(event) == null,
+    );
+}
+
+interface IndexedHydrationEventOverlap extends HydrationEventOverlap {
+  hydratedTurnIndex: number;
+}
+
+function latestEventPositionAtOrBeforeTurn(
+  positions: HydrationEventPosition[],
+  maximumTurnIndex: number,
+): number {
+  let low = 0;
+  let high = positions.length - 1;
+  let match = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (positions[middle].turnIndex <= maximumTurnIndex) {
+      match = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return match;
+}
+
+function findIndexedPromptlessOverlap(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  minimumTurnIndex: number,
+  maximumTurnIndex: number,
+): IndexedHydrationEventOverlap | undefined {
+  let latestMatch: IndexedHydrationEventOverlap | undefined;
+  for (
+    let liveEventIndex = liveTurn.events.length - 1;
+    liveEventIndex >= 0;
+    liveEventIndex -= 1
+  ) {
+    const liveEvent = liveTurn.events[liveEventIndex];
+    if (!isStrongPromptlessOverlapEvent(liveEvent)) continue;
+    const positions = hydratedEventIndex.get(
+      liveTurn.eventHashes[liveEventIndex],
+    );
+    if (!positions) continue;
+    for (
+      let positionIndex = latestEventPositionAtOrBeforeTurn(
+        positions,
+        maximumTurnIndex,
+      );
+      positionIndex >= 0;
+      positionIndex -= 1
+    ) {
+      const position = positions[positionIndex];
+      if (position.turnIndex < minimumTurnIndex) break;
+      if (latestMatch && position.turnIndex < latestMatch.hydratedTurnIndex) {
+        break;
+      }
+      const hydratedTurn = hydratedTurns[position.turnIndex];
+      const hydratedEvent = hydratedTurn.events[position.eventIndex];
+      if (
+        !isStrongPromptlessOverlapEvent(hydratedEvent) ||
+        !hydrationTurnScopesMatch(liveTurn, hydratedTurn) ||
+        !cloudHydrationMessagesEqual(liveEvent, hydratedEvent)
+      ) {
+        continue;
+      }
+      latestMatch = {
+        hydratedTurnIndex: position.turnIndex,
+        hydratedEventIndex: position.eventIndex,
+        liveEventIndex,
+      };
+      break;
+    }
+  }
+  return latestMatch;
+}
+
+function findPromptlessHydrationTurn(
+  liveTurn: HydrationTurn,
+  hydratedTurns: HydrationTurn[],
+  hydratedEventIndex: HydrationEventIndex,
+  maximum: number,
+): PromptlessHydrationMatch | undefined {
+  if (maximum < 0) return undefined;
+  const leafTaskRunId = hydratedTurns[maximum]?.taskRunId;
+  let minimum = 0;
+  if (leafTaskRunId !== undefined) {
+    minimum = maximum;
+    while (
+      minimum > 0 &&
+      hydratedTurns[minimum - 1].taskRunId === leafTaskRunId
+    ) {
+      minimum -= 1;
+    }
+  }
+  const newestHydratedTurn = hydratedTurns[maximum];
+  const newestOverlap = findHydrationEventOverlap(
+    liveTurn,
+    newestHydratedTurn,
+    true,
+  );
+  if (newestOverlap) {
+    if (
+      !cloudHydrationPositionsEqual(
+        liveTurn.events[newestOverlap.liveEventIndex],
+        newestHydratedTurn.events[newestOverlap.hydratedEventIndex],
+      ) &&
+      hasLaterUnmatchedAssistantBoundary(
+        liveTurn,
+        newestHydratedTurn,
+        newestOverlap,
+      )
+    ) {
+      return undefined;
+    }
+    return {
+      hydratedTurnIndex: maximum,
+      liveMessageIndexOffset:
+        agentMessageIndexBeforeEvent(
+          newestHydratedTurn.events,
+          newestOverlap.hydratedEventIndex,
+        ) -
+        agentMessageIndexBeforeEvent(
+          liveTurn.events,
+          newestOverlap.liveEventIndex,
+        ),
+    };
+  }
+  if (maximum === minimum) {
+    return undefined;
+  }
+  const olderOverlap = findIndexedPromptlessOverlap(
+    liveTurn,
+    hydratedTurns,
+    hydratedEventIndex,
+    minimum,
+    maximum - 1,
+  );
+  if (!olderOverlap) return undefined;
+  const hydratedTurn = hydratedTurns[olderOverlap.hydratedTurnIndex];
+  const hasStableOverlap = cloudHydrationPositionsEqual(
+    liveTurn.events[olderOverlap.liveEventIndex],
+    hydratedTurn.events[olderOverlap.hydratedEventIndex],
+  );
+  if (
+    !hasStableOverlap &&
+    !promptlessTailStrictlyPredatesPrompt(liveTurn, newestHydratedTurn)
+  ) {
+    return undefined;
+  }
+  return {
+    hydratedTurnIndex: olderOverlap.hydratedTurnIndex,
+    liveMessageIndexOffset:
+      agentMessageIndexBeforeEvent(
+        hydratedTurn.events,
+        olderOverlap.hydratedEventIndex,
+      ) -
+      agentMessageIndexBeforeEvent(
+        liveTurn.events,
+        olderOverlap.liveEventIndex,
+      ),
+  };
+}
+
+function discardExactHydratedEvents(
+  liveTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  hydratedTurn: Pick<HydrationTurn, "events" | "eventHashes">,
+  liveMessagePositions: WeakMap<AcpMessage, number>,
+  hydratedMessagePositions: WeakMap<AcpMessage, number>,
+): AcpMessage[] {
+  const keep = new Array<boolean>(liveTurn.events.length).fill(true);
+  const hydratedPositions = new Map<number, number[]>();
+  for (let index = 0; index < hydratedTurn.eventHashes.length; index += 1) {
+    const eventHash = hydratedTurn.eventHashes[index];
+    const positions = hydratedPositions.get(eventHash) ?? [];
+    positions.push(index);
+    hydratedPositions.set(eventHash, positions);
+  }
+  let hydratedIndex = hydratedTurn.eventHashes.length - 1;
+  for (
+    let liveIndex = liveTurn.eventHashes.length - 1;
+    liveIndex >= 0;
+    liveIndex -= 1
+  ) {
+    const positions = hydratedPositions.get(liveTurn.eventHashes[liveIndex]);
+    if (!positions) continue;
+    let positionIndex = latestPositionIndexAtOrBefore(positions, hydratedIndex);
+    while (positionIndex >= 0) {
+      const matchedIndex = positions[positionIndex];
+      const liveMessagePosition = liveMessagePositions.get(
+        liveTurn.events[liveIndex],
+      );
+      const hydratedMessagePosition = hydratedMessagePositions.get(
+        hydratedTurn.events[matchedIndex],
+      );
+      if (
+        (liveMessagePosition !== undefined ||
+          hydratedMessagePosition !== undefined) &&
+        liveMessagePosition !== hydratedMessagePosition
+      ) {
+        positionIndex -= 1;
+        continue;
+      }
+      if (
+        cloudHydrationMessagesEqual(
+          liveTurn.events[liveIndex],
+          hydratedTurn.events[matchedIndex],
+        )
+      ) {
+        keep[liveIndex] = false;
+        hydratedIndex = matchedIndex - 1;
+        break;
+      }
+      positionIndex -= 1;
+    }
+  }
+  return liveTurn.events.filter((_event, index) => keep[index]);
+}
+
+function agentMessageUpdateKind(
+  event: AcpMessage,
+): "final" | "chunk" | "ignored" | undefined {
+  const message = event.message;
+  if (!isJsonRpcNotification(message) || message.method !== "session/update") {
+    return undefined;
+  }
+  const update = (
+    message.params as
+      | {
+          update?: {
+            sessionUpdate?: string;
+            content?: unknown;
+          };
+        }
+      | undefined
+  )?.update;
+  if (update?.sessionUpdate === "agent_message") return "final";
+  if (update?.sessionUpdate === "agent_message_chunk") return "chunk";
+  if (update?.sessionUpdate === "agent_thought_chunk") {
+    const content = update.content as
+      | { type?: string; text?: string; thinking?: string }
+      | null
+      | undefined;
+    if (
+      (content?.type === "text" && !content.text) ||
+      (content?.type === "thinking" && !content.thinking)
+    ) {
+      return "ignored";
+    }
+  }
+  return undefined;
+}
+
+interface AgentMessagePosition {
+  messageIndex: number;
+  chunkRunActive: boolean;
+}
+
+function isSessionPromptEvent(event: AcpMessage): boolean {
+  return (
+    isJsonRpcRequest(event.message) && event.message.method === "session/prompt"
+  );
+}
+
+function finishAgentMessageChunkRun(position: AgentMessagePosition): void {
+  if (!position.chunkRunActive) return;
+  position.messageIndex += 1;
+  position.chunkRunActive = false;
+}
+
+function discardChunksSupersededByHydratedMessages(
+  liveTurn: HydrationTurn,
+  hydratedTurn: HydrationTurn,
+  liveMessageIndexOffset: number,
+): Pick<HydrationTurn, "events" | "eventHashes"> {
+  const hydratedMessagePositions = new Set<number>();
+  const hydratedPosition: AgentMessagePosition = {
+    messageIndex: 0,
+    chunkRunActive: false,
+  };
+  for (const event of hydratedTurn.events) {
+    if (isSessionPromptEvent(event)) continue;
+    const updateKind = agentMessageUpdateKind(event);
+    if (updateKind === "ignored") continue;
+    if (updateKind === "chunk") {
+      hydratedPosition.chunkRunActive = true;
+      continue;
+    }
+    if (updateKind === "final") {
+      hydratedMessagePositions.add(hydratedPosition.messageIndex);
+      hydratedPosition.messageIndex += 1;
+      hydratedPosition.chunkRunActive = false;
+      continue;
+    }
+    finishAgentMessageChunkRun(hydratedPosition);
+  }
+
+  // SessionLogWriter treats consecutive chunks as one assistant message. A
+  // direct agent_message replaces that buffered message, while a later chunk
+  // run after a tool/update boundary is a separate message. Match those
+  // turn-local message positions instead of timestamps so direct finals and
+  // same-millisecond events reconcile correctly.
+  const livePosition: AgentMessagePosition = {
+    messageIndex: Math.max(0, liveMessageIndexOffset),
+    chunkRunActive: false,
+  };
+  let discardChunkRun = false;
+  const events: AcpMessage[] = [];
+  const eventHashes: number[] = [];
+  for (
+    let eventIndex = 0;
+    eventIndex < liveTurn.events.length;
+    eventIndex += 1
+  ) {
+    const event = liveTurn.events[eventIndex];
+    let keep = true;
+    if (isSessionPromptEvent(event)) {
+      discardChunkRun = false;
+    } else {
+      const updateKind = agentMessageUpdateKind(event);
+      if (updateKind === "chunk") {
+        if (!livePosition.chunkRunActive) {
+          livePosition.chunkRunActive = true;
+          discardChunkRun = hydratedMessagePositions.has(
+            livePosition.messageIndex,
+          );
+        }
+        keep = !discardChunkRun;
+      } else if (updateKind === "final") {
+        livePosition.messageIndex += 1;
+        livePosition.chunkRunActive = false;
+        discardChunkRun = false;
+      } else if (updateKind !== "ignored") {
+        finishAgentMessageChunkRun(livePosition);
+        discardChunkRun = false;
+      }
+    }
+    if (keep) {
+      events.push(event);
+      eventHashes.push(liveTurn.eventHashes[eventIndex]);
+    }
+  }
+  return { events, eventHashes };
+}
+
+export function reconcileLiveEventsWithHydratedEvents(
+  liveEvents: AcpMessage[],
+  hydratedEvents: AcpMessage[],
+): AcpMessage[] {
+  const liveTurns = splitHydrationTurns(liveEvents);
+  const hydratedTurns = splitHydrationTurns(hydratedEvents);
+  const promptPositions = indexHydratedPromptTurns(hydratedTurns);
+  const hydratedEventIndex = indexHydratedTurnEvents(hydratedTurns);
+  const reconciledTurns = new Array<AcpMessage[]>(liveTurns.length);
+  let hydratedTurnIndex = hydratedTurns.length - 1;
+
+  for (
+    let liveTurnIndex = liveTurns.length - 1;
+    liveTurnIndex >= 0;
+    liveTurnIndex -= 1
+  ) {
+    const liveTurn = liveTurns[liveTurnIndex];
+    let liveMessageIndexOffset = 0;
+    let matchedHydratedTurnIndex = findPromptHydrationTurn(
+      liveTurn,
+      hydratedTurns,
+      promptPositions,
+      hydratedTurnIndex,
+    );
+    if (liveTurn.promptEvent === undefined) {
+      const promptlessMatch = findPromptlessHydrationTurn(
+        liveTurn,
+        hydratedTurns,
+        hydratedEventIndex,
+        hydratedTurnIndex,
+      );
+      if (promptlessMatch) {
+        matchedHydratedTurnIndex = promptlessMatch.hydratedTurnIndex;
+        liveMessageIndexOffset = promptlessMatch.liveMessageIndexOffset;
+      }
+    }
+    if (matchedHydratedTurnIndex === -1) {
+      reconciledTurns[liveTurnIndex] = liveTurn.events;
+      continue;
+    }
+
+    const hydratedTurn = hydratedTurns[matchedHydratedTurnIndex];
+    const liveMessagePositions = indexAgentMessagePositions(
+      liveTurn.events,
+      Math.max(0, liveMessageIndexOffset),
+    );
+    const hydratedMessagePositions = indexAgentMessagePositions(
+      hydratedTurn.events,
+      0,
+    );
+    reconciledTurns[liveTurnIndex] = discardExactHydratedEvents(
+      discardChunksSupersededByHydratedMessages(
+        liveTurn,
+        hydratedTurn,
+        liveMessageIndexOffset,
+      ),
+      hydratedTurn,
+      liveMessagePositions,
+      hydratedMessagePositions,
+    );
+    hydratedTurnIndex = matchedHydratedTurnIndex - 1;
+  }
+
+  return reconciledTurns.flat();
+}
+
 export function derivePendingPermissionRequests(
   entries: StoredLogEntry[],
   options?: { taskRunId?: string },
@@ -653,17 +1576,7 @@ export class SessionService {
     }
   >();
   /** Active cloud task watchers, keyed by taskId */
-  private cloudTaskWatchers = new Map<
-    string,
-    {
-      runId: string;
-      apiHost: string;
-      teamId: number;
-      startToken: number;
-      subscription: { unsubscribe: () => void };
-      onStatusChange?: () => void;
-    }
-  >();
+  private cloudTaskWatchers = new Map<string, CloudTaskWatcher>();
   private cloudLogGapReconciler: CloudLogGapReconciler;
   /** Maps toolCallId → cloud requestId for routing permission responses */
   private cloudPermissionRequestIds = new Map<string, string>();
@@ -679,6 +1592,18 @@ export class SessionService {
     { startedAtTs: number; agentTextChunks: number; agentOutputEvents: number }
   >();
   private pendingPermissionHydratedRuns = new Set<string>();
+  /** In-flight hydrations keyed by `${taskRunId}:${hydrationMode}` */
+  private cloudHydrationPromises = new Map<
+    string,
+    Promise<CloudHydrationResult | undefined>
+  >();
+  /** Deduplicates concurrent manifest reads when a message renders many images. */
+  private cloudAttachmentManifestRequests = new Map<
+    string,
+    Promise<TaskRunArtifact[]>
+  >();
+  /** Uploads started from the composer before a cloud message is submitted. */
+  private preparedCloudAttachmentUploads = new Map<string, Promise<string[]>>();
   private idleKilledSubscription: { unsubscribe: () => void } | null = null;
   /**
    * Cached preview-config-options responses keyed by `${apiHost}::${adapter}`.
@@ -1107,18 +2032,33 @@ export class SessionService {
       });
 
       if (result) {
-        // Cast and merge live configOptions with persisted values.
-        // Fall back to persisted options if the agent doesn't return any
-        // (e.g. after session compaction).
-        let configOptions = result.configOptions as
+        const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
-        if (configOptions && persistedConfigOptions) {
-          configOptions = mergeConfigOptions(
-            configOptions,
-            persistedConfigOptions,
-          );
-        } else if (!configOptions) {
+
+        // Only restore persisted options the resumed session still supports:
+        // it must advertise an option with the same id and still offer the
+        // persisted value (see isPersistedOptionSupported). Without live
+        // options (e.g. after session compaction) we can't confirm support, so
+        // we restore nothing rather than push a value the agent may reject —
+        // the same failure this guard exists to prevent.
+        const restorableConfigOptions =
+          liveConfigOptions && persistedConfigOptions
+            ? persistedConfigOptions.filter((persistedOption) =>
+                isPersistedOptionSupported(persistedOption, liveConfigOptions),
+              )
+            : [];
+
+        // Merge only the restorable persisted values into the live options so
+        // the stored and displayed config never shows a setting the resumed
+        // agent rejected. Fall back to persisted options for display when the
+        // agent returns none (nothing is pushed to the server in that case).
+        let configOptions: SessionConfigOption[] | undefined;
+        if (liveConfigOptions) {
+          configOptions = restorableConfigOptions.length
+            ? mergeConfigOptions(liveConfigOptions, restorableConfigOptions)
+            : liveConfigOptions;
+        } else {
           configOptions = persistedConfigOptions ?? undefined;
         }
 
@@ -1133,10 +2073,10 @@ export class SessionService {
           this.d.setPersistedConfigOptions(taskRunId, configOptions);
         }
 
-        // Restore persisted config options to server in parallel
-        if (persistedConfigOptions) {
+        // Restore supported persisted config options to server in parallel
+        if (restorableConfigOptions.length) {
           await Promise.all(
-            persistedConfigOptions.map((opt) =>
+            restorableConfigOptions.map((opt) =>
               this.d.trpc.agent.setConfigOption
                 .mutate({
                   sessionId: taskRunId,
@@ -1932,6 +2872,16 @@ export class SessionService {
         if (session && session.currentPromptId !== msg.id) {
           continue;
         }
+        if (session?.isCloud) {
+          // Cloud logs carry both this response and `_posthog/turn_complete`,
+          // in either order (they race in the agent's log stream). Only
+          // turn_complete may disarm the turn; disarming here would make the
+          // completion notification fire or vanish based on log line order.
+          this.d.store.updateSession(taskRunId, {
+            isPromptPending: false,
+          });
+          continue;
+        }
         this.d.store.updateSession(taskRunId, {
           isPromptPending: false,
           promptStartedAt: null,
@@ -1943,10 +2893,15 @@ export class SessionService {
       }
       if (isTurnCompleteEvent(acpMsg)) {
         // Local sessions use the JSON-RPC response as the canonical turn-done
-        // signal; clearing currentPromptId here would race the id-match guard
-        // above. Cloud sessions never see that response.
+        // signal; turn_complete is the cloud one, so only cloud disarms here.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const completedActiveTurn =
+            session.currentPromptId !== null &&
+            session.currentPromptId !== undefined;
+          const stopReason =
+            (msg as { params?: { stopReason?: string } }).params?.stopReason ??
+            "end_turn";
           const turnStartedAtTs =
             this.liveTurnContent.get(taskRunId)?.startedAtTs ??
             session.promptStartedAt;
@@ -1957,10 +2912,14 @@ export class SessionService {
           });
           if (isLive) {
             // Queued messages will start a new turn — suppress the "done" notification in that case.
-            if (session.messageQueue.length === 0) {
+            if (
+              completedActiveTurn &&
+              stopReason === "end_turn" &&
+              session.messageQueue.length === 0
+            ) {
               this.d.notifyPromptComplete(
                 session.taskTitle,
-                "end_turn",
+                stopReason,
                 session.taskId,
                 turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
@@ -1986,7 +2945,11 @@ export class SessionService {
         isNotification(msg.method, POSTHOG_NOTIFICATIONS.RUN_STARTED)
       ) {
         const session = this.d.store.getSessions()[taskRunId];
-        const params = (msg as { params?: { agentVersion?: unknown } }).params;
+        const params = (
+          msg as {
+            params?: { agentVersion?: unknown; steering?: unknown };
+          }
+        ).params;
         const agentVersion =
           typeof params?.agentVersion === "string"
             ? params.agentVersion
@@ -1994,6 +2957,12 @@ export class SessionService {
         const updates: Partial<AgentSession> = {};
         if (agentVersion && session?.agentVersion !== agentVersion) {
           updates.agentVersion = agentVersion;
+        }
+        if (
+          typeof params?.steering === "string" &&
+          session?.steering !== params.steering
+        ) {
+          updates.steering = params.steering;
         }
         if (session?.isCloud && session.status !== "connected") {
           updates.status = "connected";
@@ -2439,6 +3408,51 @@ export class SessionService {
 
   // --- Prompt Handling ---
 
+  async prepareCloudAttachments(
+    taskId: string,
+    filePaths: string[],
+  ): Promise<void> {
+    if (filePaths.length === 0) return;
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session?.isCloud) return;
+
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      throw new Error("Authentication required to upload attachments");
+    }
+
+    await this.getPreparedCloudAttachmentUpload(
+      session,
+      authStatus.auth.client,
+      filePaths,
+    );
+  }
+
+  private getPreparedCloudAttachmentUpload(
+    session: AgentSession,
+    client: CloudArtifactClient,
+    filePaths: string[],
+  ): Promise<string[]> {
+    if (filePaths.length === 0) return Promise.resolve([]);
+    const key = `${session.taskRunId}:${JSON.stringify(filePaths)}`;
+    const existing = this.preparedCloudAttachmentUploads.get(key);
+    if (existing) return existing;
+
+    const upload = this.d.h
+      .uploadRunAttachments(
+        client,
+        session.taskId,
+        session.taskRunId,
+        filePaths,
+      )
+      .catch((error) => {
+        this.preparedCloudAttachmentUploads.delete(key);
+        throw error;
+      });
+    this.preparedCloudAttachmentUploads.set(key, upload);
+    return upload;
+  }
+
   /**
    * Send a prompt to the agent.
    * Queues if a prompt is already pending.
@@ -2469,22 +3483,27 @@ export class SessionService {
     // Steer: the user sent a message mid-turn and asked to fold it into the
     // running turn rather than queue it. Adapters that negotiated
     // `steering: "native"` (Claude, codex) inject at the next tool boundary;
-    // unknown adapters cancel and resend. Cloud has no real mid-turn steer
-    // (the backend only delivers messages between turns), so it falls through
-    // to the queue; compaction too.
-    if (
-      options?.steer &&
-      !session.isCloud &&
-      session.isPromptPending &&
-      !session.isCompacting
-    ) {
+    // unknown local adapters cancel and resend. Cloud sessions only enter this
+    // path after the sandbox advertises native steering; compaction still queues.
+    if (options?.steer && session.isPromptPending && !session.isCompacting) {
       if (sessionSupportsNativeSteer(session)) {
-        return this.sendSteerPrompt(session, prompt);
+        if (session.isCloud) {
+          if (session.status === "connected") {
+            return this.sendCloudPrompt(session, prompt, {
+              skipQueueGuard: true,
+              steer: true,
+            });
+          }
+        } else {
+          return this.sendSteerPrompt(session, prompt);
+        }
       }
-      await this.cancelPrompt(taskId);
-      const refreshed = this.d.store.getSessionByTaskId(taskId);
-      if (refreshed) {
-        session = refreshed;
+      if (!session.isCloud) {
+        await this.cancelPrompt(taskId);
+        const refreshed = this.d.store.getSessionByTaskId(taskId);
+        if (refreshed) {
+          session = refreshed;
+        }
       }
     }
 
@@ -3016,7 +4035,7 @@ export class SessionService {
   private async sendCloudPrompt(
     session: AgentSession,
     prompt: string | ContentBlock[],
-    options?: { skipQueueGuard?: boolean },
+    options?: { skipQueueGuard?: boolean; steer?: boolean },
   ): Promise<{ stopReason: string }> {
     const normalizedPrompt = await this.resolveCloudPrompt(prompt);
     const transport = this.d.h.getCloudPromptTransport(normalizedPrompt);
@@ -3108,8 +4127,19 @@ export class SessionService {
       return { stopReason: "queued" };
     }
 
-    const authStatus = await this.getAuthCredentialsStatus();
+    this.d.store.appendOptimisticItem(session.taskRunId, {
+      type: "user_message",
+      content: transport.promptText,
+      timestamp: Date.now(),
+      pinToTop: false,
+    });
+
+    const authStatus = await this.getAuthCredentialsStatus().catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
     if (authStatus.kind === "restoring") {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
       return this.queueRestoringCloudPrompt(
         session,
         normalizedPrompt,
@@ -3117,8 +4147,12 @@ export class SessionService {
       );
     }
 
-    const cloudCommandAuth = await this.getCloudCommandAuth();
+    const cloudCommandAuth = await this.getCloudCommandAuth().catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
     if (authStatus.kind !== "ready" || !cloudCommandAuth) {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
       throw new Error("Authentication required for cloud commands");
     }
     const { auth } = authStatus;
@@ -3134,13 +4168,30 @@ export class SessionService {
       session.adapter ?? "claude",
     );
 
-    const artifactIds = await this.d.h.uploadRunAttachments(
+    const fileArtifactIds = await this.getPreparedCloudAttachmentUpload(
+      session,
       auth.client,
-      session.taskId,
-      session.taskRunId,
       transport.filePaths,
-      transport.skillBundles,
-    );
+    ).catch((error) => {
+      this.d.store.clearTailOptimisticItems(session.taskRunId);
+      throw error;
+    });
+    const skillArtifactIds =
+      transport.skillBundles.length === 0
+        ? []
+        : await this.d.h
+            .uploadRunAttachments(
+              auth.client,
+              session.taskId,
+              session.taskRunId,
+              [],
+              transport.skillBundles,
+            )
+            .catch((error) => {
+              this.d.store.clearTailOptimisticItems(session.taskRunId);
+              throw error;
+            });
+    const artifactIds = [...fileArtifactIds, ...skillArtifactIds];
     const params: Record<string, unknown> = {};
     if (transport.messageText) {
       params.content = transport.messageText;
@@ -3148,31 +4199,30 @@ export class SessionService {
     if (artifactIds.length > 0) {
       params.artifact_ids = artifactIds;
     }
+    if (options?.steer) {
+      params.steer = true;
+    }
 
     const currentSessionBeforeSend =
       this.getSessionByRunId(session.taskRunId) ?? session;
     const idleEvidenceBeforeSend = this.cloudRunIdleTracker.capture(
       currentSessionBeforeSend,
     );
-    this.d.store.updateSession(session.taskRunId, {
-      isPromptPending: true,
-      promptStartedAt: Date.now(),
-      pausedDurationMs: 0,
-      agentIdleForRunId: undefined,
-    });
-    this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
-    this.d.store.appendOptimisticItem(session.taskRunId, {
-      type: "user_message",
-      content: transport.promptText,
-      timestamp: Date.now(),
-      pinToTop: false,
-    });
-
+    if (!options?.steer) {
+      this.d.store.updateSession(session.taskRunId, {
+        isPromptPending: true,
+        promptStartedAt: Date.now(),
+        pausedDurationMs: 0,
+        agentIdleForRunId: undefined,
+      });
+      this.cloudRunIdleTracker.markBusy(currentSessionBeforeSend);
+    }
     this.d.track(ANALYTICS_EVENTS.PROMPT_SENT, {
       task_id: session.taskId,
       is_initial: session.events.length === 0,
       execution_type: "cloud",
       prompt_length_chars: transport.promptText.length,
+      ...(options?.steer ? { is_steer: true } : {}),
     });
 
     try {
@@ -3190,7 +4240,7 @@ export class SessionService {
       }
 
       const commandResult = result.result as
-        | { queued?: boolean; stopReason?: string }
+        | { queued?: boolean; steered?: boolean; stopReason?: string }
         | undefined;
       const stopReason = commandResult?.queued
         ? "queued"
@@ -3198,15 +4248,17 @@ export class SessionService {
 
       return { stopReason };
     } catch (error) {
-      this.d.store.updateSession(session.taskRunId, {
-        isPromptPending: false,
-        promptStartedAt: null,
-      });
+      if (!options?.steer) {
+        this.d.store.updateSession(session.taskRunId, {
+          isPromptPending: false,
+          promptStartedAt: null,
+        });
+      }
       this.d.store.clearTailOptimisticItems(session.taskRunId);
       const currentSessionAfterFailure = this.getSessionByRunId(
         session.taskRunId,
       );
-      if (currentSessionAfterFailure) {
+      if (currentSessionAfterFailure && !options?.steer) {
         const restoreResult = this.cloudRunIdleTracker.restoreAfterFailedSend(
           idleEvidenceBeforeSend,
           currentSessionAfterFailure,
@@ -3446,8 +4498,10 @@ export class SessionService {
     newSession.optimisticItems = (
       this.getSessionByRunId(session.taskRunId)?.optimisticItems ?? []
     ).filter((item) => item.type === "user_message" && item.pinToTop === false);
-    const resumeFromEntryCount = session.processedLineCount ?? 0;
-    newSession.processedLineCount = resumeFromEntryCount;
+    const resumeFromEntryCount =
+      session.cloudTranscriptEntryCount ?? session.processedLineCount ?? 0;
+    newSession.cloudTranscriptEntryCount = resumeFromEntryCount;
+    newSession.processedLineCount = 0;
     this.d.store.setSession(newSession);
 
     // Start the watcher immediately so we don't miss status updates.
@@ -3692,6 +4746,7 @@ export class SessionService {
         cloudStatus: run.status,
         cloudStage: run.stage ?? null,
         cloudOutput: run.output ?? null,
+        cloudArtifacts: run.artifacts ?? [],
         cloudErrorMessage: run.error_message,
         logUrl: run.log_url ?? session.logUrl,
       });
@@ -4584,6 +5639,25 @@ export class SessionService {
       if (onStatusChange) {
         existingWatcher.onStatusChange = onStatusChange;
       }
+      // The run finished while a live watcher was still attached: apply the
+      // final transcript, mark the terminal status, and tear the watcher down
+      // instead of leaving a live stream on a dead run.
+      if (isTerminalStatus(runStatus)) {
+        const terminalSession = this.d.store.getSessionByTaskId(taskId);
+        if (terminalSession?.taskRunId === taskRunId) {
+          void this.hydrateCloudTaskSessionFromLogs(
+            taskId,
+            taskRunId,
+            logUrl,
+            taskDescription,
+            runStatus,
+            runState,
+          );
+        }
+        this.finalizeTerminalCloudTask(taskRunId, runStatus);
+        this.stopCloudTaskWatch(taskId);
+        return () => {};
+      }
       // Ensure configOptions is populated on revisit
       const existing = this.d.store.getSessionByTaskId(taskId);
       if (existing) {
@@ -4620,6 +5694,19 @@ export class SessionService {
           adapter,
           initialModel,
           initialReasoningEffort,
+        );
+      }
+      if (
+        typeof runState?.resume_from_run_id === "string" &&
+        !this.pendingPermissionHydratedRuns.has(taskRunId)
+      ) {
+        void this.hydrateResumeCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
         );
       }
       return () => {};
@@ -4680,12 +5767,16 @@ export class SessionService {
       !this.pendingPermissionHydratedRuns.has(taskRunId) &&
       (isTerminalStatus(existing.cloudStatus) ||
         (runStatus !== undefined && isTerminalStatus(runStatus)));
+    const shouldHydrateResumeChain =
+      Boolean(runState?.resume_from_run_id) &&
+      !this.pendingPermissionHydratedRuns.has(taskRunId);
     const shouldHydrateSession =
       !existing ||
       existing.taskRunId !== taskRunId ||
       shouldResetExistingSession ||
       existing.events.length === 0 ||
-      shouldHydratePersistedPermissions;
+      shouldHydratePersistedPermissions ||
+      shouldHydrateResumeChain;
 
     if (
       !existing ||
@@ -4746,8 +5837,13 @@ export class SessionService {
       initialReasoningEffort,
     );
 
-    if (shouldHydrateSession) {
-      this.hydrateCloudTaskSessionFromLogs(
+    // A run that is already terminal has no live stream to subscribe to:
+    // hydrate the final transcript, settle the terminal status, and return
+    // without registering a watcher. Plain hydration already fetches the
+    // full resume chain for terminal runs, and the resume wrapper only
+    // exists to buffer a live stream that does not exist here.
+    if (isTerminalStatus(runStatus)) {
+      void this.hydrateCloudTaskSessionFromLogs(
         taskId,
         taskRunId,
         logUrl,
@@ -4755,38 +5851,108 @@ export class SessionService {
         runStatus,
         runState,
       );
+      this.finalizeTerminalCloudTask(taskRunId, runStatus);
+      return () => {};
     }
+
+    const processCloudUpdate = (update: CloudTaskUpdatePayload): void => {
+      if (update.kind === "logs" || update.kind === "snapshot") {
+        this.d.store.updateSession(taskRunId, {
+          cloudTranscriptEntryCount: update.totalEntryCount,
+        });
+      }
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const resumeHistoryCountOffset =
+        watcher?.runId === runId ? (watcher.resumeHistoryCountOffset ?? 0) : 0;
+      const normalizedUpdate: CloudTaskUpdatePayload =
+        resumeHistoryCountOffset > 0 &&
+        (update.kind === "logs" || update.kind === "snapshot")
+          ? {
+              ...update,
+              totalEntryCount: Math.max(
+                0,
+                update.totalEntryCount - resumeHistoryCountOffset,
+              ),
+            }
+          : update;
+      // Evaluate staleness before handleCloudTaskUpdate mutates cloudStatus:
+      // a late non-terminal update must not re-notify after the run settled.
+      const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+        taskRunId,
+        normalizedUpdate,
+      );
+      this.handleCloudTaskUpdate(taskRunId, normalizedUpdate);
+      if (
+        (update.kind === "status" ||
+          update.kind === "snapshot" ||
+          update.kind === "error") &&
+        !isStaleNonTerminalStatus &&
+        watcher?.onStatusChange
+      ) {
+        watcher.onStatusChange();
+      }
+    };
+
+    const watcher: CloudTaskWatcher = {
+      runId,
+      apiHost,
+      teamId,
+      startToken,
+      resumeFromEntryCount,
+      resumeHistoryCountOffset: shouldHydrateResumeChain
+        ? resumeFromEntryCount
+        : 0,
+      resumeHydrationToken: 0,
+      bufferResumeUpdates: false,
+      bufferedResumeUpdates: [],
+      processCloudUpdate,
+      subscription: { unsubscribe: () => undefined },
+      onStatusChange,
+    };
+    this.cloudTaskWatchers.set(taskId, watcher);
 
     // Subscribe before starting the main-process watcher so the first replayed
     // SSE/log burst cannot race ahead of the renderer subscription.
-    const subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
+    watcher.subscription = this.d.trpc.cloudTask.onUpdate.subscribe(
       { taskId, runId },
       {
         onData: (update: CloudTaskUpdatePayload) => {
-          this.handleCloudTaskUpdate(taskRunId, update);
-          const watcher = this.cloudTaskWatchers.get(taskId);
-          if (
-            (update.kind === "status" ||
-              update.kind === "snapshot" ||
-              update.kind === "error") &&
-            watcher?.onStatusChange
-          ) {
-            watcher.onStatusChange();
+          const activeWatcher = this.cloudTaskWatchers.get(taskId);
+          if (!activeWatcher || activeWatcher.runId !== runId) {
+            return;
           }
+          if (activeWatcher.bufferResumeUpdates) {
+            activeWatcher.bufferedResumeUpdates.push(update);
+            return;
+          }
+          activeWatcher.processCloudUpdate(update);
         },
         onError: (err: unknown) =>
           this.d.log.error("Cloud task subscription error", { taskId, err }),
       },
     );
 
-    this.cloudTaskWatchers.set(taskId, {
-      runId,
-      apiHost,
-      teamId,
-      startToken,
-      subscription,
-      onStatusChange,
-    });
+    if (shouldHydrateSession) {
+      if (shouldHydrateResumeChain) {
+        void this.hydrateResumeCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      } else {
+        void this.hydrateCloudTaskSessionFromLogs(
+          taskId,
+          taskRunId,
+          logUrl,
+          taskDescription,
+          runStatus,
+          runState,
+        );
+      }
+    }
 
     // Start main-process watcher after the subscription is attached.
     void (async () => {
@@ -4840,108 +6006,393 @@ export class SessionService {
     taskDescription?: string,
     runStatus?: TaskRunStatus,
     runState?: Record<string, unknown>,
-  ): void {
-    void (async () => {
-      let rawEntries: StoredLogEntry[];
-      let totalLineCount: number;
-      const isResumeRun = Boolean(runState?.resume_from_run_id);
-      if (isTerminalStatus(runStatus) || isResumeRun) {
-        // Resume chains need the full history even while the leaf run is still
-        // active; otherwise a renderer restart hydrates only the final run.
-        // Non-resume in-progress runs keep using the single-run log so hydrate
-        // cannot race the live stream and double the active turn.
-        const authStatus = await this.getAuthCredentialsStatus();
-        if (authStatus.kind !== "ready") {
-          return;
-        }
-        try {
-          rawEntries = await authStatus.auth.client.getTaskRunSessionLogs(
-            taskId,
-            taskRunId,
-            { limit: 100000 },
-          );
-        } catch (err) {
-          this.d.log.warn("Failed to fetch session-log chain for hydrate", {
-            taskId,
-            taskRunId,
-            err,
-          });
-          return;
-        }
-        totalLineCount = rawEntries.length;
-      } else {
-        const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
-        rawEntries = parsed.rawEntries;
-        totalLineCount = parsed.totalLineCount;
-      }
-
-      const session = this.d.store.getSessionByTaskId(taskId);
-      if (!session || session.taskRunId !== taskRunId) {
-        return;
-      }
-
-      const events = convertStoredEntriesToEvents(rawEntries);
-      const hasUserPrompt = events.some(
-        (e: AcpMessage) =>
-          isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
-      );
-
-      // Seed the optimistic user-message bubble whenever the agent has
-      // not yet recorded an initial `session/prompt` request — covers the
-      // brand-new task case as well as "agent has emitted lifecycle
-      // notifications but hasn't received its first prompt yet". Prefer the
-      // stashed initial prompt (which carries the channel CONTEXT.md block, so
-      // its chip renders right away) over the bare task description.
-      const seedContent =
-        this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-      if (!hasUserPrompt && seedContent?.trim()) {
-        this.d.store.appendOptimisticItem(taskRunId, {
-          type: "user_message",
-          content: seedContent,
-          timestamp: Date.now(),
-        });
-      }
-      if (hasUserPrompt) {
-        // The real prompt has landed; the stash is no longer needed.
-        this.initialCloudOptimisticPrompt.delete(taskId);
-        this.d.store.clearTailOptimisticItems(taskRunId);
-      }
-
-      if (rawEntries.length === 0) {
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      // If live updates already populated a processed count, don't overwrite
-      // that newer state with the persisted baseline fetched during startup.
-      if (
-        session.processedLineCount !== undefined &&
-        session.processedLineCount > 0
-      ) {
-        this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-        this.pendingPermissionHydratedRuns.add(taskRunId);
-        return;
-      }
-
-      this.d.store.updateSession(taskRunId, {
-        events,
-        isCloud: true,
-        logUrl: logUrl ?? session.logUrl,
-        processedLineCount: totalLineCount,
-      });
-      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
-      this.pendingPermissionHydratedRuns.add(taskRunId);
-      // Without this the "Galumphing…" indicator stays hidden when the hydrated
-      // baseline already contains an in-flight session/prompt — the live delta
-      // path otherwise sees delta <= 0 and never re-evaluates the tail.
-      this.updatePromptStateFromEvents(taskRunId, events);
-    })().catch((err: unknown) => {
+  ): Promise<CloudHydrationResult | undefined> {
+    // Key by hydration mode, not just run: a run going terminal must start
+    // its final-transcript hydration even while a resume-chain or single-run
+    // hydration for the same run is still in flight.
+    const hydrationMode = isTerminalStatus(runStatus)
+      ? "terminal-chain"
+      : runState?.resume_from_run_id
+        ? "resume-chain"
+        : "single";
+    const hydrationKey = `${taskRunId}:${hydrationMode}`;
+    const existing = this.cloudHydrationPromises.get(hydrationKey);
+    if (existing) {
+      return existing;
+    }
+    const hydration = this.performCloudTaskSessionHydration(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    ).catch((err: unknown) => {
       this.d.log.warn("Failed to hydrate cloud task session from logs", {
         taskId,
         taskRunId,
         err,
       });
+      return undefined;
     });
+    this.cloudHydrationPromises.set(hydrationKey, hydration);
+    void hydration.finally(() => {
+      if (this.cloudHydrationPromises.get(hydrationKey) === hydration) {
+        this.cloudHydrationPromises.delete(hydrationKey);
+      }
+    });
+    return hydration;
+  }
+
+  private async hydrateResumeCloudTaskSessionFromLogs(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<void> {
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    const hydrationToken = ++watcher.resumeHydrationToken;
+    watcher.bufferResumeUpdates = true;
+
+    const result = await this.hydrateCloudTaskSessionFromLogs(
+      taskId,
+      taskRunId,
+      logUrl,
+      taskDescription,
+      runStatus,
+      runState,
+    );
+    const activeWatcher = this.cloudTaskWatchers.get(taskId);
+    if (
+      !activeWatcher ||
+      activeWatcher.runId !== taskRunId ||
+      activeWatcher.resumeHydrationToken !== hydrationToken
+    ) {
+      return;
+    }
+
+    this.applyResumeHydrationOffset(taskId, taskRunId, result);
+    activeWatcher.bufferResumeUpdates = false;
+    const bufferedUpdates = activeWatcher.bufferedResumeUpdates.splice(0);
+    for (const update of bufferedUpdates) {
+      activeWatcher.processCloudUpdate(update);
+    }
+  }
+
+  private applyResumeHydrationOffset(
+    taskId: string,
+    taskRunId: string,
+    result: CloudHydrationResult | undefined,
+  ): void {
+    if (!result) return;
+    const watcher = this.cloudTaskWatchers.get(taskId);
+    if (!watcher || watcher.runId !== taskRunId) return;
+    watcher.resumeHistoryCountOffset = Math.max(
+      0,
+      result.historyEntryCount - result.liveStreamLineCount,
+    );
+  }
+
+  private async performCloudTaskSessionHydration(
+    taskId: string,
+    taskRunId: string,
+    logUrl?: string,
+    taskDescription?: string,
+    runStatus?: TaskRunStatus,
+    runState?: Record<string, unknown>,
+  ): Promise<CloudHydrationResult | undefined> {
+    let rawEntries: StoredLogEntry[];
+    let liveStreamLineCount: number;
+    let resumeLeafEntryStartIndex: number | undefined;
+    const resumeFromRunId =
+      typeof runState?.resume_from_run_id === "string"
+        ? runState.resume_from_run_id
+        : undefined;
+    const isResumeRun = Boolean(resumeFromRunId);
+    const isTerminalRun = isTerminalStatus(runStatus);
+    if (isTerminalRun || isResumeRun) {
+      // Resume chains need the full history even while the leaf run is still
+      // active; otherwise a renderer restart hydrates only the final run.
+      // Non-resume in-progress runs keep using the single-run log so hydrate
+      // cannot race the live stream and double the active turn.
+      const authStatus = await this.getAuthCredentialsStatus();
+      if (authStatus.kind !== "ready") {
+        return;
+      }
+      if (resumeFromRunId) {
+        if (isTerminalStatus(runStatus)) {
+          const result =
+            await authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            );
+          if (!result.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+            });
+            return;
+          }
+          rawEntries = result.entries;
+          const markedLeafStart = rawEntries.findIndex(
+            (entry) => getEntryTaskRunMarker(entry) === taskRunId,
+          );
+          resumeLeafEntryStartIndex =
+            markedLeafStart >= 0 ? markedLeafStart : undefined;
+          liveStreamLineCount =
+            markedLeafStart >= 0
+              ? rawEntries.length - markedLeafStart
+              : rawEntries.length;
+        } else {
+          const [ancestorResult, currentRunResult] = await Promise.all([
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              resumeFromRunId,
+              { limit: 100000 },
+            ),
+            authStatus.auth.client.getTaskRunSessionLogsResult(
+              taskId,
+              taskRunId,
+              { limit: 100000 },
+            ),
+          ]);
+          if (!ancestorResult.complete || !currentRunResult.complete) {
+            this.d.log.warn("Resume session log hydration was incomplete", {
+              taskId,
+              taskRunId,
+              resumeFromRunId,
+              ancestorComplete: ancestorResult.complete,
+              currentRunComplete: currentRunResult.complete,
+            });
+            return;
+          }
+          const ancestorEntries: StoredLogEntry[] = ancestorResult.entries;
+          const currentRunEntries: StoredLogEntry[] = currentRunResult.entries;
+          const ancestorKeys = ancestorEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const currentKeys = currentRunEntries.map((entry) =>
+            JSON.stringify(entry),
+          );
+          const overlap = suffixPrefixOverlap(ancestorKeys, currentKeys);
+          const persistedLeafEntries = currentRunEntries.slice(overlap);
+          const leafLogs = await this.fetchSessionLogs(logUrl, taskRunId);
+          const leafKeys = new Set(
+            persistedLeafEntries.map((entry) => JSON.stringify(entry)),
+          );
+          rawEntries = [
+            ...ancestorEntries,
+            ...persistedLeafEntries,
+            ...leafLogs.rawEntries.filter(
+              (entry) => !leafKeys.has(JSON.stringify(entry)),
+            ),
+          ];
+          resumeLeafEntryStartIndex = ancestorEntries.length;
+          liveStreamLineCount = Math.max(
+            leafLogs.totalLineCount,
+            persistedLeafEntries.length,
+          );
+        }
+      } else {
+        const result = await authStatus.auth.client.getTaskRunSessionLogsResult(
+          taskId,
+          taskRunId,
+          { limit: 100000 },
+        );
+        if (!result.complete) {
+          this.d.log.warn("Session log hydration was incomplete", {
+            taskId,
+            taskRunId,
+          });
+          return;
+        }
+        rawEntries = result.entries;
+        liveStreamLineCount = rawEntries.length;
+        // A terminal run whose persisted chain comes back empty can still
+        // have a complete S3 session log (persistence raced teardown); fall
+        // back to it rather than hydrating an empty final transcript.
+        if (rawEntries.length === 0 && logUrl) {
+          const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+          if (parsed.rawEntries.length > 0) {
+            rawEntries = parsed.rawEntries;
+            liveStreamLineCount = parsed.totalLineCount;
+          }
+        }
+      }
+    } else {
+      const parsed = await this.fetchSessionLogs(logUrl, taskRunId);
+      rawEntries = parsed.rawEntries;
+      liveStreamLineCount = parsed.totalLineCount;
+    }
+
+    const session = this.d.store.getSessionByTaskId(taskId);
+    if (!session || session.taskRunId !== taskRunId) {
+      return;
+    }
+
+    let events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+      firstPositionedEntryIndex: resumeLeafEntryStartIndex,
+    });
+    if (isResumeRun && session.events.length > 0) {
+      const inheritedEvents = reconcileLiveEventsWithHydratedEvents(
+        session.events,
+        events,
+      );
+      events = [...events, ...inheritedEvents];
+      const watcher = this.cloudTaskWatchers.get(taskId);
+      const hasLeafLocalWatcherCursor =
+        watcher?.runId === taskRunId &&
+        watcher.resumeHistoryCountOffset !== undefined;
+      if (hasLeafLocalWatcherCursor) {
+        liveStreamLineCount = Math.max(
+          liveStreamLineCount,
+          session.processedLineCount ?? 0,
+        );
+      }
+    }
+    const hasUserPrompt = events.some(
+      (e: AcpMessage) =>
+        isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
+    );
+
+    // Seed the optimistic user-message bubble whenever the agent has
+    // not yet recorded an initial `session/prompt` request — covers the
+    // brand-new task case as well as "agent has emitted lifecycle
+    // notifications but hasn't received its first prompt yet". Prefer the
+    // stashed initial prompt (which carries the channel CONTEXT.md block, so
+    // its chip renders right away) over the bare task description.
+    const seedContent =
+      this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
+    if (!isTerminalRun && !hasUserPrompt && seedContent?.trim()) {
+      this.d.store.appendOptimisticItem(taskRunId, {
+        type: "user_message",
+        content: seedContent,
+        timestamp: Date.now(),
+      });
+    }
+    if (hasUserPrompt || isTerminalRun) {
+      // The stash is no longer needed once the real prompt lands - and a
+      // finished run gets no further echoes, so leftover optimistic items
+      // would otherwise linger as phantom tail items on the final transcript.
+      this.initialCloudOptimisticPrompt.delete(taskId);
+      this.d.store.clearTailOptimisticItems(taskRunId);
+    }
+
+    if (rawEntries.length === 0) {
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: 0,
+        liveStreamLineCount,
+      };
+    }
+
+    // If live updates already populated a processed count, don't overwrite
+    // that newer state with the persisted baseline fetched during startup.
+    // Terminal hydration is different: it is the final transcript, so apply
+    // it whenever the persisted chain has more lines than the local stream.
+    const effectiveLineCount = Math.max(liveStreamLineCount, rawEntries.length);
+    const alreadyApplied = isTerminalRun
+      ? (session.processedLineCount ?? 0) >= effectiveLineCount
+      : session.processedLineCount !== undefined &&
+        session.processedLineCount > 0 &&
+        !isResumeRun;
+    if (alreadyApplied) {
+      this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+      this.pendingPermissionHydratedRuns.add(taskRunId);
+      return {
+        historyEntryCount: rawEntries.length,
+        liveStreamLineCount: session.processedLineCount ?? liveStreamLineCount,
+      };
+    }
+
+    // A concurrent terminal-chain hydration (they memoize under different
+    // mode keys) may have already recorded the full chain as processed; a
+    // leaf-stream cursor from this older hydration must never lower it once
+    // the run has settled.
+    const settled = this.d.store.getSessions()[taskRunId];
+    const settledCursor = isTerminalStatus(settled?.cloudStatus)
+      ? (settled?.processedLineCount ?? 0)
+      : 0;
+
+    this.d.store.updateSession(taskRunId, {
+      events,
+      isCloud: true,
+      logUrl: logUrl ?? session.logUrl,
+      cloudTranscriptEntryCount: rawEntries.length,
+      // Terminal hydration records the whole chain as processed so nothing
+      // re-applies it; live resume runs keep the leaf-stream cursor.
+      processedLineCount: isTerminalRun
+        ? effectiveLineCount
+        : Math.max(liveStreamLineCount, settledCursor),
+    });
+    this.surfacePersistedPendingPermissions(taskRunId, rawEntries);
+    this.pendingPermissionHydratedRuns.add(taskRunId);
+    // Without this the "Galumphing…" indicator stays hidden when the hydrated
+    // baseline already contains an in-flight session/prompt — the live delta
+    // path otherwise sees delta <= 0 and never re-evaluates the tail.
+    this.updatePromptStateFromEvents(taskRunId, events);
+    if (isTerminalRun) {
+      this.clearTerminalCloudPromptState(taskRunId);
+    }
+    return {
+      historyEntryCount: rawEntries.length,
+      liveStreamLineCount,
+    };
+  }
+
+  private finalizeTerminalCloudTask(
+    taskRunId: string,
+    status: TaskRunStatus | undefined,
+  ): void {
+    this.d.store.updateCloudStatus(taskRunId, { status });
+    this.clearTerminalCloudPromptState(taskRunId);
+  }
+
+  /**
+   * A terminal run can never flush its queue or answer a pending prompt;
+   * leaving those set keeps the composer in a busy state forever.
+   */
+  private clearTerminalCloudPromptState(taskRunId: string): void {
+    const session = this.d.store.getSessions()[taskRunId];
+    if (
+      !session ||
+      (!session.isPromptPending && session.messageQueue.length === 0)
+    ) {
+      return;
+    }
+
+    this.d.store.clearMessageQueue(session.taskId);
+    this.d.store.updateSession(taskRunId, {
+      isPromptPending: false,
+    });
+  }
+
+  /**
+   * SSE replays and out-of-order bursts can deliver a non-terminal status
+   * after the run already settled; applying it would revive a finished run.
+   */
+  private isStaleNonTerminalCloudUpdate(
+    taskRunId: string,
+    update: CloudTaskUpdatePayload,
+  ): boolean {
+    if (update.kind !== "status" && update.kind !== "snapshot") {
+      return false;
+    }
+    if (update.status === undefined) {
+      return false;
+    }
+    const currentCloudStatus =
+      this.d.store.getSessions()[taskRunId]?.cloudStatus;
+    return (
+      isTerminalStatus(currentCloudStatus) && !isTerminalStatus(update.status)
+    );
   }
 
   private isCurrentCloudTaskWatcher(
@@ -5840,7 +7291,14 @@ export class SessionService {
         // Already caught up — skip duplicate entries
       } else if (plan.kind === "append-tail") {
         const entriesToAppend = update.newEntries.slice(-plan.tailCount);
-        const newEvents = convertStoredEntriesToEvents(entriesToAppend);
+        const newEvents = convertStoredEntriesToEvents(
+          entriesToAppend,
+          undefined,
+          {
+            taskRunId,
+            startEntryIndex: expectedCount - entriesToAppend.length,
+          },
+        );
         if (hasSessionPromptEvent(newEvents)) {
           this.d.store.clearTailOptimisticItems(taskRunId);
         }
@@ -5860,7 +7318,17 @@ export class SessionService {
       }
     }
 
-    if (update.kind === "snapshot" && !isTerminalStatus(update.status)) {
+    // Evaluated once, before updateCloudStatus below can mutate cloudStatus.
+    const isStaleNonTerminalStatus = this.isStaleNonTerminalCloudUpdate(
+      taskRunId,
+      update,
+    );
+
+    if (
+      update.kind === "snapshot" &&
+      !isTerminalStatus(update.status) &&
+      !isStaleNonTerminalStatus
+    ) {
       this.surfacePersistedPendingPermissions(taskRunId, update.newEntries);
     }
 
@@ -5874,35 +7342,103 @@ export class SessionService {
 
     // Update cloud status fields if present
     if (update.kind === "status" || update.kind === "snapshot") {
-      this.d.store.updateCloudStatus(taskRunId, {
-        status: update.status,
-        stage: update.stage,
-        output: update.output,
-        errorMessage: update.errorMessage,
-        branch: update.branch,
-      });
-
-      if (update.status === "in_progress") {
-        this.tryRecoverIdleCloudQueue(taskRunId, {
-          serverSandboxAlive: update.sandboxAlive,
+      if (!isStaleNonTerminalStatus) {
+        this.d.store.updateCloudStatus(taskRunId, {
+          status: update.status,
+          stage: update.stage,
+          output: update.output,
+          errorMessage: update.errorMessage,
+          branch: update.branch,
         });
+
+        if (update.status === "in_progress") {
+          this.tryRecoverIdleCloudQueue(taskRunId, {
+            serverSandboxAlive: update.sandboxAlive,
+          });
+        }
       }
 
       if (isTerminalStatus(update.status)) {
-        // Clean up any pending resume messages that couldn't be sent
-        const session = this.d.store.getSessions()[taskRunId];
-        if (
-          session &&
-          (session.messageQueue.length > 0 || session.isPromptPending)
-        ) {
-          this.d.store.clearMessageQueue(session.taskId);
-          this.d.store.updateSession(taskRunId, {
-            isPromptPending: false,
-          });
-        }
+        // Pending resume messages can never be sent to a settled run.
+        this.clearTerminalCloudPromptState(taskRunId);
         this.stopCloudTaskWatch(update.taskId);
       }
     }
+  }
+
+  async getCloudAttachmentPreviewUrl(
+    taskId: string,
+    runId: string,
+    artifactId: string,
+  ): Promise<string | null> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return null;
+
+    try {
+      const artifacts = await this.getCloudAttachmentManifest(
+        authStatus.auth.client,
+        `${authStatus.auth.apiHost}:${authStatus.auth.projectId}`,
+        taskId,
+        runId,
+      );
+      const artifact = artifacts.find(
+        (candidate) => candidate.id === artifactId,
+      );
+      if (!artifact?.storage_path) return null;
+
+      return await authStatus.auth.client.presignTaskRunArtifact(
+        taskId,
+        runId,
+        artifact.storage_path,
+      );
+    } catch (error) {
+      this.d.log.warn("Failed to resolve cloud attachment preview", {
+        taskId,
+        runId,
+        artifactId,
+        error: String(error),
+      });
+      return null;
+    }
+  }
+
+  async getCloudRunArtifacts(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskRunArtifact[]> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return [];
+
+    return this.getCloudAttachmentManifest(
+      authStatus.auth.client,
+      `${authStatus.auth.apiHost}:${authStatus.auth.projectId}`,
+      taskId,
+      runId,
+    );
+  }
+
+  private getCloudAttachmentManifest(
+    client: AuthClient,
+    authIdentity: string,
+    taskId: string,
+    runId: string,
+  ): Promise<TaskRunArtifact[]> {
+    const key = `${authIdentity}:${taskId}:${runId}`;
+    const existing = this.cloudAttachmentManifestRequests.get(key);
+    if (existing) return existing;
+
+    const request = client
+      .getTaskRun(taskId, runId)
+      .then((run: { artifacts?: TaskRunArtifact[] }) => run.artifacts ?? []);
+    this.cloudAttachmentManifestRequests.set(key, request);
+
+    const clear = () => {
+      if (this.cloudAttachmentManifestRequests.get(key) === request) {
+        this.cloudAttachmentManifestRequests.delete(key);
+      }
+    };
+    void request.then(clear, clear);
+    return request;
   }
 
   // --- Helper Methods ---
@@ -6119,7 +7655,10 @@ export class SessionService {
     logUrl: string | undefined,
     processedLineCount: number,
   ): void {
-    const events = convertStoredEntriesToEvents(rawEntries);
+    const events = convertStoredEntriesToEvents(rawEntries, undefined, {
+      taskRunId,
+      startEntryIndex: 0,
+    });
     if (hasSessionPromptEvent(events)) {
       this.d.store.clearTailOptimisticItems(taskRunId);
     }

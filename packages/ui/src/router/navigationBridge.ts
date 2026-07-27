@@ -111,10 +111,6 @@ export function openNotificationTarget(target: NotificationTarget): void {
   }
 }
 
-export function navigateToHome(): void {
-  void getRouterOrNull()?.navigate({ to: "/code/home" });
-}
-
 export function navigateToInbox(): void {
   void getRouterOrNull()?.navigate({ to: "/code/inbox" });
 }
@@ -155,6 +151,28 @@ export function navigateToScoutFindings(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents/scouts/findings" });
 }
 
+export function navigateToLoops(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/loops" });
+}
+
+export function navigateToNewLoop(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/loops/new" });
+}
+
+export function navigateToLoopDetail(loopId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/loops/$loopId",
+    params: { loopId },
+  });
+}
+
+export function navigateToEditLoop(loopId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/loops/$loopId/edit",
+    params: { loopId },
+  });
+}
+
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }
@@ -192,10 +210,6 @@ export function navigateToMcpServers(): void {
 
 export function navigateToWebsiteNew(): void {
   void getRouterOrNull()?.navigate({ to: "/website/new" });
-}
-
-export function navigateToWebsiteHome(): void {
-  void getRouterOrNull()?.navigate({ to: "/website/home" });
 }
 
 // The Canvas workspace landing (the channels index, where canvases live).

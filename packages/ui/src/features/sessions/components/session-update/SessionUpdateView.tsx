@@ -7,7 +7,8 @@ import { StatusNotificationView } from "@posthog/ui/features/sessions/components
 import { TaskNotificationView } from "@posthog/ui/features/sessions/components/session-update/TaskNotificationView";
 import { ThoughtView } from "@posthog/ui/features/sessions/components/session-update/ThoughtView";
 import type {
-  SessionUpdate,
+  CompactBoundaryUpdate,
+  ConversationSessionUpdate,
   ToolCall,
 } from "@posthog/ui/features/sessions/types";
 import type { Step } from "@posthog/ui/primitives/StepList";
@@ -16,19 +17,14 @@ import type { ConversationItem } from "../buildConversationItems";
 import { ToolCallBlock } from "./ToolCallBlock";
 
 export type RenderItem =
-  | SessionUpdate
+  | ConversationSessionUpdate
   | {
       sessionUpdate: "console";
       level: string;
       message: string;
       timestamp?: string;
     }
-  | {
-      sessionUpdate: "compact_boundary";
-      trigger: "manual" | "auto";
-      preTokens: number;
-      contextSize?: number;
-    }
+  | CompactBoundaryUpdate
   | {
       sessionUpdate: "status";
       status: string;
@@ -43,6 +39,10 @@ export type RenderItem =
       fromModel?: string;
       /** Refusal fallback: the model that retried the request. */
       toModel?: string;
+      message?: string;
+      attempt?: number;
+      maxAttempts?: number;
+      delayMs?: number;
     }
   | {
       sessionUpdate: "error";
@@ -137,6 +137,10 @@ export const SessionUpdateView = memo(function SessionUpdateView({
           explanation={item.explanation}
           fromModel={item.fromModel}
           toModel={item.toModel}
+          message={item.message}
+          attempt={item.attempt}
+          maxAttempts={item.maxAttempts}
+          delayMs={item.delayMs}
         />
       );
     case "error":

@@ -142,7 +142,7 @@ const NavDrawerContent = memo(function NavDrawerContent({
       style={{ paddingTop, paddingBottom: insets.bottom }}
     >
       <Pressable onPress={handleHome} className="px-4 pb-3 active:opacity-60">
-        <Text className="font-bold text-[20px] text-gray-12">PostHog Code</Text>
+        <Text className="font-bold text-[20px] text-gray-12">PostHog</Text>
       </Pressable>
 
       <View className="gap-0.5 px-2 pb-2">

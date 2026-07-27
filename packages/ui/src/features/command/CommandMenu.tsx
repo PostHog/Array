@@ -4,6 +4,7 @@ import {
   ChartLine,
   EnvelopeSimple,
   HashIcon,
+  RepeatIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -24,7 +25,7 @@ import {
   DialogContent,
   Kbd,
 } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
@@ -59,6 +60,7 @@ import {
   navigateToChannel,
   navigateToCommandCenter,
   navigateToInbox,
+  navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -141,6 +143,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   const { channels } = useChannels({ enabled: bluebirdEnabled });
   const taskChannelMap = useTaskChannelMap(channels, {
     enabled: open && bluebirdEnabled,
@@ -278,6 +281,21 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           navigateToCommandCenter();
         },
       },
+      ...(loopsEnabled
+        ? [
+            {
+              id: "loops",
+              label: "Loops",
+              keywords: "automations schedules recurring",
+              icon: <RepeatIcon size={12} className="text-gray-11" />,
+              action: "open-loops" as CommandMenuAction,
+              onRun: () => {
+                closeSettingsDialog();
+                navigateToLoops();
+              },
+            },
+          ]
+        : []),
       {
         id: "plan-usage",
         label: "Plan & usage",
@@ -449,6 +467,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     reviewTaskId,
     canSearchFiles,
     openFilePicker,
+    loopsEnabled,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {

@@ -6,7 +6,11 @@ export type SettingsCategory =
   | "worktrees"
   | "environments"
   | "cloud-environments"
+  | "agents"
+  | "skills"
+  | "mcp-servers"
   | "personalization"
+  | "sidebar"
   | "terminal"
   | "claude-code"
   | "shortcuts"
@@ -25,7 +29,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   "worktrees",
   "environments",
   "cloud-environments",
+  "agents",
+  "skills",
+  "mcp-servers",
   "personalization",
+  "sidebar",
   "terminal",
   "claude-code",
   "shortcuts",

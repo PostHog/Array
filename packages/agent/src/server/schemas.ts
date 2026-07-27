@@ -1,5 +1,7 @@
 import { z } from "zod/v4";
 
+export { posthogExecPermissionRegexSchema } from "../posthog-exec-permission";
+
 const httpHeaderSchema = z.object({
   name: z.string(),
   value: z.string(),
@@ -65,6 +67,8 @@ export const userMessageParamsSchema = z
       ])
       .optional(),
     artifacts: z.array(z.record(z.string(), z.unknown())).optional(),
+    messageId: z.string().min(1).optional(),
+    steer: z.boolean().optional(),
   })
   .refine(
     (params) => {

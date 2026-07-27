@@ -1,7 +1,6 @@
 import {
   Check,
   Copy,
-  File,
   FileText,
   Scroll,
   SlackLogo,
@@ -15,6 +14,7 @@ import { MarkdownRenderer } from "../../../editor/components/MarkdownRenderer";
 import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
+import { UserMessageAttachments } from "../UserMessageAttachments";
 import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
 import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
@@ -179,19 +179,9 @@ export const UserMessage = memo(function UserMessage({
             </Flex>
           )}
           {showAttachmentChips && (
-            <Flex
-              wrap="wrap"
-              gap="1"
-              className={content.trim() ? "mt-1.5" : ""}
-            >
-              {attachments.map((attachment) => (
-                <MentionChip
-                  key={attachment.id}
-                  icon={<File size={12} />}
-                  label={attachment.label}
-                />
-              ))}
-            </Flex>
+            <div className={content.trim() ? "mt-1.5" : ""}>
+              <UserMessageAttachments attachments={attachments} />
+            </div>
           )}
         </CollapsibleMessageContent>
         {sourceUrl && (

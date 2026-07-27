@@ -54,17 +54,14 @@ const EXTENSIONS: HarnessExtension[] = [
 ];
 ```
 
-`registry.ts` is the single source of truth. Both entry paths consume it, so a registered extension
-is loaded everywhere with no further wiring:
+`registry.ts` is the single source of truth. Both harness entry paths consume it, so a registered
+extension is loaded everywhere with no further wiring:
 
-- **In-process CLI** (`src/cli.ts`) → one `-e dist/extensions/<name>/index.js` per extension, passed
-  through argv (`main([...extensionArgs, ...args])`)
-- **Subprocess** (`src/spawn.ts`) → one `-e dist/extensions/<name>/index.js` per extension
+- **Pi CLI** (`src/cli.ts`) loads each compiled extension by file path through Pi's native `-e`
+  argument.
+- **Harness runtime** (`src/runtime.ts`) supplies named inline factories to Pi's
+  `createAgentSessionServices()`.
 
-Both load extensions by file path (not `extensionFactories`), so each one shows its real name in pi's
-startup banner instead of `<inline:N>`. `harnessExtensions()` (function factories, taking
-`HarnessExtensionOptions`) remains available for programmatic embedding — for example
-`session.ts`'s lean SDK path — where a caller needs to inject runtime options.
-
-Both `-e` paths are real pi extension-loading paths, verified to register in every pi mode
-(interactive, print, rpc, json, and `--list-models`).
+The CLI path shows each extension's directory name in Pi's startup banner. The runtime path uses
+named `InlineExtension` values, so those extensions appear as `<inline:name>` rather than anonymous
+`<inline:N>` entries. Both paths use Pi's native extension loader.

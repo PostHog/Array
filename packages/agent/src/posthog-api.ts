@@ -230,14 +230,22 @@ export class PostHogAPIClient {
     runId: string,
     text: string,
     textParts?: string[],
+    messageId?: string,
   ): Promise<void> {
     const teamId = this.getTeamId();
     // Send `text_parts` alongside the joined `text` so backends that understand
     // the new schema can pick just the post-last-tool-use answer, while older
     // backends still get the flat `text` field they already handle.
-    const body: { text: string; text_parts?: string[] } = { text };
+    // `message_id` correlates the relay with the user message that initiated
+    // the turn; it is omitted when no message id is known (e.g. boot prompt).
+    const body: { text: string; text_parts?: string[]; message_id?: string } = {
+      text,
+    };
     if (textParts && textParts.length > 0) {
       body.text_parts = textParts;
+    }
+    if (messageId) {
+      body.message_id = messageId;
     }
     await this.apiRequest<{ status: string }>(
       `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/relay_message/`,

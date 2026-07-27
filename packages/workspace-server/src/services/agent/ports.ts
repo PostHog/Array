@@ -1,3 +1,5 @@
+import type { CloudRegion } from "@posthog/shared";
+
 // Narrow ports inverting AgentService's dependencies on core/host services so it
 // can live in workspace-server without importing @posthog/core or apps/code.
 // The host (apps/code) binds these to the concrete SleepService, McpAppsService,
@@ -28,6 +30,8 @@ export interface AgentMcpServerConnectionConfig {
 export interface AgentMcpApps {
   handleDiscovery(serverNames: string[]): Promise<void>;
   setServerConfigs(configs: AgentMcpServerConnectionConfig[]): void;
+  addServerConfigs(configs: AgentMcpServerConnectionConfig[]): void;
+  setConfigResolver(resolver: (serverName: string) => Promise<void>): void;
   notifyToolCancelled(toolKey: string, toolCallId: string): void;
   notifyToolInput(toolKey: string, toolCallId: string, args: unknown): void;
   notifyToolResult(
@@ -55,7 +59,17 @@ type AgentFetchLike = (
 
 export interface AgentAuth {
   getValidAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
+  getOAuthCredentials(): Promise<{
+    access: string;
+    refresh: string | null;
+    expires: number;
+    region: CloudRegion;
+  } | null>;
   refreshAccessToken(): Promise<{ accessToken: string; apiHost: string }>;
+  getState(): {
+    currentProjectId: number | null;
+    sessionType?: "persistent" | "impersonated" | null;
+  };
   authenticatedFetch(
     fetchImpl: AgentFetchLike,
     input: string | Request,

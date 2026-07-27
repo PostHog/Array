@@ -7,6 +7,8 @@ import type {
   CloudRunSource,
   ExecutionMode,
   PrAuthorshipMode,
+  SourceProduct,
+  SourceType,
   StoredLogEntry,
   TaskRunArtifactMetadata,
 } from "@posthog/shared";
@@ -96,7 +98,7 @@ import {
   type HogQLGrid,
   shapeAgentAnalytics,
 } from "./agent-analytics";
-import { buildApiFetcher } from "./fetcher";
+import { buildApiFetcher, requestErrorStatus } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
 export interface ApiClientLogger {
@@ -117,6 +119,10 @@ export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
 }
 
+export function getPosthogApiClientAppVersion(): string {
+  return clientAppVersion;
+}
+
 export class SandboxCustomImagesDisabledError extends Error {
   constructor(message?: string) {
     super(message ?? "Custom sandbox images are not enabled");
@@ -130,6 +136,11 @@ export type UsageLimitType = "burst" | "sustained" | null;
 export const CLOUD_USAGE_LIMIT_ERROR_MESSAGE = "Cloud usage limit reached";
 
 export const SESSION_LOGS_MAX_PAGE_SIZE = 5000;
+
+export interface TaskRunSessionLogsResult {
+  entries: StoredLogEntry[];
+  complete: boolean;
+}
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
@@ -239,26 +250,8 @@ export interface LlmSkillFileInput {
 
 export interface SignalSourceConfig {
   id: string;
-  source_product:
-    | "session_replay"
-    | "llm_analytics"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "error_tracking"
-    | "pganalyze"
-    | "signals_scout";
-  source_type:
-    | "session_analysis_cluster"
-    | "evaluation"
-    | "issue"
-    | "ticket"
-    | "issue_created"
-    | "issue_reopened"
-    | "issue_spiking"
-    | "cross_source_issue";
+  source_product: SourceProduct;
+  source_type: SourceType;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -598,7 +591,6 @@ interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
-  homeQuickAction?: string;
   /**
    * Local url-based MCP servers to make available inside the sandbox. The
    * backend merges these into the agent server's `--mcpServers` at spawn.
@@ -695,9 +687,6 @@ function buildCloudRunRequestBody(
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.homeQuickAction) {
-    body.home_quick_action = options.homeQuickAction;
   }
   if (options?.importedMcpServers?.length) {
     body.imported_mcp_servers = options.importedMcpServers;
@@ -1846,82 +1835,6 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
-  async getHomeSnapshot(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch home snapshot: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async refreshHomeSnapshot(): Promise<void> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/refresh/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to request home refresh: ${response.status}`);
-    }
-  }
-
-  async getCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  // 409/422 carry a structured save-result body the caller validates.
-  async saveCodeWorkflow(body: {
-    config: unknown;
-    expectedVersion: number;
-  }): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/save/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-      overrides: {
-        body: JSON.stringify(body),
-      },
-    });
-    if (!response.ok && response.status !== 409 && response.status !== 422) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async resetCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/reset/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {
@@ -2426,6 +2339,7 @@ export class PostHogAPIClient {
           | "repository"
           | "json_schema"
           | "origin_product"
+          | "runtime"
           | "signal_report"
         >
       > & {
@@ -2675,6 +2589,14 @@ export class PostHogAPIClient {
   // Everyone in the current organization — the pool of taggable teammates for
   // thread @-mentions. Membership churn is slow, so callers cache aggressively.
   async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const result = await this.listOrganizationMembersWithStatus();
+    return result.members;
+  }
+
+  async listOrganizationMembersWithStatus(): Promise<{
+    members: OrganizationMemberBasic[];
+    isComplete: boolean;
+  }> {
     const ORG_MEMBERS_MAX_PAGES = 20;
     const ORG_MEMBERS_PAGE_SIZE = 200;
     const all: OrganizationMemberBasic[] = [];
@@ -2695,7 +2617,7 @@ export class PostHogAPIClient {
         next: string | null;
       };
       all.push(...page.results);
-      if (!page.next) return all;
+      if (!page.next) return { members: all, isComplete: true };
       const nextUrl = new URL(page.next);
       urlPath = `${nextUrl.pathname}${nextUrl.search}`;
     }
@@ -2703,7 +2625,7 @@ export class PostHogAPIClient {
       `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
       { returned: all.length },
     );
-    return all;
+    return { members: all, isComplete: false };
   }
 
   async sendRunCommand(
@@ -2986,6 +2908,34 @@ export class PostHogAPIClient {
     return data.artifacts ?? [];
   }
 
+  async presignTaskRunArtifact(
+    taskId: string,
+    runId: string,
+    storagePath: string,
+  ): Promise<string> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+      overrides: {
+        body: JSON.stringify({ storage_path: storagePath }),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to generate artifact preview URL: ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as { url: string };
+    return data.url;
+  }
+
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -3156,6 +3106,15 @@ export class PostHogAPIClient {
     runId: string,
     options?: { limit?: number; after?: string },
   ): Promise<StoredLogEntry[]> {
+    return (await this.getTaskRunSessionLogsResult(taskId, runId, options))
+      .entries;
+  }
+
+  async getTaskRunSessionLogsResult(
+    taskId: string,
+    runId: string,
+    options?: { limit?: number; after?: string },
+  ): Promise<TaskRunSessionLogsResult> {
     const maxEntries = options?.limit ?? SESSION_LOGS_MAX_PAGE_SIZE;
     const entries: StoredLogEntry[] = [];
     try {
@@ -3186,21 +3145,21 @@ export class PostHogAPIClient {
           log.warn(
             `Failed to fetch session logs page at offset ${offset}: ${response.status} ${response.statusText}`,
           );
-          break;
+          return { entries, complete: false };
         }
 
         const page = (await response.json()) as StoredLogEntry[];
         entries.push(...page);
         const hasMore = response.headers.get("X-Has-More") === "true";
         if (!hasMore || page.length === 0) {
-          break;
+          return { entries, complete: true };
         }
         offset += page.length;
       }
-      return entries;
+      return { entries, complete: false };
     } catch (err) {
       log.warn("Failed to fetch task run session logs", err);
-      return entries;
+      return { entries, complete: false };
     }
   }
 
@@ -4185,6 +4144,40 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  /**
+   * Object URL for an MCP server's brand icon, proxied from logo.dev by the
+   * authenticated `mcp_servers/icon/` endpoint. Returns null when no brand
+   * icon exists for the domain (the endpoint 404s so callers render their own
+   * fallback glyph, e.g. on self-hosted instances without a logo.dev token).
+   */
+  async getMcpServerIconUrl(
+    domain: string,
+    theme?: "light" | "dark",
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_servers/icon/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("domain", domain);
+    if (theme) {
+      url.searchParams.set("theme", theme);
+    }
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+    } catch (error) {
+      // 404 is the endpoint's definitive "no icon for this domain" answer,
+      // not a failure; anything else propagates so callers can retry.
+      if (requestErrorStatus(error) === 404) return null;
+      throw error;
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
   async getMcpServerInstallations(): Promise<McpServerInstallation[]> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -4677,6 +4670,34 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
       );
     }
     return (await response.json()) as SandboxCustomImage;

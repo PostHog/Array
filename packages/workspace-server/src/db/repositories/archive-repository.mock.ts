@@ -37,6 +37,9 @@ export function createMockArchiveRepository(
         workspaceId: data.workspaceId,
         branchName: data.branchName,
         checkpointId: data.checkpointId,
+        title: data.title ?? null,
+        taskCreatedAt: data.taskCreatedAt ?? null,
+        repository: data.repository ?? null,
         archivedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -44,6 +47,17 @@ export function createMockArchiveRepository(
       archives.set(archive.id, archive);
       workspaceIndex.set(archive.workspaceId, archive.id);
       return archive;
+    },
+    updateDetailsByWorkspaceId: (workspaceId, details) => {
+      const id = workspaceIndex.get(workspaceId);
+      const archive = id ? archives.get(id) : undefined;
+      if (archive) {
+        archives.set(archive.id, {
+          ...archive,
+          ...details,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     },
     deleteByWorkspaceId: (workspaceId: string) => {
       if (opts?.failOnDelete) {

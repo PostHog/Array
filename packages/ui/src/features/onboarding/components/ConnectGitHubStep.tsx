@@ -55,7 +55,7 @@ export function ConnectGitHubStep({ onNext, onBack }: ConnectGitHubStepProps) {
                     <OptionalBadge />
                   </Flex>
                   <Text className="text-(--gray-11) text-sm">
-                    Unlocks the parts of PostHog Code that leave your machine.
+                    Unlocks the parts of PostHog that leave your machine.
                   </Text>
                 </Flex>
               </motion.div>

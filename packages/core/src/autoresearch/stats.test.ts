@@ -3,6 +3,7 @@ import type { AutoresearchIteration, AutoresearchRun } from "./schemas";
 import {
   computeBest,
   evaluateContinuation,
+  getAutoresearchElapsedMs,
   isImprovement,
   meetsTarget,
   summarizeRun,
@@ -32,6 +33,11 @@ function makeRun(overrides: {
   direction?: "maximize" | "minimize";
   targetValue?: number | null;
   maxIterations?: number;
+  startedAt?: number;
+  pausedAt?: number | null;
+  pausedDurationMs?: number;
+  pauseIntervals?: AutoresearchRun["pauseIntervals"];
+  endedAt?: number | null;
 }): AutoresearchRun {
   return {
     id: "ar-1",
@@ -54,13 +60,42 @@ function makeRun(overrides: {
     originalEffort: null,
     researchFindings: [],
     iterations: overrides.iterations ?? [],
-    startedAt: 0,
-    endedAt: null,
+    startedAt: overrides.startedAt ?? 0,
+    pausedAt: overrides.pausedAt,
+    pausedDurationMs: overrides.pausedDurationMs,
+    pauseIntervals: overrides.pauseIntervals ?? [],
+    endedAt: overrides.endedAt ?? null,
     endReason: null,
     interruptedReason: null,
     lastError: null,
   };
 }
+
+describe("getAutoresearchElapsedMs", () => {
+  it("freezes while paused and excludes completed pause intervals", () => {
+    expect(
+      getAutoresearchElapsedMs(
+        makeRun({ startedAt: 1_000, pausedAt: 11_000 }),
+        31_000,
+      ),
+    ).toBe(10_000);
+    expect(
+      getAutoresearchElapsedMs(
+        makeRun({ startedAt: 1_000, pausedDurationMs: 20_000 }),
+        36_000,
+      ),
+    ).toBe(15_000);
+    expect(
+      getAutoresearchElapsedMs(
+        makeRun({
+          startedAt: 1_000,
+          pauseIntervals: [{ startedAt: 11_000, endedAt: 31_000 }],
+        }),
+        36_000,
+      ),
+    ).toBe(15_000);
+  });
+});
 
 describe("isImprovement", () => {
   it.each([

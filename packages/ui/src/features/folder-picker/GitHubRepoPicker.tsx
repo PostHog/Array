@@ -43,6 +43,7 @@ export function GitHubRepoPicker({
   repositories,
   isLoading,
   placeholder = "Select repository...",
+  size = "1",
   disabled = false,
   anchor,
   showSearchInput = true,
@@ -55,6 +56,8 @@ export function GitHubRepoPicker({
   hasMore: controlledHasMore,
   onLoadMore,
 }: GitHubRepoPickerProps) {
+  const buttonSize = size === "2" ? "lg" : "sm";
+  const buttonTextClass = size === "2" ? "text-[13px]" : "";
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [uncontrolledSearchQuery, setUncontrolledSearchQuery] = useState("");
@@ -91,7 +94,12 @@ export function GitHubRepoPicker({
 
   if (isLoading && !showInlineLoadingState) {
     return (
-      <Button variant="outline" disabled size="sm">
+      <Button
+        variant="outline"
+        disabled
+        size={buttonSize}
+        className={buttonTextClass}
+      >
         <GithubLogo size={16} weight="regular" className="shrink-0" />
         Loading repos...
       </Button>
@@ -107,7 +115,12 @@ export function GitHubRepoPicker({
     !hasActiveRemoteSearch
   ) {
     return (
-      <Button variant="outline" disabled size="sm">
+      <Button
+        variant="outline"
+        disabled
+        size={buttonSize}
+        className={buttonTextClass}
+      >
         <GithubLogo size={16} weight="regular" className="shrink-0" />
         No GitHub repos
       </Button>
@@ -121,10 +134,10 @@ export function GitHubRepoPicker({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size={buttonSize}
             disabled
             aria-label="Repository"
-            className="pointer-events-none min-w-0 max-w-full cursor-default justify-start disabled:opacity-100"
+            className={`pointer-events-none min-w-0 max-w-full cursor-default justify-start disabled:opacity-100 ${buttonTextClass}`}
           >
             <GithubLogo size={14} weight="regular" className="shrink-0" />
             <span className="min-w-0 truncate">{onlyRepo}</span>
@@ -165,9 +178,10 @@ export function GitHubRepoPicker({
           <Button
             ref={triggerRef}
             variant="outline"
-            size="sm"
+            size={buttonSize}
             disabled={disabled}
             aria-label="Repository"
+            className={buttonTextClass}
           >
             <GithubLogo size={14} weight="regular" className="shrink-0" />
             <span className="min-w-0 truncate">{value ?? placeholder}</span>

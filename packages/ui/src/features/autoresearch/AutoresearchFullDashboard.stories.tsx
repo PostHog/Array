@@ -58,7 +58,7 @@ function FullDashboardStory(props: FullDashboardStoryProps) {
     : null;
 
   return (
-    <div className="mx-auto min-h-screen max-w-[900px] bg-gray-1 p-5">
+    <div className="@container mx-auto min-h-screen max-w-[900px] bg-gray-1 p-5">
       <Flex direction="column" gap="4">
         <DashboardHeader run={run} />
         {run.iterations.length === 0 ? (
@@ -149,42 +149,101 @@ function buildRun(props: FullDashboardStoryProps): AutoresearchRun {
     phase: null,
     originalModel: null,
     originalEffort: null,
-    researchFindings: props.showResearch
-      ? [
-          {
-            index: 1,
-            area: "build",
-            summary: "Located the measurement path",
-            finding:
-              "The metric can be reproduced from production build output.",
-            nextStep: "Measure the baseline",
-            at: STARTED_AT + 60_000,
-          },
-          {
-            index: 2,
-            area: "frontend",
-            summary: "Mapped the eager dependency graph",
-            finding: "Several modal modules load before the user opens them.",
-            nextStep: "Test a lazy loading boundary",
-            at: STARTED_AT + 3 * 60_000,
-          },
-        ]
-      : [],
+    researchFindings: props.showResearch ? buildResearchFindings() : [],
     iterations: buildIterations(props),
     startedAt: STARTED_AT,
     endedAt: ended ? STORY_NOW : null,
-    endReason:
-      props.status === "completed"
-        ? "max-iterations"
-        : props.status === "stopped"
-          ? "stopped-by-user"
-          : null,
+    endReason: endReasonForStatus(props.status),
     interruptedReason: props.status === "interrupted" ? "session-error" : null,
     lastError:
       props.status === "failed"
         ? "The agent stopped reporting the metric."
         : null,
   };
+}
+
+function buildResearchFindings(): AutoresearchRun["researchFindings"] {
+  return [
+    {
+      index: 1,
+      area: "build",
+      summary: "Located the production bundle measurement",
+      finding:
+        "The dashboard marginal bundle can be isolated from esbuild metadata.",
+      nextStep: "Establish the baseline bundle size",
+      at: STARTED_AT + 60_000,
+    },
+    {
+      index: 2,
+      area: "build",
+      summary: "Found the dashboard entry chunk",
+      finding:
+        "The route entry includes editor and modal code before either feature is opened.",
+      nextStep: "Compare the entry chunk with lazy boundaries enabled",
+      at: STARTED_AT + 2 * 60_000,
+    },
+    {
+      index: 3,
+      area: "frontend",
+      summary: "Mapped eager dashboard imports",
+      finding: "Dashboard modals load before users open them.",
+      nextStep: "Inspect modal boundaries",
+      at: STARTED_AT + 3 * 60_000,
+    },
+    {
+      index: 4,
+      area: "frontend",
+      summary: "Traced editor initialization",
+      finding:
+        "The rich text editor initializes with the dashboard even when no editor is visible.",
+      nextStep: "Move editor setup behind the edit action",
+      at: STARTED_AT + 4 * 60_000,
+    },
+    {
+      index: 5,
+      area: "data",
+      summary: "Identified duplicate insight requests",
+      finding:
+        "The summary and chart issue equivalent requests during the first render.",
+      nextStep: "Share the initial query result",
+      at: STARTED_AT + 5 * 60_000,
+    },
+    {
+      index: 6,
+      area: "data",
+      summary: "Measured oversized response fields",
+      finding:
+        "Dashboard cards receive metadata that is only needed in the detail view.",
+      nextStep: "Select the minimal card response shape",
+      at: STARTED_AT + 6 * 60_000,
+    },
+    {
+      index: 7,
+      area: "testing",
+      summary: "Located the bundle regression test",
+      finding:
+        "The current threshold covers the full application instead of the dashboard entry.",
+      nextStep: "Add a dashboard-specific bundle assertion",
+      at: STARTED_AT + 7 * 60_000,
+    },
+    {
+      index: 8,
+      area: "testing",
+      summary: "Confirmed a stable measurement command",
+      finding:
+        "The production build emits deterministic metadata for the dashboard chunk.",
+      nextStep: "Establish the baseline bundle size",
+      at: STARTED_AT + 8 * 60_000,
+    },
+  ];
+}
+
+function endReasonForStatus(
+  status: AutoresearchRunStatus,
+): AutoresearchRun["endReason"] {
+  if (status === "completed") return "max-iterations";
+  if (status === "stopped") return "stopped-by-user";
+  return null;
 }
 
 function buildIterations(
@@ -210,12 +269,7 @@ function buildIterations(
       value,
       bestValue: best ?? value,
       delta: previous === null ? null : value - previous,
-      summary:
-        index === 1
-          ? "Established the baseline"
-          : index % 3 === 1
-            ? "Measured a regression and changed direction"
-            : `Completed focused experiment ${index}`,
+      summary: iterationSummary(index),
       hypothesis:
         index === 1
           ? "The baseline captures the current production behavior"
@@ -232,6 +286,12 @@ function buildIterations(
   });
 }
 
+function iterationSummary(index: number): string {
+  if (index === 1) return "Established the baseline";
+  if (index % 3 === 1) return "Measured a regression and changed direction";
+  return `Completed focused experiment ${index}`;
+}
+
 function buildEvents(props: FullDashboardStoryProps): AcpMessage[] {
   if (!props.showActivity) return [];
   return [
@@ -244,21 +304,81 @@ function buildEvents(props: FullDashboardStoryProps): AcpMessage[] {
     }),
     sessionEvent(STARTED_AT + 13 * 60_000, {
       sessionUpdate: "tool_call",
-      title: "Search relevant modules",
+      toolCallId: "search",
+      title: "Find autoresearch dashboard components",
       kind: "search",
       status: "completed",
     }),
-    sessionEvent(STARTED_AT + 17 * 60_000, {
+    sessionEvent(STARTED_AT + 14 * 60_000, {
       sessionUpdate: "tool_call",
-      title: "Edit the selected implementation",
+      toolCallId: "read",
+      title: "Read existing timeline implementation",
+      kind: "read",
+      status: "completed",
+    }),
+    sessionEvent(STARTED_AT + 15 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "server",
+      title: "Start Storybook dev server",
+      kind: "execute",
+      rawInput: { command: "pnpm --filter code storybook" },
+      status: props.status === "running" ? "in_progress" : "completed",
+    }),
+    sessionEvent(STARTED_AT + 16 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "layout",
+      title: "Add responsive timeline layout",
+      kind: "edit",
+      status: "completed",
+    }),
+    sessionEvent(STARTED_AT + 18 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "typecheck",
+      title: "Typecheck UI package",
+      kind: "execute",
+      rawInput: { command: "pnpm --filter @posthog/ui typecheck" },
+      status: "completed",
+    }),
+    sessionEvent(STARTED_AT + 19 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "screenshots",
+      title: "Inspect Storybook screenshots",
+      kind: "read",
+      status: "completed",
+    }),
+    sessionEvent(STARTED_AT + 20 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "stories",
+      title: "Add dashboard story variants",
       kind: "edit",
       status: "completed",
     }),
     sessionEvent(STARTED_AT + 22 * 60_000, {
       sessionUpdate: "tool_call",
-      title: "Run the metric measurement",
+      toolCallId: "benchmark",
+      title: "Run bundle benchmark",
       kind: "execute",
+      rawInput: { command: "pnpm bench:dashboard" },
       status: props.status === "running" ? "in_progress" : "completed",
+    }),
+    sessionEvent(STARTED_AT + 23 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "status",
+      title: "Check repository status",
+      kind: "execute",
+      rawInput: { command: "git status --short" },
+      status: "completed",
+    }),
+    sessionEvent(STARTED_AT + 24 * 60_000, {
+      sessionUpdate: "tool_call",
+      toolCallId: "visual-tests",
+      title: "Capture visual snapshots",
+      kind: "execute",
+      rawInput: {
+        command:
+          "pnpm exec test-storybook --browsers chromium AutoresearchFullDashboard.stories.tsx",
+      },
+      status: "completed",
     }),
   ];
 }
@@ -276,7 +396,7 @@ function sessionEvent(ts: number, update: Record<string, unknown>): AcpMessage {
 }
 
 const meta = {
-  title: "Autoresearch/Configurable Full Dashboard",
+  title: "Autoresearch/Dashboard",
   component: FullDashboardStory,
   parameters: { layout: "fullscreen" },
   argTypes: {
@@ -326,12 +446,21 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Playground: Story = {};
+export const ActiveRun: Story = {
+  parameters: { testOptions: { viewport: { width: 1280, height: 2200 } } },
+};
 
-export const BeforeBaseline: Story = {
+export const ResearchingBaseline: Story = {
   args: { iterationCount: 0, showResearch: true, status: "running" },
+  parameters: {
+    testOptions: {
+      waitForLoadersToDisappear: false,
+      viewport: { width: 1280, height: 2500 },
+    },
+  },
 };
 
 export const CompletedRun: Story = {
   args: { status: "completed", iterationCount: 8 },
+  parameters: { testOptions: { viewport: { width: 1280, height: 2400 } } },
 };

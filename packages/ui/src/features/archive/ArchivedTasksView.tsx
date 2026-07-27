@@ -11,7 +11,6 @@ import type { RestoreOutcome } from "@posthog/core/archive/archivedTasksControll
 import {
   type ArchivedTaskWithDetails,
   deriveUniqueRepos,
-  filterAndSortArchivedTasks,
   formatRelativeDate,
   mergeArchivedWithTasks,
   type ArchiveSortColumn as SortColumn,
@@ -20,6 +19,7 @@ import {
 } from "@posthog/core/archive/archiveListView";
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { WorkspaceMode } from "@posthog/shared";
+import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { openTask } from "@posthog/ui/router/useOpenTask";
 import {
   AlertDialog,
@@ -32,13 +32,19 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSetHeaderContent } from "../../hooks/useSetHeaderContent";
 import { DotsCircleSpinner } from "../../primitives/DotsCircleSpinner";
 import { Tooltip } from "../../primitives/Tooltip";
 import { toast } from "../../primitives/toast";
 import { useTasks } from "../tasks/useTasks";
+import {
+  getVisibleArchivedTasks,
+  shouldLoadMoreArchivedTasks,
+} from "./archiveListPagination";
+import { useArchivedTaskSummaries } from "./useArchivedTaskSummaries";
 import { useUnarchiveTask } from "./useUnarchiveTask";
 
 const ICON_SIZE = 12;
@@ -110,7 +116,7 @@ function SortableColumnHeader({
 const filterItemClassName =
   "flex w-full items-center justify-between rounded-sm px-1.5 py-1 text-left text-[13px] text-gray-12 transition-colors hover:bg-gray-3";
 
-function RepositoryFilterHeader({
+function RepositoryFilter({
   repos,
   selectedRepo,
   onSelect,
@@ -119,55 +125,59 @@ function RepositoryFilterHeader({
   selectedRepo: string | null;
   onSelect: (repo: string | null) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const selectRepo = (repo: string | null) => {
+    onSelect(repo);
+    setOpen(false);
+  };
+
   return (
-    <Table.ColumnHeaderCell className="w-[20%] font-normal text-[13px] text-gray-11">
-      <Popover.Root>
-        <Popover.Trigger>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger>
+        <button
+          type="button"
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-6 px-2 text-[13px] text-gray-11 transition-colors hover:bg-gray-3 hover:text-gray-12"
+        >
+          Repository: {selectedRepo ?? "All"}
+          <CaretDown size={10} />
+          {selectedRepo !== null && (
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-9" />
+          )}
+        </button>
+      </Popover.Trigger>
+      <Popover.Content
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        className="min-w-[180px] p-[6px]"
+      >
+        <Flex direction="column" gap="0">
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-gray-11 transition-colors hover:text-gray-12"
+            className={filterItemClassName}
+            onClick={() => selectRepo(null)}
           >
-            Repository
-            <CaretDown size={10} />
-            {selectedRepo !== null && (
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-9" />
+            <span>All repositories</span>
+            {selectedRepo === null && (
+              <Check size={12} className="text-gray-12" />
             )}
           </button>
-        </Popover.Trigger>
-        <Popover.Content
-          align="start"
-          side="bottom"
-          sideOffset={4}
-          className="min-w-[180px] p-[6px]"
-        >
-          <Flex direction="column" gap="0">
+          {repos.map((repo) => (
             <button
+              key={repo}
               type="button"
               className={filterItemClassName}
-              onClick={() => onSelect(null)}
+              onClick={() => selectRepo(repo)}
             >
-              <span>All repositories</span>
-              {selectedRepo === null && (
+              <span className="max-w-[200px] truncate">{repo}</span>
+              {selectedRepo === repo && (
                 <Check size={12} className="text-gray-12" />
               )}
             </button>
-            {repos.map((repo) => (
-              <button
-                key={repo}
-                type="button"
-                className={filterItemClassName}
-                onClick={() => onSelect(repo)}
-              >
-                <span className="max-w-[200px] truncate">{repo}</span>
-                {selectedRepo === repo && (
-                  <Check size={12} className="text-gray-12" />
-                )}
-              </button>
-            ))}
-          </Flex>
-        </Popover.Content>
-      </Popover.Root>
-    </Table.ColumnHeaderCell>
+          ))}
+        </Flex>
+      </Popover.Content>
+    </Popover.Root>
   );
 }
 
@@ -181,23 +191,31 @@ export type { ArchivedTaskWithDetails };
 export interface ArchivedTasksViewPresentationProps {
   items: ArchivedTaskWithDetails[];
   isLoading: boolean;
+  loadedCount?: number;
   branchNotFound: BranchNotFoundPrompt | null;
   onUnarchive: (taskId: string) => void;
   onDelete: (taskId: string) => void;
   onContextMenu: (item: ArchivedTaskWithDetails, e: React.MouseEvent) => void;
   onBranchNotFoundClose: () => void;
   onRecreateBranch: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function ArchivedTasksViewPresentation({
   items,
   isLoading,
+  loadedCount = items.length,
   branchNotFound,
   onUnarchive,
   onDelete,
   onContextMenu,
   onBranchNotFoundClose,
   onRecreateBranch,
+  hasNextPage = false,
+  isFetchingNextPage = false,
+  onLoadMore,
 }: ArchivedTasksViewPresentationProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sort, setSort] = useState<SortState>({
@@ -206,8 +224,12 @@ export function ArchivedTasksViewPresentation({
   });
   const [repoFilter, setRepoFilter] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const tableViewportRef = useRef<HTMLDivElement>(null);
+
+  const resetTableScroll = () => tableViewportRef.current?.scrollTo({ top: 0 });
 
   const handleSort = (column: SortColumn) => {
+    resetTableScroll();
     setSort((prev) =>
       prev.column === column
         ? { column, direction: prev.direction === "asc" ? "desc" : "asc" }
@@ -222,36 +244,83 @@ export function ArchivedTasksViewPresentation({
     [itemsWithRepo],
   );
 
-  const filteredItems = useMemo(
+  const visibleItems = useMemo(
     () =>
-      filterAndSortArchivedTasks(itemsWithRepo, {
-        searchQuery,
-        repoFilter,
-        sort,
-      }),
-    [itemsWithRepo, searchQuery, repoFilter, sort],
+      getVisibleArchivedTasks(
+        itemsWithRepo,
+        { searchQuery, repoFilter, sort },
+        loadedCount,
+      ),
+    [itemsWithRepo, searchQuery, repoFilter, sort, loadedCount],
   );
+  const rowVirtualizer = useVirtualizer({
+    count: visibleItems.length,
+    getScrollElement: () => tableViewportRef.current,
+    estimateSize: () => 37,
+    overscan: 12,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const lastVirtualRowIndex = virtualRows[virtualRows.length - 1]?.index;
+  const hasActiveFilter = searchQuery.trim() !== "" || repoFilter !== null;
+  useEffect(() => {
+    if (
+      shouldLoadMoreArchivedTasks(
+        lastVirtualRowIndex,
+        visibleItems.length,
+        hasActiveFilter,
+      ) &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      onLoadMore?.();
+    }
+  }, [
+    visibleItems.length,
+    hasActiveFilter,
+    hasNextPage,
+    isFetchingNextPage,
+    lastVirtualRowIndex,
+    onLoadMore,
+  ]);
+  const topSpacerHeight = virtualRows[0]?.start ?? 0;
+  const bottomSpacerHeight =
+    rowVirtualizer.getTotalSize() -
+    (virtualRows[virtualRows.length - 1]?.end ?? 0);
 
   return (
     <Flex direction="column" height="100%">
-      <Box
-        className="flex-1 overflow-y-auto"
-        style={{ scrollbarGutter: "stable" }}
-      >
-        <Box px="3" pt="3" pb="2">
+      <Box px="3" pt="3" pb="2">
+        <Flex gap="2" align="center">
           <TextField.Root
             size="2"
-            placeholder="Search archived tasks..."
+            placeholder="Filter by title or task ID..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="text-[13px]"
+            onChange={(e) => {
+              resetTableScroll();
+              setSearchQuery(e.target.value);
+            }}
+            className="min-w-0 flex-1 text-[13px]"
           >
             <TextField.Slot>
               <MagnifyingGlass size={14} />
             </TextField.Slot>
           </TextField.Root>
-        </Box>
+          <RepositoryFilter
+            repos={uniqueRepos}
+            selectedRepo={repoFilter}
+            onSelect={(repo) => {
+              resetTableScroll();
+              setRepoFilter(repo);
+            }}
+          />
+        </Flex>
+      </Box>
 
+      <Box
+        ref={tableViewportRef}
+        className="flex-1 overflow-y-auto"
+        style={{ scrollbarGutter: "stable" }}
+      >
         {isLoading ? (
           <Flex align="center" justify="center" gap="2" py="8">
             <DotsCircleSpinner size={16} className="text-gray-10" />
@@ -259,7 +328,7 @@ export function ArchivedTasksViewPresentation({
               Loading archived tasks...
             </Text>
           </Flex>
-        ) : filteredItems.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <Flex align="center" justify="center" py="8">
             <Text className="text-[13px] text-gray-10">
               {items.length === 0 ? "No archived tasks" : "No matching tasks"}
@@ -289,66 +358,82 @@ export function ArchivedTasksViewPresentation({
                   onSort={handleSort}
                   width="15%"
                 />
-                <RepositoryFilterHeader
-                  repos={uniqueRepos}
-                  selectedRepo={repoFilter}
-                  onSelect={setRepoFilter}
-                />
+                <Table.ColumnHeaderCell className="w-[20%] font-normal text-[13px] text-gray-11">
+                  Repository
+                </Table.ColumnHeaderCell>
                 <Table.ColumnHeaderCell className="w-[160px]" />
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {filteredItems.map((item) => (
-                <Table.Row
-                  key={item.archived.taskId}
-                  onContextMenu={(e) => onContextMenu(item, e)}
-                  className="group"
-                >
-                  <Table.Cell>
-                    <Flex align="center" gap="2">
-                      <ModeIcon mode={item.archived.mode} />
-                      <Text className="block truncate text-[13px]">
-                        {item.task?.title ?? "Unknown task"}
-                      </Text>
-                    </Flex>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Text className="block whitespace-nowrap text-[13px] text-gray-11">
-                      {formatRelativeDate(item.task?.created_at)}
-                    </Text>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Text className="block whitespace-nowrap text-[13px] text-gray-11">
-                      {formatRelativeDate(item.archived.archivedAt)}
-                    </Text>
-                  </Table.Cell>
-                  <Table.Cell>
-                    <Text className="block truncate text-[13px] text-gray-11">
-                      {item.repoName}
-                    </Text>
-                  </Table.Cell>
-                  <Table.Cell className="overflow-visible">
-                    <Flex gap="2" className="invisible group-hover:visible">
-                      <Button
-                        variant="outline"
-                        color="gray"
-                        size="1"
-                        onClick={() => onUnarchive(item.archived.taskId)}
-                      >
-                        Unarchive
-                      </Button>
-                      <Button
-                        variant="outline"
-                        color="red"
-                        size="1"
-                        onClick={() => setDeleteTargetId(item.archived.taskId)}
-                      >
-                        Delete
-                      </Button>
-                    </Flex>
-                  </Table.Cell>
+              {topSpacerHeight > 0 && (
+                <Table.Row aria-hidden="true">
+                  <Table.Cell colSpan={5} style={{ height: topSpacerHeight }} />
                 </Table.Row>
-              ))}
+              )}
+              {virtualRows.map((virtualRow) => {
+                const item = visibleItems[virtualRow.index];
+                return (
+                  <Table.Row
+                    key={item.archived.taskId}
+                    onContextMenu={(e) => onContextMenu(item, e)}
+                    className="group"
+                  >
+                    <Table.Cell>
+                      <Flex align="center" gap="2">
+                        <ModeIcon mode={item.archived.mode} />
+                        <Text className="block truncate text-[13px]">
+                          {item.task?.title ?? "Unknown task"}
+                        </Text>
+                      </Flex>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text className="block whitespace-nowrap text-[13px] text-gray-11">
+                        {formatRelativeDate(item.task?.created_at)}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text className="block whitespace-nowrap text-[13px] text-gray-11">
+                        {formatRelativeDate(item.archived.archivedAt)}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text className="block truncate text-[13px] text-gray-11">
+                        {item.repoName}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell className="overflow-visible">
+                      <Flex gap="2" className="invisible group-hover:visible">
+                        <Button
+                          variant="outline"
+                          color="gray"
+                          size="1"
+                          onClick={() => onUnarchive(item.archived.taskId)}
+                        >
+                          Unarchive
+                        </Button>
+                        <Button
+                          variant="outline"
+                          color="red"
+                          size="1"
+                          onClick={() =>
+                            setDeleteTargetId(item.archived.taskId)
+                          }
+                        >
+                          Delete
+                        </Button>
+                      </Flex>
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })}
+              {bottomSpacerHeight > 0 && (
+                <Table.Row aria-hidden="true">
+                  <Table.Cell
+                    colSpan={5}
+                    style={{ height: bottomSpacerHeight }}
+                  />
+                </Table.Row>
+              )}
             </Table.Body>
           </Table.Root>
         )}
@@ -434,10 +519,25 @@ export function ArchivedTasksViewPresentation({
 
 export function ArchivedTasksView() {
   const trpc = useHostTRPC();
-  const { data: archivedTasks = [], isLoading: isLoadingArchived } = useQuery(
-    trpc.archive.list.queryOptions(),
+  const queryClient = useQueryClient();
+  const { data: archivedTasks = [], isLoading: isLoadingArchived } = useQuery({
+    ...trpc.archive.list.queryOptions(),
+    refetchInterval: (query) =>
+      query.state.data?.some((task) => task.recoveryPending) ? 1_000 : false,
+  });
+  const { data: listedTasks = [] } = useTasks();
+  const archivedTaskIds = useMemo(
+    () => archivedTasks.map((task) => task.taskId),
+    [archivedTasks],
   );
-  const { data: tasks = [], isLoading: isLoadingTasks } = useTasks();
+  const {
+    summaries: archivedTaskDetails,
+    loadedCount,
+    isLoading: isLoadingTasks,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useArchivedTaskSummaries(archivedTaskIds);
   const { restore, remove, runContextMenuAction } = useUnarchiveTask();
 
   useSetHeaderContent(
@@ -448,24 +548,27 @@ export function ArchivedTasksView() {
     useState<BranchNotFoundPrompt | null>(null);
 
   const items = useMemo(
-    () => mergeArchivedWithTasks(archivedTasks, tasks),
-    [archivedTasks, tasks],
+    () =>
+      mergeArchivedWithTasks(archivedTasks, [
+        ...listedTasks,
+        ...archivedTaskDetails,
+      ]),
+    [archivedTasks, listedTasks, archivedTaskDetails],
   );
 
   const isLoading = isLoadingArchived || isLoadingTasks;
 
   const applyRestoreOutcome = (taskId: string, outcome: RestoreOutcome) => {
     if (outcome.kind === "restored") {
-      const task =
-        outcome.navigateToTaskId === null
-          ? null
-          : (items.find((i) => i.archived.taskId === outcome.navigateToTaskId)
-              ?.task ?? null);
+      const navigateToTaskId = outcome.navigateToTaskId;
       toast.success("Task unarchived", {
-        action: task
+        action: navigateToTaskId
           ? {
               label: "View task",
-              onClick: () => void openTask(task),
+              onClick: () =>
+                void queryClient
+                  .fetchQuery(taskDetailQuery(navigateToTaskId))
+                  .then(openTask),
             }
           : undefined,
       });
@@ -531,12 +634,16 @@ export function ArchivedTasksView() {
     <ArchivedTasksViewPresentation
       items={items}
       isLoading={isLoading}
+      loadedCount={loadedCount}
       branchNotFound={branchNotFound}
       onUnarchive={onUnarchive}
       onDelete={onDelete}
       onContextMenu={handleContextMenu}
       onBranchNotFoundClose={() => setBranchNotFound(null)}
       onRecreateBranch={handleRecreateBranch}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      onLoadMore={() => void fetchNextPage({ cancelRefetch: false })}
     />
   );
 }

@@ -24,7 +24,12 @@ vi.mock("@/lib/api", () => ({
     }),
 }));
 
-import { cancelRun, HttpError, runTaskInCloud } from "./api";
+import {
+  cancelRun,
+  HttpError,
+  presignTaskRunArtifact,
+  runTaskInCloud,
+} from "./api";
 
 function bodyOf(call: unknown): Record<string, unknown> {
   const [, init] = call as [string, RequestInit];
@@ -61,6 +66,30 @@ describe("runTaskInCloud", () => {
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBeUndefined();
+  });
+
+  it("forwards the selected sandbox environment and custom image", async () => {
+    await runTaskInCloud("task-1", {
+      sandboxEnvironmentId: "environment-123",
+      customImageId: "image-123",
+    });
+
+    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-123",
+    });
+  });
+
+  it("omits the sandbox environment and custom image when unset", async () => {
+    await runTaskInCloud("task-1", {
+      model: "claude-opus-4-8",
+      sandboxEnvironmentId: null,
+      customImageId: null,
+    });
+
+    const body = bodyOf(mockFetch.mock.calls[0]);
+    expect(body).not.toHaveProperty("sandbox_environment_id");
+    expect(body).not.toHaveProperty("custom_image_id");
   });
 
   it("sends rtk_enabled=false when the run opts out", async () => {
@@ -129,5 +158,41 @@ describe("cancelRun", () => {
     await expect(cancelRun("task-1", "run-1")).rejects.toBeInstanceOf(
       HttpError,
     );
+  });
+});
+
+describe("presignTaskRunArtifact", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it("posts the storage path and returns the presigned URL", async () => {
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ url: "https://s3.example.com/x.png?sig=abc" }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      presignTaskRunArtifact("task-1", "run-1", "tasks/run-1/artifacts/x.png"),
+    ).resolves.toBe("https://s3.example.com/x.png?sig=abc");
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/artifacts/presign/",
+    );
+    expect(init.method).toBe("POST");
+    expect(bodyOf(mockFetch.mock.calls[0])).toEqual({
+      storage_path: "tasks/run-1/artifacts/x.png",
+    });
+  });
+
+  it("throws an HttpError on a non-OK response", async () => {
+    mockFetch.mockResolvedValue(new Response("nope", { status: 500 }));
+
+    await expect(
+      presignTaskRunArtifact("task-1", "run-1", "tasks/run-1/artifacts/x.png"),
+    ).rejects.toBeInstanceOf(HttpError);
   });
 });

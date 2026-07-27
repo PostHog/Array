@@ -61,8 +61,13 @@ describe("AutoresearchRuntimeStats", () => {
     });
 
     expect(screen.getByText("1m 05s")).toBeVisible();
+    expect(screen.getByText("This run's active time")).toBeVisible();
+    expect(screen.getByText("This run only · excludes pauses")).toBeVisible();
     expect(screen.getByText("43K / 200K")).toBeVisible();
     expect(screen.getByText("21% of current window")).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Autoresearch runtime metrics" }),
+    ).toHaveClass("@min-[520px]:grid-cols-2", "grid-cols-1");
   });
 
   it("uses the end time and explains unavailable usage", () => {
@@ -70,6 +75,35 @@ describe("AutoresearchRuntimeStats", () => {
 
     expect(screen.getByText("30s")).toBeVisible();
     expect(screen.getByText("Waiting")).toBeVisible();
-    expect(screen.getByText("Total run time")).toBeVisible();
+    expect(screen.getByText("This run's active time")).toBeVisible();
+    expect(screen.getByText("Final duration for this run")).toBeVisible();
+  });
+
+  it("freezes the timer while paused", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(66_000);
+    renderStats(
+      makeRun({
+        status: "paused",
+        pausedAt: 31_000,
+      }),
+      null,
+    );
+
+    expect(screen.getByText("30s")).toBeVisible();
+    expect(screen.getByText("Paused · this run only")).toBeVisible();
+
+    vi.advanceTimersByTime(60_000);
+    expect(screen.getByText("30s")).toBeVisible();
+  });
+
+  it("freezes legacy paused runs without a pause timestamp", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(66_000);
+    renderStats(makeRun({ status: "paused" }), null);
+
+    expect(screen.getByText("1m 05s")).toBeVisible();
+    vi.advanceTimersByTime(60_000);
+    expect(screen.getByText("1m 05s")).toBeVisible();
   });
 });

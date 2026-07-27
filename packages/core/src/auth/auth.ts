@@ -52,7 +52,8 @@ interface InMemorySession {
   accountKey: string | null;
   accessToken: string;
   accessTokenExpiresAt: number;
-  refreshToken: string;
+  refreshToken: string | null;
+  sessionType: "persistent" | "impersonated";
   cloudRegion: CloudRegion;
   orgProjectsMap: OrgProjectsMap;
   currentOrgId: string | null;
@@ -69,6 +70,7 @@ interface StoredSessionInput {
 interface TokenResponseOptions {
   cloudRegion: CloudRegion;
   selectedProjectId: number | null;
+  fallbackRefreshToken?: string;
 }
 
 @injectable()
@@ -82,10 +84,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     currentProjectId: null,
     hasCodeAccess: null,
     needsScopeReauth: false,
+    sessionType: null,
+    sessionExpiresAt: null,
+    sessionEndReason: null,
   };
   private session: InMemorySession | null = null;
   private initializePromise: Promise<void> | null = null;
   private refreshPromise: Promise<InMemorySession> | null = null;
+  private impersonationExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   // Serializes session-state commits so overlapping selections can't
   // interleave across async encryption (see commitSessionState).
   private commitChain: Promise<void> = Promise.resolve();
@@ -155,6 +161,22 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       apiHost: getCloudUrlFromRegion(session.cloudRegion),
     };
   }
+  async getOAuthCredentials(): Promise<{
+    access: string;
+    refresh: string | null;
+    expires: number;
+    region: CloudRegion;
+  } | null> {
+    if (this.tokenOverride) return null;
+    await this.initialize();
+    const session = await this.ensureValidSession();
+    return {
+      access: session.accessToken,
+      refresh: session.refreshToken,
+      expires: session.accessTokenExpiresAt,
+      region: session.cloudRegion,
+    };
+  }
   async refreshAccessToken(): Promise<ValidAccessTokenOutput> {
     const override = this.tokenOverride;
     if (override) {
@@ -199,6 +221,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       init,
       initialAuth.accessToken,
     );
+
+    if (
+      response.status === 403 &&
+      this.session?.sessionType === "impersonated"
+    ) {
+      return response;
+    }
 
     if (response.status === 401 || response.status === 403) {
       const refreshedAuth = await this.refreshAccessToken();
@@ -367,11 +396,13 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     // encryption may reject). Mutate this.session, the preference, and
     // published state only after it resolves, so a rejection leaves every
     // layer on the prior session.
-    await this.persistSession({
-      refreshToken: nextSession.refreshToken,
-      cloudRegion: nextSession.cloudRegion,
-      selectedProjectId: next.currentProjectId,
-    });
+    if (nextSession.refreshToken) {
+      await this.persistSession({
+        refreshToken: nextSession.refreshToken,
+        cloudRegion: nextSession.cloudRegion,
+        selectedProjectId: next.currentProjectId,
+      });
+    }
 
     this.session = nextSession;
     this.persistProjectPreference(nextSession);
@@ -401,6 +432,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     const { cloudRegion, currentProjectId } = this.state;
 
     this.authSession.clearCurrent();
+    this.clearImpersonationExpiryTimer();
     this.session = null;
     this.setAnonymousState({ cloudRegion, currentProjectId });
     return this.getState();
@@ -522,6 +554,16 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       return currentSession;
     }
 
+    if (currentSession && !currentSession.refreshToken) {
+      if (!forceRefresh && !this.isSessionExpired(currentSession)) {
+        return currentSession;
+      }
+      this.endImpersonatedSession(currentSession);
+      throw new NotAuthenticatedError(
+        "Your impersonated session has expired. Impersonate the user again to continue.",
+      );
+    }
+
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
@@ -563,6 +605,11 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
 
   private async getSessionInputForRefresh(): Promise<StoredSessionInput> {
     if (this.session) {
+      if (!this.session.refreshToken) {
+        throw new NotAuthenticatedError(
+          "Your impersonated session has expired. Impersonate the user again to continue.",
+        );
+      }
       return {
         refreshToken: this.session.refreshToken,
         cloudRegion: this.session.cloudRegion,
@@ -597,7 +644,10 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       );
 
       if (result.success && result.data) {
-        return await this.createSessionFromTokenResponse(result.data, input);
+        return await this.createSessionFromTokenResponse(result.data, {
+          ...input,
+          fallbackRefreshToken: input.refreshToken,
+        });
       }
 
       lastError = result.error || "Token refresh failed";
@@ -670,11 +720,14 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       lastSelectedOrgId: lastPrefs?.lastSelectedOrgId ?? null,
     });
 
+    const refreshToken =
+      tokenResponse.refresh_token ?? options.fallbackRefreshToken ?? null;
     const session: InMemorySession = {
       accountKey,
       accessToken: tokenResponse.access_token,
       accessTokenExpiresAt: Date.now() + tokenResponse.expires_in * 1000,
-      refreshToken: tokenResponse.refresh_token,
+      refreshToken,
+      sessionType: refreshToken ? "persistent" : "impersonated",
       cloudRegion: options.cloudRegion,
       orgProjectsMap,
       currentOrgId,
@@ -823,13 +876,18 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
     session: InMemorySession,
   ): Promise<void> {
     this.persistProjectPreference(session);
-    await this.persistSession({
-      refreshToken: session.refreshToken,
-      cloudRegion: session.cloudRegion,
-      selectedProjectId: session.currentProjectId,
-    });
+    if (session.refreshToken) {
+      await this.persistSession({
+        refreshToken: session.refreshToken,
+        cloudRegion: session.cloudRegion,
+        selectedProjectId: session.currentProjectId,
+      });
+    } else {
+      this.authSession.clearCurrent();
+    }
 
     this.session = session;
+    this.scheduleImpersonationExpiry(session);
     this.updateState({
       status: "authenticated",
       bootstrapComplete: true,
@@ -838,6 +896,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       currentOrgId: session.currentOrgId,
       currentProjectId: session.currentProjectId,
       needsScopeReauth: false,
+      sessionType: session.sessionType,
+      sessionExpiresAt: session.accessTokenExpiresAt,
+      sessionEndReason: null,
     });
     await this.updateCodeAccessFromSession();
 
@@ -951,6 +1012,7 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       | "cloudRegion"
       | "currentProjectId"
       | "needsScopeReauth"
+      | "sessionEndReason"
     > = {},
   ): void {
     this.updateState({
@@ -962,6 +1024,9 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
       currentProjectId: partial.currentProjectId ?? null,
       hasCodeAccess: null,
       needsScopeReauth: partial.needsScopeReauth ?? false,
+      sessionType: null,
+      sessionExpiresAt: null,
+      sessionEndReason: partial.sessionEndReason ?? null,
     });
   }
   private async updateCodeAccessFromSession(): Promise<void> {
@@ -1072,10 +1137,45 @@ export class AuthService extends TypedEventEmitter<AuthServiceEvents> {
   }
   @preDestroy()
   shutdown(): void {
+    this.clearImpersonationExpiryTimer();
     this.connectivityUnsubscribe?.();
     this.connectivityUnsubscribe = null;
     this.resumeUnsubscribe?.();
     this.resumeUnsubscribe = null;
+  }
+
+  private scheduleImpersonationExpiry(session: InMemorySession): void {
+    this.clearImpersonationExpiryTimer();
+    if (session.sessionType !== "impersonated") return;
+
+    const delayMs = Math.max(0, session.accessTokenExpiresAt - Date.now());
+    this.impersonationExpiryTimer = setTimeout(() => {
+      this.impersonationExpiryTimer = null;
+      const currentSession = this.session;
+      if (
+        currentSession?.sessionType === "impersonated" &&
+        this.isSessionExpired(currentSession)
+      ) {
+        this.endImpersonatedSession(currentSession);
+      }
+    }, delayMs);
+  }
+
+  private clearImpersonationExpiryTimer(): void {
+    if (this.impersonationExpiryTimer) {
+      clearTimeout(this.impersonationExpiryTimer);
+      this.impersonationExpiryTimer = null;
+    }
+  }
+
+  private endImpersonatedSession(session: InMemorySession): void {
+    this.clearImpersonationExpiryTimer();
+    this.session = null;
+    this.setAnonymousState({
+      cloudRegion: session.cloudRegion,
+      currentProjectId: session.currentProjectId,
+      sessionEndReason: "impersonation_expired",
+    });
   }
   private handleResume = (): void => {
     this.attemptSessionRecovery();

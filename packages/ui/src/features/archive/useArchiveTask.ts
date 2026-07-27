@@ -1,3 +1,4 @@
+import type { Schemas } from "@posthog/api-client";
 import {
   type ArchiveCacheWriter,
   type ArchiveOrchestrationDeps,
@@ -16,10 +17,12 @@ import {
   type HostTrpcClient,
 } from "@posthog/host-router/client";
 import { useHostTRPC } from "@posthog/host-router/react";
+import type { Task } from "@posthog/shared/domain-types";
 import { useReviewViewedStore } from "@posthog/ui/features/code-review/reviewViewedStore";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFocusStore } from "@posthog/ui/features/focus/focusStore";
 import { pinnedTasksApi } from "@posthog/ui/features/sidebar/taskMetaApi";
+import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { destroyTaskTerminals } from "@posthog/ui/features/terminal/destroyTaskTerminals";
 import { toast } from "@posthog/ui/primitives/toast";
 import { getAppViewSnapshot } from "@posthog/ui/router/useAppView";
@@ -67,6 +70,24 @@ function makeCacheWriter(
     setArchiveList: (updater) =>
       queryClient.setQueryData(keys.archiveListQueryKey, updater),
   };
+}
+
+export function getCachedArchiveTask(
+  queryClient: QueryClient,
+  taskId: string,
+): Pick<Task, "id" | "title" | "created_at" | "repository"> | undefined {
+  return (
+    queryClient
+      .getQueriesData<Task[]>({ queryKey: taskKeys.lists() })
+      .flatMap(([, tasks]) => tasks ?? [])
+      .find((item) => item.id === taskId) ??
+    queryClient
+      .getQueriesData<Schemas.TaskSummary[]>({
+        queryKey: taskKeys.allSummaries(),
+      })
+      .flatMap(([, tasks]) => tasks ?? [])
+      .find((item) => item.id === taskId)
+  );
 }
 
 function makeOrchestrationDeps(
@@ -126,8 +147,17 @@ function makeOrchestrationDeps(
       resolveService<SessionService>(SESSION_SERVICE).disconnectFromTask(
         taskId,
       ),
-    archive: (taskId) =>
-      hostClient.archive.archive.mutate({ taskId }).then(() => undefined),
+    archive: (taskId) => {
+      const task = getCachedArchiveTask(queryClient, taskId);
+      return hostClient.archive.archive
+        .mutate({
+          taskId,
+          title: task?.title,
+          taskCreatedAt: task?.created_at,
+          repository: task?.repository,
+        })
+        .then(() => undefined);
+    },
     clearViewedState: (taskId) =>
       useReviewViewedStore.getState().clearTasks([taskId]),
     logError: (message, error) => log.error(message, error),

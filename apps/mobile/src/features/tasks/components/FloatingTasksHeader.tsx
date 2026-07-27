@@ -54,7 +54,7 @@ export function FloatingTasksHeader({
             className="font-semibold text-[17px] text-gray-12"
             numberOfLines={1}
           >
-            PostHog Code
+            PostHog
           </Text>
         </View>
 

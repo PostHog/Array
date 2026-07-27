@@ -49,6 +49,54 @@ describe("NewTaskLinkResolver", () => {
     expect(result.analytics.properties.has_prompt).toBe(true);
   });
 
+  it.each([
+    {
+      name: "one pull request",
+      prompt:
+        '<github_pr number="12" title="Fix it" url="https://github.com/acme/web/pull/12" />',
+      expected: "acme/web",
+    },
+    {
+      name: "several pull requests from one repository",
+      prompt:
+        '<github_pr number="12" url="https://github.com/acme/web/pull/12" />\n<github_pr number="13" url="https://github.com/acme/web/pull/13" />',
+      expected: "acme/web",
+    },
+    {
+      name: "pull requests from different repositories",
+      prompt:
+        '<github_pr number="12" url="https://github.com/acme/web/pull/12" />\n<github_pr number="4" url="https://github.com/acme/api/pull/4" />',
+      expected: undefined,
+    },
+    {
+      name: "an ordinary prompt",
+      prompt: "fix the tests",
+      expected: undefined,
+    },
+  ])("infers the repository for $name", async ({ prompt, expected }) => {
+    const resolver = makeResolver(vi.fn());
+
+    const result = await resolver.resolve({ action: "new", prompt });
+
+    if (result.kind !== "navigate") throw new Error("expected navigate");
+    expect(result.navigation.initialCloudRepository).toBe(expected);
+  });
+
+  it("prefers an explicit repository over the pull request prompt", async () => {
+    const resolver = makeResolver(vi.fn());
+    const prompt =
+      '<github_pr number="12" url="https://github.com/acme/web/pull/12" />';
+
+    const result = await resolver.resolve({
+      action: "new",
+      prompt,
+      repo: "acme/api",
+    });
+
+    if (result.kind !== "navigate") throw new Error("expected navigate");
+    expect(result.navigation.initialCloudRepository).toBe("acme/api");
+  });
+
   it("uses the decoded plan as the prompt for a plan-action payload", async () => {
     const resolver = makeResolver(vi.fn());
     const payload: NewTaskLinkPayload = { action: "plan", plan: "step one" };

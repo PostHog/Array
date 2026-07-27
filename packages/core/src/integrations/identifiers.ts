@@ -1,3 +1,7 @@
+export const INTEGRATION_SERVICE = Symbol.for(
+  "posthog.core.integrationService",
+);
+
 export const GITHUB_INTEGRATION_SERVICE = Symbol.for(
   "posthog.core.githubIntegrationService",
 );

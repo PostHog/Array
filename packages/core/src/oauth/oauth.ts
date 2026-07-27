@@ -28,10 +28,10 @@ import { OAUTH_HOST, type OAuthHost } from "./identifiers";
 import type {
   CancelFlowOutput,
   CloudRegion,
-  OAuthTokenResponse,
   RefreshTokenOutput,
   StartFlowOutput,
 } from "./schemas";
+import { type OAuthTokenResponse, oAuthTokenResponse } from "./schemas";
 
 const OAUTH_TIMEOUT_MS = 180_000; // 3 minutes
 const TOKEN_FETCH_TIMEOUT_MS = 30_000;
@@ -39,7 +39,6 @@ const DEV_CALLBACK_PORT = 8237;
 
 const NETWORK_ERROR_MESSAGE =
   "Could not connect to PostHog. Please check your internet connection and try again.";
-
 const TOKEN_FETCH_MAX_ATTEMPTS = 3;
 const TOKEN_FETCH_BACKOFF: BackoffOptions = {
   initialDelayMs: 1_000,
@@ -403,7 +402,15 @@ export class OAuthService {
       }
 
       if (response.ok) {
-        return (await response.json()) as OAuthTokenResponse;
+        const tokenResponse = oAuthTokenResponse.safeParse(
+          await response.json(),
+        );
+        if (!tokenResponse.success) {
+          throw new Error(
+            "PostHog returned an invalid authentication response. Please try again.",
+          );
+        }
+        return tokenResponse.data;
       }
 
       lastError = `Token exchange failed: ${response.status} ${response.statusText}`;

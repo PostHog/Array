@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "./fetcher";
 import { PostHogAPIClient } from "./posthog-client";
 
 describe("PostHogAPIClient", () => {
@@ -168,6 +169,38 @@ describe("PostHogAPIClient", () => {
 
     expect(post).not.toHaveBeenCalled();
   });
+
+  it.each(["high", "max"] as const)(
+    "forwards supported GLM 5.2 reasoning effort %s",
+    async (reasoningLevel) => {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+
+      const post = vi.fn().mockResolvedValue({ id: "run-123" });
+      (client as unknown as { api: { post: typeof post } }).api = { post };
+
+      await client.runTaskInCloud("task-123", "feature/glm-effort", {
+        adapter: "claude",
+        model: "@cf/zai-org/glm-5.2",
+        reasoningLevel,
+      });
+
+      expect(post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/tasks/{id}/run/",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            runtime_adapter: "claude",
+            model: "@cf/zai-org/glm-5.2",
+            reasoning_effort: reasoningLevel,
+          }),
+        }),
+      );
+    },
+  );
 
   it("rejects unsupported minimal reasoning effort for cloud runs", async () => {
     const client = new PostHogAPIClient(
@@ -412,6 +445,50 @@ describe("PostHogAPIClient", () => {
           body: JSON.stringify({
             pending_user_message: "Read the attached file first",
             pending_user_artifact_ids: ["artifact-1"],
+          }),
+        },
+      }),
+    );
+  });
+
+  it("presigns a task run artifact for preview", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        url: "https://s3.example.com/screenshot.png?signature=abc",
+        expires_in: 3600,
+      }),
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.presignTaskRunArtifact(
+        "task-123",
+        "run-123",
+        "tasks/run-123/artifacts/screenshot.png",
+      ),
+    ).resolves.toBe("https://s3.example.com/screenshot.png?signature=abc");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        path: "/api/projects/123/tasks/task-123/runs/run-123/artifacts/presign/",
+        overrides: {
+          body: JSON.stringify({
+            storage_path: "tasks/run-123/artifacts/screenshot.png",
           }),
         },
       }),
@@ -1443,7 +1520,7 @@ describe("PostHogAPIClient", () => {
       });
     });
 
-    it("returns the entries collected so far when a later page fails", async () => {
+    it("marks entries collected before a failed page as incomplete", async () => {
       const fetch = vi
         .fn()
         .mockResolvedValueOnce(page(makeEntries(50, "a"), true))
@@ -1455,11 +1532,14 @@ describe("PostHogAPIClient", () => {
         });
       const client = makeClient(fetch);
 
-      const result = await client.getTaskRunSessionLogs("task-1", "run-1", {
-        limit: 100000,
-      });
+      const result = await client.getTaskRunSessionLogsResult(
+        "task-1",
+        "run-1",
+        { limit: 100000 },
+      );
 
-      expect(result).toHaveLength(50);
+      expect(result).toEqual({ entries: expect.any(Array), complete: false });
+      expect(result.entries).toHaveLength(50);
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 
@@ -1726,6 +1806,72 @@ describe("PostHogAPIClient", () => {
           mock_secrets: { API_KEY: "placeholder" },
         });
       });
+    });
+  });
+
+  describe("getMcpServerIconUrl", () => {
+    function makeClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("requests the icon proxy and returns an object URL for the bytes", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Blob(["png"], { type: "image/png" })),
+        );
+      const client = makeClient(fetch);
+
+      const url = await client.getMcpServerIconUrl("linear.app", "dark");
+
+      expect(url).toMatch(/^blob:/);
+      expect(fetch.mock.calls[0][0].url.toString()).toBe(
+        "http://localhost:8000/api/environments/123/mcp_servers/icon/?domain=linear.app&theme=dark",
+      );
+    });
+
+    it("omits the theme param when none is given", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Blob(["png"], { type: "image/png" })),
+        );
+      const client = makeClient(fetch);
+
+      await client.getMcpServerIconUrl("linear.app");
+
+      expect(fetch.mock.calls[0][0].url.toString()).toBe(
+        "http://localhost:8000/api/environments/123/mcp_servers/icon/?domain=linear.app",
+      );
+    });
+
+    it("treats the proxy's 404 as a definitive no-icon null, not a failure", async () => {
+      const fetch = vi.fn().mockRejectedValue(new ApiRequestError(404, "{}"));
+      const client = makeClient(fetch);
+
+      await expect(
+        client.getMcpServerIconUrl("no-logo.example"),
+      ).resolves.toBeNull();
+    });
+
+    it("propagates non-404 failures so callers can retry", async () => {
+      const fetch = vi.fn().mockRejectedValue(new ApiRequestError(500, "{}"));
+      const client = makeClient(fetch);
+
+      await expect(client.getMcpServerIconUrl("linear.app")).rejects.toThrow(
+        "Failed request: [500]",
+      );
     });
   });
 });

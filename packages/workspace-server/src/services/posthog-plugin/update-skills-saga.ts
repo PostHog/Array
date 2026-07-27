@@ -151,8 +151,8 @@ export class UpdateSkillsSaga extends Saga<
         "Couldn't download skills from PostHog (the skills and context-mill " +
           "sources both returned nothing, likely a temporary network or " +
           "server issue) and no previously downloaded skills were cached. " +
-          "The skills bundled with this version of PostHog Code are still " +
-          "available, and PostHog Code will retry automatically on the next " +
+          "The skills bundled with this version of PostHog are still " +
+          "available, and PostHog will retry automatically on the next " +
           "update.",
       );
     }

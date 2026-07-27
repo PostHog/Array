@@ -57,9 +57,21 @@ describe("PreBaselineState", () => {
     });
 
     expect(screen.getByText("Establishing the baseline")).toBeVisible();
+    expect(screen.getByRole("status", { name: "Loading" })).toHaveClass(
+      "motion-safe:animate-spin",
+      "motion-reduce:animate-none",
+    );
+    const metrics = screen.getByRole("status", {
+      name: "Loading autoresearch metrics",
+    });
+    expect(metrics).toBeVisible();
     expect(
-      screen.getByRole("status", { name: "Loading autoresearch metrics" }),
-    ).toBeVisible();
+      screen.getByRole("region", { name: "Autoresearch metric summary" }),
+    ).toHaveClass(
+      "grid-cols-1",
+      "@min-[360px]:grid-cols-2",
+      "@min-[700px]:grid-cols-4",
+    );
     expect(screen.getByText("0 / 10")).toBeVisible();
   });
 
@@ -105,6 +117,10 @@ describe("PreBaselineState", () => {
     renderState(makeRun({ status: "paused" }), null);
 
     expect(screen.getByText("Baseline measurement paused")).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Autoresearch metric summary" }),
+    ).toBeVisible();
+    expect(screen.getByText("0 / 10")).toBeVisible();
     expect(
       screen.queryByRole("status", { name: "Loading autoresearch metrics" }),
     ).not.toBeInTheDocument();

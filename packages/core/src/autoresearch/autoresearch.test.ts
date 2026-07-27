@@ -270,6 +270,7 @@ function makeRun(
     researchFindings: [],
     iterations: [],
     startedAt: 1_000,
+    pauseIntervals: [],
     endedAt: null,
     endReason: null,
     interruptedReason: null,
@@ -941,6 +942,46 @@ describe("AutoresearchService", () => {
   });
 
   describe("pause and resume", () => {
+    it("records and settles paused duration", () => {
+      vi.setSystemTime(1_000);
+      const run = service.startRun(baseConfig);
+
+      vi.setSystemTime(11_000);
+      service.pauseRun(run.id);
+      expect(activeRun().pausedAt).toBe(11_000);
+      expect(activeRun().pausedDurationMs).toBe(0);
+
+      vi.setSystemTime(31_000);
+      service.resumeRun(run.id);
+      expect(activeRun().pausedAt).toBeNull();
+      expect(activeRun().pausedDurationMs).toBe(20_000);
+      expect(activeRun().pauseIntervals).toEqual([
+        { startedAt: 11_000, endedAt: 31_000 },
+      ]);
+    });
+
+    it("excludes interruption downtime and records its interval", async () => {
+      vi.setSystemTime(1_000);
+      service.startRun(baseConfig);
+      await flush();
+
+      vi.setSystemTime(11_000);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "error" });
+      expect(activeRun().status).toBe("interrupted");
+      expect(activeRun().pausedAt).toBe(11_000);
+
+      vi.setSystemTime(31_000);
+      sessionStoreSetters.updateSession(TASK_RUN_ID, { status: "connected" });
+      await flush();
+
+      expect(activeRun().status).toBe("running");
+      expect(activeRun().pausedAt).toBeNull();
+      expect(activeRun().pausedDurationMs).toBe(20_000);
+      expect(activeRun().pauseIntervals).toEqual([
+        { startedAt: 11_000, endedAt: 31_000 },
+      ]);
+    });
+
     it("records iterations while paused but does not continue the loop", () => {
       const run = service.startRun(baseConfig);
       service.pauseRun(run.id);
@@ -989,13 +1030,22 @@ describe("AutoresearchService", () => {
     });
 
     it("resume waits for the agent when a turn is in flight", () => {
+      vi.setSystemTime(1_000);
       const run = service.startRun(baseConfig);
+
+      vi.setSystemTime(11_000);
       service.pauseRun(run.id);
       beginTurn();
       sentPrompts = [];
 
+      vi.setSystemTime(31_000);
       service.resumeRun(run.id);
       expect(sentPrompts).toHaveLength(0);
+      expect(activeRun().pausedAt).toBeNull();
+      expect(activeRun().pausedDurationMs).toBe(20_000);
+      expect(activeRun().pauseIntervals).toEqual([
+        { startedAt: 11_000, endedAt: 31_000 },
+      ]);
 
       completeTurn(reportText(10));
       expect(activeRun().iterations).toHaveLength(1);

@@ -212,7 +212,7 @@ describe("ShellService.execute", () => {
       };
       expect(options.env.ELECTRON_RUN_AS_NODE).toBeUndefined();
       expect(options.env.POSTHOG_CODE_INTERNAL_CHILD).toBeUndefined();
-      expect(options.env.TERM_PROGRAM).toBe("PostHog Code");
+      expect(options.env.TERM_PROGRAM).toBe("PostHog");
     } finally {
       restoreEnv("ELECTRON_RUN_AS_NODE", saved.runAsNode);
       restoreEnv("POSTHOG_CODE_INTERNAL_CHILD", saved.internalChild);

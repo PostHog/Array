@@ -44,6 +44,7 @@ import {
   SSE_KEEPALIVE_INTERVAL_MS,
 } from "./agent-server";
 import { type JwtPayload, SANDBOX_CONNECTION_AUDIENCE } from "./jwt";
+import type { ExistingPrCheckoutResult } from "./pr-checkout";
 
 const mockedClaudeSdk = vi.hoisted(() => {
   const createSuccessResult = () => ({
@@ -232,6 +233,13 @@ interface TestableServer {
     inboxReportUrl?: string | null,
   ): string;
   buildDetectedPrContext(prUrl: string): string;
+  buildExistingPrCheckoutPromise(
+    prUrl: string | null,
+  ): Promise<ExistingPrCheckoutResult> | null;
+  logExistingPrCheckoutResult(
+    prUrl: string | null,
+    result: ExistingPrCheckoutResult,
+  ): void;
   buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
@@ -944,6 +952,124 @@ describe("AgentServer HTTP Mode", () => {
       );
     });
 
+    // Sandbox teardown kills the exec'd agent-server without SIGTERM, so the
+    // trace's root span only exports if telemetry is shut down at the run's
+    // in-process terminal points.
+    it("shuts down telemetry after mirroring the terminal failure record", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: {
+          payload: { run_id: string };
+          logWriter: { flush: ReturnType<typeof vi.fn> };
+          telemetry: {
+            append: ReturnType<typeof vi.fn>;
+            shutdown: ReturnType<typeof vi.fn>;
+          };
+        };
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+      testServer.session = {
+        payload: { run_id: "run-1" },
+        logWriter: { flush: vi.fn(async () => {}) },
+        telemetry: {
+          append: vi.fn(() => {
+            order.push("append");
+          }),
+          shutdown: vi.fn(async () => {
+            order.push("shutdown");
+          }),
+        },
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "error",
+        "boom",
+      );
+
+      // The error mirror must land before shutdown so the root span exports
+      // with ERROR status.
+      expect(order).toEqual(["append", "shutdown"]);
+    });
+
+    it.each([
+      { mode: "background" as const, shutdownCalls: 1 },
+      { mode: "interactive" as const, shutdownCalls: 0 },
+    ])(
+      "finalizeRunTelemetry shuts down telemetry only for $mode runs",
+      async ({ mode, shutdownCalls }) => {
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "interactive",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          session: { telemetry: { shutdown: ReturnType<typeof vi.fn> } };
+          finalizeRunTelemetry(payload: JwtPayload): Promise<void>;
+        };
+        testServer.session = {
+          telemetry: { shutdown: vi.fn(async () => {}) },
+        };
+
+        await testServer.finalizeRunTelemetry({
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode,
+        });
+
+        expect(testServer.session.telemetry.shutdown).toHaveBeenCalledTimes(
+          shutdownCalls,
+        );
+      },
+    );
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -1297,6 +1423,11 @@ describe("AgentServer HTTP Mode", () => {
         session: { hasDesktopConnected?: boolean } | null;
         eventStreamSender: unknown;
         relayPermissionToClient: (params: unknown) => Promise<unknown>;
+        pendingPermissions: Map<string, unknown>;
+        resolvePermission: (
+          requestId: string,
+          optionId: string,
+        ) => "resolved" | "not_found" | "invalid_option";
         createCloudClient(payload: {
           run_id: string;
           task_id: string;
@@ -1339,6 +1470,41 @@ describe("AgentServer HTTP Mode", () => {
             },
           },
           rawInput: { some: "arg" },
+        },
+      };
+    }
+
+    function posthogExecPermissionOptions() {
+      return [
+        { optionId: "allow_once", kind: "allow_once" },
+        { optionId: "allow_always", kind: "allow_always" },
+        { optionId: "reject_once", kind: "reject_once" },
+      ];
+    }
+
+    function claudePosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: { claudeCode: { toolName: "mcp__posthog__exec" } },
+          rawInput: { command },
+        },
+      };
+    }
+
+    function codexPosthogExecPermissionRequest(command: string) {
+      return {
+        options: posthogExecPermissionOptions(),
+        toolCall: {
+          kind: "other",
+          _meta: {
+            posthog: {
+              toolName: "mcp__posthog_cloud__exec",
+              mcp: { server: "posthog_cloud", tool: "exec" },
+            },
+          },
+          rawInput: { command },
         },
       };
     }
@@ -1477,6 +1643,164 @@ describe("AgentServer HTTP Mode", () => {
 
       expect(relaySpy).not.toHaveBeenCalled();
       expect(result.outcome).toEqual({ outcome: "cancelled" });
+    });
+
+    it.each([
+      {
+        adapter: "Claude",
+        request: claudePosthogExecPermissionRequest(
+          "call notebooks-destroy {}",
+        ),
+        expectedKinds: ["allow_once", "allow_always", "reject_once"],
+      },
+      {
+        adapter: "Codex",
+        request: codexPosthogExecPermissionRequest("call notebooks-destroy {}"),
+        expectedKinds: ["allow_once", "reject_once"],
+      },
+    ])(
+      "relays a configured PostHog exec match from $adapter with adapter-specific choices",
+      async ({ request, expectedKinds }) => {
+        const testServer = exposeCloudClient(createServer());
+        testServer.session = null;
+        testServer.eventStreamSender = null;
+        const relaySpy = vi
+          .spyOn(testServer, "relayPermissionToClient")
+          .mockResolvedValue({
+            outcome: { outcome: "selected", optionId: "allow_once" },
+          });
+
+        const { requestPermission } = testServer.createCloudClient(basePayload);
+        const result = await requestPermission(request);
+
+        const relayed = relaySpy.mock.calls[0]?.[0] as {
+          options: Array<{ kind: string }>;
+        };
+        expect(relayed.options.map((option) => option.kind)).toEqual(
+          expectedKinds,
+        );
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("auto-approves a nonmatching PostHog exec sub-tool", async () => {
+      const testServer = exposeCloudClient(
+        createServer({ posthogExecPermissionRegex: "delete|destroy" }),
+      );
+      const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+      const { requestPermission } = testServer.createCloudClient(basePayload);
+      const result = await requestPermission(
+        claudePosthogExecPermissionRequest("call experiment-get {}"),
+      );
+
+      expect(relaySpy).not.toHaveBeenCalled();
+      expect(result.outcome).toEqual({
+        outcome: "selected",
+        optionId: "allow_once",
+      });
+    });
+
+    it.each([
+      {
+        modeSource: "JWT payload",
+        configMode: "interactive",
+        payloadMode: "background",
+      },
+      {
+        modeSource: "server config",
+        configMode: "background",
+        payloadMode: undefined,
+      },
+    ] as const)(
+      "keeps PostHog exec matches auto-approved in background mode from $modeSource",
+      async ({ configMode, payloadMode }) => {
+        const testServer = exposeCloudClient(
+          createServer({
+            mode: configMode,
+            posthogExecPermissionRegex: "delete|destroy",
+          }),
+        );
+        const relaySpy = vi.spyOn(testServer, "relayPermissionToClient");
+
+        const { requestPermission } = testServer.createCloudClient({
+          ...basePayload,
+          ...(payloadMode ? { mode: payloadMode } : {}),
+        });
+        const result = await requestPermission(
+          codexPosthogExecPermissionRequest("call experiment-delete {}"),
+        );
+
+        expect(relaySpy).not.toHaveBeenCalled();
+        expect(result.outcome).toEqual({
+          outcome: "selected",
+          optionId: "allow_once",
+        });
+      },
+    );
+
+    it("rejects permission responses for options that were not offered", async () => {
+      const testServer = exposeCloudClient(createServer());
+      const pending = testServer.relayPermissionToClient({
+        options: [
+          { optionId: "allow_once", kind: "allow_once" },
+          { optionId: "reject_once", kind: "reject_once" },
+        ],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0];
+
+      expect(requestId).toBeDefined();
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_always"),
+      ).toBe("invalid_option");
+      expect(testServer.pendingPermissions.has(requestId as string)).toBe(true);
+      expect(testServer.resolvePermission("nope", "allow_once")).toBe(
+        "not_found",
+      );
+      expect(
+        testServer.resolvePermission(requestId as string, "allow_once"),
+      ).toBe("resolved");
+      await expect(pending).resolves.toEqual({
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      });
+    });
+
+    it("distinguishes unknown requests from unoffered options in permission_response errors", async () => {
+      const server = createServer();
+      const testServer = exposeCloudClient(server);
+      const commandServer = server as unknown as {
+        session: unknown;
+        executeCommand(
+          method: string,
+          params: Record<string, unknown>,
+        ): Promise<unknown>;
+      };
+      void testServer.relayPermissionToClient({
+        options: [{ optionId: "allow_once", kind: "allow_once" }],
+      });
+      const requestId = [...testServer.pendingPermissions.keys()][0] as string;
+      // Both error paths return before touching the session; the guard at the
+      // top of executeCommand only needs it to exist.
+      commandServer.session = {};
+
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId: "missing",
+          optionId: "allow_once",
+        }),
+      ).rejects.toThrow("No pending permission request found for id: missing");
+      await expect(
+        commandServer.executeCommand("permission_response", {
+          requestId,
+          optionId: "allow_always",
+        }),
+      ).rejects.toThrow(
+        `Option "allow_always" was not offered for permission request ${requestId}`,
+      );
+      expect(testServer.pendingPermissions.has(requestId)).toBe(true);
     });
   });
 
@@ -2267,6 +2591,106 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toHaveBeenCalledTimes(4);
     }, 20000);
 
+    it("steers an active turn without emitting a separate turn completion", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn(async () => ({
+        stopReason: "end_turn",
+        _meta: { steer: true },
+      }));
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-1",
+          method: "user_message",
+          params: { content: "change direction", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steered", steered: true },
+      });
+      expect(prompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+    }, 20000);
+
+    it("declines steering without blocking on a fallback normal turn", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi.fn();
+      const broadcastTurnComplete = vi.fn();
+      const resetTurnMessages = vi.fn();
+      const serverInternals = s as unknown as {
+        activeOwnedTurnCount: number;
+        broadcastTurnComplete: typeof broadcastTurnComplete;
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: { resetTurnMessages: typeof resetTurnMessages };
+        };
+      };
+      serverInternals.activeOwnedTurnCount = 1;
+      prompt.mockImplementationOnce(async () => {
+        serverInternals.activeOwnedTurnCount = 0;
+        return { stopReason: "end_turn", _meta: { steer: false } };
+      });
+      serverInternals.broadcastTurnComplete = broadcastTurnComplete;
+      serverInternals.session.clientConnection.prompt = prompt;
+      serverInternals.session.logWriter.resetTurnMessages = resetTurnMessages;
+
+      const response = await fetch(`http://localhost:${port}/command`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${createToken()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "steer-race",
+          method: "user_message",
+          params: { content: "continue normally", steer: true },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        result: { stopReason: "steer_declined", steered: false },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(prompt.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+      expect(resetTurnMessages).not.toHaveBeenCalled();
+      expect(broadcastTurnComplete).not.toHaveBeenCalled();
+    }, 20000);
+
     it("redelivers a messageId whose first delivery failed before producing a turn", async () => {
       const s = createServer();
       await s.start();
@@ -2306,6 +2730,268 @@ describe("AgentServer HTTP Mode", () => {
       expect(body.result?.stopReason).toBe("end_turn");
       expect(prompt).toHaveBeenCalledTimes(2);
     }, 20000);
+
+    it("keeps a recoverable delivery committed across an ambiguous retry", async () => {
+      const s = createServer();
+      await s.start();
+      const prompt = vi
+        .fn()
+        .mockRejectedValue(new Error("API Error: The operation timed out."));
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              messageId: "m-recoverable",
+            },
+          }),
+        });
+
+      const first = await send("first-attempt");
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "error_recoverable" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+
+      const retry = await send("ambiguous-retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("shares a failed in-flight messageId outcome with concurrent retries", async () => {
+      const s = createServer();
+      await s.start();
+      let rejectFirstDelivery!: (error: Error) => void;
+      const prompt = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectFirstDelivery = reject;
+            }),
+        )
+        .mockResolvedValueOnce({ stopReason: "end_turn" });
+      const serverInternals = s as unknown as {
+        logger: { info: (...args: unknown[]) => void };
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      const infoLog = vi.spyOn(serverInternals.logger, "info");
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-concurrent" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      let retrySettled = false;
+      const retryResponse = send("concurrent-retry").finally(() => {
+        retrySettled = true;
+      });
+      await vi.waitFor(() => {
+        expect(infoLog).toHaveBeenCalledWith(
+          "Awaiting in-flight user_message delivery",
+          { messageId: "m-concurrent" },
+        );
+        expect(prompt).toHaveBeenCalledTimes(1);
+        expect(retrySettled).toBe(false);
+      });
+
+      rejectFirstDelivery(new Error("sdk connection lost"));
+      const [first, retry] = await Promise.all([firstResponse, retryResponse]);
+      await expect(first.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      await expect(retry.json()).resolves.toMatchObject({
+        error: { message: "sdk connection lost" },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    it("keeps an accepted messageId committed when teardown clears the active session", async () => {
+      const s = createServer();
+      await s.start();
+      let finishPrompt!: (result: { stopReason: "end_turn" }) => void;
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: "end_turn" }>((resolve) => {
+            finishPrompt = resolve;
+          }),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } } | null;
+      };
+      const acceptedSession = serverInternals.session;
+      if (!acceptedSession) throw new Error("expected active test session");
+      acceptedSession.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = async (requestId: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "user_message",
+            params: { content: "do the thing", messageId: "m-teardown" },
+          }),
+        });
+
+      const firstResponse = send("first-attempt");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      serverInternals.session = null;
+      finishPrompt({ stopReason: "end_turn" });
+      const first = await firstResponse;
+      await expect(first.json()).resolves.toMatchObject({
+        result: { stopReason: "end_turn" },
+      });
+
+      serverInternals.session = acceptedSession;
+      const retry = await send("retry");
+      await expect(retry.json()).resolves.toMatchObject({
+        result: { stopReason: "duplicate_delivery", duplicate: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(1);
+    }, 20000);
+
+    // Shared plumbing for the relay-echo tests: install a controllable
+    // prompt, stub the log writer so relayAgentResponse has an answer to
+    // relay, and spy on the relay_message client call.
+    const setupRelayEchoServer = async (
+      prompt: () => Promise<{ stopReason: string }>,
+    ) => {
+      const s = createServer();
+      await s.start();
+      const serverInternals = s as unknown as {
+        session: {
+          clientConnection: { prompt: typeof prompt };
+          logWriter: {
+            getFullAgentResponse: (runId: string) => string | undefined;
+            getAgentResponseParts: (runId: string) => string[];
+          };
+        };
+        posthogAPI: PostHogAPIClient;
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getFullAgentResponse",
+      ).mockReturnValue("final answer");
+      vi.spyOn(
+        serverInternals.session.logWriter,
+        "getAgentResponseParts",
+      ).mockReturnValue(["final answer"]);
+      const relaySpy = vi
+        .spyOn(serverInternals.posthogAPI, "relayMessage")
+        .mockResolvedValue(undefined);
+
+      const token = createToken();
+      const send = (messageId?: string) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: messageId ?? "no-id",
+            method: "user_message",
+            params: {
+              content: "do the thing",
+              ...(messageId ? { messageId } : {}),
+            },
+          }),
+        });
+
+      return { relaySpy, send };
+    };
+
+    it("echoes each turn's own initiating messageId on relay_message", async () => {
+      const pendingTurns: Array<(result: { stopReason: string }) => void> = [];
+      const prompt = vi.fn(
+        () =>
+          new Promise<{ stopReason: string }>((resolve) => {
+            pendingTurns.push(resolve);
+          }),
+      );
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      // The second message lands while the first turn is still in flight;
+      // each relay carries its own sender's id, not the first turn's.
+      const first = send("m-first");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+      const second = send("m-second");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
+
+      pendingTurns[0]({ stopReason: "end_turn" });
+      await first;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-first");
+
+      pendingTurns[1]({ stopReason: "end_turn" });
+      await second;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(2));
+      expect(relaySpy.mock.calls[1][4]).toBe("m-second");
+
+      // A message without an id relays without correlation (backward
+      // compatible with backends that don't know message_id).
+      relaySpy.mockClear();
+      const anonymous = send(undefined);
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(3));
+      pendingTurns[2]({ stopReason: "end_turn" });
+      await anonymous;
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBeUndefined();
+    }, 20000);
+
+    it("does not leak a failed turn's messageId into the next turn", async () => {
+      const prompt = vi
+        .fn(async () => ({ stopReason: "end_turn" }))
+        .mockRejectedValueOnce(new Error("sdk connection lost"));
+      const { relaySpy, send } = await setupRelayEchoServer(prompt);
+
+      await send("m-fail");
+      expect(relaySpy).not.toHaveBeenCalled();
+
+      await send("m-next");
+      await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
+      expect(relaySpy.mock.calls[0][4]).toBe("m-next");
+    }, 20000);
   });
 
   describe("404 handling", () => {
@@ -2342,6 +3028,7 @@ describe("AgentServer HTTP Mode", () => {
           expect(runStarted?.notification?.params).toMatchObject({
             runId: "test-run-id",
             taskId: "test-task-id",
+            steering: "native",
           });
           // Agent reports its semver so clients can gate UI features
           // against agent capabilities (e.g. `>=0.40.1`). The exact value
@@ -2719,11 +3406,27 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it.each([
-      { retryOutcome: "succeeds", retryFails: false },
-      { retryOutcome: "fails", retryFails: true },
+      {
+        retryOutcome: "succeeds",
+        retryFails: false,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      {
+        retryOutcome: "fails",
+        retryFails: true,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      // The LLM gateway phrases oversized rejections as HTTP 413; the
+      // fresh-session retry must trigger on that shape too.
+      {
+        retryOutcome: "succeeds after a gateway 413",
+        retryFails: false,
+        oversizedError:
+          'Internal error: API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
+      },
     ])(
       "clears resume state when the fresh-session retry $retryOutcome",
-      async ({ retryFails }) => {
+      async ({ retryFails, oversizedError }) => {
         const s = createServer();
         await s.start();
 
@@ -2731,7 +3434,7 @@ describe("AgentServer HTTP Mode", () => {
         const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
           prompts.push(params.prompt);
           if (prompts.length === 1) {
-            throw new Error("Internal error: Prompt is too long");
+            throw new Error(oversizedError);
           }
           if (retryFails) {
             throw new Error("Fresh-session retry failed");
@@ -3399,8 +4102,12 @@ describe("AgentServer HTTP Mode", () => {
         "https://github.com/org/repo/pull/1",
       );
       expect(prompt).toContain(
-        "gh pr checkout https://github.com/org/repo/pull/1",
+        "If it is not already checked out, check it out with `gh pr checkout https://github.com/org/repo/pull/1`",
       );
+      expect(prompt).toContain(
+        "Do not check it out again when it is already active",
+      );
+      expect(prompt).not.toContain("Check out the existing PR branch");
       expect(prompt).toContain("git_signed_commit");
       expect(prompt).toContain("Committing (signed commits required)");
       expect(prompt).not.toContain("Create a draft pull request");
@@ -3722,13 +4429,18 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).not.toContain("gh pr checkout");
     });
 
-    it("returns auto-update PR context for Slack-origin runs", () => {
+    it("avoids redundant PR checkout for auto-update runs", () => {
       process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
       const s = createServer();
       const context = (s as unknown as TestableServer).buildDetectedPrContext(
         prUrl,
       );
-      expect(context).toContain(`gh pr checkout ${prUrl}`);
+      expect(context).toContain(
+        `If it is not already checked out, check it out with \`gh pr checkout ${prUrl}\``,
+      );
+      expect(context).toContain(
+        "Do not check it out again when it is already active",
+      );
       expect(context).toContain(
         "Make changes, commit, and push to that branch",
       );
@@ -3755,6 +4467,78 @@ describe("AgentServer HTTP Mode", () => {
       expect(context).toContain("stop with local changes ready for review");
       expect(context).not.toContain("gh pr checkout");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+  });
+
+  describe("buildExistingPrCheckoutPromise", () => {
+    const prUrl = "https://github.com/org/repo/pull/1";
+
+    afterEach(() => {
+      delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
+    });
+
+    // Guards the gating condition: a review-first run (no auto-publish) must
+    // not silently check out a PR branch the prompt told the agent to leave
+    // alone. Regressing the guard to always-checkout would fail here.
+    it("does not check out when auto-publish is off", () => {
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when there is no prUrl", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(null);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when createPr is false, even on a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ createPr: false });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("does not check out when no repository is connected", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer({ repositoryPath: undefined });
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeNull();
+    });
+
+    it("starts a checkout when auto-publish is on for a Slack-origin run", () => {
+      process.env.POSTHOG_CODE_INTERACTION_ORIGIN = "slack";
+      const s = createServer();
+      const promise = (
+        s as unknown as TestableServer
+      ).buildExistingPrCheckoutPromise(prUrl);
+      expect(promise).toBeInstanceOf(Promise);
+      // Sanity: the promise resolves to a checkout result shape (it will fail
+      // against the synthetic URL with no real gh, which is fine — we only
+      // assert the promise was actually kicked off).
+      expect(typeof promise).toBe("object");
+    });
+
+    // Guards the failure fallback: a transient gh failure must surface as a
+    // warn, never throw or abort startup. Regressing the failed branch to
+    // `throw` would fail here.
+    it("logs a warning for a failed checkout result without throwing", () => {
+      const s = createServer();
+      expect(() =>
+        (s as unknown as TestableServer).logExistingPrCheckoutResult(prUrl, {
+          status: "failed",
+          error: "gh unavailable",
+        }),
+      ).not.toThrow();
     });
   });
 });

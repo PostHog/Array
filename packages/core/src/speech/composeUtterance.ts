@@ -1,4 +1,6 @@
 const TASK_TITLE_MAX = 40;
+const TASK_PREFIX = "PostHog task";
+const TASK_PREFIX_GUARD = new RegExp(`^\\s*${TASK_PREFIX}`, "i");
 
 export interface ComposeInput {
   text: string;
@@ -43,7 +45,7 @@ export function composeUtterance({
   // before any greeting logic so the guard stays order-independent: injecting
   // "Hey <name>," first would push the prefix past the start of the string and
   // defeat this test, producing a double prefix.
-  if (/^\s*posthog code task/i.test(body)) return body;
+  if (TASK_PREFIX_GUARD.test(body)) return body;
 
   if (needsUser && addressByName && firstName) {
     // Normalize any leading greeting the agent added, then address by real name.
@@ -57,5 +59,5 @@ export function composeUtterance({
     title.length > TASK_TITLE_MAX
       ? `${title.slice(0, TASK_TITLE_MAX)}…`
       : title;
-  return `PostHog Code task '${shortTitle}' — ${body}`;
+  return `${TASK_PREFIX} '${shortTitle}' — ${body}`;
 }

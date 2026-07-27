@@ -169,7 +169,6 @@ import type { ExternalAppsPreferences } from "@posthog/workspace-server/services
 import { foldersModule } from "@posthog/workspace-server/services/folders/folders.module";
 import { GitService } from "@posthog/workspace-server/services/git/service";
 import { TaskPrStatusService } from "@posthog/workspace-server/services/git/task-pr-status";
-import { githubReleasesModule } from "@posthog/workspace-server/services/github-releases/github-releases.module";
 import {
   HANDOFF_GIT_GATEWAY,
   HANDOFF_LOG_GATEWAY,
@@ -187,10 +186,18 @@ import { OAUTH_CALLBACK_SERVER } from "@posthog/workspace-server/services/oauth-
 import { oauthCallbackModule } from "@posthog/workspace-server/services/oauth-callback/oauth-callback.module";
 import { onboardingImportModule } from "@posthog/workspace-server/services/onboarding-import/onboarding-import.module";
 import { osModule } from "@posthog/workspace-server/services/os/os.module";
+import {
+  PI_RPC_CLIENT_FACTORY,
+  PI_RUNTIME_FACTORY,
+  PI_SESSION_SERVICE,
+} from "@posthog/workspace-server/services/pi-session/identifiers";
+import type { PiSessionService } from "@posthog/workspace-server/services/pi-session/pi-session";
+import { piSessionModule } from "@posthog/workspace-server/services/pi-session/pi-session.module";
 import { POSTHOG_PLUGIN_SERVICE } from "@posthog/workspace-server/services/posthog-plugin/identifiers";
 import { posthogPluginModule } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin.module";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import { processTrackingModule } from "@posthog/workspace-server/services/process-tracking/process-tracking.module";
+import { releaseFeedModule } from "@posthog/workspace-server/services/release-feed/release-feed.module";
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
 import { skillsModule } from "@posthog/workspace-server/services/skills/skills.module";
@@ -223,6 +230,8 @@ import { workspaceModule } from "@posthog/workspace-server/services/workspace/wo
 import { workspaceMetadataModule } from "@posthog/workspace-server/services/workspace-metadata/workspace-metadata.module";
 import ExternalAppsStoreImpl from "electron-store";
 import type { FileWatcherBridge } from "../index";
+import { DesktopPiRpcClientFactory } from "../platform-adapters/desktop-pi-rpc-client-factory";
+import { DesktopPiRuntimeFactory } from "../platform-adapters/desktop-pi-runtime-factory";
 import { ElectronAppLifecycle } from "../platform-adapters/electron-app-lifecycle";
 import { ElectronAppMeta } from "../platform-adapters/electron-app-meta";
 import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
@@ -318,6 +327,17 @@ import {
   WORKTREE_REPOSITORY as MAIN_WORKTREE_REPOSITORY,
 } from "./tokens";
 
+async function cancelTaskSessions(
+  agentService: AgentService,
+  piSessionService: PiSessionService,
+  taskId: string,
+): Promise<void> {
+  await Promise.all([
+    agentService.cancelSessionsByTaskId(taskId),
+    piSessionService.stop(taskId),
+  ]);
+}
+
 export const container = new TypedContainer<MainBindings>({
   defaultScope: "Singleton",
 });
@@ -359,10 +379,16 @@ container
   .bind(MAIN_DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY)
   .toService(DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY);
 container.load(agentModule);
+container.bind(PI_RUNTIME_FACTORY).to(DesktopPiRuntimeFactory);
+container.load(piSessionModule);
 container.bind(AGENT_SLEEP_COORDINATOR).toService(MAIN_SLEEP_SERVICE);
 container.bind(AGENT_MCP_APPS).toService(MCP_APPS_SERVICE);
 container.bind(AGENT_REPO_FILES).toService(MAIN_FS_SERVICE);
 container.bind(AGENT_AUTH).toService(MAIN_AUTH_SERVICE);
+container
+  .bind(PI_RPC_CLIENT_FACTORY)
+  .to(DesktopPiRpcClientFactory)
+  .inSingletonScope();
 container.bind(AGENT_LOGGER).toConstantValue(logger);
 container.load(osModule);
 container.bind<RootLogger>(ROOT_LOGGER).toConstantValue(logger);
@@ -395,7 +421,11 @@ container.bind(MCP_PROXY_AUTH).toDynamicValue((ctx) => {
 container.load(archiveModule);
 container.bind(ARCHIVE_SESSION_CANCELLER).toDynamicValue((ctx) => ({
   cancelSessionsByTaskId: (taskId: string) =>
-    ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
+    cancelTaskSessions(
+      ctx.get<AgentService>(AGENT_SERVICE),
+      ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+      taskId,
+    ),
 }));
 container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -407,7 +437,11 @@ container.bind(ARCHIVE_FILE_WATCHER).toDynamicValue((ctx) => ({
 container.load(suspensionModule);
 container.bind(SUSPENSION_SESSION_CANCELLER).toDynamicValue((ctx) => ({
   cancelSessionsByTaskId: (taskId: string) =>
-    ctx.get<AgentService>(AGENT_SERVICE).cancelSessionsByTaskId(taskId),
+    cancelTaskSessions(
+      ctx.get<AgentService>(AGENT_SERVICE),
+      ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+      taskId,
+    ),
 }));
 container.bind(SUSPENSION_FILE_WATCHER).toDynamicValue((ctx) => ({
   stopWatching: async (worktreePath: string) => {
@@ -619,7 +653,7 @@ container.load(posthogPluginModule);
 container.bind(MAIN_POSTHOG_PLUGIN_SERVICE).toService(POSTHOG_PLUGIN_SERVICE);
 container.load(skillsModule);
 container.load(skillsMarketplaceModule);
-container.load(githubReleasesModule);
+container.load(releaseFeedModule);
 container.load(onboardingImportModule);
 container.load(localMcpModule);
 container.load(mcpRelayModule);
@@ -685,7 +719,12 @@ container.load(workspaceModule);
 container.bind(WORKSPACE_AGENT).toDynamicValue((ctx): WorkspaceAgent => {
   const agent = ctx.get<AgentService>(AGENT_SERVICE);
   return {
-    cancelSessionsByTaskId: (taskId) => agent.cancelSessionsByTaskId(taskId),
+    cancelSessionsByTaskId: (taskId) =>
+      cancelTaskSessions(
+        agent,
+        ctx.get<PiSessionService>(PI_SESSION_SERVICE),
+        taskId,
+      ),
     onAgentFileActivity: (handler) =>
       agent.on(AgentServiceEvent.AgentFileActivity, handler),
   };

@@ -16,7 +16,6 @@ import { fileURLToPath } from "node:url";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { piCliInvocation } from "../../pi-cli";
 import type { AgentConfig } from "./agents";
 import { resolveModelAuthWithFallback, writeAuthBridgeExtension } from "./auth";
 import { composeTaskWithContext, resolveContext } from "./context";
@@ -31,6 +30,7 @@ import {
   type ChildProcessHandle,
   spawnChildProcess,
 } from "./process/child-process";
+import { piCliInvocation } from "./process/pi-subprocess";
 import { applyAgentOverrides, loadSubagentSettings } from "./settings";
 import { removeAgentRun, upsertAgentRun } from "./status-registry";
 
@@ -82,8 +82,8 @@ export function isFailedResult(result: SingleRunResult): boolean {
 }
 
 /** Sibling extension entry points resolved by relative path — not through
- * `spawn.ts`/`registry.ts` — so this module has no dependency on the harness
- * extension registry or on any specific provider extension. */
+ * the registry — so this module has no dependency on the harness extension
+ * registry or on any specific provider extension. */
 function siblingExtensionFile(name: string): string {
   return fileURLToPath(new URL(`../${name}/index.js`, import.meta.url));
 }

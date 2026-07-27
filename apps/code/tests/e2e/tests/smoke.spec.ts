@@ -9,7 +9,7 @@ test.describe("Smoke Tests", () => {
     expect(window).toBeTruthy();
 
     const title = await window.title();
-    expect(title).toContain("PostHog Code");
+    expect(title).toContain("PostHog");
   });
 
   test("app renders initial UI (auth or main layout)", async ({ window }) => {
