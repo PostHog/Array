@@ -337,7 +337,13 @@ function LoopListTabs({
       </TabsList>
       <TabsContent value="personal">
         {personalLoops.length > 0 ? (
-          <LoopListSection loops={personalLoops} />
+          <LoopListSection
+            loops={personalLoops}
+            members={members}
+            membersLoading={membersLoading}
+            membersError={membersError}
+            membersComplete={membersComplete}
+          />
         ) : (
           <LoopsEmptyState />
         )}
