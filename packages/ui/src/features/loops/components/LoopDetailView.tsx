@@ -269,7 +269,13 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
         </Flex>
 
         <ConfigSummarySection
-          key={`${loop.id}:${loop.updated_at}`}
+          key={JSON.stringify([
+            loop.id,
+            loop.runtime_adapter,
+            loop.model,
+            loop.reasoning_effort,
+            loop.triggers,
+          ])}
           loop={loop}
         />
 
