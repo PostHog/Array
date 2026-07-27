@@ -4,7 +4,7 @@ import {
   OPTION_DOCS_URL_META_KEY,
 } from "@posthog/shared";
 import { Theme } from "@radix-ui/themes";
-import { configure, render, screen, waitFor } from "@testing-library/react";
+import { configure, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ReasoningLevelSelector } from "./ReasoningLevelSelector";
@@ -96,12 +96,27 @@ async function openAdvanced(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "Advanced" }));
 }
 
+// Plain polling instead of RTL waitFor: menu transitions complete on timers
+// that the act-wrapped waitFor starves under suite load.
+async function pollUntil(check: () => boolean, timeoutMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("condition not met within timeout");
+}
+
 async function openSub(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
   const trigger = await screen.findByRole("menuitem", { name });
-  // Hover first: under parallel test load a bare click can race the
-  // submenu's hover-intent handling and toggle it straight closed.
-  await user.hover(trigger);
   await user.click(trigger);
+  // The submenu opens on a Base UI timer that RTL's act-wrapped waitFor never
+  // flushes in jsdom, so poll with plain sleeps instead of findByRole.
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (screen.queryAllByRole("menuitemradio").length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("submenu did not open");
 }
 
 describe("ReasoningLevelSelector", () => {
@@ -146,9 +161,10 @@ describe("ReasoningLevelSelector", () => {
     await openAdvanced(user);
     await openSub(user, /^Reasoning/);
     const lowItem = await screen.findByRole("menuitemradio", { name: "Low" });
-    await user.click(lowItem);
+    fireEvent.click(lowItem);
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith("low"));
+    await pollUntil(() => onChange.mock.calls.length > 0);
+    expect(onChange).toHaveBeenCalledWith("low");
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
@@ -185,7 +201,9 @@ describe("ReasoningLevelSelector", () => {
     const docsButton = await screen.findByRole("button", {
       name: "Learn more about Ultracode",
     });
-    await user.click(docsButton);
+    // Plain dispatch: user-event's pointer sequence can re-highlight the
+    // parent item under suite load and swallow the click.
+    fireEvent.click(docsButton);
 
     expect(openUrlInBrowser).toHaveBeenCalledWith(ultracodeDocsUrl);
     expect(onChange).not.toHaveBeenCalled();
@@ -211,16 +229,10 @@ describe("ReasoningLevelSelector", () => {
       screen.queryByRole("menuitem", { name: /Fast Mode/ }),
     ).not.toBeInTheDocument();
     await openSub(user, /Context Window/);
-    await user.click(
-      await screen.findByRole("menuitemradio", { name: "200k" }),
-    );
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "200k" }));
 
-    await waitFor(() =>
-      expect(onConfigOptionChange).toHaveBeenCalledWith(
-        "context_window",
-        "200k",
-      ),
-    );
+    await pollUntil(() => onConfigOptionChange.mock.calls.length > 0);
+    expect(onConfigOptionChange).toHaveBeenCalledWith("context_window", "200k");
     expect(onConfigOptionChange).toHaveBeenCalledTimes(1);
   });
 
@@ -266,7 +278,8 @@ describe("ReasoningLevelSelector", () => {
     await user.click(await screen.findByRole("button", { name: "Advanced" }));
     await user.click(await screen.findByText("Reset to default"));
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith("high"));
+    await pollUntil(() => onChange.mock.calls.length > 0);
+    expect(onChange).toHaveBeenCalledWith("high");
     expect(onConfigOptionChange).toHaveBeenCalledWith("context_window", "1m");
     expect(onConfigOptionChange).toHaveBeenCalledWith("fast", "off");
   });
