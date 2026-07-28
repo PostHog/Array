@@ -1,5 +1,6 @@
 import {
   contentToXml,
+  isContentEmpty,
   xmlToContent,
 } from "@posthog/core/message-editor/content";
 import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
@@ -37,6 +38,7 @@ import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { toast } from "@posthog/ui/primitives/toast";
 import { TaskDetailSkeleton } from "@posthog/ui/router/routeSkeletons";
+import { logger } from "@posthog/ui/shell/logger";
 import { Box, Flex } from "@radix-ui/themes";
 import { type ReactElement, useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
@@ -46,6 +48,8 @@ import {
   PiModelSelector,
   PiThinkingLevelSelector,
 } from "./PiSessionControls";
+
+const log = logger.scope("pi-session-view");
 
 interface PiSessionViewProps {
   taskId: string;
@@ -126,6 +130,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
 
   const handleControllerError = useCallback(
     (error: unknown, fallback: string) => {
+      log.error(fallback, error);
       if (error instanceof PiOperationError) {
         return;
       }
@@ -267,7 +272,10 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     if (!failure || failure.scope !== "operation") {
       return;
     }
-    if (failure.recoveryPrompt) {
+    if (
+      failure.recoveryPrompt &&
+      isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)
+    ) {
       draftActions.setPendingContent(
         taskId,
         xmlToContent(failure.recoveryPrompt),

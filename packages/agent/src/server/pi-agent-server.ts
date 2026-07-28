@@ -34,6 +34,9 @@ interface PiCloudSession {
 }
 
 const emptySchema = z.object({});
+const MAX_PENDING_EVENTS = 1_000;
+const MAX_PENDING_LOG_ENTRIES = 10_000;
+const LOG_FLUSH_ENTRY_COUNT = 100;
 
 const userMessageCommandSchema = z
   .object({
@@ -78,6 +81,8 @@ export class PiAgentServer {
   private settledPersistenceQueue: Promise<void> = Promise.resolve();
   private pendingLogEntries: StoredLogEntry[] = [];
   private logFlushQueue: Promise<void> = Promise.resolve();
+  private logFlushActive = false;
+  private logFlushRequested = false;
   private readonly canceledSseControllers = new WeakSet<SseController>();
 
   constructor(private readonly config: AgentServerConfig) {
@@ -148,7 +153,11 @@ export class PiAgentServer {
         this.logger.error("Failed to sync Pi session during shutdown", error),
       );
       session.unsubscribe();
-      await session.runtime.client.stop();
+      await session.runtime.client
+        .stop()
+        .catch((error) =>
+          this.logger.error("Failed to stop Pi client during shutdown", error),
+        );
     }
     this.session = null;
     await this.flushConversationLog().catch((error) =>
@@ -171,6 +180,15 @@ export class PiAgentServer {
         message,
       } satisfies AgentConversationEvent,
     });
+    await this.settledPersistenceQueue.catch((syncError) =>
+      this.logger.error(
+        "Failed to persist settled Pi turn after crash",
+        syncError,
+      ),
+    );
+    await this.syncTaskSession().catch((syncError) =>
+      this.logger.error("Failed to sync crashed Pi session", syncError),
+    );
     await this.flushConversationLog().catch((syncError) =>
       this.logger.error("Failed to persist crashed Pi events", syncError),
     );
@@ -378,6 +396,7 @@ export class PiAgentServer {
     const client = createPiRpcClient({
       cliPath: this.config.piRpcHostPath,
       cwd,
+      model: this.config.model,
       sessionFile: restoredSessionFile,
       providerOptions: {
         apiKey: this.config.apiKey,
@@ -453,8 +472,11 @@ export class PiAgentServer {
         return client.abort();
       case "queue_get":
         return client.getQueue();
-      case "queue_clear":
-        return client.clearQueue();
+      case "queue_clear": {
+        const queue = await client.clearQueue();
+        runtime.clearPendingQueuedUserMessages();
+        return queue;
+      }
       case "pi/rpc":
         return runtime.sendCommand(params.command as RpcCommand);
     }
@@ -639,8 +661,15 @@ export class PiAgentServer {
             ? (event.event as AgentConversationEvent)
             : undefined,
       });
+      if (this.pendingLogEntries.length > MAX_PENDING_LOG_ENTRIES) {
+        this.pendingLogEntries.splice(
+          0,
+          this.pendingLogEntries.length - MAX_PENDING_LOG_ENTRIES,
+        );
+      }
       if (
         event.type === "pi_run_started" ||
+        this.pendingLogEntries.length >= LOG_FLUSH_ENTRY_COUNT ||
         (event.event as { type?: string } | undefined)?.type ===
           "turn_completed"
       ) {
@@ -655,29 +684,54 @@ export class PiAgentServer {
       this.session.sseController.send(event);
     } else {
       this.pendingEvents.push(event);
+      if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+        this.pendingEvents.splice(
+          0,
+          this.pendingEvents.length - MAX_PENDING_EVENTS,
+        );
+      }
     }
   }
 
   private flushConversationLog(): Promise<void> {
+    if (this.logFlushActive) {
+      this.logFlushRequested = true;
+      return this.logFlushQueue;
+    }
     if (this.pendingLogEntries.length === 0) {
       return this.logFlushQueue;
     }
 
-    const entries = this.pendingLogEntries;
-    this.pendingLogEntries = [];
-    const flush = this.logFlushQueue
-      .then(() =>
-        this.posthogAPI.appendTaskRunLog(
-          this.config.taskId,
-          this.config.runId,
-          entries,
-        ),
-      )
-      .then(() => undefined)
-      .catch((error) => {
-        this.pendingLogEntries = [...entries, ...this.pendingLogEntries];
-        throw error;
-      });
+    this.logFlushActive = true;
+    const flush = (async () => {
+      do {
+        this.logFlushRequested = false;
+        const entries = this.pendingLogEntries;
+        this.pendingLogEntries = [];
+        if (entries.length === 0) {
+          return;
+        }
+        try {
+          await this.posthogAPI.appendTaskRunLog(
+            this.config.taskId,
+            this.config.runId,
+            entries,
+          );
+        } catch (error) {
+          this.pendingLogEntries = [
+            ...entries,
+            ...this.pendingLogEntries,
+          ].slice(-MAX_PENDING_LOG_ENTRIES);
+          throw error;
+        }
+      } while (
+        this.logFlushRequested ||
+        this.pendingLogEntries.length >= LOG_FLUSH_ENTRY_COUNT
+      );
+    })().finally(() => {
+      this.logFlushActive = false;
+    });
+
     this.logFlushQueue = flush.catch(() => undefined);
     return flush;
   }

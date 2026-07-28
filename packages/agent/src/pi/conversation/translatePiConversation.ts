@@ -114,6 +114,7 @@ export function createPiConversationTranslator(): PiConversationTranslator {
   let directBashSequence = 0;
   let activeDirectBash:
     | {
+        nextOutputSize: number;
         output: string;
         startedAt: number;
         toolCallId: string;
@@ -123,7 +124,12 @@ export function createPiConversationTranslator(): PiConversationTranslator {
   function beginDirectBash(command: string): AgentConversationEvent[] {
     const startedAt = Date.now();
     const toolCallId = `pi-bash-live-${startedAt}-${++directBashSequence}`;
-    activeDirectBash = { output: "", startedAt, toolCallId };
+    activeDirectBash = {
+      nextOutputSize: 4_096,
+      output: "",
+      startedAt,
+      toolCallId,
+    };
 
     return [
       {
@@ -179,7 +185,10 @@ export function createPiConversationTranslator(): PiConversationTranslator {
   }
 
   function failDirectBash(message: string): AgentConversationEvent[] {
-    return finishDirectBash("failed", message);
+    const output = [activeDirectBash?.output, message]
+      .filter(Boolean)
+      .join("\n\n");
+    return finishDirectBash("failed", output);
   }
 
   function translateHistoryMessage(
@@ -298,6 +307,15 @@ export function createPiConversationTranslator(): PiConversationTranslator {
       }
 
       directBash.output += event.delta;
+      if (directBash.output.length >= 4_096) {
+        if (directBash.output.length < directBash.nextOutputSize) {
+          return [];
+        }
+        while (directBash.nextOutputSize <= directBash.output.length) {
+          directBash.nextOutputSize *= 2;
+        }
+      }
+
       return [
         {
           type: "tool_call_updated",
@@ -441,6 +459,10 @@ export function createPiConversationTranslator(): PiConversationTranslator {
       const timestamp = event.result?.summary
         ? Math.max(Date.now(), latestConversationTimestamp + 1)
         : latestConversationTimestamp;
+      latestConversationTimestamp = Math.max(
+        latestConversationTimestamp,
+        timestamp,
+      );
       const events: AgentConversationEvent[] = [
         {
           type: "runtime_status",

@@ -47,16 +47,31 @@ function isPiToolName(name: string): name is PiToolName {
 function toGenericToolContent(
   resultContent: ToolResultMessage["content"],
 ): AgentToolCallContent[] | undefined {
-  const text = resultContent
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+  const content: AgentToolCallContent[] = [];
+  let text = "";
 
-  if (!text) {
-    return undefined;
+  const appendText = () => {
+    if (!text) {
+      return;
+    }
+    content.push({ type: "content", content: { type: "text", text } });
+    text = "";
+  };
+
+  for (const block of resultContent) {
+    if (block.type === "text") {
+      text += block.text;
+      continue;
+    }
+    const translated = toContent(block);
+    if (translated) {
+      appendText();
+      content.push({ type: "content", content: translated });
+    }
   }
+  appendText();
 
-  return [{ type: "content", content: { type: "text", text } }];
+  return content.length > 0 ? content : undefined;
 }
 
 function toContent(block: {

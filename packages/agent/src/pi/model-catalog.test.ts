@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { resolvePosthogPiModelCatalog } from "./model-catalog";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  fetchPosthogPiModelCatalog,
+  resolvePosthogPiModelCatalog,
+} from "./model-catalog";
 
 describe("resolvePosthogPiModelCatalog", () => {
+  afterEach(() => {
+    delete process.env.PI_OFFLINE;
+    vi.unstubAllGlobals();
+  });
+
   it("uses the PostHog provider model configuration for gateway models", () => {
     const models = resolvePosthogPiModelCatalog(
       [
@@ -41,5 +49,19 @@ describe("resolvePosthogPiModelCatalog", () => {
         id: "claude-haiku-4-5",
       }),
     ]);
+  });
+
+  it("uses fallback models without fetching while offline", async () => {
+    process.env.PI_OFFLINE = "1";
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    const models = await fetchPosthogPiModelCatalog(
+      "https://gateway.example.com",
+      "us",
+    );
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(models.length).toBeGreaterThan(0);
   });
 });

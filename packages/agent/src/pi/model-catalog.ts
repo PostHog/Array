@@ -42,6 +42,9 @@ export async function fetchPosthogPiModelCatalog(
   region: CloudRegion,
   apiKey?: string,
 ): Promise<PiModelCatalogEntry[]> {
-  const models = await fetchPosthogGatewayModels(gatewayUrl, apiKey);
+  const models =
+    process.env.PI_OFFLINE || process.env.HARNESS_STATIC_MODELS
+      ? []
+      : await fetchPosthogGatewayModels(gatewayUrl, apiKey);
   return resolvePosthogPiModelCatalog(models, region);
 }

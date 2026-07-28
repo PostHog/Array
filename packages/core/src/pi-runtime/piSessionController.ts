@@ -118,6 +118,7 @@ export class PiSessionController {
   private readonly queuesToRestore = new Map<string, PiQueueSnapshot>();
   private readonly cancelAuthRestoration = new Map<string, () => void>();
   private readonly taskRunIds = new Map<string, string>();
+  private readonly activeTaskIds = new Set<string>();
 
   constructor(
     @inject(PI_SESSION_PROVIDER) private readonly provider: PiSessionProvider,
@@ -128,6 +129,7 @@ export class PiSessionController {
   ) {}
 
   ensureConnected(taskId: string, taskRunId?: string): Promise<void> {
+    this.activeTaskIds.add(taskId);
     this.bindTaskRun(taskId, taskRunId);
     this.ensureSubscription(taskId);
 
@@ -166,6 +168,7 @@ export class PiSessionController {
   }
 
   connect(taskId: string, taskRunId?: string): Promise<void> {
+    this.activeTaskIds.add(taskId);
     this.bindTaskRun(taskId, taskRunId);
     this.ensureSubscription(taskId);
 
@@ -192,17 +195,21 @@ export class PiSessionController {
     this.liveEvents.delete(taskId);
     this.queueRevisions.delete(taskId);
     this.queuesToRestore.delete(taskId);
+    this.activeTaskIds.delete(taskId);
   }
 
   async retry(taskId: string): Promise<void> {
-    const taskRunId = this.taskRunIds.get(taskId);
-    this.captureQueueForRestore(taskId);
-    const session = await this.getPiSession(taskId);
+    if (this.getSession(taskId).connectionState === "connecting") {
+      return;
+    }
     this.updateSession(taskId, {
       connectionState: "connecting",
       error: undefined,
     });
+    const taskRunId = this.taskRunIds.get(taskId);
+    this.captureQueueForRestore(taskId);
     try {
+      const session = await this.getPiSession(taskId);
       await session.retry?.();
       this.resetTransport(taskId);
       await this.ensureConnected(taskId, taskRunId);
@@ -224,8 +231,10 @@ export class PiSessionController {
   }
 
   async restart(taskId: string): Promise<void> {
+    if (this.getSession(taskId).connectionState === "connecting") {
+      return;
+    }
     const taskRunId = this.taskRunIds.get(taskId);
-    this.captureQueueForRestore(taskId);
     if (!taskRunId) {
       await this.retry(taskId);
       return;
@@ -235,6 +244,7 @@ export class PiSessionController {
       connectionState: "connecting",
       error: undefined,
     });
+    this.captureQueueForRestore(taskId);
     try {
       const resumedRun = await this.taskService.resumeCloudPiRun(
         taskId,
@@ -252,6 +262,7 @@ export class PiSessionController {
       this.store.getState().sessions,
     )) {
       if (
+        this.activeTaskIds.has(taskId) &&
         session.cloudStatus !== undefined &&
         session.error?.retryable &&
         (session.connectionState === "disconnected" ||
@@ -894,6 +905,7 @@ export class PiSessionController {
         mode: "follow_up" as const,
       })),
     ];
+    this.queuesToRestore.delete(taskId);
     if (!status.isStreaming) {
       const first = messages.shift();
       if (first) {
@@ -908,7 +920,6 @@ export class PiSessionController {
         await session.client.followUp(message.content);
       }
     }
-    this.queuesToRestore.delete(taskId);
   }
 
   private async refreshQueue(

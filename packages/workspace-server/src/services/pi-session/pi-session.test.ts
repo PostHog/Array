@@ -176,12 +176,16 @@ describe("PiSessionService start", () => {
 });
 
 describe("PiSessionService RPC request pinning", () => {
-  it("keeps a session pinned until every concurrent generic command settles", async () => {
+  it("keeps a session pinned until command and queue requests settle", async () => {
     vi.stubEnv("POSTHOG_CODE_PI_HOT_POOL_SIZE", "1");
     let timestamp = 0;
     vi.spyOn(Date, "now").mockImplementation(() => timestamp++);
 
     const requestResolvers: Array<(response: RpcResponse) => void> = [];
+    let resolveQueue: (queue: {
+      steering: string[];
+      followUp: string[];
+    }) => void = () => {};
     const firstClient = {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -193,6 +197,12 @@ describe("PiSessionService RPC request pinning", () => {
         () =>
           new Promise<RpcResponse>((resolve) => {
             requestResolvers.push(resolve);
+          }),
+      ),
+      getQueue: vi.fn(
+        () =>
+          new Promise<{ steering: string[]; followUp: string[] }>((resolve) => {
+            resolveQueue = resolve;
           }),
       ),
     } as unknown as PiRpcClient;
@@ -255,7 +265,7 @@ describe("PiSessionService RPC request pinning", () => {
       type: "bash",
       command: "sleep 1",
     });
-    const compactRequest = service.request("first", { type: "compact" });
+    const queueRequest = service.getQueue("first");
 
     await service.resume({ taskId: "second", cwd: "/tmp" });
     expect(firstClient.stop).not.toHaveBeenCalled();
@@ -265,8 +275,8 @@ describe("PiSessionService RPC request pinning", () => {
     await vi.waitFor(() => expect(secondClient.stop).toHaveBeenCalledOnce());
     expect(firstClient.stop).not.toHaveBeenCalled();
 
-    requestResolvers[1](successfulResponse("compact"));
-    await compactRequest;
+    resolveQueue({ steering: [], followUp: [] });
+    await queueRequest;
     expect(firstClient.stop).not.toHaveBeenCalled();
 
     await service.resume({ taskId: "third", cwd: "/tmp" });

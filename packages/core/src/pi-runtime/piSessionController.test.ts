@@ -518,6 +518,35 @@ describe("PiSessionController", () => {
     expect(session.client.followUp).toHaveBeenCalledWith("then summarize");
   });
 
+  it("does not replay an already restored prompt after a later queue failure", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    session.retry = vi.fn(async () => {});
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    vi.mocked(session.client.followUp).mockRejectedValueOnce(
+      new Error("queue unavailable"),
+    );
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    onEvent({
+      type: "queue_update",
+      timestamp: 1,
+      steering: ["fix this"],
+      followUp: ["then summarize"],
+    });
+
+    await expect(controller.retry("task-1")).rejects.toThrow(
+      "queue unavailable",
+    );
+    await controller.retry("task-1");
+
+    expect(session.client.prompt).toHaveBeenCalledTimes(1);
+  });
+
   it("does not restore a captured queue after the task disconnects", async () => {
     let resolveRetry: () => void = () => {};
     const retrying = new Promise<void>((resolve) => {
@@ -588,6 +617,67 @@ describe("PiSessionController", () => {
       events: [initialEvent],
       error: undefined,
     });
+  });
+
+  it("does not retry disconnected cloud sessions after their view unmounts", async () => {
+    const session = createSession();
+    session.retry = vi.fn(async () => {});
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    controller.store.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "task-1": {
+          ...state.sessions["task-1"],
+          connectionState: "disconnected",
+          cloudStatus: "in_progress",
+          error: {
+            id: "connection-error",
+            scope: "connection",
+            kind: "unknown",
+            title: "Connection failed",
+            message: "stream dropped",
+            retryable: true,
+            limitCause: null,
+          },
+        },
+      },
+    }));
+    controller.disconnect("task-1");
+
+    controller.retryUnhealthyCloudSessions();
+
+    expect(session.retry).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent retry requests", async () => {
+    let resolveRetry: () => void = () => {};
+    const session = createSession();
+    session.retry = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    controller.store.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "task-1": {
+          ...state.sessions["task-1"],
+          connectionState: "disconnected",
+        },
+      },
+    }));
+
+    const first = controller.retry("task-1");
+    const second = controller.retry("task-1");
+    await vi.waitFor(() => expect(session.retry).toHaveBeenCalledOnce());
+    resolveRetry();
+    await Promise.all([first, second]);
   });
 
   it("uses the live bash operation without reloading native history", async () => {

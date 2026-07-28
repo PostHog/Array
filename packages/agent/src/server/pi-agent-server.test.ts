@@ -83,6 +83,44 @@ describe("PiAgentServer", () => {
     ]);
   });
 
+  it("bounds events retained while no SSE client is connected", () => {
+    const server = new PiAgentServer(config()) as unknown as {
+      broadcast(event: Record<string, unknown>): void;
+      pendingEvents: Record<string, unknown>[];
+    };
+
+    for (let index = 0; index < 1_100; index++) {
+      server.broadcast({ type: "test", index });
+    }
+
+    expect(server.pendingEvents).toHaveLength(1_000);
+    expect(server.pendingEvents[0]).toEqual({ type: "test", index: 100 });
+  });
+
+  it("flushes long-running conversation logs in bounded batches", async () => {
+    const appendTaskRunLog = vi.fn(
+      async (_taskId: string, _runId: string, _entries: unknown[]) => ({}),
+    );
+    const server = new PiAgentServer(config()) as unknown as {
+      posthogAPI: { appendTaskRunLog: typeof appendTaskRunLog };
+      handleEvent(event: Record<string, unknown>): void;
+      logFlushQueue: Promise<void>;
+    };
+    server.posthogAPI.appendTaskRunLog = appendTaskRunLog;
+
+    for (let index = 0; index < 100; index++) {
+      server.handleEvent({
+        type: "assistant_message_chunk",
+        timestamp: index,
+        content: { type: "text", text: String(index) },
+      });
+    }
+    await server.logFlushQueue;
+
+    expect(appendTaskRunLog).toHaveBeenCalledOnce();
+    expect(appendTaskRunLog.mock.calls[0]?.[2]).toHaveLength(100);
+  });
+
   it("uses the durable message id for an idle native Pi prompt", async () => {
     const sendCommand = vi.fn(
       async (_command: Record<string, unknown>) => ({}),
@@ -312,6 +350,7 @@ describe("PiAgentServer", () => {
         getQueue: vi.fn(async () => queue),
         clearQueue: vi.fn(async () => queue),
       };
+      const clearPendingQueuedUserMessages = vi.fn();
       const server = new PiAgentServer(config()) as unknown as {
         session: unknown;
         executeCommand(
@@ -319,10 +358,15 @@ describe("PiAgentServer", () => {
           params: Record<string, unknown>,
         ): Promise<unknown>;
       };
-      server.session = { runtime: { client } };
+      server.session = {
+        runtime: { client, clearPendingQueuedUserMessages },
+      };
 
       await expect(server.executeCommand(method, {})).resolves.toEqual(queue);
       expect(client[operation]).toHaveBeenCalledOnce();
+      expect(clearPendingQueuedUserMessages).toHaveBeenCalledTimes(
+        method === "queue_clear" ? 1 : 0,
+      );
     },
   );
 

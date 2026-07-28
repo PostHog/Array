@@ -111,6 +111,7 @@ interface SettingsStore {
   lastUsedAgentRuntime: AgentRuntime;
   lastUsedAdapter: AgentAdapter;
   lastUsedModel: string | null;
+  lastUsedPiModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
@@ -133,6 +134,7 @@ interface SettingsStore {
   setLastUsedAgentRuntime: (runtime: AgentRuntime) => void;
   setLastUsedAdapter: (adapter: AgentAdapter) => void;
   setLastUsedModel: (model: string) => void;
+  setLastUsedPiModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
   setCachedCloudRepositoryMap: (
@@ -306,6 +308,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedAgentRuntime: "acp",
       lastUsedAdapter: "claude",
       lastUsedModel: null,
+      lastUsedPiModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
@@ -325,6 +328,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastUsedAgentRuntime: runtime }),
       setLastUsedAdapter: (adapter) => set({ lastUsedAdapter: adapter }),
       setLastUsedModel: (model) => set({ lastUsedModel: model }),
+      setLastUsedPiModel: (model) => set({ lastUsedPiModel: model }),
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
@@ -534,6 +538,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedAgentRuntime: state.lastUsedAgentRuntime,
         lastUsedAdapter: state.lastUsedAdapter,
         lastUsedModel: state.lastUsedModel,
+        lastUsedPiModel: state.lastUsedPiModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,

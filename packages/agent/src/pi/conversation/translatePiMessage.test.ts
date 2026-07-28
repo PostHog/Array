@@ -160,6 +160,39 @@ describe("createPiMessageTranslator", () => {
     ]);
   });
 
+  it("preserves images in generic extension tool results", () => {
+    const translator = createPiMessageTranslator();
+    const content: ToolResultMessage["content"] = [
+      { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+    ];
+    const message: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "extension-image",
+      toolName: "screenshot",
+      content,
+      isError: false,
+      timestamp: 12,
+    };
+
+    expect(translator.translate(message)).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "image",
+                data: "aW1hZ2U=",
+                mimeType: "image/png",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   it("keeps built-in tool translation and raw output", () => {
     const translator = createPiMessageTranslator();
     const content: ToolResultMessage["content"] = [

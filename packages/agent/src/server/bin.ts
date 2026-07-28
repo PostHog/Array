@@ -182,6 +182,7 @@ program
     // bodies can't leak it. Defense in depth, not a boundary: same-UID
     // processes can still read the container's initial env via /proc.
     delete process.env.POSTHOG_AGENT_OTEL_LOGS_TOKEN;
+    delete process.env.POSTHOG_TASK_RUN_SESSION_TOKEN;
 
     const mode = options.mode === "background" ? "background" : "interactive";
     const createPr = parseBooleanOption(options.createPr, "--createPr");

@@ -165,6 +165,65 @@ describe("PiRuntime", () => {
     );
   });
 
+  it("drops cleared queued message ids before matching later messages", async () => {
+    const { client, emit, send } = createClient();
+    const runtime = new PiRuntime(client);
+    const conversationListener = vi.fn();
+    runtime.onConversationEvent(conversationListener);
+    send.mockResolvedValue({
+      type: "response",
+      command: "steer",
+      success: true,
+    });
+
+    await runtime.sendCommand({
+      id: "cleared-id",
+      type: "steer",
+      message: "continue",
+    });
+    runtime.clearPendingQueuedUserMessages();
+    send.mockImplementationOnce(async () => {
+      emit({
+        type: "message_end",
+        message: { role: "user", content: "continue", timestamp: 1 },
+      });
+      return { type: "response", command: "prompt", success: true };
+    });
+    await runtime.sendCommand({
+      id: "current-id",
+      type: "prompt",
+      message: "continue",
+    });
+
+    expect(conversationListener).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "user_message", id: "current-id" }),
+    );
+  });
+
+  it("rejects concurrent direct bash commands", async () => {
+    const { client, send } = createClient();
+    const runtime = new PiRuntime(client);
+    let resolveBash: (value: unknown) => void = () => {};
+    send.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveBash = resolve;
+        }),
+    );
+
+    const first = runtime.sendCommand({ type: "bash", command: "sleep 1" });
+    await expect(
+      runtime.sendCommand({ type: "bash", command: "pwd" }),
+    ).rejects.toThrow("already running");
+    resolveBash({
+      type: "response",
+      command: "bash",
+      success: true,
+      data: { output: "", exitCode: 0, cancelled: false },
+    });
+    await first;
+  });
+
   it("forwards native queue snapshots", () => {
     const { client, emit } = createClient();
     const runtime = new PiRuntime(client);

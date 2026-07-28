@@ -25,7 +25,9 @@ export class PiRuntime {
   private readonly pendingUserMessages: Array<{
     id: string;
     message: string;
+    type: "prompt" | "steer" | "follow_up";
   }> = [];
+  private directBashActive = false;
 
   constructor(client: PiRpcClient) {
     this.client = client;
@@ -58,6 +60,7 @@ export class PiRuntime {
       this.pendingUserMessages.push({
         id: command.id,
         message: command.message,
+        type: command.type,
       });
     }
     if (command.type !== "bash") {
@@ -75,6 +78,10 @@ export class PiRuntime {
       }
     }
 
+    if (this.directBashActive) {
+      throw new Error("A Pi bash command is already running");
+    }
+    this.directBashActive = true;
     this.emitConversationEvents(
       this.translator.beginDirectBash(command.command),
     );
@@ -93,6 +100,16 @@ export class PiRuntime {
       const message = error instanceof Error ? error.message : String(error);
       this.emitConversationEvents(this.translator.failDirectBash(message));
       throw error;
+    } finally {
+      this.directBashActive = false;
+    }
+  }
+
+  clearPendingQueuedUserMessages(): void {
+    for (let index = this.pendingUserMessages.length - 1; index >= 0; index--) {
+      if (this.pendingUserMessages[index]?.type !== "prompt") {
+        this.pendingUserMessages.splice(index, 1);
+      }
     }
   }
 

@@ -237,10 +237,8 @@ export class CloudPiSessionClient implements PiSession {
     onError: (error: unknown) => void,
     onCloudStatus?: (status: TaskRunStatus) => void,
   ): void {
-    const snapshotCanProveReadiness =
-      update.kind === "snapshot" && update.status === "in_progress";
     const hasCurrentReadinessEvent =
-      (update.kind === "logs" || snapshotCanProveReadiness) &&
+      (update.kind === "logs" || update.kind === "snapshot") &&
       update.newEntries.some((entry) => entry.type === "pi_run_started");
     if (hasCurrentReadinessEvent) {
       this.markRuntimeReady();

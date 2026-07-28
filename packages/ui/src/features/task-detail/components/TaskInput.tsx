@@ -220,8 +220,9 @@ export function TaskInput({
     defaultInitialTaskMode,
     lastUsedInitialTaskMode,
     setLastUsedReasoningEffort,
-    lastUsedModel,
     setLastUsedModel,
+    lastUsedPiModel,
+    setLastUsedPiModel,
     _hasHydrated: settingsHydrated,
   } = useSettingsStore();
   const { data: skills } = useSkills();
@@ -757,7 +758,7 @@ export function TaskInput({
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
   const currentPiModel =
     piModelCatalog.find((model) => model.id === selectedPiModelId) ??
-    piModelCatalog.find((model) => model.id === lastUsedModel) ??
+    piModelCatalog.find((model) => model.id === lastUsedPiModel) ??
     piModelCatalog[0];
   const piThinkingLevels = currentPiModel?.thinkingLevels ?? [];
   const currentPiThinkingLevel = piThinkingLevels.includes(
@@ -1049,9 +1050,9 @@ export function TaskInput({
   const handlePiModelChange = useCallback(
     (model: PiModelSelection) => {
       setSelectedPiModelId(model.id);
-      setLastUsedModel(model.id);
+      setLastUsedPiModel(model.id);
     },
-    [setLastUsedModel],
+    [setLastUsedPiModel],
   );
 
   const handlePiThinkingLevelChange = useCallback((level: PiThinkingLevel) => {

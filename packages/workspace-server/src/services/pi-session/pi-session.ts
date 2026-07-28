@@ -170,11 +170,8 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
     await this.startSession(input.taskId, client, session, async () => {});
   }
 
-  async request(taskId: string, command: RpcCommand): Promise<RpcResponse> {
-    const session = this.requireSession(taskId);
-    session.activeRequestCount += 1;
-
-    try {
+  request(taskId: string, command: RpcCommand): Promise<RpcResponse> {
+    return this.withActiveRequest(taskId, async (session) => {
       const response = await session.runtime.sendCommand(command);
 
       if (
@@ -187,18 +184,21 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
       }
 
       return response;
-    } finally {
-      session.activeRequestCount -= 1;
-      void this.enforceHotPoolLimit();
-    }
+    });
   }
 
   getQueue(taskId: string): Promise<PiQueueSnapshot> {
-    return this.requireSession(taskId).client.getQueue();
+    return this.withActiveRequest(taskId, (session) =>
+      session.client.getQueue(),
+    );
   }
 
   clearQueue(taskId: string): Promise<PiQueueSnapshot> {
-    return this.requireSession(taskId).client.clearQueue();
+    return this.withActiveRequest(taskId, async (session) => {
+      const queue = await session.client.clearQueue();
+      session.runtime.clearPendingQueuedUserMessages();
+      return queue;
+    });
   }
 
   async stop(taskId: string): Promise<void> {
@@ -363,6 +363,21 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
     this.taskMetadataRepository.upsert(taskId, {
       piSessionFile: state.sessionFile ?? null,
     });
+  }
+
+  private async withActiveRequest<T>(
+    taskId: string,
+    operation: (session: ManagedPiSession) => Promise<T>,
+  ): Promise<T> {
+    const session = this.requireSession(taskId);
+    session.activeRequestCount += 1;
+
+    try {
+      return await operation(session);
+    } finally {
+      session.activeRequestCount -= 1;
+      void this.enforceHotPoolLimit();
+    }
   }
 
   private requireSession(taskId: string): ManagedPiSession {

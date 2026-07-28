@@ -126,7 +126,7 @@ describe("CloudPiSessionClient", () => {
     }
   });
 
-  it("accepts an in-progress reconnect snapshot as runtime readiness", async () => {
+  it("accepts a reconnect snapshot with a start entry as runtime readiness", async () => {
     const cloud = createCloudTaskClient();
     vi.mocked(cloud.client.sendCommand).mockResolvedValue({
       success: true,
@@ -145,7 +145,7 @@ describe("CloudPiSessionClient", () => {
       taskId: "task-1",
       runId: "run-1",
       kind: "snapshot",
-      status: "in_progress",
+      status: "queued",
       newEntries: [{ type: "pi_run_started" }],
       totalEntryCount: 1,
     });

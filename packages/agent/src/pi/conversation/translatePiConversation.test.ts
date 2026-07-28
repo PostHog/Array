@@ -411,6 +411,31 @@ describe("createPiConversationTranslator", () => {
     ]);
   });
 
+  it("preserves streamed direct bash output when the command fails", () => {
+    const translator = createPiConversationTranslator();
+    const [started] = translator.beginDirectBash("failing-command");
+    if (started?.type !== "tool_call_started") {
+      throw new Error("Expected a direct bash tool call");
+    }
+
+    translator.translateEvent({
+      type: "bash_execution_update",
+      id: "req_1",
+      delta: "partial output",
+    });
+
+    expect(translator.failDirectBash("transport failed")).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          id: started.toolCall.id,
+          status: "failed",
+          rawOutput: "partial output\n\ntransport failed",
+        },
+      },
+    ]);
+  });
+
   it("streams tool execution start, output updates, and completion", () => {
     const translator = createPiConversationTranslator();
     const message = assistant(
