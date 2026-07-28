@@ -729,7 +729,6 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
         data-selected={isActive || undefined}
         disabled={isCreating}
         onClick={() => void open()}
-        className={spacesLayout ? "pl-4" : undefined}
       >
         {channelGlyph(PERSONAL_CHANNEL_NAME, {
           size: 14,

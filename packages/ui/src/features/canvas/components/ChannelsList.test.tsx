@@ -105,7 +105,7 @@ describe("ChannelsList", () => {
       expect(screen.getByText("engineering").closest("button")).toHaveClass(
         "pl-4",
       );
-      expect(screen.getByText("me").closest("button")).toHaveClass("pl-4");
+      expect(screen.getByText("me").closest("button")).not.toHaveClass("pl-4");
     });
 
     it("keeps the indented tree off the layout", () => {
