@@ -208,6 +208,12 @@ const FALLBACK_GATEWAY_MODELS: GatewayModel[] = [
     context_window: 128000,
     supports_vision: false,
   },
+  {
+    id: "moonshotai/kimi-k3",
+    owned_by: "modal",
+    context_window: 262144,
+    supports_vision: false,
+  },
 ];
 
 export function fallbackModelConfigs(
