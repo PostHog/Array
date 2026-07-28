@@ -35,6 +35,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
+import { useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
@@ -64,6 +65,9 @@ import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
 export function LoopDetailView({ loopId }: { loopId: string }) {
+  const hasLoopListOrigin = useLocation({
+    select: (location) => location.state.loopListOrigin === true,
+  });
   const { data: loop, isLoading, isError } = useLoop(loopId);
   const updateLoop = useUpdateLoop(loopId);
   const deleteLoop = useDeleteLoop();
@@ -210,7 +214,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
             variant="link-muted"
             size="sm"
             onClick={() => {
-              if (canGoBackInHistory()) {
+              if (hasLoopListOrigin && canGoBackInHistory()) {
                 goBackInHistory();
                 return;
               }
