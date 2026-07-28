@@ -1,5 +1,14 @@
-import { ChecksIcon } from "@phosphor-icons/react";
-import { Button, PopoverContent, Spinner } from "@posthog/quill";
+import { BellIcon, ChecksIcon } from "@phosphor-icons/react";
+import {
+  Button,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  PopoverContent,
+  Spinner,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
@@ -7,12 +16,26 @@ import { ActivityRow } from "@posthog/ui/features/canvas/components/ActivityView
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
-import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { track } from "@posthog/ui/shell/analytics";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  activityReadPayload,
+  channelIdForName,
+  createChannelIdByName,
+  getUnreadActivityItems,
+  markLoadedReadLabel,
+} from "./activityFeed";
 
-export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
+interface ActivityHoverCardProps {
+  onClose: () => void;
+  side?: "bottom" | "right";
+}
+
+export function ActivityHoverCard({
+  onClose,
+  side = "right",
+}: ActivityHoverCardProps) {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const {
@@ -23,21 +46,17 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
     isFetchingNextPage,
     fetchNextPage,
   } = useTaskActivity();
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
   const [loadMoreRef, loadMoreInView] = useInView<HTMLDivElement>({
+    root: scrollRoot,
     rootMargin: "100px 0px",
   });
-  const unreadItems = items.filter((item) => item.isUnread);
+  const unreadItems = getUnreadActivityItems(items);
   const { mutate: markTasksRead, isPending: isMarkingRead } =
     useMarkTaskActivityRead();
   const { channels } = useChannels();
   const folderIdByName = useMemo(
-    () =>
-      new Map(
-        channels.map((channel) => [
-          normalizeChannelName(channel.name),
-          channel.id,
-        ]),
-      ),
+    () => createChannelIdByName(channels),
     [channels],
   );
   useEffect(() => {
@@ -47,27 +66,22 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
     });
   }, []);
   useEffect(() => {
-    if (loadMoreInView && hasNextPage && !isFetchingNextPage) {
+    if (loadMoreInView && hasNextPage) {
       void fetchNextPage();
     }
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, loadMoreInView]);
+  }, [fetchNextPage, hasNextPage, loadMoreInView]);
 
   const markRead = (taskId: string, activityAt: string) => {
     markTasksRead([{ task_id: taskId, seen_before: activityAt }]);
   };
 
   const markAllRead = () => {
-    markTasksRead(
-      unreadItems.map((item) => ({
-        task_id: item.taskId,
-        seen_before: item.activityAt,
-      })),
-    );
+    markTasksRead(activityReadPayload(unreadItems));
   };
 
   return (
     <PopoverContent
-      side="right"
+      side={side}
       align="start"
       sideOffset={8}
       className="w-[380px] gap-0 overflow-hidden p-0"
@@ -83,34 +97,37 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
             onClick={markAllRead}
           >
             <ChecksIcon size={14} />
-            {unreadItems.length === unreadCount
-              ? "Mark all as read"
-              : "Mark visible as read"}
+            {markLoadedReadLabel(unreadItems.length, unreadCount)}
           </Button>
         )}
       </div>
-      <div className="max-h-[480px] overflow-y-auto p-1.5">
+      <div ref={setScrollRoot} className="max-h-[480px] overflow-y-auto p-1.5">
         {isLoading && items.length === 0 ? (
           <div className="flex justify-center py-10">
             <Spinner />
           </div>
         ) : items.length === 0 ? (
-          <div className="px-2 py-8 text-center text-muted-foreground text-sm">
-            No recent activity.
-          </div>
+          <Empty className="border-0 py-8">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <BellIcon />
+              </EmptyMedia>
+              <EmptyTitle>No recent activity</EmptyTitle>
+              <EmptyDescription>
+                New task updates will appear here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="flex flex-col gap-0.5">
             {items.map((item) => (
               <ActivityRow
                 key={item.taskId}
                 item={item}
-                folderChannelId={
-                  item.channelName
-                    ? (folderIdByName.get(
-                        normalizeChannelName(item.channelName),
-                      ) ?? null)
-                    : null
-                }
+                folderChannelId={channelIdForName(
+                  folderIdByName,
+                  item.channelName,
+                )}
                 onOpen={(activity) =>
                   markRead(activity.taskId, activity.activityAt)
                 }
@@ -123,13 +140,11 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
                 compact
               />
             ))}
-            {hasNextPage && (
-              <div ref={loadMoreRef} className="flex h-8 justify-center py-2">
-                {isFetchingNextPage && <Spinner />}
-              </div>
-            )}
           </div>
         )}
+        <div ref={loadMoreRef} className="flex h-8 justify-center py-2">
+          {hasNextPage && isFetchingNextPage && <Spinner />}
+        </div>
       </div>
     </PopoverContent>
   );
