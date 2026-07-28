@@ -58,3 +58,87 @@ export function buildPosthogPropertyHeaderLines(
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
 }
+
+/** Header carrying the whole property set as one JSON object. */
+export const POSTHOG_PROPERTIES_HEADER = "X-PostHog-Properties";
+
+/**
+ * Byte cap the Go gateway enforces on {@link POSTHOG_PROPERTIES_HEADER}; a
+ * larger blob is rejected outright, losing every property including
+ * `ai_product`. Keep in sync with `maxPropertiesLen` in the gateway's
+ * `internal/httpapi/dispatch.go`.
+ */
+const MAX_PROPERTIES_BYTES = 8192;
+
+const encoder = new TextEncoder();
+
+function byteLength(value: string): number {
+  return encoder.encode(value).length;
+}
+
+/**
+ * Serialize properties for {@link POSTHOG_PROPERTIES_HEADER}, or `""` when
+ * there is nothing to send.
+ *
+ * Keys beginning with `$` are dropped: the gateway strips reserved `$ai_*`
+ * keys at the header boundary, so sending them silently loses them. Values
+ * are sanitized like the per-property headers so a stray control character
+ * cannot break the header block.
+ *
+ * Callers supply free-text values (task titles), so the blob can exceed
+ * {@link MAX_PROPERTIES_BYTES}. Rather than let the gateway reject the whole
+ * header, the longest string values are dropped one at a time until it fits,
+ * preferring to lose descriptive text over attribution keys, which are short.
+ */
+export function buildPosthogPropertiesBlob(
+  properties: PosthogProperties,
+): string {
+  const clean: PosthogProperties = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === null || value === undefined) continue;
+    if (key.startsWith("$")) continue;
+    // Keys are sanitized too: unlike the per-property headers, where the key
+    // becomes the header name, here it is serialized into the header value,
+    // so a non-ASCII key would make the whole request unsendable.
+    const safeKey = sanitizeHeaderValue(key);
+    if (!safeKey) continue;
+    clean[safeKey] =
+      typeof value === "string" ? sanitizeHeaderValue(value) : value;
+  }
+  if (Object.keys(clean).length === 0) return "";
+
+  let blob = JSON.stringify(clean);
+  while (byteLength(blob) > MAX_PROPERTIES_BYTES) {
+    const longest = Object.entries(clean)
+      .filter(([, value]) => typeof value === "string")
+      .sort((a, b) => (b[1] as string).length - (a[1] as string).length)[0];
+    // Only non-string values remain and they still overflow: send nothing
+    // rather than a blob the gateway will reject.
+    if (!longest) return "";
+    delete clean[longest[0]];
+    blob = JSON.stringify(clean);
+  }
+  return blob;
+}
+
+/**
+ * {@link buildPosthogPropertiesBlob} as a `fetch()`-ready header record, empty
+ * when there is nothing to send.
+ */
+export function buildPosthogPropertiesHeaderRecord(
+  properties: PosthogProperties,
+): Record<string, string> {
+  const blob = buildPosthogPropertiesBlob(properties);
+  return blob ? { [POSTHOG_PROPERTIES_HEADER]: blob } : {};
+}
+
+/**
+ * {@link buildPosthogPropertiesBlob} as a single `key: value` line for
+ * `ANTHROPIC_CUSTOM_HEADERS`, empty when there is nothing to send.
+ */
+export function buildPosthogPropertiesHeaderLines(
+  properties: PosthogProperties,
+): string {
+  const blob = buildPosthogPropertiesBlob(properties);
+  return blob ? `${POSTHOG_PROPERTIES_HEADER}: ${blob}` : "";
+}

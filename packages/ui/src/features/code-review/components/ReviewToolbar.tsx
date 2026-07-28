@@ -28,6 +28,9 @@ interface ReviewToolbarProps {
   unresolvedCommentedFileCount: number;
   commentFilter: CommentFileFilter;
   onCommentFilterChange?: (filter: CommentFileFilter) => void;
+  hideViewedFiles: boolean;
+  filteredFileCount: number;
+  onHideViewedFilesChange: (hideViewed: boolean) => void;
   linesAdded: number;
   linesRemoved: number;
   allExpanded: boolean;
@@ -82,6 +85,9 @@ export const ReviewToolbar = memo(function ReviewToolbar({
   unresolvedCommentedFileCount,
   commentFilter,
   onCommentFilterChange,
+  hideViewedFiles,
+  filteredFileCount,
+  onHideViewedFilesChange,
   allExpanded,
   onExpandAll,
   onCollapseAll,
@@ -108,13 +114,18 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     setReviewMode(taskId, "closed");
   };
 
-  const { count: visibleFileCount, label: fileCountLabel } =
-    getVisibleFileSummary(
-      commentFilter,
-      fileCount,
-      commentedFileCount,
-      unresolvedCommentedFileCount,
-    );
+  const visibleFileSummary = getVisibleFileSummary(
+    commentFilter,
+    fileCount,
+    commentedFileCount,
+    unresolvedCommentedFileCount,
+  );
+  const visibleFileCount = hideViewedFiles
+    ? filteredFileCount
+    : visibleFileSummary.count;
+  const fileCountLabel = hideViewedFiles
+    ? formatFileCount(filteredFileCount, "not viewed")
+    : visibleFileSummary.label;
 
   return (
     <Flex
@@ -129,7 +140,7 @@ export const ReviewToolbar = memo(function ReviewToolbar({
     >
       <Flex align="center" gap="2">
         <Text className="font-medium text-[13px]">{fileCountLabel}</Text>
-        {visibleFileCount > 0 && (
+        {!hideViewedFiles && visibleFileCount > 0 && (
           <Text className="text-(--gray-10) text-[13px]">
             {viewedCount}/{visibleFileCount} viewed
           </Text>
@@ -216,6 +227,8 @@ export const ReviewToolbar = memo(function ReviewToolbar({
           unresolvedCommentedFileCount={unresolvedCommentedFileCount}
           commentFilter={commentFilter}
           onCommentFilterChange={onCommentFilterChange}
+          hideViewedFiles={hideViewedFiles}
+          onHideViewedFilesChange={onHideViewedFilesChange}
         />
 
         <Tooltip content="Close review">

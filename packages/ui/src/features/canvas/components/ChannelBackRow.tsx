@@ -1,5 +1,10 @@
 import { CaretLeftIcon, StarIcon } from "@phosphor-icons/react";
-import { Skeleton } from "@posthog/quill";
+import {
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { useChannelStarToggle } from "@posthog/ui/features/canvas/hooks/useChannelStars";
@@ -10,7 +15,6 @@ import {
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { showChannelList } from "@posthog/ui/features/canvas/stores/channelPaneStore";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { track } from "@posthog/ui/shell/analytics";
 
 // An overlay rather than a sibling: the back button fills the row, and nesting
@@ -53,60 +57,61 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
 
   return (
     <div className="relative mx-2 mt-1">
-      <Tooltip content="Back to spaces" side="bottom">
-        <button
-          type="button"
-          aria-label="Back to spaces"
-          onClick={() => {
-            track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-              action_type: "browse_channels",
-              surface: "sidebar",
-              channel_id: channelId,
-            });
-            showChannelList();
-          }}
-          // Fixed height with an unconditional star well: sized off its
-          // contents, a starrable channel ran 4px taller than #me and
-          // everything below shifted on switch. No border — it's a row in the
-          // sidebar like the ones under it, not a control sitting on top.
-          className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left transition-colors hover:bg-fill-hover"
-        >
-          <CaretLeftIcon
-            size={12}
-            className="shrink-0 text-muted-foreground"
-            weight="bold"
-          />
-          <span className="flex w-4 shrink-0 items-center justify-center">
-            {channelGlyph(current?.name, {
-              size: 14,
-              space: spacesLayout,
-              className: "text-muted-foreground",
-            })}
-          </span>
-          <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-foreground">
-            {current ? (
-              current.name
-            ) : isLoading ? (
-              // A placeholder word here would read as a real channel named
-              // "channel"; a skeleton says "still loading" honestly.
-              <Skeleton className="h-3.5 w-24" />
-            ) : (
-              "Unavailable"
-            )}
-          </span>
-          <span aria-hidden className="size-6 shrink-0" />
-        </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Back to spaces"
+              onClick={() => {
+                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+                  action_type: "browse_channels",
+                  surface: "sidebar",
+                  channel_id: channelId,
+                });
+                showChannelList();
+              }}
+              // Fixed height with an unconditional star well: sized off its
+              // contents, a starrable channel ran 4px taller than #me and
+              // everything below shifted on switch. No border — it's a row in
+              // the sidebar like the ones under it, not a control sitting on
+              // top.
+              className="flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left transition-colors hover:bg-fill-hover"
+            >
+              <CaretLeftIcon
+                size={12}
+                className="shrink-0 text-muted-foreground"
+                weight="bold"
+              />
+              <span className="flex w-4 shrink-0 items-center justify-center">
+                {channelGlyph(current?.name, {
+                  size: 14,
+                  space: spacesLayout,
+                  className: "text-muted-foreground",
+                })}
+              </span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-foreground">
+                {current ? (
+                  current.name
+                ) : isLoading ? (
+                  // A placeholder word here would read as a real channel named
+                  // "channel"; a skeleton says "still loading" honestly.
+                  <Skeleton className="h-3.5 w-24" />
+                ) : (
+                  "Unavailable"
+                )}
+              </span>
+              <span aria-hidden className="size-6 shrink-0" />
+            </button>
+          }
+        />
+        <TooltipContent side="bottom">Back to spaces</TooltipContent>
       </Tooltip>
+      {/* #me can't be starred, so its well stays empty — a greyed-out star read
+          as a control you were being denied. The well itself is unconditional
+          (see the button's reserved span), which is what keeps the row the same
+          height on every space. */}
       {showStar && current && <RowStar channel={current} />}
-      {/* Inert star for #me, so the row reads the same on every channel. */}
-      {current && !showStar && (
-        <span
-          aria-hidden
-          className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-[6px] flex size-6 items-center justify-center text-muted-foreground opacity-40"
-        >
-          <StarIcon size={14} weight="fill" />
-        </span>
-      )}
     </div>
   );
 }

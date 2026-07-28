@@ -36,6 +36,7 @@ import {
   getProviderName,
   isAnthropicModel,
   isCloudflareModel,
+  isModalModel,
   isOpenAIModel,
   pickAllowedModel,
 } from "@posthog/agent/gateway-models";
@@ -2402,14 +2403,15 @@ For git operations while detached:
       authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
     });
 
-    // The Claude adapter can also drive Cloudflare `@cf/` models the gateway serves over its
-    // Anthropic-Messages surface, so the preview/default-model path must offer them too — otherwise an
-    // advertised `@cf/*` model is dropped here and the pre-session run falls back to Opus.
+    // The Claude adapter can drive non-Anthropic models that the gateway exposes through its
+    // Anthropic-Messages surface, so preview filtering must match the session adapter.
     const modelFilter =
       adapter === "codex"
         ? isOpenAIModel
         : (model: GatewayModel) =>
-            isAnthropicModel(model) || isCloudflareModel(model);
+            isAnthropicModel(model) ||
+            isCloudflareModel(model) ||
+            isModalModel(model);
 
     const adapterModels = gatewayModels.filter((model) => modelFilter(model));
     const modelOptions = adapterModels.map((model) => ({

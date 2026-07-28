@@ -59,8 +59,9 @@ describe("ChannelBackRow", () => {
     expect(useChannelPaneStore.getState().pane).toBe("list");
   });
 
-  // #me can't be unstarred, but the well stays filled so the row doesn't
-  // change height (and everything below it shift) when you switch channels.
+  // #me can't be starred, so its well is empty — but the well is still there,
+  // so the row doesn't change height (and everything below it shift) when you
+  // switch spaces.
   it("offers a star on shared channels only", () => {
     renderRow(ENG.id);
     expect(screen.getByRole("button", { name: "Star space" })).toBeTruthy();

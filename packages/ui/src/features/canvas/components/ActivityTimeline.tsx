@@ -72,7 +72,7 @@ function UserMessageRow({
   timestamp: string;
 }) {
   return (
-    <ThreadItem>
+    <ThreadItem className="rounded-none">
       <ThreadItemGutter>
         <UserAvatar user={author} size="lg" className="sticky top-2" />
       </ThreadItemGutter>
