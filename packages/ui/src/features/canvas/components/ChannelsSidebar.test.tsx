@@ -59,6 +59,9 @@ vi.mock("@posthog/ui/features/canvas/components/ChannelsFab", () => ({
 vi.mock("@posthog/ui/features/sidebar/components/SidebarNavSection", () => ({
   SidebarNavSection: () => <div data-testid="sidebar-nav-section" />,
 }));
+vi.mock("@posthog/ui/features/sidebar/components/TasksHeader", () => ({
+  TasksHeader: () => <div data-testid="tasks-header" />,
+}));
 vi.mock("@posthog/ui/features/sidebar/components/SidebarMenu", () => ({
   SidebarMenu: () => <div data-testid="sidebar-menu" />,
 }));

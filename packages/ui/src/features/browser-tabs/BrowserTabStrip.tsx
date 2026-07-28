@@ -548,6 +548,7 @@ export function BrowserTabStrip() {
     params.taskId,
     routeChannelSection,
     routeAppView,
+    spacesLayout,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is

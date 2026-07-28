@@ -316,7 +316,8 @@ export function ActivityView() {
                 </EmptyMedia>
                 <EmptyTitle>No activity yet</EmptyTitle>
                 <EmptyDescription>
-                  Tasks you create, get tagged in, or reply to across {spacesLayout ? "spaces" : "channels"} land here.
+                  Tasks you create, get tagged in, or reply to across{" "}
+                  {spacesLayout ? "spaces" : "channels"} land here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

@@ -544,7 +544,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         })),
       },
     ];
-  }, [channels, closeSettingsDialog]);
+  }, [channels, closeSettingsDialog, spacesLayout]);
 
   // Commands, channels, and tasks share a single filterable list.
   const sections = useMemo(

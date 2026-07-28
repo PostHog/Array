@@ -2,6 +2,10 @@ import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => false,
+}));
+
 const { useChannelTasks, useParams, usePathname, useTasks } = vi.hoisted(
   () => ({
     useChannelTasks: vi.fn(),
