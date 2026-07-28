@@ -225,6 +225,16 @@ describe("useImagePanAndZoom", () => {
     });
   });
 
+  it("zooms with controls", () => {
+    const harness = setupHarness();
+
+    act(() => harness.current.zoomIn());
+    expect(harness.current.scale).toBe(1.25);
+
+    act(() => harness.current.zoomOut());
+    expect(harness.current.scale).toBe(1);
+  });
+
   it("ignores pointer drag when not zoomed", () => {
     const harness = setupHarness();
     act(() => {

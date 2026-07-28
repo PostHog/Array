@@ -14,8 +14,11 @@ interface UseImagePanAndZoomOptions {
 interface UseImagePanAndZoomResult {
   containerRef: RefObject<HTMLDivElement | null>;
   transform: string;
+  scale: number;
   isZoomed: boolean;
   isDragging: boolean;
+  zoomIn: () => void;
+  zoomOut: () => void;
   reset: () => void;
 }
 
@@ -143,12 +146,24 @@ export function useImagePanAndZoom(
   }, [minScale, maxScale]);
 
   const reset = useCallback(() => setState(IDENTITY), []);
+  const zoomBy = useCallback(
+    (factor: number) => {
+      setState((prev) => {
+        const scale = clamp(prev.scale * factor, minScale, maxScale);
+        return scale === 1 ? IDENTITY : { ...prev, scale };
+      });
+    },
+    [minScale, maxScale],
+  );
 
   return {
     containerRef,
     transform: `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`,
+    scale: state.scale,
     isZoomed: state.scale > 1,
     isDragging,
+    zoomIn: () => zoomBy(1.25),
+    zoomOut: () => zoomBy(0.8),
     reset,
   };
 }

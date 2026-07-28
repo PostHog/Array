@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
   artifactHtmlDocument,
+  artifactPreviewBlob,
   markdownDocument,
 } from "./artifactPreviewDocument";
 
@@ -100,6 +101,51 @@ describe("ArtifactPreview", () => {
     const frame = screen.getByTitle("Preview of report.html");
     expect(frame).toHaveAttribute("src", "blob:preview");
     expect(frame).toHaveAttribute("sandbox", "");
+  });
+
+  it.each([
+    ["image.png", "image/png"],
+    ["image.jpg", "image/jpeg"],
+    ["image.gif", "image/gif"],
+    ["image.webp", "image/webp"],
+    ["image.bmp", "image/bmp"],
+    ["image.ico", "image/x-icon"],
+    ["image.tiff", "image/tiff"],
+    ["image.avif", "image/avif"],
+  ])("normalizes %s served as octet-stream", async (name, mimeType) => {
+    const blob = await artifactPreviewBlob(
+      new Blob(["image"], { type: "application/octet-stream" }),
+      name,
+    );
+
+    expect(blob.type).toBe(mimeType);
+  });
+
+  it("shows image controls instead of an iframe", () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="image.png"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "image.png" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Zoom out" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Fit to view" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTitle("Preview of image.png")).not.toBeInTheDocument();
   });
 
   it("renders GFM Markdown while escaping embedded HTML", () => {
