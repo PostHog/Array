@@ -81,10 +81,10 @@ sleep 60
 - Watch the **check run + PR state**, not `gh pr checks --watch`: the queue runs
   CI on Trunk's own draft/`trunk-merge/**` branch, so this PR's own checks don't
   reflect the queue's testing.
-- If it's parked waiting on a human review, don't burn the full window polling.
-  Report that it's queued and will merge on approval, then hand back — unless the
-  developer explicitly asked you to watch it until it lands.
-- Stop at the timeout with a status summary rather than looping forever.
+- If it's parked in `Queued` waiting on a human review, say so once and slow the
+  cadence to ~5 minutes. Keep watching — the merge still has to be reported.
+- Stop at the timeout with a status summary rather than looping forever. If it
+  was still waiting on review, say that's why and offer to keep watching.
 
 ## 4. Handle failure
 
