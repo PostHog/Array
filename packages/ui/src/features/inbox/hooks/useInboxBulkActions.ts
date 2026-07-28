@@ -441,11 +441,19 @@ export function useInboxBulkActions(
           (a): a is SuggestedReviewersArtefact =>
             a.type === "suggested_reviewers",
         );
-        if (!artefact) return;
+        if (!artefact) {
+          throw new Error("No suggested reviewers to update");
+        }
         const next = artefact.content.filter(
           (reviewer) => reviewer.user?.uuid !== input.meUuid,
         );
-        if (next.length === artefact.content.length) return;
+        // Throw rather than silently resolve when nothing changed: otherwise a
+        // no-op (user not present in the artefact) would be counted as a
+        // success by `runBulkAction`, firing a success toast/analytics and
+        // dropping the report from the selection while the reviewer remains.
+        if (next.length === artefact.content.length) {
+          throw new Error("Not a suggested reviewer on this report");
+        }
         await client.updateSignalReportArtefact(
           reportId,
           artefact.id,
