@@ -5,7 +5,7 @@ import {
   RepeatIcon,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
-import { cn } from "@posthog/quill";
+import { Button } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
@@ -54,20 +54,21 @@ function NavIcon({
 }) {
   return (
     <Tooltip content={label} shortcut={shortcut} side="bottom">
-      <button
-        type="button"
+      {/* quill's Button, with the sidebar's selected-row treatment — the same
+          `data-selected` pairing the channel rows use, so the nav and the list
+          below it read as one control set in either theme. `relative` is for
+          the count badge, which pins to the button's corner. */}
+      <Button
+        variant="default"
+        size="icon"
         aria-label={label}
+        data-selected={isActive || undefined}
         onClick={onClick}
-        className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
-          isActive
-            ? "bg-fill-selected text-foreground"
-            : "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
-        )}
+        className="relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground"
       >
         {icon}
         {badge}
-      </button>
+      </Button>
     </Tooltip>
   );
 }
@@ -92,16 +93,19 @@ export function ChannelNav() {
     action();
   };
 
+  const isInbox = view.type === "inbox";
   const isActivity = view.type === "activity";
   const isCommandCenter = view.type === "command-center";
 
   return (
     <div className="flex shrink-0 gap-2 px-2 pt-2 pb-1">
       <NavIcon
-        icon={<EnvelopeSimple size={16} />}
+        icon={
+          <EnvelopeSimple size={16} weight={isInbox ? "fill" : "regular"} />
+        }
         label="Inbox"
         shortcut={formatHotkey(SHORTCUTS.INBOX)}
-        isActive={view.type === "inbox"}
+        isActive={isInbox}
         onClick={withTrack("inbox", navigateToInbox)}
         badge={<CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />}
       />
