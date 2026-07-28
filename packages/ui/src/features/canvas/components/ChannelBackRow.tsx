@@ -107,16 +107,11 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
         />
         <TooltipContent side="bottom">Back to spaces</TooltipContent>
       </Tooltip>
+      {/* #me can't be starred, so its well stays empty — a greyed-out star read
+          as a control you were being denied. The well itself is unconditional
+          (see the button's reserved span), which is what keeps the row the same
+          height on every space. */}
       {showStar && current && <RowStar channel={current} />}
-      {/* Inert star for #me, so the row reads the same on every channel. */}
-      {current && !showStar && (
-        <span
-          aria-hidden
-          className="-translate-y-1/2 pointer-events-none absolute top-1/2 right-[6px] flex size-6 items-center justify-center text-muted-foreground opacity-40"
-        >
-          <StarIcon size={14} weight="fill" />
-        </span>
-      )}
     </div>
   );
 }
