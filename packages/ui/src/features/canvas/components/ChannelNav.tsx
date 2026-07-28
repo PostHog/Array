@@ -1,5 +1,5 @@
 import { BellIcon, EnvelopeSimple, Lightning } from "@phosphor-icons/react";
-import { cn } from "@posthog/quill";
+import { cn, Popover, PopoverTrigger } from "@posthog/quill";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
@@ -20,7 +20,13 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
-import type { ReactNode } from "react";
+import {
+  type ComponentPropsWithoutRef,
+  forwardRef,
+  type ReactNode,
+  useState,
+} from "react";
+import { ActivityHoverCard } from "./ActivityHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -44,26 +50,53 @@ function NavIcon({
 }) {
   return (
     <Tooltip content={label} shortcut={shortcut} side="bottom">
-      <button
-        type="button"
-        aria-label={label}
+      <NavButton
+        icon={icon}
+        label={label}
+        isActive={isActive}
         onClick={onClick}
-        className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
-          isActive
-            ? "bg-fill-selected text-foreground"
-            : "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
-        )}
-      >
-        {icon}
-        {badge}
-      </button>
+        badge={badge}
+      />
     </Tooltip>
   );
 }
 
+interface NavButtonProps extends ComponentPropsWithoutRef<"button"> {
+  icon: ReactNode;
+  label: string;
+  isActive: boolean;
+  badge?: ReactNode;
+}
+
+const NavButton = forwardRef<HTMLButtonElement, NavButtonProps>(
+  (
+    { icon, label, isActive, onClick, badge, className, ...buttonProps },
+    ref,
+  ) => (
+    <button
+      {...buttonProps}
+      ref={ref}
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
+        isActive
+          ? "bg-fill-selected text-foreground"
+          : "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
+        className,
+      )}
+    >
+      {icon}
+      {badge}
+    </button>
+  ),
+);
+NavButton.displayName = "NavButton";
+
 export function ChannelNav() {
   const view = useAppView();
+  const [activityOpen, setActivityOpen] = useState(false);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -94,15 +127,35 @@ export function ChannelNav() {
         onClick={withTrack("inbox", navigateToInbox)}
         badge={<CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />}
       />
-      <NavIcon
-        icon={<BellIcon size={16} weight={isActivity ? "fill" : "regular"} />}
-        label="Activity"
-        isActive={isActivity}
-        onClick={withTrack("activity", navigateToActivity)}
-        badge={
-          <CountBadge count={unseenActivity} className={ICON_BADGE_CLASS} />
-        }
-      />
+      <Popover open={activityOpen} onOpenChange={setActivityOpen}>
+        <PopoverTrigger
+          openOnHover
+          delay={300}
+          closeDelay={150}
+          render={
+            <NavButton
+              icon={
+                <BellIcon size={16} weight={isActivity ? "fill" : "regular"} />
+              }
+              label="Activity"
+              isActive={isActivity}
+              onClick={() => {
+                setActivityOpen(false);
+                withTrack("activity", navigateToActivity)();
+              }}
+              badge={
+                <CountBadge
+                  count={unseenActivity}
+                  className={ICON_BADGE_CLASS}
+                />
+              }
+            />
+          }
+        />
+        {activityOpen && (
+          <ActivityHoverCard onClose={() => setActivityOpen(false)} />
+        )}
+      </Popover>
       <NavIcon
         icon={
           <Lightning size={16} weight={isCommandCenter ? "fill" : "regular"} />
