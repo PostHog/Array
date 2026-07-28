@@ -37,6 +37,9 @@ describe("createPiRpcClient", () => {
     await writeFile(
       hostPath,
       `
+import { closeSync } from "node:fs";
+
+closeSync(3);
 process.stdin.resume();
 process.on("message", (request) => {
   const data = request.method === "clear_queue"

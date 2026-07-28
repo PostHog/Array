@@ -157,6 +157,7 @@ class SecurePiRpcClient extends RpcClient {
     }
 
     const bootstrapPipe = child.stdio[3] as Writable | null;
+    bootstrapPipe?.on("error", () => {});
     bootstrapPipe?.end(
       JSON.stringify({ providerOptions: this.providerOptions }),
     );
