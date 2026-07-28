@@ -25,6 +25,7 @@ import {
   Input,
   MenuLabel,
   Skeleton,
+  SkeletonText,
 } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
@@ -157,24 +158,30 @@ function RecentSectionHeader({
   );
 }
 
-// Varied widths so the loading state reads as the list it becomes.
-const SKELETON_ROW_WIDTHS = [
-  "w-3/5",
-  "w-4/5",
-  "w-2/5",
-  "w-3/4",
-  "w-1/2",
-  "w-2/3",
-] as const;
+// Varied widths, as percentages, so the loading state reads as the list it
+// becomes rather than a stack of identical bars.
+const SKELETON_ROW_WIDTHS = [60, 80, 40, 75, 50, 66] as const;
 
 function ChannelItemsSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-px">
-      <Skeleton className="mx-2 mt-1.5 mb-1 h-3 w-12" />
+      {/* Stands in for the "Recent" MenuLabel, so it carries that label's scale. */}
+      <SkeletonText
+        lines={1}
+        maxWidth={100}
+        className="mx-2 mt-1.5 mb-1 w-12 text-xs"
+      />
       {SKELETON_ROW_WIDTHS.map((width) => (
         <div key={width} className="flex items-center gap-2 px-2 py-1.5">
           <Skeleton className="size-4 shrink-0 rounded" />
-          <Skeleton className={cn("h-3.5", width)} />
+          {/* SkeletonText sizes its bar off the line it stands in — text-[13px]
+              is a row's own type scale, so the placeholder is the height of the
+              title it becomes rather than a fixed pill. */}
+          <SkeletonText
+            lines={1}
+            maxWidth={width}
+            className="min-w-0 flex-1 text-[13px] leading-snug"
+          />
         </div>
       ))}
     </div>
