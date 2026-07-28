@@ -29,7 +29,6 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
-import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -40,6 +39,13 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo } from "react";
+import {
+  activityReadPayload,
+  channelIdForName,
+  createChannelIdByName,
+  getUnreadActivityItems,
+  markLoadedReadLabel,
+} from "./activityFeed";
 
 function ChannelSuffix({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
@@ -105,12 +111,15 @@ export function activityHeadline(
   }
 }
 
-function ActivityRow({
+export function ActivityRow({
   item,
   folderChannelId,
   onOpen,
   onMarkRead,
   currentUser,
+  surface = "activity",
+  onNavigate,
+  compact = false,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
@@ -118,6 +127,9 @@ function ActivityRow({
   onOpen: (item: TaskActivityItem) => void;
   onMarkRead: (item: TaskActivityItem) => void;
   currentUser?: UserBasic | null;
+  surface?: "activity" | "activity_panel";
+  onNavigate?: () => void;
+  compact?: boolean;
 }) {
   const isAgentActivity =
     item.activityKind === "awaiting_input" ||
@@ -126,11 +138,12 @@ function ActivityRow({
   const openTask = () => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "open_task",
-      surface: "activity",
+      surface,
       channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
     onOpen(item);
+    onNavigate?.();
     // The channel thread route is the deep-link target; tasks whose channel
     // folder is gone fall back to the plain task view.
     if (folderChannelId) {
@@ -145,7 +158,7 @@ function ActivityRow({
       <button
         type="button"
         onClick={openTask}
-        className={`flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary ${item.isUnread ? "bg-fill-secondary" : ""}`}
+        className={`flex w-full gap-2 rounded-md px-2 text-left transition-colors hover:bg-fill-hover ${compact ? "py-1.5 pr-14" : "py-2"} ${item.isUnread ? "bg-fill-secondary" : ""}`}
       >
         <span className="relative mt-0.5 shrink-0">
           {isAgentActivity ? (
@@ -173,15 +186,17 @@ function ActivityRow({
             >
               {activityHeadline(item, currentUser?.email)}
             </Text>
-            {item.isUnread && <Badge variant="info">New</Badge>}
-            <Text size="1" className="shrink-0 text-muted-foreground">
-              {formatRelativeTimeShort(item.activityAt)}
-            </Text>
+            {item.isUnread && !compact && <Badge variant="info">New</Badge>}
+            {!compact && (
+              <Text size="1" className="shrink-0 text-muted-foreground">
+                {formatRelativeTimeShort(item.activityAt)}
+              </Text>
+            )}
           </span>
           <Text size="1" className="block truncate text-muted-foreground">
             {item.taskTitle}
           </Text>
-          {item.snippet && (
+          {item.snippet && !compact && (
             <MentionText
               content={item.snippet}
               currentUserEmail={currentUser?.email}
@@ -190,19 +205,27 @@ function ActivityRow({
           )}
         </span>
       </button>
+      {compact && (
+        <Text
+          size="1"
+          className="pointer-events-none absolute top-1.5 right-2 text-muted-foreground"
+        >
+          {formatRelativeTimeShort(item.activityAt)}
+        </Text>
+      )}
       {item.isUnread && (
         <Button
           variant="default"
           size="icon-xs"
           aria-label="Mark as read"
           title="Mark as read"
-          className={`absolute top-2 opacity-0 transition-opacity group-hover:opacity-100 ${folderChannelId ? "right-9" : "right-2"}`}
+          className={`absolute opacity-0 transition-opacity group-hover:opacity-100 ${compact ? "right-2 bottom-1" : `top-2 ${folderChannelId ? "right-9" : "right-2"}`}`}
           onClick={() => onMarkRead(item)}
         >
           <CheckIcon size={14} />
         </Button>
       )}
-      {folderChannelId && (
+      {folderChannelId && !compact && (
         <Button
           variant="default"
           size="icon-xs"
@@ -236,6 +259,7 @@ export function ActivityView() {
   } = useTaskActivity();
   const { mutate: markTasksRead, isPending: isMarkingRead } =
     useMarkTaskActivityRead();
+  const unreadItems = useMemo(() => getUnreadActivityItems(items), [items]);
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
@@ -244,33 +268,18 @@ export function ActivityView() {
     [markTasksRead],
   );
   const markAllRead = useCallback(() => {
-    markTasksRead(
-      items
-        .filter((item) => item.isUnread)
-        .map((item) => ({
-          task_id: item.taskId,
-          seen_before: item.activityAt,
-        })),
-    );
-  }, [items, markTasksRead]);
+    markTasksRead(activityReadPayload(unreadItems));
+  }, [markTasksRead, unreadItems]);
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
   const { channels: folderChannels } = useChannels();
   const folderIdByName = useMemo(
-    () =>
-      new Map(
-        folderChannels.map((folder) => [
-          normalizeChannelName(folder.name),
-          folder.id,
-        ]),
-      ),
+    () => createChannelIdByName(folderChannels),
     [folderChannels],
   );
   const folderChannelIdFor = (channelName: string | null): string | null =>
-    channelName
-      ? (folderIdByName.get(normalizeChannelName(channelName)) ?? null)
-      : null;
+    channelIdForName(folderIdByName, channelName);
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -300,7 +309,7 @@ export function ActivityView() {
               onClick={markAllRead}
             >
               <ChecksIcon size={14} />
-              Mark all as read
+              {markLoadedReadLabel(unreadItems.length, unreadCount)}
             </Button>
           )}
         </div>
