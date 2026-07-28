@@ -23,7 +23,7 @@ export function CommandSearchBar({ onClick }: { onClick: () => void }) {
         type="button"
         aria-label="Search"
         onClick={onClick}
-        className="mx-auto flex h-7 w-full max-w-140 items-center gap-2 rounded-sm border border-border bg-card pr-1 pl-2 hover:bg-card/50 dark:bg-fill-hover dark:hover:bg-input/80"
+        className="mx-auto flex h-7 w-full max-w-140 items-center gap-2 rounded-sm border border-border bg-fill-hover pr-1 pl-2"
       >
         <MagnifyingGlass size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left text-[13px]">
