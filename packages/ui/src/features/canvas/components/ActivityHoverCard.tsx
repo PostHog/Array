@@ -8,13 +8,24 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { track } from "@posthog/ui/shell/analytics";
 import { useEffect, useMemo } from "react";
 
 export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { items, unreadCount, isLoading } = useTaskActivity();
+  const {
+    items,
+    unreadCount,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useTaskActivity();
+  const [loadMoreRef, loadMoreInView] = useInView<HTMLDivElement>({
+    rootMargin: "100px 0px",
+  });
   const unreadItems = items.filter((item) => item.isUnread);
   const { mutate: markTasksRead, isPending: isMarkingRead } =
     useMarkTaskActivityRead();
@@ -35,6 +46,11 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
       surface: "activity_panel",
     });
   }, []);
+  useEffect(() => {
+    if (loadMoreInView && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, loadMoreInView]);
 
   const markRead = (taskId: string, activityAt: string) => {
     markTasksRead([{ task_id: taskId, seen_before: activityAt }]);
@@ -107,6 +123,11 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
                 compact
               />
             ))}
+            {hasNextPage && (
+              <div ref={loadMoreRef} className="flex h-8 justify-center py-2">
+                {isFetchingNextPage && <Spinner />}
+              </div>
+            )}
           </div>
         )}
       </div>
