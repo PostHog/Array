@@ -27,6 +27,8 @@ import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
 import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
+  canGoBackInHistory,
+  goBackInHistory,
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
@@ -34,6 +36,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
@@ -62,6 +65,9 @@ import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
 export function LoopDetailView({ loopId }: { loopId: string }) {
+  const hasLoopListOrigin = useLocation({
+    select: (location) => location.state.loopListOrigin === true,
+  });
   const { data: loop, isLoading, isError } = useLoop(loopId);
   const updateLoop = useUpdateLoop(loopId);
   const deleteLoop = useDeleteLoop();
@@ -207,11 +213,17 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           <Button
             variant="link-muted"
             size="sm"
-            onClick={navigateToLoops}
+            onClick={() => {
+              if (hasLoopListOrigin && canGoBackInHistory()) {
+                goBackInHistory();
+                return;
+              }
+              navigateToLoops();
+            }}
             className="w-fit px-0"
           >
             <ArrowLeftIcon size={15} />
-            Loops
+            Back
           </Button>
 
           <Flex align="center" justify="between" gap="3" wrap="wrap">
