@@ -1,4 +1,4 @@
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, TrashIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
 import { formatRelativeTimeShort } from "@posthog/shared";
@@ -9,6 +9,7 @@ import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTe
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { useIsCanvasPendingDelete } from "@posthog/ui/features/canvas/stores/pendingCanvasDeleteStore";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -140,16 +141,13 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
           <div className="flex flex-col gap-0.5">
             {items.map((item) =>
               item.kind === "canvas" ? (
-                <ArtifactRow
+                <CanvasArtifactRow
                   key={item.key}
-                  accent="violet"
-                  icon={iconForTemplate(item.templateId, {
-                    size: 15,
-                    className: "text-violet-9",
-                  })}
+                  dashboardId={item.dashboardId}
+                  templateId={item.templateId}
                   title={item.title}
-                  subtitle={`Canvas · ${formatRelativeTimeShort(item.ts)}`}
-                  onClick={() => openCanvas(item.dashboardId)}
+                  ts={item.ts}
+                  onClick={openCanvas}
                 />
               ) : (
                 <PrArtifactRow
@@ -165,6 +163,43 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+// A canvas artifact row. While the canvas is inside its delete-undo window the
+// row stays put — its template icon becomes a pulsing trash can and the row
+// stops opening — so undoing puts it back exactly where it was.
+function CanvasArtifactRow({
+  dashboardId,
+  templateId,
+  title,
+  ts,
+  onClick,
+}: {
+  dashboardId: string;
+  templateId: string;
+  title: string;
+  ts: number;
+  onClick: (dashboardId: string) => void;
+}) {
+  const deleting = useIsCanvasPendingDelete(dashboardId);
+
+  return (
+    <ArtifactRow
+      accent={deleting ? "red" : "violet"}
+      icon={
+        deleting ? (
+          <TrashIcon size={15} className="animate-pulse text-red-9" />
+        ) : (
+          iconForTemplate(templateId, { size: 15, className: "text-violet-9" })
+        )
+      }
+      title={title}
+      subtitle={
+        deleting ? "Deleting…" : `Canvas · ${formatRelativeTimeShort(ts)}`
+      }
+      onClick={deleting ? undefined : () => onClick(dashboardId)}
+    />
   );
 }
 

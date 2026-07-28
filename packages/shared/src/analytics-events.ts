@@ -947,6 +947,8 @@ export type DashboardActionType =
   | "open"
   | "create"
   | "delete"
+  /** The delete was undone inside its undo window, so nothing was removed. */
+  | "delete_undo"
   | "rename"
   | "save"
   | "fork"

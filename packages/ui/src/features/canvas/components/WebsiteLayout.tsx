@@ -5,9 +5,17 @@ import {
   LinkIcon,
   PencilSimpleIcon,
   PushPinIcon,
+  TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +26,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { deleteCanvasWithUndo } from "@posthog/ui/features/canvas/deleteCanvasWithUndo";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
 import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
 import { CANVAS_QUERY_KEY } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
@@ -50,7 +59,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -72,8 +81,30 @@ function FreeformEditControls({
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating, setPinned } = useDashboardMutations();
+  const { forkFreeform, isCreating, setPinned, invalidateDashboards } =
+    useDashboardMutations();
   const isPinned = dashboard?.pinnedAt != null;
+  // "Delete…" opens a confirmation rather than deleting inline — the canvas and
+  // its version history go away for everyone in the channel.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  // Once confirmed the canvas vanishes from every list and we leave for the
+  // space's artifacts list, but the delete isn't sent until the undo toast's
+  // timer runs out — Undo simply cancels it.
+  const confirmDelete = () => {
+    setConfirmDeleteOpen(false);
+    deleteCanvasWithUndo({
+      dashboardId,
+      channelId,
+      name: dashboard?.name ?? "Canvas",
+      surface: "canvas",
+      invalidate: invalidateDashboards,
+    });
+    void navigate({
+      to: "/website/$channelId/artifacts",
+      params: { channelId },
+    });
+  };
 
   const onTogglePin = () => {
     void setPinned(dashboardId, !isPinned)
@@ -250,8 +281,41 @@ function FreeformEditControls({
             <PushPinIcon size={14} weight={isPinned ? "fill" : "regular"} />
             {isPinned ? "Unpin from channel" : "Pin to channel"}
           </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setConfirmDeleteOpen(true)}
+          >
+            <TrashIcon size={14} />
+            Delete…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* Destructive confirm for "Delete…" — the canvas goes for everyone. */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete canvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Permanently delete{" "}
+              <span className="font-medium">{dashboard?.name ?? "Canvas"}</span>
+              ? This deletes its code and version history for everyone in the
+              channel and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button variant="destructive" size="sm" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Button
         variant="outline"
         size="sm"
