@@ -9,5 +9,9 @@ export function useRefreshedTask(taskId: string, initialTask: Task): Task {
     refetchOnMount: "always",
   });
 
-  return data;
+  // The refetch can resolve without data (e.g. a stale / cross-project id
+  // where getTask returns nothing), leaving `data` undefined despite the
+  // Task return type. Fall back to the last-known task so consumers
+  // (useTaskData → getTaskRepository) never read off undefined and crash.
+  return data ?? initialTask;
 }
