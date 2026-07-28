@@ -133,7 +133,7 @@ export function useTaskContextMenu() {
             break;
           case "file-to-channel":
             try {
-              await fileTask(intent.channelId, task.id, task.title);
+              await fileTask(intent.channelId, task.id);
             } catch (error) {
               toast.error("Couldn't file task to context", {
                 description:

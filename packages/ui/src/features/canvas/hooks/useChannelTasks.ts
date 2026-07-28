@@ -3,7 +3,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-/** Tasks filed to a channel — backed by desktop_file_system rows. */
+/** Tasks filed to a channel — the task's `channel` field on the tasks API. */
 export function useChannelTasks(channelId: string | undefined): {
   tasks: ChannelTaskRecord[];
   isLoading: boolean;
@@ -55,9 +55,10 @@ export function useChannelTaskMutations() {
   );
 
   return {
-    fileTask: (channelId: string, taskId: string, taskTitle: string) =>
-      file.mutateAsync({ channelId, taskId, taskTitle }),
-    unfileTask: (id: string) => unfile.mutateAsync({ id }),
+    fileTask: (channelId: string, taskId: string) =>
+      file.mutateAsync({ channelId, taskId }),
+    // Unfiling clears the task's channel field, so it's keyed on the task id.
+    unfileTask: (taskId: string) => unfile.mutateAsync({ id: taskId }),
     isFiling: file.isPending,
     isUnfiling: unfile.isPending,
   };

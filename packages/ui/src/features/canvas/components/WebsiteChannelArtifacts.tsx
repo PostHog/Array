@@ -1,6 +1,6 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
-import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import type { DashboardRecord } from "@posthog/core/canvas/dashboardSchemas";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
@@ -64,7 +64,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
 
   const items = useMemo<ArtifactItem[]>(() => {
     const canvasItems: ArtifactItem[] = dashboards.map(
-      (d: DashboardSummary) => ({
+      (d: DashboardRecord) => ({
         kind: "canvas",
         key: `canvas:${d.id}`,
         title: d.name,

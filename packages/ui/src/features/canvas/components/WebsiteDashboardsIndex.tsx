@@ -1,5 +1,5 @@
 import { DotsThreeIcon, LinkIcon, TrashIcon } from "@phosphor-icons/react";
-import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import type { DashboardRecord } from "@posthog/core/canvas/dashboardSchemas";
 import {
   Badge,
   Button,
@@ -15,34 +15,17 @@ import {
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
-import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
-import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
 import {
   useDashboardMutations,
   useDashboards,
 } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
-import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
-import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex, Grid } from "@radix-ui/themes";
-import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { memo, useCallback, useState } from "react";
-
-// Render each canvas's live app at 1/SCALE of the card width, then shrink so it
-// fits inside the fixed-height preview frame as a thumbnail.
-const PREVIEW_SCALE = 0.4;
-
-// Mount a preview only while it's near the viewport, and UNMOUNT it once it
-// scrolls away (once: false). This caps how many full preview trees / sandbox
-// iframes are live at any time, so a channel with many large canvases doesn't
-// accumulate pages of off-screen DOM. The margin pre-mounts a little early so
-// scrolling doesn't flash an empty frame. The fixed-height frame keeps the
-// layout stable across mount/unmount (no scroll jump).
-const PREVIEW_VIEWPORT = { once: false, rootMargin: "400px 0px" } as const;
+import { memo, useState } from "react";
 
 // A channel's dashboards index: a grid of cards, each showing a scaled-down
 // live preview. Clicking a card opens the full dashboard.
@@ -103,11 +86,9 @@ const DashboardCard = memo(function DashboardCard({
   templateLabel,
 }: {
   channelId: string;
-  summary: DashboardSummary;
+  summary: DashboardRecord;
   templateLabel: string;
 }) {
-  // The React source rides along in the list response, so the grid renders
-  // previews without a per-card fetch (no N+1 of get()).
   return (
     <Box className="group relative">
       <Link
@@ -125,7 +106,7 @@ const DashboardCard = memo(function DashboardCard({
         }
       >
         <Card className="gap-0 overflow-hidden p-0">
-          <FreeformPreview code={summary.code} />
+          <PreviewFrame />
           <CardContent className="flex flex-col gap-0.5 p-3">
             <Flex align="center" justify="between" gap="2">
               <Text size="sm" weight="medium" className="truncate">
@@ -155,60 +136,13 @@ const DashboardCard = memo(function DashboardCard({
   );
 });
 
-// A freeform (React-in-iframe) canvas preview: the app rendered at PREVIEW_SCALE
-// in a clipped frame, the same shape as DashboardPreview. Deferred until near
-// the viewport, and runs with NO analytics so it fires no events.
-function FreeformPreview({ code }: { code?: string }) {
-  const [ref, inView] = useInView<HTMLDivElement>(PREVIEW_VIEWPORT);
-
-  // Preview data handler: swallow captures so a thumbnail never emits analytics
-  // events, but let reads through (cached, shared with the full view) so the
-  // preview shows real-ish content. (posthog-js itself is never booted — no
-  // `analytics` prop — so there's no autocapture/pageview/replay either.)
-  const queryClient = useQueryClient();
-  const onDataRequest = useCallback(
-    (method: string, payload: unknown) =>
-      method === "capture"
-        ? Promise.resolve({ ok: true })
-        : handleFreeformDataRequest(method, payload, queryClient),
-    [queryClient],
-  );
-
+// The card's preview frame. Canvas records no longer carry source code — the
+// rendered output is the published build's artifact, wired up separately — so
+// the grid shows a stable placeholder frame instead of a live per-card render.
+function PreviewFrame() {
   return (
-    <Box
-      ref={ref}
-      className="relative h-44 overflow-hidden border-border border-b bg-muted"
-    >
-      {code ? (
-        inView ? (
-          <Box
-            className="pointer-events-none absolute top-0 left-0 origin-top-left"
-            style={{
-              transform: `scale(${PREVIEW_SCALE})`,
-              width: `${100 / PREVIEW_SCALE}%`,
-              // Fixed tall preview height for the scaled iframe to fill (the
-              // iframe is h-full); the frame clips whatever overflows.
-              height: 600,
-            }}
-          >
-            <ErrorBoundary
-              name="freeform-preview"
-              resetKey={code}
-              fallback={<PreviewPlaceholder label="Preview unavailable" />}
-            >
-              <FreeformCanvas
-                code={code}
-                mode="edit"
-                onDataRequest={onDataRequest}
-              />
-            </ErrorBoundary>
-          </Box>
-        ) : (
-          <PreviewPlaceholder label="Loading preview…" />
-        )
-      ) : (
-        <PreviewPlaceholder label="Empty canvas" />
-      )}
+    <Box className="relative h-44 overflow-hidden border-border border-b bg-muted">
+      <PreviewPlaceholder label="Canvas preview" />
     </Box>
   );
 }

@@ -1,7 +1,6 @@
 import {
   ArrowClockwiseIcon,
   DotsThreeIcon,
-  GitForkIcon,
   LinkIcon,
   PencilSimpleIcon,
   PushPinIcon,
@@ -32,10 +31,7 @@ import {
   useDashboardEditStore,
   useIsDashboardEditing,
 } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
-import {
-  useFreeformChatStore,
-  useFreeformThread,
-} from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import { useFreeformThread } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
 import { TaskHeaderActions } from "@posthog/ui/features/task-detail/components/TaskHeaderActions";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -44,23 +40,16 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Outlet,
-  useNavigate,
-  useParams,
-  useRouterState,
-} from "@tanstack/react-router";
+import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
 }
 
-// Edit toggle + autosave status + Fork for a canvas. Freeform
-// autosaves every turn, so the toolbar shows a saving spinner rather than a Save
-// button. When the user undoes to an older version, the autosave status is
-// replaced by Revert (adopt the viewed version, dropping newer ones) + Cancel
-// (jump back to the latest). Fork copies the current code to a new record.
+// Edit toggle + autosave status for a canvas. Source is server-versioned now —
+// version browsing and revert live in the canvas view's own toolbar — so the
+// only autosave surfaced here is the author-context buffer's saveContext.
 function FreeformEditControls({
   channelId,
   dashboardId,
@@ -68,11 +57,10 @@ function FreeformEditControls({
   channelId: string;
   dashboardId: string;
 }) {
-  const navigate = useNavigate();
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating, setPinned } = useDashboardMutations();
+  const { setPinned } = useDashboardMutations();
   const isPinned = dashboard?.pinnedAt != null;
 
   const onTogglePin = () => {
@@ -106,10 +94,7 @@ function FreeformEditControls({
   };
 
   const threadId = threadIdFor(dashboardId);
-  const { code, versions, currentVersionId, isSaving } =
-    useFreeformThread(threadId);
-  const revert = useFreeformChatStore((s) => s.revert);
-  const goToLatest = useFreeformChatStore((s) => s.goToLatest);
+  const { isSavingContext } = useFreeformThread(threadId);
 
   const queryClient = useQueryClient();
   const remountFrame = useCanvasFrameStore((s) => s.remount);
@@ -128,97 +113,13 @@ function FreeformEditControls({
     remountFrame(dashboardId);
   };
 
-  const hasCode = code.length > 0;
-  // Viewing the head version (or there's no history yet) → autosave is live.
-  // Otherwise the user has undone to an older version and is browsing.
-  const onLatest =
-    versions.length === 0 || currentVersionId === versions.at(-1)?.id;
-
-  const onFork = async () => {
-    if (!code) return;
-    try {
-      const name = `${dashboard?.name ?? "Canvas"} (fork)`;
-      const record = await forkFreeform(
-        channelId,
-        name,
-        code,
-        versions,
-        currentVersionId ?? undefined,
-      );
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "fork",
-        surface: "canvas",
-        channel_id: channelId,
-        dashboard_id: dashboardId,
-        kind: "freeform",
-        success: true,
-      });
-      setEditing(record.id, true);
-      void navigate({
-        to: "/website/$channelId/dashboards/$dashboardId",
-        params: { channelId, dashboardId: record.id },
-      });
-    } catch (error) {
-      track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-        action_type: "fork",
-        surface: "canvas",
-        channel_id: channelId,
-        dashboard_id: dashboardId,
-        kind: "freeform",
-        success: false,
-      });
-      toast.error("Couldn't fork canvas", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
   return (
     <Flex align="center" gap="2" className="no-drag">
-      {editing &&
-        hasCode &&
-        (onLatest ? (
-          // Autosave status — a non-interactive button showing a spinner while a
-          // save is in flight, "Saved" otherwise.
-          <Button variant="outline" size="sm" disabled loading={isSaving}>
-            Saved
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
-                  action_type: "revert",
-                  surface: "canvas",
-                  channel_id: channelId,
-                  dashboard_id: dashboardId,
-                  kind: "freeform",
-                });
-                revert(threadId);
-              }}
-            >
-              Revert to this version
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => goToLatest(threadId)}
-            >
-              Cancel
-            </Button>
-          </>
-        ))}
       {editing && (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!hasCode || isCreating}
-          onClick={onFork}
-        >
-          <GitForkIcon size={14} />
-          Save as fork
+        // Autosave status — a non-interactive button showing a spinner while a
+        // context save is in flight, "Saved" otherwise.
+        <Button variant="outline" size="sm" disabled loading={isSavingContext}>
+          Saved
         </Button>
       )}
       <DropdownMenu>
@@ -382,7 +283,7 @@ export function WebsiteLayout() {
       )}
 
       {/* Single canvas toolbar: the "# channel / canvas" breadcrumb (left) and
-          canvas actions (Edit / Save as fork / New canvas) on the right.
+          canvas actions (Edit / New canvas) on the right.
           Freeform canvases own their own date control in-app (DateTimePicker). */}
       {showToolbar && channelId && (
         <Flex

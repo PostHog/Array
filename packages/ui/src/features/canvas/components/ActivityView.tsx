@@ -25,7 +25,6 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
-import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
@@ -41,8 +40,6 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo } from "react";
 import {
   activityReadPayload,
-  channelIdForName,
-  createChannelIdByName,
   getUnreadActivityItems,
   markLoadedReadLabel,
 } from "./activityFeed";
@@ -113,7 +110,7 @@ export function activityHeadline(
 
 export function ActivityRow({
   item,
-  folderChannelId,
+  channelId,
   onOpen,
   onMarkRead,
   currentUser,
@@ -122,8 +119,8 @@ export function ActivityRow({
   compact = false,
 }: {
   item: TaskActivityItem;
-  /** Desktop folder channel id (the /website route param); null when unmapped. */
-  folderChannelId: string | null;
+  /** Backend channel id (the /website route param); null when the task is unfiled. */
+  channelId: string | null;
   onOpen: (item: TaskActivityItem) => void;
   onMarkRead: (item: TaskActivityItem) => void;
   currentUser?: UserBasic | null;
@@ -139,15 +136,15 @@ export function ActivityRow({
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "open_task",
       surface,
-      channel_id: folderChannelId ?? undefined,
+      channel_id: channelId ?? undefined,
       task_id: item.taskId,
     });
     onOpen(item);
     onNavigate?.();
-    // The channel thread route is the deep-link target; tasks whose channel
-    // folder is gone fall back to the plain task view.
-    if (folderChannelId) {
-      navigateToChannelTask(folderChannelId, item.taskId);
+    // The channel thread route is the deep-link target; unfiled tasks fall
+    // back to the plain task view.
+    if (channelId) {
+      navigateToChannelTask(channelId, item.taskId);
     } else {
       navigateToTaskDetail(item.taskId);
     }
@@ -219,20 +216,20 @@ export function ActivityRow({
           size="icon-xs"
           aria-label="Mark as read"
           title="Mark as read"
-          className={`absolute opacity-0 transition-opacity group-hover:opacity-100 ${compact ? "right-2 bottom-1" : `top-2 ${folderChannelId ? "right-9" : "right-2"}`}`}
+          className={`absolute opacity-0 transition-opacity group-hover:opacity-100 ${compact ? "right-2 bottom-1" : `top-2 ${channelId ? "right-9" : "right-2"}`}`}
           onClick={() => onMarkRead(item)}
         >
           <CheckIcon size={14} />
         </Button>
       )}
-      {folderChannelId && !compact && (
+      {channelId && !compact && (
         <Button
           variant="default"
           size="icon-xs"
           aria-label="Copy thread link"
           className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={() =>
-            void copyChannelLink(folderChannelId, "activity", item.taskId)
+            void copyChannelLink(channelId, "activity", item.taskId)
           }
         >
           <LinkIcon size={14} />
@@ -270,16 +267,6 @@ export function ActivityView() {
   const markAllRead = useCallback(() => {
     markTasksRead(activityReadPayload(unreadItems));
   }, [markTasksRead, unreadItems]);
-  // Items carry backend channel names only; the desktop folder-channel id
-  // (needed for /website navigation and copy-link) is resolved here, where
-  // the single useChannels subscription lives.
-  const { channels: folderChannels } = useChannels();
-  const folderIdByName = useMemo(
-    () => createChannelIdByName(folderChannels),
-    [folderChannels],
-  );
-  const folderChannelIdFor = (channelName: string | null): string | null =>
-    channelIdForName(folderIdByName, channelName);
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -337,7 +324,7 @@ export function ActivityView() {
                 <ActivityRow
                   key={item.taskId}
                   item={item}
-                  folderChannelId={folderChannelIdFor(item.channelName)}
+                  channelId={item.channelId}
                   onOpen={markRead}
                   onMarkRead={markRead}
                   currentUser={currentUser}

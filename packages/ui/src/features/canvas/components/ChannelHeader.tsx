@@ -18,7 +18,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === `/website/${channelId}`;
   // Every channel surface renders this header, so mark the channel read here.
-  useMarkChannelSeen(channelName);
+  useMarkChannelSeen(channelId);
 
   return (
     <div className="flex min-w-0 items-center gap-2">
