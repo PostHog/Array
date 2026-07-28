@@ -175,7 +175,7 @@ export class TitleGeneratorService {
 
       const text = result.content.trim();
       const titleMatch = text.match(/^TITLE:\s*(.+?)(?:\n|$)/m);
-      const summaryMatch = text.match(/SUMMARY:\s*([\s\S]+)$/m);
+      const summaryMatch = text.match(/^SUMMARY:\s*([\s\S]+)$/m);
 
       const title =
         titleMatch?.[1]
