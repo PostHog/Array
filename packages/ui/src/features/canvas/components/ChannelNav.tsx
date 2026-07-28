@@ -20,12 +20,7 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
-import {
-  type ComponentPropsWithoutRef,
-  forwardRef,
-  type ReactNode,
-  useState,
-} from "react";
+import { type ComponentPropsWithRef, type ReactNode, useState } from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
@@ -61,18 +56,24 @@ function NavIcon({
   );
 }
 
-interface NavButtonProps extends ComponentPropsWithoutRef<"button"> {
+interface NavButtonProps extends ComponentPropsWithRef<"button"> {
   icon: ReactNode;
   label: string;
   isActive: boolean;
   badge?: ReactNode;
 }
 
-const NavButton = forwardRef<HTMLButtonElement, NavButtonProps>(
-  (
-    { icon, label, isActive, onClick, badge, className, ...buttonProps },
-    ref,
-  ) => (
+function NavButton({
+  icon,
+  label,
+  isActive,
+  onClick,
+  badge,
+  className,
+  ref,
+  ...buttonProps
+}: NavButtonProps) {
+  return (
     <button
       {...buttonProps}
       ref={ref}
@@ -90,9 +91,8 @@ const NavButton = forwardRef<HTMLButtonElement, NavButtonProps>(
       {icon}
       {badge}
     </button>
-  ),
-);
-NavButton.displayName = "NavButton";
+  );
+}
 
 export function ChannelNav() {
   const view = useAppView();
@@ -134,7 +134,7 @@ export function ChannelNav() {
         <PopoverTrigger
           openOnHover
           delay={300}
-          closeDelay={30}
+          closeDelay={100}
           disabled={isActivity}
           render={
             <NavButton
