@@ -16,8 +16,10 @@ import {
 import { VList, type VListHandle } from "virtua";
 import {
   deriveCommentFileFilterState,
+  filterReviewItemsByViewedState,
   getEmptyReviewMessage,
   type ReviewListItem,
+  resolveVisibleActiveFilePath,
 } from "../commentFileFilter";
 import {
   REVIEW_LIST_BUFFER_PX,
@@ -29,7 +31,6 @@ import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewShellProps } from "../reviewShellParts";
 import {
   buildItemIndex,
-  filterReviewItemsByViewedState,
   findActiveScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
@@ -272,7 +273,27 @@ export function ReviewShell({
   const setActiveFilePath = useReviewNavigationStore(
     (s) => s.setActiveFilePath,
   );
+  const activeFilePath = useReviewNavigationStore(
+    (s) => s.activeFilePaths[taskId] ?? null,
+  );
   const clearTask = useReviewNavigationStore((s) => s.clearTask);
+
+  useEffect(() => {
+    if (!hideViewedFiles || !activeFilePath) return;
+    const nextActiveFilePath = resolveVisibleActiveFilePath(
+      filteredItems,
+      activeFilePath,
+    );
+    if (nextActiveFilePath === activeFilePath) return;
+    lastActiveRef.current = nextActiveFilePath;
+    setActiveFilePath(taskId, nextActiveFilePath);
+  }, [
+    activeFilePath,
+    filteredItems,
+    hideViewedFiles,
+    setActiveFilePath,
+    taskId,
+  ]);
 
   useEffect(() => {
     return () => {

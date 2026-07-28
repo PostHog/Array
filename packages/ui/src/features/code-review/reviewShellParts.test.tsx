@@ -17,13 +17,14 @@ vi.mock("../../primitives/FileIcon", () => ({
 import {
   deriveCommentFileFilterState,
   filterReviewItemsByFilePaths,
+  filterReviewItemsByViewedState,
   getCommentedFilePaths,
   type ReviewListItem,
+  resolveVisibleActiveFilePath,
 } from "./commentFileFilter";
 import {
   DeferredDiffPlaceholder,
   DiffFileHeader,
-  filterReviewItemsByViewedState,
   findActiveScrollKey,
   findRenderedScrollAnchor,
 } from "./reviewShellParts";
@@ -198,6 +199,22 @@ describe("commented file filtering", () => {
         { "staged:a.ts": "signature-a" },
       ).map((item) => item.key),
     ).toEqual(["section:changes", "unstaged:b.ts"]);
+  });
+
+  it("selects the first visible file when the active file is filtered out", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "b.ts",
+        scrollKey: "b.ts",
+        filePaths: ["b.ts", "old-b.ts"],
+        node: <span>B</span>,
+      },
+    ];
+
+    expect(resolveVisibleActiveFilePath(items, "a.ts")).toBe("b.ts");
+    expect(resolveVisibleActiveFilePath(items, "old-b.ts")).toBe("old-b.ts");
+    expect(resolveVisibleActiveFilePath([], "a.ts")).toBeNull();
   });
 
   it("collects paths for all and unresolved comment threads", () => {
