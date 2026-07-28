@@ -35,6 +35,8 @@ import {
   DropdownMenuTrigger,
   Empty,
   EmptyHeader,
+  Input,
+  Kbd,
   MenuLabel,
   Tooltip,
   TooltipContent,
@@ -56,16 +58,19 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { useStarredChannelSlots } from "@posthog/ui/features/canvas/hooks/useStarredChannelSlots";
 import {
   PERSONAL_CHANNEL_NAME,
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
+import { showChannelPane } from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import {
   resetCurrentChannel,
   useCurrentChannelStore,
 } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
+import { formatHotkey } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import {
   OverflowTickerText,
@@ -310,13 +315,17 @@ function ChannelMenu({
 function ChannelSection({
   channel,
   isUnread,
+  hotkeySlot,
 }: {
   channel: Channel;
   /** Bolds the name: activity here the viewer hasn't seen. */
   isUnread?: boolean;
+  /** ⌘1-9 slot, shown as a hint while the row isn't hovered. */
+  hotkeySlot?: number;
 }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const base = `/website/${channel.id}`;
   // Highlight the row whenever any of the channel's routes is open.
   const isActive = pathname === base || pathname.startsWith(`${base}/`);
@@ -357,6 +366,10 @@ function ChannelSection({
                   surface: "sidebar",
                   channel_id: channel.id,
                 });
+                // Slide before navigating: the route effect would get there
+                // too, but not until the navigation resolves.
+                showChannelPane();
+                setCurrentChannel(channel.id);
                 void navigate({
                   to: "/website/$channelId",
                   params: { channelId: channel.id },
@@ -392,6 +405,11 @@ function ChannelSection({
               >
                 {channel.name}
               </OverflowTickerText>
+              {hotkeySlot != null && (
+                <Kbd className="ml-auto shrink-0 group-hover/chan:opacity-0">
+                  {formatHotkey(`mod+${hotkeySlot}`)}
+                </Kbd>
+              )}
             </Button>
           }
         />
@@ -529,9 +547,10 @@ function ChannelSection({
 // The feed and task ownership live on the per-user backend personal channel;
 // the "me" folder is the bridge that keeps the folder-keyed surfaces
 // (CONTEXT.md, artifacts) routable, created lazily on first open.
-function PersonalChannelRow() {
+function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const { channels } = useChannels();
   const { createChannel, isCreating } = useChannelMutations();
   // Listing backend channels lazily provisions the personal channel server-side.
@@ -565,6 +584,8 @@ function PersonalChannelRow() {
   const open = async () => {
     const channelId = await ensureFolderId();
     if (!channelId) return;
+    showChannelPane();
+    setCurrentChannel(channelId);
     void navigate({ to: "/website/$channelId", params: { channelId } });
   };
 
@@ -622,6 +643,11 @@ function PersonalChannelRow() {
         >
           {PERSONAL_CHANNEL_NAME}
         </span>
+        {hotkeySlot != null && (
+          <Kbd className="ml-auto shrink-0 group-hover/chan:opacity-0">
+            {formatHotkey(`mod+${hotkeySlot}`)}
+          </Kbd>
+        )}
       </Button>
       <div className="absolute top-0 right-1">
         <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
@@ -746,7 +772,7 @@ function ChannelGroup({
   );
 }
 
-// The channel list — the Channels space sidebar body. The private "#me"
+// The channel list — the list pane of the sidebar slider. The private "#me"
 // channel is pinned at the top; starred channels surface in their own section
 // so the ones you use most stay in reach; the rest sit under a "Channels"
 // label. Creating anything goes through the floating ChannelsFab, mounted by
@@ -754,49 +780,106 @@ function ChannelGroup({
 export function ChannelsList() {
   const { channels: allChannels, isLoading } = useChannels();
   const { starredRefToShortcutId } = useChannelStars();
+  // ChannelHotkeys owns the keys these slots describe; sharing the derivation
+  // keeps the advertised key and the key that fires in agreement.
+  const { slotFor } = useStarredChannelSlots();
 
   const isUnread = useIsChannelUnread();
 
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = (name: string) =>
+    !normalizedQuery || name.toLowerCase().includes(normalizedQuery);
+
   // The "me" folder renders as the pinned personal row, not a shared channel.
+  const me = allChannels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   const channels = allChannels.filter((c) => c.name !== PERSONAL_CHANNEL_NAME);
   const starred = channels.filter((c) => starredRefToShortcutId.has(c.path));
   const others = channels.filter((c) => !starredRefToShortcutId.has(c.path));
+
+  // Searching collapses the sections into one flat list: the group labels only
+  // stand between you and the row you already named, and an empty "Starred"
+  // heading reads as a result that isn't there.
+  const searchResults = channels.filter((c) => matches(c.name));
+  const meMatches = matches(PERSONAL_CHANNEL_NAME);
+  const noMatches =
+    normalizedQuery !== "" && !meMatches && !searchResults.length;
 
   return (
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      {/* Bottom padding clears the floating create button (ChannelsFab), so the
-          last channel stays reachable at full scroll. */}
-      <Flex direction="column" gap="px" className="px-2 pt-2 pb-16">
-        <PersonalChannelRow />
+      <Flex direction="column" className="h-full min-h-0">
+        <Box className="shrink-0 px-2 pt-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search channels…"
+            aria-label="Search channels"
+            className="h-7 text-[13px]"
+          />
+        </Box>
+        {/* Bottom padding clears the floating create button (ChannelsFab), so
+            the last channel stays reachable at full scroll. */}
+        <Flex
+          direction="column"
+          gap="px"
+          className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-16"
+        >
+          {normalizedQuery ? (
+            <>
+              {meMatches && <PersonalChannelRow />}
+              {searchResults.map((channel) => (
+                <ChannelSection
+                  key={channel.id}
+                  channel={channel}
+                  isUnread={isUnread(channel.name)}
+                />
+              ))}
+              {noMatches && (
+                <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+                  <EmptyHeader className="text-left">
+                    No channels match “{query.trim()}”.
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </>
+          ) : (
+            <>
+              <PersonalChannelRow hotkeySlot={me ? slotFor(me) : undefined} />
 
-        {starred.length > 0 && (
-          <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
-            {starred.map((channel) => (
-              <ChannelSection
-                key={channel.id}
-                channel={channel}
-                isUnread={isUnread(channel.name)}
-              />
-            ))}
-          </ChannelGroup>
-        )}
+              {starred.length > 0 && (
+                <ChannelGroup sectionId={STARRED_SECTION_ID} label="Starred">
+                  {starred.map((channel) => (
+                    <ChannelSection
+                      key={channel.id}
+                      channel={channel}
+                      isUnread={isUnread(channel.name)}
+                      hotkeySlot={slotFor(channel)}
+                    />
+                  ))}
+                </ChannelGroup>
+              )}
 
-        <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
-          {!isLoading && channels.length === 0 && (
-            <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-              <EmptyHeader className="text-left">No channels yet.</EmptyHeader>
-            </Empty>
+              <ChannelGroup sectionId={CHANNELS_SECTION_ID} label="Channels">
+                {!isLoading && channels.length === 0 && (
+                  <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+                    <EmptyHeader className="text-left">
+                      No channels yet.
+                    </EmptyHeader>
+                  </Empty>
+                )}
+                {others.map((channel) => (
+                  <ChannelSection
+                    key={channel.id}
+                    channel={channel}
+                    isUnread={isUnread(channel.name)}
+                  />
+                ))}
+              </ChannelGroup>
+            </>
           )}
-          {others.map((channel) => (
-            <ChannelSection
-              key={channel.id}
-              channel={channel}
-              isUnread={isUnread(channel.name)}
-            />
-          ))}
-        </ChannelGroup>
+        </Flex>
       </Flex>
     </TooltipProvider>
   );

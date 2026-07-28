@@ -40,6 +40,16 @@ The root `AGENTS.md` architecture rules still apply.
   sidebar (`ChannelsList`, rendered in `__root`) + the `WebsiteLayout` outlet. It
   does NOT use the code `HeaderRow`/`MainSidebar`, so breadcrumbs render in
   `WebsiteLayout`'s own top bar (below).
+- Under the channels layout the sidebar is a **master/detail slider**
+  (`ChannelPanes` in `ChannelsSidebar.tsx`): the searchable channel list, and the
+  channel you're in (`ChannelSidebar`, headed by `ChannelBackRow`). Both panes
+  stay mounted — the offscreen one is `inert` — so the slide has something to
+  slide and returning to the list doesn't rebuild every row.
+- **Which pane shows is view state, not a route.** `channelPaneStore` holds it,
+  separately from the scoped channel (`currentChannelStore`): "back to channels"
+  browses the list while the route, the main pane and the scoped channel stay
+  put. Every way into a channel — a row click, a deep link, a mention, ⌘1-9 —
+  ends at `showChannelPane()`, directly or through the route effect.
 
 ## Breadcrumbs
 

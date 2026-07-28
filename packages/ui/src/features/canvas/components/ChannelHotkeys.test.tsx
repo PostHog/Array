@@ -48,8 +48,8 @@ describe("ChannelHotkeys", () => {
     useCurrentChannelStore.setState({ currentChannelId: null });
   });
 
-  // The regression: this component is rendered ALONE — no sidebar, no switcher.
-  // Binding the keys inside the switcher left them unowned exactly when the
+  // The regression: this component is rendered ALONE — no sidebar at all.
+  // Binding the keys inside the sidebar left them unowned exactly when the
   // channel list hadn't resolved yet.
   it("switches channels without the sidebar being mounted", () => {
     render(<ChannelHotkeys />);
