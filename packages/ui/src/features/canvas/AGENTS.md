@@ -47,9 +47,9 @@ The root `AGENTS.md` architecture rules still apply.
   slide and returning to the list doesn't rebuild every row. A two-finger
   horizontal swipe moves between them (`useChannelPaneSwipe`, wheel `deltaX`
   accumulated per gesture and locked until the wheel goes quiet).
-- In the list, "Starred"/"Channels" are headings, not parents: under the layout
-  the rows sit at the heading's level (no indent) and the "#"/lock glyph belongs
-  to the rows. The alpha's indented tree is unchanged.
+- In the list, "Starred"/"Spaces" are headings above lightly indented shared
+  rows; the pinned private "me" row aligns with the headings. The alpha's more
+  deeply indented Channels tree and hash glyphs are unchanged.
 - One `ChannelsFab` serves both panes: given a `channelId` it creates inside
   that channel (task, canvas), and either way it can create a channel. Off the
   layout it keeps its original two-item menu. Archived moves out of the sidebar

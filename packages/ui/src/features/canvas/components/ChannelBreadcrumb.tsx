@@ -5,6 +5,7 @@ import {
   TooltipTrigger,
 } from "@posthog/quill";
 import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { HeaderTitleEditor } from "@posthog/ui/features/task-detail/HeaderTitleEditor";
 import { Flex, Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
@@ -45,6 +46,7 @@ export function ChannelBreadcrumb({
   onRename,
   trailing,
 }: ChannelBreadcrumbProps) {
+  const spacesLayout = useChannelsLayout();
   const currentEditScope = editScopeKey ?? leafLabel;
   const [editingScope, setEditingScope] = useState<string | null>(null);
   const editing = editingScope === currentEditScope;
@@ -54,6 +56,7 @@ export function ChannelBreadcrumb({
     <>
       {channelGlyph(channelName, {
         size: 12,
+        space: spacesLayout,
         className: "mt-px shrink-0 text-muted-foreground/80",
       })}
       <Text

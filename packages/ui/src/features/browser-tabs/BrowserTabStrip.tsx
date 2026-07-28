@@ -1,6 +1,5 @@
 import {
   BrainIcon,
-  HashIcon,
   PlugsConnectedIcon,
   RobotIcon,
   SquaresFourIcon,
@@ -24,6 +23,7 @@ import {
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelMutations,
@@ -505,7 +505,7 @@ export function BrowserTabStrip() {
           };
         }
         // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
-        // The section drives the label; the channel name carries the `#` hover
+        // The section drives the label; the channel name carries the space
         // context. Home has no section, so it labels by the channel name.
         if (channelId) {
           const meta = channelSectionFor(section);
@@ -513,7 +513,10 @@ export function BrowserTabStrip() {
             id: t.id,
             label:
               meta?.label ?? channel ?? (spacesLayout ? "Space" : "Channel"),
-            icon: <HashIcon size={14} />,
+            icon: channelGlyph(channel ?? undefined, {
+              size: 14,
+              space: spacesLayout,
+            }),
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,
