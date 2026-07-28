@@ -9,6 +9,7 @@ export const taskContextMenuInput = z.object({
   canStop: z.boolean().optional(),
   isInCommandCenter: z.boolean().optional(),
   hasEmptyCommandCenterCell: z.boolean().optional(),
+  showArchivePrior: z.boolean().optional(),
   // Top-level desktop_file_system channels available as "File to…" targets.
   // Omit (or pass empty) to hide the submenu entirely.
   channels: z.array(z.object({ id: z.string(), name: z.string() })).optional(),

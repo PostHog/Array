@@ -49,6 +49,7 @@ export function useTaskContextMenu() {
         runId?: string;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
+        showArchivePrior?: boolean;
         onTogglePin?: () => void;
         onStop?: (taskId: string, taskTitle: string, runId?: string) => void;
         onArchive?: (taskId: string) => void;
@@ -68,6 +69,7 @@ export function useTaskContextMenu() {
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        showArchivePrior,
         onTogglePin,
         onStop,
         onArchive,
@@ -85,6 +87,7 @@ export function useTaskContextMenu() {
           canStop,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
+          showArchivePrior,
           channels: channels.map(({ id, name }) => ({ id, name })),
         });
 

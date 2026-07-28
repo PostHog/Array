@@ -33,10 +33,12 @@ import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBa
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
+import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
+import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useState } from "react";
@@ -206,6 +208,10 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const { showContextMenu, editingTaskId, setEditingTaskId } =
     useTaskContextMenu();
   const { renameTask } = useRenameTask();
+  const commandCenterCells = useCommandCenterStore((state) => state.cells);
+  const assignTaskToCommandCenter = useCommandCenterStore(
+    (state) => state.assignTask,
+  );
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -246,8 +252,17 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
           ? (event) =>
               void showContextMenu(item, event, {
                 isPinned: item.pinned,
+                isInCommandCenter: commandCenterCells.includes(item.id),
+                hasEmptyCommandCenterCell: commandCenterCells.includes(null),
+                showArchivePrior: false,
                 onTogglePin: () => actions.togglePin(item),
                 onArchive: () => actions.archive(item),
+                onAddToCommandCenter: () => {
+                  const cellIndex = commandCenterCells.indexOf(null);
+                  if (cellIndex === -1) return;
+                  assignTaskToCommandCenter(cellIndex, item.id);
+                  navigateToCommandCenter();
+                },
               })
           : undefined
       }
