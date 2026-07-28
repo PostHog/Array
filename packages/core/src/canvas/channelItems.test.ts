@@ -114,8 +114,8 @@ describe("buildChannelItems", () => {
   it("filters to the owner for the personal channel", () => {
     const items = build({
       dashboards: [
-        canvas({ id: "mine", createdBy: "Ada Lovelace" }),
-        canvas({ id: "theirs", createdBy: "Grace Hopper" }),
+        canvas({ id: "mine", createdByUuid: ME.uuid }),
+        canvas({ id: "theirs", createdByUuid: OTHER.uuid }),
       ],
       feedTasks: [
         task({ id: "mine-task", created_by: ME }),
@@ -124,6 +124,14 @@ describe("buildChannelItems", () => {
       ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
     });
     expect(items.map((i) => i.id).sort()).toEqual(["mine", "mine-task"]);
+  });
+
+  it("never claims ownership from a matching display name", () => {
+    const items = build({
+      dashboards: [canvas({ id: "name-twin", createdBy: "Ada Lovelace" })],
+      ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
+    });
+    expect(items).toEqual([]);
   });
 
   it("excludes items whose author is unknown from the personal channel", () => {

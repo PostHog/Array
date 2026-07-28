@@ -24,17 +24,16 @@ export interface ChannelItemOwner {
   name: string | null;
 }
 
-// Ownership keys off the stable creator uuid for every item kind (canvases via
+// Ownership is decided solely by the stable creator uuid (canvases via
 // `createdByUuid`, tasks via `created_by.uuid` — both set in buildChannelItems).
-// `authorUser` is a display-only field and is never consulted here. Display-name
-// matching stays as a fallback for rows the backend returns without a uuid.
+// A display name is NOT an identity — two users can share one — so it must never
+// gate the private `#me` space. Items without a creator uuid fail closed
+// (excluded from #me); `authorName`/`authorUser` are display-only.
 function isOwnedBy(
-  item: Pick<ChannelItemModel, "authorName" | "authorUuid">,
+  item: Pick<ChannelItemModel, "authorUuid">,
   owner: ChannelItemOwner,
 ): boolean {
-  if (item.authorUuid) return item.authorUuid === owner.uuid;
-  if (item.authorName && owner.name) return item.authorName === owner.name;
-  return false;
+  return item.authorUuid != null && item.authorUuid === owner.uuid;
 }
 
 export function buildChannelItems({
