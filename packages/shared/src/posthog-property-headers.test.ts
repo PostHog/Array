@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPosthogPropertiesBlob,
+  buildPosthogPropertiesHeaderLines,
+  buildPosthogPropertiesHeaderRecord,
   buildPosthogPropertyHeaderLines,
   buildPosthogPropertyHeaderRecord,
 } from "./posthog-property-headers";
@@ -173,4 +176,142 @@ describe("buildPosthogPropertyHeaderLines", () => {
       );
     },
   );
+});
+
+describe("buildPosthogPropertiesBlob", () => {
+  it("serializes properties as one JSON object", () => {
+    expect(
+      buildPosthogPropertiesBlob({
+        ai_product: "signals_scout",
+        ai_stage: "scout",
+        task_internal: true,
+      }),
+    ).toBe(
+      '{"ai_product":"signals_scout","ai_stage":"scout","task_internal":true}',
+    );
+  });
+
+  it("drops null and undefined values but keeps falsy primitives", () => {
+    expect(
+      buildPosthogPropertiesBlob({
+        ai_stage: null,
+        task_internal: false,
+        task_count: 0,
+        skipped: undefined,
+      }),
+    ).toBe('{"task_internal":false,"task_count":0}');
+  });
+
+  it("drops reserved $-prefixed keys the gateway strips anyway", () => {
+    expect(
+      buildPosthogPropertiesBlob({
+        $ai_trace_id: "trace-1",
+        ai_stage: "research",
+      }),
+    ).toBe('{"ai_stage":"research"}');
+  });
+
+  it("returns an empty string when no usable properties remain", () => {
+    expect(
+      buildPosthogPropertiesBlob({ ai_stage: null, task_id: undefined }),
+    ).toBe("");
+  });
+
+  it.each([
+    { description: "newlines", title: "Fix the bug\nmalicious: true" },
+    { description: "carriage returns", title: "Fix the bug\rmalicious: true" },
+  ])("collapses $description in values", ({ title }) => {
+    expect(buildPosthogPropertiesBlob({ task_title: title })).toBe(
+      '{"task_title":"Fix the bug malicious: true"}',
+    );
+  });
+
+  it("drops the longest string value until the blob fits the gateway cap", () => {
+    const blob = buildPosthogPropertiesBlob({
+      ai_product: "signals_scout",
+      ai_stage: "scout",
+      task_title: "t".repeat(9000),
+    });
+    expect(blob).toBe('{"ai_product":"signals_scout","ai_stage":"scout"}');
+  });
+
+  it("drops only as many values as the cap requires", () => {
+    const blob = buildPosthogPropertiesBlob({
+      ai_product: "signals_research",
+      task_title: "t".repeat(5000),
+      task_description: "d".repeat(5000),
+    });
+    // One 5000-char value fits, so only the other is dropped.
+    expect(blob).toBe(
+      `{"ai_product":"signals_research","task_description":"${"d".repeat(5000)}"}`,
+    );
+  });
+
+  it("keeps attribution when every free-text value is oversized", () => {
+    const blob = buildPosthogPropertiesBlob({
+      ai_product: "signals_research",
+      task_title: "t".repeat(9000),
+      task_description: "d".repeat(9000),
+    });
+    expect(blob).toBe('{"ai_product":"signals_research"}');
+  });
+
+  it("stays under the cap it enforces", () => {
+    const blob = buildPosthogPropertiesBlob({
+      ai_product: "signals_scout",
+      task_title: "t".repeat(20000),
+    });
+    expect(new TextEncoder().encode(blob).length).toBeLessThanOrEqual(8192);
+  });
+
+  it("returns empty when only non-string values remain and still overflow", () => {
+    // No string value to drop, so trimming can't shrink the blob: send nothing
+    // rather than a blob the gateway rejects wholesale.
+    const props: Record<string, number> = {};
+    for (let i = 0; i < 600; i++) {
+      props[`numeric_property_number_${i}`] = i;
+    }
+    expect(buildPosthogPropertiesBlob(props)).toBe("");
+  });
+
+  it("sanitizes keys, which are serialized into the header value", () => {
+    expect(
+      buildPosthogPropertiesBlob({ "ai_stage\ud83d\ude80": "scout" }),
+    ).toBe('{"ai_stage":"scout"}');
+  });
+
+  it("emits only printable ASCII a strict HTTP client accepts", () => {
+    const blob = buildPosthogPropertiesBlob({
+      ai_product: "signals_scout",
+      task_title: "s\u00ec, perch\u00e9 non funziona? \ud83d\ude80",
+    });
+    expect(blob).toMatch(/^[\x20-\x7e]*$/);
+    expect(blob).toBe(
+      '{"ai_product":"signals_scout","task_title":"si, perche non funziona? "}',
+    );
+  });
+});
+
+describe("buildPosthogPropertiesHeaderRecord", () => {
+  it("wraps the blob in the X-PostHog-Properties header", () => {
+    expect(
+      buildPosthogPropertiesHeaderRecord({ ai_product: "signals_scout" }),
+    ).toEqual({ "X-PostHog-Properties": '{"ai_product":"signals_scout"}' });
+  });
+
+  it("returns an empty record when there is nothing to send", () => {
+    expect(buildPosthogPropertiesHeaderRecord({ ai_stage: null })).toEqual({});
+  });
+});
+
+describe("buildPosthogPropertiesHeaderLines", () => {
+  it("emits a single header line", () => {
+    expect(
+      buildPosthogPropertiesHeaderLines({ ai_product: "signals_scout" }),
+    ).toBe('X-PostHog-Properties: {"ai_product":"signals_scout"}');
+  });
+
+  it("returns an empty string when there is nothing to send", () => {
+    expect(buildPosthogPropertiesHeaderLines({ ai_stage: null })).toBe("");
+  });
 });

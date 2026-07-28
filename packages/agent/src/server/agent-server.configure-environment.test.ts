@@ -16,7 +16,12 @@ interface TestableServer {
   }): GatewayEnv;
 }
 
-const ENV_KEYS_UNDER_TEST = ["LLM_GATEWAY_URL", "POSTHOG_PROJECT_ID"] as const;
+const ENV_KEYS_UNDER_TEST = [
+  "LLM_GATEWAY_URL",
+  "POSTHOG_PROJECT_ID",
+  "AI_GATEWAY_URL",
+  "AI_GATEWAY_PRODUCTS",
+] as const;
 
 describe("AgentServer.configureEnvironment", () => {
   const originalEnv: Partial<Record<string, string | undefined>> = {};
@@ -320,6 +325,159 @@ describe("AgentServer.configureEnvironment", () => {
     );
     expect(env.openaiBaseUrl).toBe(
       "http://ngrok.test/proxy/background_agents/v1",
+    );
+  });
+});
+
+describe("AgentServer.configureEnvironment on the Go ai-gateway", () => {
+  const originalEnv: Partial<Record<string, string | undefined>> = {};
+  const ENV_KEYS = [
+    "LLM_GATEWAY_URL",
+    "POSTHOG_PROJECT_ID",
+    "AI_GATEWAY_URL",
+    "AI_GATEWAY_PRODUCTS",
+  ];
+  const GO_GATEWAY = "https://ai-gateway.us.posthog.com";
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) {
+      originalEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+    process.env.AI_GATEWAY_URL = GO_GATEWAY;
+    process.env.AI_GATEWAY_PRODUCTS = [
+      "signals_scout",
+      "signals_research",
+      "signals_implementation",
+      "signals_repo_selection",
+      "background_agents",
+    ].join(",");
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      const value = originalEnv[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  const buildServer = (): TestableServer =>
+    new AgentServer({
+      port: 0,
+      jwtPublicKey: "test-key",
+      apiUrl: "https://us.posthog.com",
+      apiKey: "test-api-key",
+      projectId: 42,
+      mode: "background",
+      taskId: "test-task-id",
+      runId: "test-run-id",
+    }) as unknown as TestableServer;
+
+  const parseBlob = (headerLines: string): Record<string, unknown> => {
+    const prefix = "X-PostHog-Properties: ";
+    expect(headerLines.startsWith(prefix)).toBe(true);
+    return JSON.parse(headerLines.slice(prefix.length));
+  };
+
+  it("drops the product slug from the base URLs", () => {
+    const env = buildServer().configureEnvironment({
+      originProduct: "signals_scout",
+      aiStage: "scout",
+    });
+
+    expect(env.anthropicBaseUrl).toBe(GO_GATEWAY);
+    expect(env.openaiBaseUrl).toBe(`${GO_GATEWAY}/v1`);
+  });
+
+  it("honours an explicit AI_GATEWAY_URL with a trailing /v1", () => {
+    process.env.AI_GATEWAY_URL = "https://ai-gateway.dev.posthog.dev/v1";
+    const env = buildServer().configureEnvironment({
+      originProduct: "signal_report",
+      aiStage: "research",
+    });
+
+    expect(env.anthropicBaseUrl).toBe("https://ai-gateway.dev.posthog.dev");
+    expect(env.openaiBaseUrl).toBe("https://ai-gateway.dev.posthog.dev/v1");
+  });
+
+  it("leaves an unlisted product on the Python gateway, slug and all", () => {
+    process.env.AI_GATEWAY_PRODUCTS = "signals_scout";
+    const env = buildServer().configureEnvironment({ isInternal: false });
+
+    expect(env.anthropicBaseUrl).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
+    );
+    expect(env.anthropicCustomHeaders).toContain(
+      "x-posthog-property-task_internal",
+    );
+  });
+
+  it.each([
+    ["scout", "signals_scout"],
+    ["research", "signals_research"],
+    ["implementation", "signals_implementation"],
+    ["repo_selection", "signals_repo_selection"],
+  ])("sends ai_product %s as %s", (aiStage, expected) => {
+    const env = buildServer().configureEnvironment({
+      originProduct: "signal_report",
+      aiStage,
+    });
+
+    expect(parseBlob(env.anthropicCustomHeaders ?? "").ai_product).toBe(
+      expected,
+    );
+  });
+
+  it("carries stage and team attribution in the blob for both adapters", () => {
+    const env = buildServer().configureEnvironment({
+      originProduct: "signal_report",
+      aiStage: "scout",
+      taskId: "task-1",
+      taskRunId: "run-1",
+    });
+
+    const expected = {
+      task_origin_product: "signal_report",
+      task_internal: false,
+      ai_stage: "scout",
+      task_id: "task-1",
+      task_run_id: "run-1",
+      ai_product: "signals_scout",
+      team_id: 42,
+    };
+    expect(parseBlob(env.anthropicCustomHeaders ?? "")).toMatchObject(expected);
+    expect(
+      JSON.parse(env.openaiCustomHeaders?.["X-PostHog-Properties"] ?? "{}"),
+    ).toMatchObject(expected);
+  });
+
+  it("emits attribution as one X-PostHog-Properties blob, not per-property headers", () => {
+    // Asserts the gateway env this function produces. The Claude adapter's
+    // buildEnvironment later appends `x-posthog-property-team_id` and
+    // `x-posthog-use-bedrock-fallback` as separate header lines; the Go gateway
+    // reads only the blob (team_id is already in it, and it does Bedrock
+    // failover itself), so those extra lines are inert on this path.
+    const env = buildServer().configureEnvironment({
+      originProduct: "signal_report",
+      aiStage: "scout",
+    });
+
+    expect(env.anthropicCustomHeaders).not.toContain("x-posthog-property-");
+    expect(env.anthropicCustomHeaders?.split("\n")).toHaveLength(1);
+    expect(Object.keys(env.openaiCustomHeaders ?? {})).toEqual([
+      "X-PostHog-Properties",
+    ]);
+  });
+
+  it("keeps non-signals products on their existing ai_product name", () => {
+    const env = buildServer().configureEnvironment({ isInternal: true });
+
+    expect(parseBlob(env.anthropicCustomHeaders ?? "").ai_product).toBe(
+      "background_agents",
     );
   });
 });
