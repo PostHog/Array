@@ -1,4 +1,8 @@
-import { CaretRightIcon } from "@phosphor-icons/react";
+import {
+  ArrowSquareOutIcon,
+  CaretRightIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { Button, cn, Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
@@ -8,7 +12,6 @@ import { TaskArtifactsList } from "@posthog/ui/features/canvas/components/TaskAr
 import {
   AgentStatusLine,
   ThreadLoadingState,
-  ThreadPanelHeader,
   ThreadReplyComposer,
   ThreadTimeline,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
@@ -35,27 +38,76 @@ const TABS_WITH_COMPOSER: ReadonlySet<ActivityTab> = new Set([
 const TIMESTAMP_END_CLASS =
   "[&_[data-slot=thread-item-timestamp]]:ml-auto [&_[data-slot=thread-item-timestamp]]:shrink-0 [&_[data-slot=thread-item-timestamp]]:pl-2";
 
-function ActivityTabsRow({
+/** The 32px row this panel leads with: the tabs are the header, so the strip
+ *  lines up with the tab bar of the pane on its left (TabbedPanel) and the
+ *  review toolbar, which are the same fixed height and border. */
+function ActivityHeader({
   tab,
   onTabChange,
+  onClose,
+  onToggleCollapsed,
+  onOpenFull,
 }: {
   tab: ActivityTab;
   onTabChange: (tab: ActivityTab) => void;
+  onClose?: () => void;
+  onToggleCollapsed?: () => void;
+  onOpenFull?: () => void;
 }) {
   return (
-    <div className="shrink-0 border-border border-b px-2 py-1.5">
+    <div className="flex h-[32px] shrink-0 items-center gap-1 border-b border-b-(--gray-6) pr-1 pl-2">
       <Tabs
         value={tab}
         onValueChange={(value: string) => onTabChange(value as ActivityTab)}
       >
-        <TabsList variant="line" className="h-auto gap-0.5">
+        {/* Nothing spells out "Activity" any more, so the strip carries the name.
+            The list fills the row's 32px and drops quill's 3px inset so the
+            line-variant indicator (bottom: 0 of the list) lands on the row's
+            bottom border, the way the left pane's tabs underline does. */}
+        <TabsList
+          variant="line"
+          aria-label="Activity"
+          className="h-[31px] gap-0.5 p-0"
+        >
           {ACTIVITY_TABS.map((t) => (
-            <TabsTrigger key={t.key} value={t.key} className="px-2.5 py-1">
+            <TabsTrigger key={t.key} value={t.key} className="px-2.5">
               <span className="font-medium text-[13px]">{t.label}</span>
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {onOpenFull && (
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Open full task"
+            onClick={onOpenFull}
+          >
+            <ArrowSquareOutIcon size={14} />
+          </Button>
+        )}
+        {onToggleCollapsed && (
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Collapse activity"
+            onClick={onToggleCollapsed}
+          >
+            <CaretRightIcon size={14} />
+          </Button>
+        )}
+        {onClose && (
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Close activity"
+            onClick={onClose}
+          >
+            <XIcon size={14} />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -170,13 +222,13 @@ function ActivityConversation({
         TIMESTAMP_END_CLASS,
       )}
     >
-      <ThreadPanelHeader
-        title="Activity"
+      <ActivityHeader
+        tab={tab}
+        onTabChange={handleTabChange}
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
       />
-      <ActivityTabsRow tab={tab} onTabChange={handleTabChange} />
 
       {showTaskSummary && (
         <div className="z-10 px-2">
@@ -235,15 +287,18 @@ export function ActivityPanel({
 
   if (collapsed) {
     return (
-      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1 py-2">
-        <Button
-          variant="default"
-          size="icon-sm"
-          aria-label="Expand activity"
-          onClick={onToggleCollapsed}
-        >
-          <CaretRightIcon size={14} className="rotate-180" />
-        </Button>
+      <div className="flex h-full w-9 flex-col items-center border-border border-l bg-gray-1">
+        {/* Same 32px band as the expanded header, so the button doesn't jump. */}
+        <div className="flex h-[32px] shrink-0 items-center">
+          <Button
+            variant="default"
+            size="icon-sm"
+            aria-label="Expand activity"
+            onClick={onToggleCollapsed}
+          >
+            <CaretRightIcon size={14} className="rotate-180" />
+          </Button>
+        </div>
       </div>
     );
   }
