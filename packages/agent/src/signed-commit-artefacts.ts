@@ -45,11 +45,10 @@ function readSandboxOauthToken(oauthEnvFilePath: string): string | undefined {
   let raw: string;
   try {
     raw = readFileSync(oauthEnvFilePath, "utf8");
-  } catch (error) {
-    // Only a missing file means the sandbox predates the dedicated credential
-    // channel. Any other read failure must fail closed instead of resurrecting
-    // the frozen launch-time token.
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "";
+  } catch {
+    // The dedicated credential channel is mandatory. Missing and unreadable
+    // files both fail closed.
+    return undefined;
   }
 
   // The backend revokes OAuth access by truncating this managed file. Its
@@ -69,17 +68,13 @@ export function resolveSandboxPosthogApi(
   const fileEnv = readSandboxEnvFile(envFilePath);
   const oauthToken = readSandboxOauthToken(oauthEnvFilePath);
   const apiUrl = fileEnv.POSTHOG_API_URL ?? env.POSTHOG_API_URL;
-  const apiKey =
-    oauthToken ??
-    fileEnv.POSTHOG_PERSONAL_API_KEY ??
-    env.POSTHOG_PERSONAL_API_KEY;
   const projectId = Number(
     fileEnv.POSTHOG_PROJECT_ID ?? env.POSTHOG_PROJECT_ID,
   );
-  if (!apiUrl || !apiKey || !Number.isFinite(projectId) || projectId <= 0) {
+  if (!apiUrl || !oauthToken || !Number.isFinite(projectId) || projectId <= 0) {
     return undefined;
   }
-  return { apiUrl, apiKey, projectId };
+  return { apiUrl, apiKey: oauthToken, projectId };
 }
 
 export function createSandboxPosthogClient(
@@ -105,13 +100,18 @@ export async function reportCommitArtefacts(opts: {
   message: string;
   env?: Record<string, string | undefined>;
   envFilePath?: string;
+  oauthEnvFilePath?: string;
 }): Promise<void> {
   const { taskId, result, message } = opts;
   if (!taskId) {
     return; // Local/desktop run — no task to attribute or associate through.
   }
   try {
-    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    const client = createSandboxPosthogClient(
+      opts.env,
+      opts.envFilePath,
+      opts.oauthEnvFilePath,
+    );
     if (!client) {
       return; // No sandbox PostHog credentials — nothing to report to.
     }
@@ -146,12 +146,17 @@ export async function reportTaskRunBranch(opts: {
   branch: string;
   env?: Record<string, string | undefined>;
   envFilePath?: string;
+  oauthEnvFilePath?: string;
 }): Promise<void> {
   if (!opts.taskId || !opts.taskRunId) {
     return;
   }
   try {
-    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    const client = createSandboxPosthogClient(
+      opts.env,
+      opts.envFilePath,
+      opts.oauthEnvFilePath,
+    );
     if (!client) {
       return;
     }

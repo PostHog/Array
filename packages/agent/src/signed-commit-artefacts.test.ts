@@ -1,7 +1,16 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   reportCommitArtefacts,
   reportTaskRunBranch,
@@ -16,6 +25,18 @@ const ENV = {
 
 // Point the env-file read at a path that never exists so only `env` is used.
 const NO_ENV_FILE = "/nonexistent/agent-env";
+const TEST_OAUTH_ENV_FILE = path.join(
+  tmpdir(),
+  `posthog-agent-oauth-env-${process.pid}`,
+);
+
+beforeAll(async () => {
+  await writeFile(TEST_OAUTH_ENV_FILE, "POSTHOG_PERSONAL_API_KEY=pha_test\0");
+});
+
+afterAll(async () => {
+  await rm(TEST_OAUTH_ENV_FILE, { force: true });
+});
 
 describe("resolveSandboxPosthogApi", () => {
   it("reads the rotating API key from the dedicated OAuth file", async () => {
@@ -47,12 +68,10 @@ describe("resolveSandboxPosthogApi", () => {
     }
   });
 
-  it("falls back to the process environment without credential files", () => {
-    expect(resolveSandboxPosthogApi(ENV, NO_ENV_FILE, NO_ENV_FILE)).toEqual({
-      apiUrl: "https://us.posthog.com",
-      apiKey: "pha_test",
-      projectId: 7,
-    });
+  it("fails closed without the dedicated OAuth file", () => {
+    expect(
+      resolveSandboxPosthogApi(ENV, NO_ENV_FILE, NO_ENV_FILE),
+    ).toBeUndefined();
   });
 
   it("does not resurrect a stale token when the OAuth file is empty", async () => {
@@ -144,6 +163,7 @@ describe("reportCommitArtefacts", () => {
       message: "fix: foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     const lookupCalls = fetchMock.mock.calls.filter(([url]) =>
@@ -202,6 +222,7 @@ describe("reportCommitArtefacts", () => {
         message: "fix: foo",
         env: ENV,
         envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
       }),
     ).resolves.toBeUndefined();
   });
@@ -225,6 +246,7 @@ describe("reportCommitArtefacts", () => {
       message: "fix: foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     // Both commits attempted despite the first failing.
@@ -260,6 +282,7 @@ describe("reportTaskRunBranch", () => {
       branch: "posthog-code/fix-foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     expect(fetchMock).toHaveBeenCalledOnce();
