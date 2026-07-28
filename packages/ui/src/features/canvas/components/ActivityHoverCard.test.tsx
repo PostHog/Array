@@ -12,6 +12,13 @@ vi.mock("@posthog/quill", () => ({
   Button: ({ children }: { children: ReactNode }) => (
     <button type="button">{children}</button>
   ),
+  Empty: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  EmptyDescription: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
+  EmptyHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  EmptyMedia: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  EmptyTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   PopoverContent: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>
   ),
@@ -43,7 +50,7 @@ vi.mock("@posthog/ui/features/canvas/hooks/useTaskActivity", () => ({
   }),
 }));
 vi.mock("@posthog/ui/primitives/hooks/useInView", () => ({
-  useInView: () => [{ current: null }, true],
+  useInView: () => [vi.fn(), true],
 }));
 vi.mock("@posthog/ui/shell/analytics", () => ({ track: vi.fn() }));
 

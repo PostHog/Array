@@ -142,33 +142,40 @@ export function ChannelNav() {
         open={!isActivity && activityOpen}
         onOpenChange={(open) => setActivityOpen(!isActivity && open)}
       >
-        <PopoverTrigger
-          openOnHover
-          delay={300}
-          closeDelay={100}
-          disabled={isActivity}
-          render={
-            <NavButton
-              icon={
-                <BellIcon size={16} weight={isActivity ? "fill" : "regular"} />
-              }
-              label="Activity"
-              isActive={isActivity}
-              onClick={() => {
-                setActivityOpen(false);
-                withTrack("activity", navigateToActivity)();
-              }}
-              badge={
-                <CountBadge
-                  count={unseenActivity}
-                  className={ICON_BADGE_CLASS}
-                />
-              }
-            />
-          }
-        />
+        <Tooltip content="Activity" side="bottom">
+          <PopoverTrigger
+            openOnHover
+            delay={300}
+            closeDelay={100}
+            render={
+              <NavButton
+                icon={
+                  <BellIcon
+                    size={16}
+                    weight={isActivity ? "fill" : "regular"}
+                  />
+                }
+                label="Activity"
+                isActive={isActivity}
+                onClick={() => {
+                  setActivityOpen(false);
+                  withTrack("activity", navigateToActivity)();
+                }}
+                badge={
+                  <CountBadge
+                    count={unseenActivity}
+                    className={ICON_BADGE_CLASS}
+                  />
+                }
+              />
+            }
+          />
+        </Tooltip>
         {!isActivity && activityOpen && (
-          <ActivityHoverCard onClose={() => setActivityOpen(false)} />
+          <ActivityHoverCard
+            side="bottom"
+            onClose={() => setActivityOpen(false)}
+          />
         )}
       </Popover>
       <NavIcon

@@ -72,7 +72,9 @@ describe("ChannelNav", () => {
     const user = userEvent.setup();
     render(<ChannelNav />);
 
-    await user.hover(screen.getByLabelText("Activity"));
+    const activity = screen.getByLabelText("Activity");
+    expect(activity).toBeEnabled();
+    await user.hover(activity);
 
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByText("Recent activity card")).not.toBeInTheDocument();

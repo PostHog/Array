@@ -29,7 +29,6 @@ import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
-import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -40,6 +39,13 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo } from "react";
+import {
+  activityReadPayload,
+  channelIdForName,
+  createChannelIdByName,
+  getUnreadActivityItems,
+  markLoadedReadLabel,
+} from "./activityFeed";
 
 function ChannelSuffix({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
@@ -253,6 +259,7 @@ export function ActivityView() {
   } = useTaskActivity();
   const { mutate: markTasksRead, isPending: isMarkingRead } =
     useMarkTaskActivityRead();
+  const unreadItems = useMemo(() => getUnreadActivityItems(items), [items]);
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
@@ -261,33 +268,18 @@ export function ActivityView() {
     [markTasksRead],
   );
   const markAllRead = useCallback(() => {
-    markTasksRead(
-      items
-        .filter((item) => item.isUnread)
-        .map((item) => ({
-          task_id: item.taskId,
-          seen_before: item.activityAt,
-        })),
-    );
-  }, [items, markTasksRead]);
+    markTasksRead(activityReadPayload(unreadItems));
+  }, [markTasksRead, unreadItems]);
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
   const { channels: folderChannels } = useChannels();
   const folderIdByName = useMemo(
-    () =>
-      new Map(
-        folderChannels.map((folder) => [
-          normalizeChannelName(folder.name),
-          folder.id,
-        ]),
-      ),
+    () => createChannelIdByName(folderChannels),
     [folderChannels],
   );
   const folderChannelIdFor = (channelName: string | null): string | null =>
-    channelName
-      ? (folderIdByName.get(normalizeChannelName(channelName)) ?? null)
-      : null;
+    channelIdForName(folderIdByName, channelName);
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -317,7 +309,7 @@ export function ActivityView() {
               onClick={markAllRead}
             >
               <ChecksIcon size={14} />
-              Mark all as read
+              {markLoadedReadLabel(unreadItems.length, unreadCount)}
             </Button>
           )}
         </div>
