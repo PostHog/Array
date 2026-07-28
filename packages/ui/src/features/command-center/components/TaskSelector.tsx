@@ -10,6 +10,7 @@ import { Popover } from "@radix-ui/themes";
 import { type ReactNode, useCallback, useState } from "react";
 import { Combobox } from "../../../primitives/combobox/Combobox";
 import { useFolders } from "../../folders/useFolders";
+import { useSettingsStore } from "../../settings/settingsStore";
 import { useCommandCenterStore } from "../commandCenterStore";
 import { useAvailableTasks } from "../hooks/useAvailableTasks";
 
@@ -36,6 +37,7 @@ export function TaskSelector({
   const assignTask = useCommandCenterStore((s) => s.assignTask);
   const { getRecentFolders } = useFolders();
   const folders = getRecentFolders();
+  const defaultCwd = useSettingsStore((s) => s.terminalDefaultCwd);
   const [step, setStep] = useState<"tasks" | "folder">("tasks");
 
   const handleOpenChange = useCallback(
@@ -67,14 +69,21 @@ export function TaskSelector({
     }
   }, [handleOpenChange, onNewTask]);
 
+  // A configured default wins outright: no folder prompt, even with several
+  // folders registered. "Terminal in…" below stays as the one-off escape hatch.
   const handleNewTerminal = useCallback(() => {
+    if (defaultCwd) {
+      handleOpenChange(false);
+      onNewTerminal?.(defaultCwd);
+      return;
+    }
     if (folders.length > 1) {
       setStep("folder");
       return;
     }
     handleOpenChange(false);
     onNewTerminal?.(folders[0]?.path);
-  }, [folders, handleOpenChange, onNewTerminal]);
+  }, [defaultCwd, folders, handleOpenChange, onNewTerminal]);
 
   const handleBrainrot = useCallback(() => {
     handleOpenChange(false);
@@ -172,6 +181,16 @@ export function TaskSelector({
                   >
                     <Terminal size={11} weight="bold" />
                     Terminal
+                  </button>
+                )}
+                {onNewTerminal && defaultCwd && folders.length > 0 && (
+                  <button
+                    type="button"
+                    className="combobox-footer-button"
+                    onClick={() => setStep("folder")}
+                  >
+                    <Folder size={11} weight="bold" />
+                    Terminal in…
                   </button>
                 )}
                 {onBrainrot && (
