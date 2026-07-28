@@ -1022,6 +1022,20 @@ describe("PiSessionController", () => {
     ]);
   });
 
+  it("retains cloud status when loading a cloud session", async () => {
+    const session = {
+      ...createSession(),
+      cloudStatus: "in_progress" as const,
+    };
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+
+    expect(controller.store.getState().sessions["task-1"].cloudStatus).toBe(
+      "in_progress",
+    );
+  });
+
   it("loads session state and appends normalized runtime events", async () => {
     const initialEvent: AgentConversationEvent = {
       type: "assistant_message_chunk",

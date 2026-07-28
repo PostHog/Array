@@ -576,6 +576,7 @@ export class PiSessionController {
         events: reconciledEvents,
         status: resolvedStatus,
         stats,
+        cloudStatus: session.cloudStatus,
         models: currentSession.models,
         modelsLoaded: currentSession.modelsLoaded,
         thinkingLevels: currentSession.thinkingLevels,
