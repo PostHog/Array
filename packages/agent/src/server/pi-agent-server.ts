@@ -60,6 +60,29 @@ const commandSchemas = {
 
 type PiCommandMethod = keyof typeof commandSchemas;
 
+function updatedToolCallId(
+  event: AgentConversationEvent | undefined,
+): string | undefined {
+  return event?.type === "tool_call_updated" ? event.toolCall.id : undefined;
+}
+
+function mergeToolCallUpdate(
+  previous: AgentConversationEvent | undefined,
+  next: AgentConversationEvent | undefined,
+): AgentConversationEvent | undefined {
+  if (
+    previous?.type !== "tool_call_updated" ||
+    next?.type !== "tool_call_updated" ||
+    previous.toolCall.id !== next.toolCall.id
+  ) {
+    return next;
+  }
+  return {
+    ...next,
+    toolCall: { ...previous.toolCall, ...next.toolCall },
+  };
+}
+
 export class PiAgentServer {
   private readonly app: Hono;
   private readonly logger = new Logger({
@@ -654,7 +677,7 @@ export class PiAgentServer {
 
   private broadcast(event: Record<string, unknown>): void {
     if (event.type === "pi_event" || event.type === "pi_run_started") {
-      this.pendingLogEntries.push({
+      const logEntry: StoredLogEntry = {
         id: typeof event.id === "string" ? event.id : undefined,
         type: event.type,
         timestamp:
@@ -663,7 +686,22 @@ export class PiAgentServer {
           event.type === "pi_event"
             ? (event.event as AgentConversationEvent)
             : undefined,
-      });
+      };
+      const toolCallId = updatedToolCallId(logEntry.event);
+      const pendingLogIndex = toolCallId
+        ? this.pendingLogEntries.findLastIndex(
+            (entry) => updatedToolCallId(entry.event) === toolCallId,
+          )
+        : -1;
+      if (pendingLogIndex >= 0) {
+        const previous = this.pendingLogEntries[pendingLogIndex];
+        this.pendingLogEntries[pendingLogIndex] = {
+          ...logEntry,
+          event: mergeToolCallUpdate(previous?.event, logEntry.event),
+        };
+      } else {
+        this.pendingLogEntries.push(logEntry);
+      }
       if (this.pendingLogEntries.length > MAX_PENDING_LOG_ENTRIES) {
         this.pendingLogEntries.splice(
           0,
@@ -686,7 +724,32 @@ export class PiAgentServer {
     if (this.session?.sseController) {
       this.session.sseController.send(event);
     } else {
-      this.pendingEvents.push(event);
+      const toolCallId = updatedToolCallId(
+        event.type === "pi_event"
+          ? (event.event as AgentConversationEvent)
+          : undefined,
+      );
+      const pendingEventIndex = toolCallId
+        ? this.pendingEvents.findLastIndex(
+            (pending) =>
+              pending.type === "pi_event" &&
+              updatedToolCallId(
+                pending.event as AgentConversationEvent | undefined,
+              ) === toolCallId,
+          )
+        : -1;
+      if (pendingEventIndex >= 0) {
+        const previous = this.pendingEvents[pendingEventIndex];
+        this.pendingEvents[pendingEventIndex] = {
+          ...event,
+          event: mergeToolCallUpdate(
+            previous?.event as AgentConversationEvent | undefined,
+            event.event as AgentConversationEvent | undefined,
+          ),
+        };
+      } else {
+        this.pendingEvents.push(event);
+      }
       if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
         this.pendingEvents.splice(
           0,

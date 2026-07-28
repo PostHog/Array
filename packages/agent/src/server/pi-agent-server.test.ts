@@ -97,6 +97,42 @@ describe("PiAgentServer", () => {
     expect(server.pendingEvents[0]).toEqual({ type: "test", index: 100 });
   });
 
+  it("coalesces replay and log buffers for repeated tool updates", () => {
+    const server = new PiAgentServer(config()) as unknown as {
+      broadcast(event: Record<string, unknown>): void;
+      pendingEvents: Record<string, unknown>[];
+      pendingLogEntries: Array<{ event?: Record<string, unknown> }>;
+    };
+
+    server.broadcast({
+      type: "pi_event",
+      event: {
+        type: "tool_call_updated",
+        timestamp: 1,
+        toolCall: { id: "tool-1", content: [{ type: "content" }] },
+      },
+    });
+    server.broadcast({
+      type: "pi_event",
+      event: {
+        type: "tool_call_updated",
+        timestamp: 2,
+        toolCall: { id: "tool-1", status: "completed" },
+      },
+    });
+
+    expect(server.pendingEvents).toHaveLength(1);
+    expect(server.pendingLogEntries).toHaveLength(1);
+    expect(server.pendingLogEntries[0]?.event).toMatchObject({
+      timestamp: 2,
+      toolCall: {
+        id: "tool-1",
+        status: "completed",
+        content: [{ type: "content" }],
+      },
+    });
+  });
+
   it("flushes long-running conversation logs in bounded batches", async () => {
     const appendTaskRunLog = vi.fn(
       async (_taskId: string, _runId: string, _entries: unknown[]) => ({}),

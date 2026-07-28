@@ -191,7 +191,9 @@ export class TaskService {
       throw new Error("Not authenticated");
     }
 
-    return posthogClient.resumeRunInCloud(taskId, taskRunId);
+    const run = await posthogClient.resumeRunInCloud(taskId, taskRunId);
+    this.effects.onRunResumed(taskId, run);
+    return run;
   }
 
   public async openTask(

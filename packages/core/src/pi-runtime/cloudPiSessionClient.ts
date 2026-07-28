@@ -338,7 +338,10 @@ export class CloudPiSessionClient implements PiSession {
       const sourceId =
         entry.id ?? `${this.context.runId}:log:${firstEntryIndex + index}`;
       if (entry.type === "pi_event" && entry.event) {
-        events.push({ ...entry.event, sourceId });
+        events.push({
+          ...this.normalizeLegacyEvent(entry.event),
+          sourceId,
+        });
         continue;
       }
 
@@ -348,6 +351,32 @@ export class CloudPiSessionClient implements PiSession {
       }
     }
     return events;
+  }
+
+  private normalizeLegacyEvent(
+    event: AgentConversationEvent,
+  ): AgentConversationEvent {
+    if (
+      event.type === "tool_call_started" &&
+      event.toolCall.origin === undefined &&
+      event.toolCall.id.startsWith("pi-bash-")
+    ) {
+      return {
+        ...event,
+        toolCall: { ...event.toolCall, origin: "user_shell" },
+      };
+    }
+    if (
+      event.type === "tool_call_updated" &&
+      event.toolCall.origin === undefined &&
+      event.toolCall.id.startsWith("pi-bash-")
+    ) {
+      return {
+        ...event,
+        toolCall: { ...event.toolCall, origin: "user_shell" },
+      };
+    }
+    return event;
   }
 
   private getProgressEvent(

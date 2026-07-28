@@ -709,6 +709,7 @@ describe("PiSessionController", () => {
         kind: "execute",
         status: "in_progress",
         rawInput: { command: "printf hello" },
+        origin: "user_shell",
       },
     });
     onEvent({
@@ -717,6 +718,7 @@ describe("PiSessionController", () => {
       toolCall: {
         id: "pi-bash-live-1-1",
         status: "completed",
+        origin: "user_shell",
       },
     });
 

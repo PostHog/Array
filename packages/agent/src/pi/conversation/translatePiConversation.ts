@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentConversationEvent } from "@posthog/shared";
@@ -31,6 +32,7 @@ function customMessageEvents(message: AgentMessage): AgentConversationEvent[] {
           kind: "execute",
           status: "in_progress",
           rawInput: { command: message.command },
+          origin: "user_shell",
         },
       },
       {
@@ -40,6 +42,7 @@ function customMessageEvents(message: AgentMessage): AgentConversationEvent[] {
           id,
           status: failed ? "failed" : "completed",
           rawOutput: message.output,
+          origin: "user_shell",
           content: message.output
             ? [
                 {
@@ -114,8 +117,9 @@ export function createPiConversationTranslator(): PiConversationTranslator {
   let directBashSequence = 0;
   let activeDirectBash:
     | {
-        nextOutputSize: number;
+        nextOutputBytes: number;
         output: string;
+        outputBytes: number;
         startedAt: number;
         toolCallId: string;
       }
@@ -125,8 +129,9 @@ export function createPiConversationTranslator(): PiConversationTranslator {
     const startedAt = Date.now();
     const toolCallId = `pi-bash-live-${startedAt}-${++directBashSequence}`;
     activeDirectBash = {
-      nextOutputSize: 4_096,
+      nextOutputBytes: 4_096,
       output: "",
+      outputBytes: 0,
       startedAt,
       toolCallId,
     };
@@ -141,6 +146,7 @@ export function createPiConversationTranslator(): PiConversationTranslator {
           kind: "execute",
           status: "in_progress",
           rawInput: { command },
+          origin: "user_shell",
         },
       },
     ];
@@ -164,6 +170,7 @@ export function createPiConversationTranslator(): PiConversationTranslator {
           id: directBash.toolCallId,
           status,
           rawOutput: output,
+          origin: "user_shell",
           content: output
             ? [
                 {
@@ -307,12 +314,13 @@ export function createPiConversationTranslator(): PiConversationTranslator {
       }
 
       directBash.output += event.delta;
-      if (directBash.output.length >= 4_096) {
-        if (directBash.output.length < directBash.nextOutputSize) {
+      directBash.outputBytes += Buffer.byteLength(event.delta, "utf8");
+      if (directBash.outputBytes >= 4_096) {
+        if (directBash.outputBytes < directBash.nextOutputBytes) {
           return [];
         }
-        while (directBash.nextOutputSize <= directBash.output.length) {
-          directBash.nextOutputSize *= 2;
+        while (directBash.nextOutputBytes <= directBash.outputBytes) {
+          directBash.nextOutputBytes *= 2;
         }
       }
 
@@ -322,6 +330,7 @@ export function createPiConversationTranslator(): PiConversationTranslator {
           timestamp: directBash.startedAt,
           toolCall: {
             id: directBash.toolCallId,
+            origin: "user_shell",
             content: directBash.output
               ? [
                   {
@@ -485,10 +494,11 @@ export function createPiConversationTranslator(): PiConversationTranslator {
     if (event.type === "agent_settled") {
       streamedAssistantTimestamps.clear();
 
-      const timestamp = latestRuntimeTimestamp;
+      const timestamp = Math.max(Date.now(), latestRuntimeTimestamp);
+      const hadRuntimeActivity = latestRuntimeTimestamp > 0;
       latestRuntimeTimestamp = 0;
 
-      return timestamp > 0 ? [{ type: "turn_completed", timestamp }] : [];
+      return hadRuntimeActivity ? [{ type: "turn_completed", timestamp }] : [];
     }
 
     return [];

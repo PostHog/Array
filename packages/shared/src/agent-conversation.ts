@@ -108,6 +108,7 @@ export interface AgentToolCall {
   rawInput?: unknown;
   rawOutput?: unknown;
   parentId?: string;
+  origin?: "agent" | "user_shell";
 }
 
 interface AgentConversationEventIdentity {

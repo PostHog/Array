@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPiConversationTranslator } from "./translatePiConversation";
 
 function assistant(
@@ -99,7 +99,9 @@ describe("createPiConversationTranslator", () => {
     ).toEqual([]);
   });
 
-  it("completes a turn using the latest runtime timestamp", () => {
+  it("completes a turn using the settlement time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(30);
     const translator = createPiConversationTranslator();
     const laterMessage = assistant(
       [{ type: "text", text: "later" }],
@@ -116,8 +118,9 @@ describe("createPiConversationTranslator", () => {
     translator.translateEvent({ type: "message_end", message: earlierMessage });
 
     expect(translator.translateEvent({ type: "agent_settled" })).toEqual([
-      { type: "turn_completed", timestamp: 20 },
+      { type: "turn_completed", timestamp: 30 },
     ]);
+    vi.useRealTimers();
   });
 
   it("translates retry lifecycle without rendering transient runtime errors", () => {
@@ -310,6 +313,7 @@ describe("createPiConversationTranslator", () => {
           kind: "execute",
           status: "in_progress",
           rawInput: { command: "pwd" },
+          origin: "user_shell",
         },
       },
       {
@@ -319,6 +323,7 @@ describe("createPiConversationTranslator", () => {
           id: "pi-bash-20",
           status: "completed",
           rawOutput: "/tmp/project",
+          origin: "user_shell",
           content: [
             {
               type: "content",
@@ -409,6 +414,26 @@ describe("createPiConversationTranslator", () => {
         },
       },
     ]);
+  });
+
+  it("throttles direct bash output by encoded byte size", () => {
+    const translator = createPiConversationTranslator();
+    translator.beginDirectBash("unicode-output");
+
+    expect(
+      translator.translateEvent({
+        type: "bash_execution_update",
+        id: "req_1",
+        delta: "🙂".repeat(1_024),
+      }),
+    ).toHaveLength(1);
+    expect(
+      translator.translateEvent({
+        type: "bash_execution_update",
+        id: "req_1",
+        delta: "x",
+      }),
+    ).toEqual([]);
   });
 
   it("preserves streamed direct bash output when the command fails", () => {

@@ -100,6 +100,37 @@ describe("TaskService.openTask", () => {
   });
 });
 
+describe("TaskService.resumeCloudPiRun", () => {
+  it("publishes the resumed run to host state", async () => {
+    const run = {
+      id: "run-2",
+      task_id: "task-1",
+      environment: "cloud",
+      status: "queued",
+    };
+    const api = {
+      resumeRunInCloud: vi.fn(async () => run),
+    };
+    const effects = {
+      onRunResumed: vi.fn(),
+    } as unknown as TaskCreationEffects;
+    const service = new TaskService(
+      {
+        getAuthenticatedClient: vi.fn(async () => api),
+      } as unknown as ITaskCreationHost,
+      {} as SessionService,
+      effects,
+      {} as PiRunner,
+      rootLogger,
+    );
+
+    await expect(service.resumeCloudPiRun("task-1", "run-1")).resolves.toBe(
+      run,
+    );
+    expect(effects.onRunResumed).toHaveBeenCalledWith("task-1", run);
+  });
+});
+
 describe("TaskService.createTask validation", () => {
   it("rejects an input with neither content nor a taskDescription", async () => {
     const result = await makeService().createTask({

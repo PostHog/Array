@@ -679,7 +679,7 @@ export class PiSessionController {
     const isDirectBashEvent =
       (event.type === "tool_call_started" ||
         event.type === "tool_call_updated") &&
-      event.toolCall.id.startsWith("pi-bash-");
+      event.toolCall.origin === "user_shell";
     const hasTurnActivity =
       !isDirectBashEvent &&
       (event.type === "assistant_message_chunk" ||

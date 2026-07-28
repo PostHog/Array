@@ -258,6 +258,41 @@ describe("CloudPiSessionClient", () => {
     expect(cloud.client.sendCommand).not.toHaveBeenCalled();
   });
 
+  it("normalizes legacy direct bash events at the cloud boundary", async () => {
+    const cloud = createCloudTaskClient();
+    const session = new CloudPiSessionClient(
+      cloud.client,
+      context("completed"),
+    );
+    session.onConversationEvent(vi.fn(), vi.fn());
+
+    const conversation = session.getConversation();
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "snapshot",
+      status: "completed",
+      newEntries: [
+        {
+          type: "pi_event",
+          event: {
+            type: "tool_call_updated",
+            timestamp: 1,
+            toolCall: { id: "pi-bash-1", status: "completed" },
+          },
+        },
+      ],
+      totalEntryCount: 1,
+    });
+
+    await expect(conversation).resolves.toEqual([
+      expect.objectContaining({
+        type: "tool_call_updated",
+        toolCall: expect.objectContaining({ origin: "user_shell" }),
+      }),
+    ]);
+  });
+
   it("loads terminal history from the cloud snapshot without sandbox RPC", async () => {
     const cloud = createCloudTaskClient();
     const session = new CloudPiSessionClient(
