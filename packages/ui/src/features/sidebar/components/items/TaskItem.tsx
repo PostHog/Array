@@ -221,7 +221,7 @@ export function TaskItem({
   );
 }
 
-function InlineEditInput({
+export function InlineEditInput({
   depth,
   icon,
   label,
