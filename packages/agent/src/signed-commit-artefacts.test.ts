@@ -1,8 +1,37 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  parseSandboxEnv,
   reportCommitArtefacts,
   reportTaskRunBranch,
+  resolveSandboxPosthogApi,
 } from "./signed-commit-artefacts";
+
+describe("parseSandboxEnv", () => {
+  it("parses NUL-delimited entries into an object", () => {
+    expect(parseSandboxEnv("FIRST=one\0SECOND=two\0")).toEqual({
+      FIRST: "one",
+      SECOND: "two",
+    });
+  });
+
+  it("preserves equals signs in values and ignores malformed entries", () => {
+    expect(
+      parseSandboxEnv("TOKEN=header.payload=signature\0invalid\0=value\0"),
+    ).toEqual({ TOKEN: "header.payload=signature" });
+  });
+});
 
 const ENV = {
   POSTHOG_API_URL: "https://us.posthog.com",
@@ -12,6 +41,97 @@ const ENV = {
 
 // Point the env-file read at a path that never exists so only `env` is used.
 const NO_ENV_FILE = "/nonexistent/agent-env";
+const TEST_OAUTH_ENV_FILE = path.join(
+  tmpdir(),
+  `posthog-agent-oauth-env-${process.pid}`,
+);
+
+beforeAll(async () => {
+  await writeFile(TEST_OAUTH_ENV_FILE, "POSTHOG_PERSONAL_API_KEY=pha_test\0");
+});
+
+afterAll(async () => {
+  await rm(TEST_OAUTH_ENV_FILE, { force: true });
+});
+
+describe("resolveSandboxPosthogApi", () => {
+  it("reads the rotating API key from the dedicated OAuth file", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PROJECT_ID=7\0",
+      );
+      await writeFile(
+        oauthEnvFilePath,
+        "POSTHOG_PERSONAL_API_KEY=pha_refreshed\0",
+      );
+
+      expect(
+        resolveSandboxPosthogApi({}, envFilePath, oauthEnvFilePath),
+      ).toEqual({
+        apiUrl: "https://us.posthog.com",
+        apiKey: "pha_refreshed",
+        projectId: 7,
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed without the dedicated OAuth file", () => {
+    expect(
+      resolveSandboxPosthogApi(ENV, NO_ENV_FILE, NO_ENV_FILE),
+    ).toBeUndefined();
+  });
+
+  it("does not resurrect a stale token when the OAuth file is empty", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PERSONAL_API_KEY=pha_stale\0POSTHOG_PROJECT_ID=7\0",
+      );
+      await writeFile(oauthEnvFilePath, "");
+
+      expect(
+        resolveSandboxPosthogApi(ENV, envFilePath, oauthEnvFilePath),
+      ).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the managed OAuth file is unreadable", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PROJECT_ID=7\0",
+      );
+
+      expect(
+        resolveSandboxPosthogApi(ENV, envFilePath, directory),
+      ).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 const RESULT = {
   branch: "posthog-code/fix-foo",
@@ -59,6 +179,7 @@ describe("reportCommitArtefacts", () => {
       message: "fix: foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     const lookupCalls = fetchMock.mock.calls.filter(([url]) =>
@@ -83,6 +204,83 @@ describe("reportCommitArtefacts", () => {
       expect(body.content.branch).toBe("posthog-code/fix-foo");
       expect(["aaa111", "bbb222"]).toContain(body.content.commit_sha);
       expect(body.content.message).toBe("fix: foo");
+    }
+  });
+
+  it("rereads the OAuth file when credentials rotate between requests", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+    await writeFile(oauthEnvFilePath, "POSTHOG_PERSONAL_API_KEY=pha_initial\0");
+
+    try {
+      fetchMock.mockImplementationOnce(async () => {
+        await writeFile(
+          oauthEnvFilePath,
+          "POSTHOG_PERSONAL_API_KEY=pha_rotated\0",
+        );
+        return jsonResponse({ results: [{ id: "report-1" }] });
+      });
+      fetchMock.mockImplementation(async () =>
+        jsonResponse({ id: "artefact" }),
+      );
+
+      await reportCommitArtefacts({
+        taskId: "task-1",
+        result: { ...RESULT, commits: [RESULT.commits[0]] },
+        message: "fix: foo",
+        env: ENV,
+        envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_initial");
+      expect(
+        (fetchMock.mock.calls[1]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_rotated");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rereads the OAuth file when retrying an auth failure", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+    await writeFile(oauthEnvFilePath, "POSTHOG_PERSONAL_API_KEY=pha_initial\0");
+
+    try {
+      fetchMock.mockImplementationOnce(async () => {
+        await writeFile(
+          oauthEnvFilePath,
+          "POSTHOG_PERSONAL_API_KEY=pha_rotated\0",
+        );
+        return new Response(null, { status: 401 });
+      });
+      fetchMock.mockImplementationOnce(async () =>
+        jsonResponse({ results: [] }),
+      );
+
+      await reportCommitArtefacts({
+        taskId: "task-1",
+        result: RESULT,
+        message: "fix: foo",
+        env: ENV,
+        envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        (fetchMock.mock.calls[1]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_rotated");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
   });
 
@@ -117,6 +315,7 @@ describe("reportCommitArtefacts", () => {
         message: "fix: foo",
         env: ENV,
         envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
       }),
     ).resolves.toBeUndefined();
   });
@@ -140,6 +339,7 @@ describe("reportCommitArtefacts", () => {
       message: "fix: foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     // Both commits attempted despite the first failing.
@@ -175,6 +375,7 @@ describe("reportTaskRunBranch", () => {
       branch: "posthog-code/fix-foo",
       env: ENV,
       envFilePath: NO_ENV_FILE,
+      oauthEnvFilePath: TEST_OAUTH_ENV_FILE,
     });
 
     expect(fetchMock).toHaveBeenCalledOnce();
