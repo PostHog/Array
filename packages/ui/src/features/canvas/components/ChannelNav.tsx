@@ -174,11 +174,15 @@ export function ChannelNav() {
             <CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />
           }
         />
-        <Popover open={activityOpen} onOpenChange={setActivityOpen}>
+        <Popover
+          open={!isActivity && activityOpen}
+          onOpenChange={(open) => setActivityOpen(!isActivity && open)}
+        >
           <PopoverTrigger
             openOnHover
             delay={300}
-            closeDelay={150}
+            closeDelay={30}
+            disabled={isActivity}
             render={
               <NavButton
                 icon={
@@ -196,7 +200,7 @@ export function ChannelNav() {
               />
             }
           />
-          {activityOpen && (
+          {!isActivity && activityOpen && (
             <ActivityHoverCard onClose={() => setActivityOpen(false)} />
           )}
         </Popover>

@@ -102,6 +102,7 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
                 currentUser={currentUser}
                 surface="activity_panel"
                 onNavigate={onClose}
+                compact
               />
             ))}
           </div>

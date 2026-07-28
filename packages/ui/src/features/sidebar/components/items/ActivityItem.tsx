@@ -22,36 +22,35 @@ export function ActivityItem({
 }: ActivityItemProps) {
   const { unreadCount } = useTaskActivity();
   const [open, setOpen] = useState(false);
+  const item = (
+    <SidebarItem
+      depth={depth}
+      icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
+      label={
+        <>
+          Activity
+          <SidebarCountBadge
+            count={unreadCount}
+            title={`${unreadCount} new ${unreadCount === 1 ? "update" : "updates"}`}
+          />
+        </>
+      }
+      isActive={isActive}
+      onClick={() => {
+        setOpen(false);
+        onClick();
+      }}
+    />
+  );
+  if (isActive) return item;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         openOnHover
         delay={300}
-        closeDelay={150}
-        render={
-          <div className="w-full">
-            <SidebarItem
-              depth={depth}
-              icon={
-                <BellIcon size={16} weight={isActive ? "fill" : "regular"} />
-              }
-              label={
-                <>
-                  Activity
-                  <SidebarCountBadge
-                    count={unreadCount}
-                    title={`${unreadCount} new ${unreadCount === 1 ? "update" : "updates"}`}
-                  />
-                </>
-              }
-              isActive={isActive}
-              onClick={() => {
-                setOpen(false);
-                onClick();
-              }}
-            />
-          </div>
-        }
+        closeDelay={30}
+        render={<div className="w-full">{item}</div>}
       />
       {open && <ActivityHoverCard onClose={() => setOpen(false)} />}
     </Popover>
