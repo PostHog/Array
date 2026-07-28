@@ -40,6 +40,7 @@ Title rules:
 - Remove: the, this, my, a, an
 - If possible, start with action verbs (Fix, Implement, Analyze, Debug, Update, Research, Review)
 - Keep exact: technical terms, numbers, filenames, HTTP codes, PR numbers
+- GitHub PR rule: If the content contains a <github_pr> with a non-empty title, the generated TITLE MUST include both the PR number and the PR title verbatim. This rule overrides the 6-word title limit. Never replace the PR title with a generic phrase. Before responding, verify that both values appear in TITLE.
 - Never assume tech stack
 - Only output "Untitled" if the input is completely null/missing, not just unclear
 - If the input is a URL (e.g. a GitHub issue link, PR link, or any web URL), generate a title based on what you can infer from the URL structure (repo name, issue/PR number, etc.). Never say you cannot access URLs or ask the user for more information.
@@ -58,6 +59,7 @@ Title examples:
 - "Update user documentation for new API endpoints" → Update API documentation
 - "Research competitor pricing strategies for our product" → Research competitor pricing
 - "Review pull request #123" → Review pull request #123
+- "<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />" → Review PR #123: Fix login redirect
 - "debug 500 errors in production" → Debug production 500 errors
 - "why is the payment flow failing" → Analyze payment flow failure
 - "So how about that weather huh" → Weather chat
