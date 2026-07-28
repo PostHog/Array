@@ -2,7 +2,6 @@ import {
   ArrowSquareOut,
   CaretLeftIcon,
   CaretRightIcon,
-  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { Button, ButtonGroup } from "@posthog/quill";
@@ -35,12 +34,9 @@ import { useCanvasDeepLink } from "@posthog/ui/features/canvas/hooks/useCanvasDe
 import { useChannelDeepLink } from "@posthog/ui/features/canvas/hooks/useChannelDeepLink";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { CommandMenu } from "@posthog/ui/features/command/CommandMenu";
+import { CommandSearchBar } from "@posthog/ui/features/command/CommandSearchBar";
 import { GlobalFilePicker } from "@posthog/ui/features/command/GlobalFilePicker";
 import { KeyboardShortcutsSheet } from "@posthog/ui/features/command/KeyboardShortcutsSheet";
-import {
-  formatHotkey,
-  SHORTCUTS,
-} from "@posthog/ui/features/command/keyboard-shortcuts";
 import { ConnectivityBanner } from "@posthog/ui/features/connectivity/ConnectivityBanner";
 import { useNewTaskDeepLink } from "@posthog/ui/features/deep-links/useNewTaskDeepLink";
 import { useOpenTargetDeepLink } from "@posthog/ui/features/deep-links/useOpenTargetDeepLink";
@@ -66,7 +62,6 @@ import { UpdateAvailableModal } from "@posthog/ui/features/updates/UpdateAvailab
 import { WhatsNewModal } from "@posthog/ui/features/updates/WhatsNewModal";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
 import LogosLandscape from "@posthog/ui/primitives/Logo";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
@@ -399,58 +394,38 @@ function RootLayout() {
                 )}
               </Button>
             </Flex>
-            {(localWorkspaces || channelsLayout) && (
-              <Flex align="center" gap="2" className="no-drag">
-                {/* Search rides the title bar rather than the sidebar nav —
-                    it's chrome, not a destination — and leads the history
-                    controls so those stay against the sidebar edge. */}
-                {channelsLayout && (
-                  <Tooltip
-                    content="Search"
-                    shortcut={formatHotkey(SHORTCUTS.COMMAND_MENU)}
-                    side="bottom"
-                  >
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="Search"
-                      onClick={toggleCommandMenu}
-                    >
-                      <MagnifyingGlass size={14} />
-                    </Button>
-                  </Tooltip>
-                )}
-                {localWorkspaces && (
-                  <ButtonGroup className="no-drag">
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="Back"
-                      disabled={!canGoBack}
-                      onClick={() => router.history.back()}
-                    >
-                      <CaretLeftIcon size={14} />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="Forward"
-                      disabled={!canGoForward}
-                      onClick={() => router.history.forward()}
-                    >
-                      <CaretRightIcon size={14} />
-                    </Button>
-                  </ButtonGroup>
-                )}
-              </Flex>
+            {localWorkspaces && (
+              <ButtonGroup className="no-drag">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Back"
+                  disabled={!canGoBack}
+                  onClick={() => router.history.back()}
+                >
+                  <CaretLeftIcon size={14} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Forward"
+                  disabled={!canGoForward}
+                  onClick={() => router.history.forward()}
+                >
+                  <CaretRightIcon size={14} />
+                </Button>
+              </ButtonGroup>
             )}
           </Flex>
           {/* The new layout has no global tab strip (tabs live inside the
-              task view); search/inbox/activity live in the sidebar nav. The
-              strip is also the only global owner of Cmd+W, so something has to
-              keep holding that key when it isn't mounted. */}
+              task view); inbox/activity live in the sidebar nav. The strip is
+              also the only global owner of Cmd+W, so something has to keep
+              holding that key when it isn't mounted. */}
           {channelsLayout ? (
-            <TabShortcutFallback enabled />
+            <>
+              <TabShortcutFallback enabled />
+              <CommandSearchBar onClick={toggleCommandMenu} />
+            </>
           ) : (
             <BrowserTabStrip />
           )}
