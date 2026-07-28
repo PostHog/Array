@@ -918,7 +918,9 @@ export type ChannelActionType =
   | "view_activity"
   | "open_mention"
   | "canvas_mode_toggle"
-  | "activity_tab_change";
+  | "activity_tab_change"
+  /** Switched the artifacts list between list / grid / masonry. */
+  | "artifacts_view_change";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -939,6 +941,8 @@ export interface ChannelActionProperties {
   armed?: boolean;
   /** For activity_tab_change: the tab landed on. */
   tab?: string;
+  /** For artifacts_view_change: the layout landed on ("list"|"grid"|"masonry"). */
+  view_mode?: string;
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }

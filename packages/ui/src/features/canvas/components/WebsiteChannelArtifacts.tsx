@@ -1,21 +1,36 @@
-import { CaretRightIcon, TrashIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, FilesIcon, TrashIcon } from "@phosphor-icons/react";
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import type { DashboardSummary } from "@posthog/core/canvas/dashboardSchemas";
+import {
+  Badge,
+  Card,
+  CardContent,
+  cn,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Text,
+} from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { ArtifactsViewToggle } from "@posthog/ui/features/canvas/components/ArtifactsViewToggle";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { FreeformPreview } from "@posthog/ui/features/canvas/components/FreeformPreview";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { useArtifactsViewStore } from "@posthog/ui/features/canvas/stores/artifactsViewStore";
 import { useIsCanvasPendingDelete } from "@posthog/ui/features/canvas/stores/pendingCanvasDeleteStore";
+import { masonryPreviewHeight } from "@posthog/ui/features/canvas/utils/masonryPreviewHeight";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { Text } from "@radix-ui/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
@@ -30,6 +45,8 @@ type ArtifactItem =
       ts: number;
       templateId: string;
       dashboardId: string;
+      /** Live React source, along for the ride so cards preview without a get(). */
+      code?: string;
     }
   | {
       kind: "pr";
@@ -41,10 +58,12 @@ type ArtifactItem =
 
 // A channel's artifacts: canvases and the pull requests produced by its tasks,
 // most recent first. Sibling of the History tab, but scoped to outputs rather
-// than the full activity stream.
+// than the full activity stream. The view toggle switches between a dense row
+// list and card layouts that preview each canvas live.
 export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
   const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
+  const view = useArtifactsViewStore((s) => s.view);
 
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
@@ -72,6 +91,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
         ts: d.updatedAt,
         templateId: d.templateId,
         dashboardId: d.id,
+        code: d.code,
       }),
     );
 
@@ -126,43 +146,136 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
 
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
-      <div className="mx-auto w-full max-w-[680px] px-4 py-6">
+      {/* The list reads best narrow; card layouts want the full width. */}
+      <div
+        className={cn(
+          "mx-auto w-full px-4 py-6",
+          view === "list" ? "max-w-[680px]" : "max-w-[1200px]",
+        )}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <Text size="sm" variant="muted">
+            {items.length === 0
+              ? "Artifacts"
+              : `${items.length} artifact${items.length === 1 ? "" : "s"}`}
+          </Text>
+          <ArtifactsViewToggle channelId={channelId} />
+        </div>
+
         {items.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 py-24 text-center">
-            <Text className="font-medium text-[14px] text-gray-12">
-              No artifacts yet
-            </Text>
-            <Text className="text-[13px] text-gray-10">
-              Canvases and pull requests from this{" "}
-              {spacesLayout ? "space's" : "channel's"} tasks show up here.
-            </Text>
+          <Empty className="mx-auto max-w-md py-20">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FilesIcon size={24} />
+              </EmptyMedia>
+              <EmptyTitle>No artifacts yet</EmptyTitle>
+              <EmptyDescription>
+                Canvases and pull requests from this{" "}
+                {spacesLayout ? "space's" : "channel's"} tasks show up here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : view === "list" ? (
+          <div className="flex flex-col gap-0.5">
+            {items.map((item) => (
+              <ArtifactListItem
+                key={item.key}
+                item={item}
+                onOpenCanvas={openCanvas}
+                onOpenPr={openPr}
+              />
+            ))}
+          </div>
+        ) : view === "grid" ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((item) => (
+              <ArtifactCard
+                key={item.key}
+                item={item}
+                previewHeight={176}
+                onOpenCanvas={openCanvas}
+                onOpenPr={openPr}
+              />
+            ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-0.5">
-            {items.map((item) =>
-              item.kind === "canvas" ? (
-                <CanvasArtifactRow
-                  key={item.key}
-                  dashboardId={item.dashboardId}
-                  templateId={item.templateId}
-                  title={item.title}
-                  ts={item.ts}
-                  onClick={openCanvas}
+          // CSS columns rather than a JS masonry: cards are self-contained and
+          // never reflow into each other, so break-inside-avoid is enough. The
+          // trade-off is column-major order — newest runs down column one, not
+          // across the row — which is fine for a browse-y wall of previews.
+          <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
+            {items.map((item) => (
+              <div key={item.key} className="mb-4 break-inside-avoid">
+                <ArtifactCard
+                  item={item}
+                  previewHeight={masonryPreviewHeight(item.key)}
+                  onOpenCanvas={openCanvas}
+                  onOpenPr={openPr}
                 />
-              ) : (
-                <PrArtifactRow
-                  key={item.key}
-                  title={item.title}
-                  prUrl={item.prUrl}
-                  ts={item.ts}
-                  onClick={openPr}
-                />
-              ),
-            )}
+              </div>
+            ))}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function ArtifactListItem({
+  item,
+  onOpenCanvas,
+  onOpenPr,
+}: {
+  item: ArtifactItem;
+  onOpenCanvas: (dashboardId: string) => void;
+  onOpenPr: (safeUrl: string) => void;
+}) {
+  return item.kind === "canvas" ? (
+    <CanvasArtifactRow
+      dashboardId={item.dashboardId}
+      templateId={item.templateId}
+      title={item.title}
+      ts={item.ts}
+      onClick={onOpenCanvas}
+    />
+  ) : (
+    <PrArtifactRow
+      title={item.title}
+      prUrl={item.prUrl}
+      ts={item.ts}
+      onClick={onOpenPr}
+    />
+  );
+}
+
+function ArtifactCard({
+  item,
+  previewHeight,
+  onOpenCanvas,
+  onOpenPr,
+}: {
+  item: ArtifactItem;
+  previewHeight: number;
+  onOpenCanvas: (dashboardId: string) => void;
+  onOpenPr: (safeUrl: string) => void;
+}) {
+  return item.kind === "canvas" ? (
+    <CanvasArtifactCard
+      dashboardId={item.dashboardId}
+      templateId={item.templateId}
+      title={item.title}
+      ts={item.ts}
+      code={item.code}
+      previewHeight={previewHeight}
+      onClick={onOpenCanvas}
+    />
+  ) : (
+    <PrArtifactCard
+      title={item.title}
+      prUrl={item.prUrl}
+      ts={item.ts}
+      onClick={onOpenPr}
+    />
   );
 }
 
@@ -280,6 +393,159 @@ function ArtifactRow({
         size={14}
         className="shrink-0 text-gray-8 opacity-0 transition-opacity group-hover:opacity-100"
       />
+    </button>
+  );
+}
+
+// The card form of a canvas artifact: a live preview of the canvas above its
+// title. Same delete-undo behaviour as the row — the card stays in place,
+// dimmed, until the undo window closes.
+function CanvasArtifactCard({
+  dashboardId,
+  templateId,
+  title,
+  ts,
+  code,
+  previewHeight,
+  onClick,
+}: {
+  dashboardId: string;
+  templateId: string;
+  title: string;
+  ts: number;
+  code?: string;
+  previewHeight: number;
+  onClick: (dashboardId: string) => void;
+}) {
+  const deleting = useIsCanvasPendingDelete(dashboardId);
+
+  return (
+    <ArtifactCardShell
+      media={
+        <>
+          <FreeformPreview
+            code={code}
+            height={previewHeight}
+            className="border-border border-b"
+          />
+          {deleting && (
+            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-gray-1/80">
+              <TrashIcon size={18} className="animate-pulse text-red-9" />
+              <Text size="xs" variant="muted">
+                Deleting…
+              </Text>
+            </div>
+          )}
+        </>
+      }
+      icon={iconForTemplate(templateId, {
+        size: 14,
+        className: "text-violet-9",
+      })}
+      title={title}
+      badge="Canvas"
+      subtitle={
+        deleting ? "Deleting…" : `Updated ${formatRelativeTimeShort(ts)}`
+      }
+      dimmed={deleting}
+      onClick={deleting ? undefined : () => onClick(dashboardId)}
+    />
+  );
+}
+
+// The card form of a PR artifact. A PR has nothing to preview, so its media
+// slot is a short tinted band carrying the lifecycle icon — which also keeps PR
+// cards visibly shorter than canvas cards in the masonry layout.
+function PrArtifactCard({
+  title,
+  prUrl,
+  ts,
+  onClick,
+}: {
+  title: string;
+  prUrl: string;
+  ts: number;
+  onClick: (safeUrl: string) => void;
+}) {
+  const {
+    safeUrl,
+    title: prTitle,
+    stateLabel,
+    Icon,
+    iconColor,
+    accentColor,
+  } = usePrArtifact(prUrl);
+
+  const subtitle = [prTitle, formatRelativeTimeShort(ts)]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <ArtifactCardShell
+      media={
+        <div
+          className="flex h-20 items-center justify-center border-border border-b"
+          style={{ backgroundColor: `var(--${accentColor}-3)` }}
+        >
+          <Icon size={28} weight="bold" style={{ color: iconColor }} />
+        </div>
+      }
+      icon={<Icon size={14} weight="bold" style={{ color: iconColor }} />}
+      title={title}
+      badge={stateLabel || "Pull request"}
+      subtitle={subtitle}
+      onClick={safeUrl ? () => onClick(safeUrl) : undefined}
+    />
+  );
+}
+
+function ArtifactCardShell({
+  media,
+  icon,
+  title,
+  badge,
+  subtitle,
+  dimmed,
+  onClick,
+}: {
+  media: ReactNode;
+  icon: ReactNode;
+  title: string;
+  badge: string;
+  subtitle: string;
+  dimmed?: boolean;
+  /** Absent for a card with nowhere safe to go — a non-github PR link. */
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={cn(
+        // A card with nowhere to go (or mid-delete) takes no pointer events, so
+        // the hover treatment below can key off plain group-hover.
+        "group w-full text-left disabled:pointer-events-none",
+        dimmed && "pointer-events-none opacity-60",
+      )}
+    >
+      <Card className="gap-0 overflow-hidden p-0 transition-colors group-hover:border-accent">
+        <div className="relative">{media}</div>
+        <CardContent className="flex flex-col gap-0.5 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0">{icon}</span>
+              <Text size="sm" weight="medium" className="truncate">
+                {title}
+              </Text>
+            </div>
+            <Badge>{badge}</Badge>
+          </div>
+          <Text size="xxs" variant="muted" className="truncate">
+            {subtitle}
+          </Text>
+        </CardContent>
+      </Card>
     </button>
   );
 }
