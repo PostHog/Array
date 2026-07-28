@@ -27,6 +27,8 @@ import { TimezoneTimestamp } from "@posthog/ui/primitives/TimezoneTimestamp";
 import { systemTimezone } from "@posthog/ui/primitives/timezone";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
+  canGoBackInHistory,
+  goBackInHistory,
   navigateToEditLoop,
   navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
@@ -34,7 +36,6 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
@@ -48,7 +49,6 @@ import {
   buildLoopEnabledToggledProps,
   buildLoopViewedProps,
 } from "../loopAnalytics";
-import { useLoopBackTarget } from "../loopBackTarget";
 import {
   describeTrigger,
   loopFireBlockedMessage,
@@ -64,8 +64,6 @@ import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
 
 export function LoopDetailView({ loopId }: { loopId: string }) {
-  const navigate = useNavigate();
-  const backTarget = useLoopBackTarget();
   const { data: loop, isLoading, isError } = useLoop(loopId);
   const updateLoop = useUpdateLoop(loopId);
   const deleteLoop = useDeleteLoop();
@@ -212,11 +210,8 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
             variant="link-muted"
             size="sm"
             onClick={() => {
-              if (backTarget) {
-                void navigate({
-                  to: "/website/$channelId/loops",
-                  params: { channelId: backTarget.channelId },
-                });
+              if (canGoBackInHistory()) {
+                goBackInHistory();
                 return;
               }
               navigateToLoops();
@@ -224,7 +219,7 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
             className="w-fit px-0"
           >
             <ArrowLeftIcon size={15} />
-            Loops
+            Back
           </Button>
 
           <Flex align="center" justify="between" gap="3" wrap="wrap">
