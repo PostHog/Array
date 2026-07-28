@@ -2,6 +2,7 @@ import { PreviewCard } from "@base-ui/react/preview-card";
 import { Archive, FileTextIcon, PushPin } from "@phosphor-icons/react";
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import {
+  isRunStatusActive,
   runStatusLabel,
   runStatusVariant,
 } from "@posthog/core/canvas/runStatus";
@@ -47,6 +48,19 @@ function itemIcon(item: ChannelItemModel): ReactNode {
   );
 }
 
+/**
+ * Marks a row whose run is still going. The glyph is kept and shimmered rather
+ * than swapped for a spinner, so the list stays scannable by kind while it
+ * moves — you can still tell a running task from a running canvas.
+ */
+function RunningIcon({ children }: { children: ReactNode }) {
+  return (
+    <span aria-label="Running" className="ph-shimmer" role="img">
+      {children}
+    </span>
+  );
+}
+
 function authorLabel(item: ChannelItemModel): string | null {
   if (item.authorUser) return userDisplayName(item.authorUser);
   return item.authorName;
@@ -64,6 +78,13 @@ export function ChannelItemRow({
   const icon = itemIcon(item);
   const statusLabel = runStatusLabel(item.rawStatus);
   const author = authorLabel(item);
+  // Only the row shimmers. The preview card spells the status out in a badge,
+  // so animating its copy of the icon would say the same thing twice.
+  const rowIcon = isRunStatusActive(item.rawStatus) ? (
+    <RunningIcon>{icon}</RunningIcon>
+  ) : (
+    icon
+  );
 
   return (
     <PreviewCard.Root>
@@ -74,7 +95,7 @@ export function ChannelItemRow({
           <div className="min-w-0">
             <SidebarItem
               depth={0}
-              icon={icon}
+              icon={rowIcon}
               // A non-string label opts out of SidebarItem's truncation tooltip.
               label={<span>{item.title}</span>}
               isActive={isActive}
