@@ -60,7 +60,6 @@ export const THINKING_MESSAGES = [
   "Blooming",
   "Sparking",
   "Nesting",
-  "Looping",
   "Wiring",
   "Snipping",
   "Zoning",
