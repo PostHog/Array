@@ -3,13 +3,13 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   ChartBarIcon,
+  CubeFocusIcon,
   DotsThreeIcon,
   FileTextIcon,
   HashIcon,
   LinkIcon,
   PencilSimpleIcon,
   PlusIcon,
-  SquaresFourIcon,
   StarIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -1030,7 +1030,7 @@ export function ChannelsList() {
         keepMounted={!channelsLayout}
         icon={
           channelsLayout ? (
-            <SquaresFourIcon size={14} data-testid="spaces-section-icon" />
+            <CubeFocusIcon size={14} data-testid="spaces-section-icon" />
           ) : (
             <HashIcon size={14} />
           )
