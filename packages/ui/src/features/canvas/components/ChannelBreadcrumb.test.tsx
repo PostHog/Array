@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => true,
+}));
 
 import { ChannelBreadcrumb } from "./ChannelBreadcrumb";
 
