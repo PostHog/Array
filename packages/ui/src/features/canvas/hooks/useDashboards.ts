@@ -10,6 +10,11 @@ import { logger } from "@posthog/ui/shell/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
+import {
+  SPACE_QUERY_GC_TIME_MS,
+  SPACE_QUERY_REFETCH_INTERVAL_MS,
+  SPACE_QUERY_STALE_TIME_MS,
+} from "./spaceQueryPolicy";
 
 const log = logger.scope("dashboards");
 
@@ -33,7 +38,12 @@ export function useDashboards(channelId: string | undefined): {
   const { data, isLoading } = useQuery(
     trpc.dashboards.list.queryOptions(
       { channelId: channelId ?? "" },
-      { enabled: !!channelId, staleTime: 5_000 },
+      {
+        enabled: !!channelId,
+        gcTime: SPACE_QUERY_GC_TIME_MS,
+        refetchInterval: SPACE_QUERY_REFETCH_INTERVAL_MS,
+        staleTime: SPACE_QUERY_STALE_TIME_MS,
+      },
     ),
   );
   return { dashboards: data ?? [], isLoading };
@@ -50,7 +60,13 @@ export function usePrefetchDashboards(): (channelId: string) => void {
   return useCallback(
     (channelId: string) => {
       void queryClient.prefetchQuery(
-        trpc.dashboards.list.queryOptions({ channelId }, { staleTime: 5_000 }),
+        trpc.dashboards.list.queryOptions(
+          { channelId },
+          {
+            gcTime: SPACE_QUERY_GC_TIME_MS,
+            staleTime: SPACE_QUERY_STALE_TIME_MS,
+          },
+        ),
       );
     },
     [trpc, queryClient],

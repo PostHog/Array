@@ -2,6 +2,11 @@ import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas"
 import { useHostTRPC } from "@posthog/host-router/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import {
+  SPACE_QUERY_GC_TIME_MS,
+  SPACE_QUERY_REFETCH_INTERVAL_MS,
+  SPACE_QUERY_STALE_TIME_MS,
+} from "./spaceQueryPolicy";
 
 /** Tasks filed to a channel — backed by desktop_file_system rows. */
 export function useChannelTasks(channelId: string | undefined): {
@@ -12,7 +17,12 @@ export function useChannelTasks(channelId: string | undefined): {
   const { data, isLoading } = useQuery(
     trpc.channelTasks.list.queryOptions(
       { channelId: channelId ?? "" },
-      { enabled: !!channelId, staleTime: 5_000 },
+      {
+        enabled: !!channelId,
+        gcTime: SPACE_QUERY_GC_TIME_MS,
+        refetchInterval: SPACE_QUERY_REFETCH_INTERVAL_MS,
+        staleTime: SPACE_QUERY_STALE_TIME_MS,
+      },
     ),
   );
   return { tasks: data ?? [], isLoading };
@@ -31,7 +41,10 @@ export function usePrefetchChannelTasks(): (channelId: string) => void {
       void queryClient.prefetchQuery(
         trpc.channelTasks.list.queryOptions(
           { channelId },
-          { staleTime: 5_000 },
+          {
+            gcTime: SPACE_QUERY_GC_TIME_MS,
+            staleTime: SPACE_QUERY_STALE_TIME_MS,
+          },
         ),
       );
     },
