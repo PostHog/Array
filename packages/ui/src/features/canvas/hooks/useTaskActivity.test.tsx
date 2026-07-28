@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockClient = vi.hoisted(() => ({
   getTaskActivity: vi.fn(),
+  markAllTaskActivityRead: vi.fn(),
   markTaskActivityRead: vi.fn(),
 }));
 
@@ -16,7 +17,10 @@ vi.mock("@posthog/ui/features/auth/authClient", () => ({
   useOptionalAuthenticatedClient: () => mockClient,
 }));
 
-import { useMarkTaskActivityRead } from "./useMarkTaskActivityRead";
+import {
+  useMarkAllTaskActivityRead,
+  useMarkTaskActivityRead,
+} from "./useMarkTaskActivityRead";
 import { TASK_ACTIVITY_QUERY_KEY, useTaskActivity } from "./useTaskActivity";
 
 function activity(overrides: Partial<TaskActivity>): TaskActivity {
@@ -89,6 +93,24 @@ describe("task activity hooks", () => {
     });
   });
 
+  it("requests only unread activity for the hover card", async () => {
+    mockClient.getTaskActivity.mockResolvedValue({
+      results: [activity({})],
+      unread_count: 1,
+    });
+
+    const hook = renderHook(
+      () => useTaskActivity({ unreadOnly: true, limit: 500 }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
+    expect(mockClient.getTaskActivity).toHaveBeenCalledWith({
+      limit: 500,
+      unreadOnly: true,
+    });
+  });
+
   it("does not optimistically clear activity newer than the marker", async () => {
     const page: TaskActivityPage = {
       results: [activity({ activity_at: "2026-07-01T11:00:00Z" })],
@@ -149,5 +171,40 @@ describe("task activity hooks", () => {
     );
     expect(hook.result.current.activity.items).toHaveLength(1);
     expect(mockClient.getTaskActivity).toHaveBeenCalledOnce();
+  });
+
+  it("clears unread state across the full and unread-only caches", async () => {
+    const data = {
+      pages: [
+        {
+          results: [activity({})],
+          unread_count: 1,
+        },
+      ],
+      pageParams: [undefined],
+    };
+    queryClient.setQueryData(["task-activity"], data);
+    queryClient.setQueryData(["task-activity", { unreadOnly: true }], data);
+    mockClient.markAllTaskActivityRead.mockResolvedValue({
+      marked_read: 1,
+      unread_count: 0,
+    });
+
+    const hook = renderHook(() => useMarkAllTaskActivityRead(), { wrapper });
+    act(() => hook.result.current.mutate());
+
+    await waitFor(() =>
+      expect(mockClient.markAllTaskActivityRead).toHaveBeenCalledOnce(),
+    );
+    for (const queryKey of [
+      ["task-activity"],
+      ["task-activity", { unreadOnly: true }],
+    ]) {
+      const cached = queryClient.getQueryData<{
+        pages: TaskActivityPage[];
+      }>(queryKey);
+      expect(cached?.pages[0]?.unread_count).toBe(0);
+      expect(cached?.pages[0]?.results[0]?.is_unread).toBe(false);
+    }
   });
 });
