@@ -1,4 +1,10 @@
-import { BellIcon, LinkIcon, RobotIcon } from "@phosphor-icons/react";
+import {
+  BellIcon,
+  CheckIcon,
+  ChecksIcon,
+  LinkIcon,
+  RobotIcon,
+} from "@phosphor-icons/react";
 import type { TaskActivityItem } from "@posthog/core/canvas/taskActivity";
 import {
   Avatar,
@@ -102,12 +108,14 @@ function ActivityRow({
   item,
   folderChannelId,
   onOpen,
+  onMarkRead,
   currentUser,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
   onOpen: (item: TaskActivityItem) => void;
+  onMarkRead: (item: TaskActivityItem) => void;
   currentUser?: UserBasic | null;
 }) {
   const isAgentActivity =
@@ -181,6 +189,18 @@ function ActivityRow({
           )}
         </span>
       </button>
+      {item.isUnread && (
+        <Button
+          variant="default"
+          size="icon-xs"
+          aria-label="Mark as read"
+          title="Mark as read"
+          className={`absolute top-2 opacity-0 transition-opacity group-hover:opacity-100 ${folderChannelId ? "right-9" : "right-2"}`}
+          onClick={() => onMarkRead(item)}
+        >
+          <CheckIcon size={14} />
+        </Button>
+      )}
       {folderChannelId && (
         <Button
           variant="default"
@@ -204,9 +224,16 @@ function ActivityRow({
 export function ActivityView() {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { items, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useTaskActivity();
-  const { mutate: markTasksRead } = useMarkTaskActivityRead();
+  const {
+    items,
+    unreadCount,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useTaskActivity();
+  const { mutate: markTasksRead, isPending: isMarkingRead } =
+    useMarkTaskActivityRead();
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
@@ -214,6 +241,16 @@ export function ActivityView() {
       markTasksRead([{ task_id: item.taskId, seen_before: item.activityAt }]),
     [markTasksRead],
   );
+  const markAllRead = useCallback(() => {
+    markTasksRead(
+      items
+        .filter((item) => item.isUnread)
+        .map((item) => ({
+          task_id: item.taskId,
+          seen_before: item.activityAt,
+        })),
+    );
+  }, [items, markTasksRead]);
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
@@ -242,12 +279,28 @@ export function ActivityView() {
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
       <div className="mx-auto w-full max-w-[680px] px-4 py-6">
-        <Text size="5" weight="bold" className="block">
-          Activity
-        </Text>
-        <Text size="2" className="block text-muted-foreground">
-          Tasks you're involved in across channels.
-        </Text>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Text size="5" weight="bold" className="block">
+              Activity
+            </Text>
+            <Text size="2" className="block text-muted-foreground">
+              Tasks you're involved in across channels.
+            </Text>
+          </div>
+          {unreadCount > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              loading={isMarkingRead}
+              disabled={isMarkingRead}
+              onClick={markAllRead}
+            >
+              <ChecksIcon size={14} />
+              Mark all as read
+            </Button>
+          )}
+        </div>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -274,6 +327,7 @@ export function ActivityView() {
                   item={item}
                   folderChannelId={folderChannelIdFor(item.channelName)}
                   onOpen={markRead}
+                  onMarkRead={markRead}
                   currentUser={currentUser}
                 />
               ))}
