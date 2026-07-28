@@ -7,7 +7,7 @@ import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authCl
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { taskActivityQueryKey } from "../task-activity/taskActivityQuery";
+import { TASK_ACTIVITY_QUERY_KEY } from "../task-activity/taskActivityQuery";
 
 export { TASK_ACTIVITY_QUERY_KEY } from "../task-activity/taskActivityQuery";
 
@@ -17,11 +17,7 @@ export { TASK_ACTIVITY_QUERY_KEY } from "../task-activity/taskActivityQuery";
  * index. Mount once per surface (sidebar badge, Activity page) — results are
  * shared through the react-query cache.
  */
-export function useTaskActivity(options?: {
-  enabled?: boolean;
-  unreadOnly?: boolean;
-  limit?: number;
-}): {
+export function useTaskActivity(options?: { enabled?: boolean }): {
   items: TaskActivityItem[];
   unreadCount: number;
   isLoading: boolean;
@@ -30,19 +26,11 @@ export function useTaskActivity(options?: {
   fetchNextPage: () => Promise<unknown>;
 } {
   const client = useOptionalAuthenticatedClient();
-  const unreadOnly = options?.unreadOnly ?? false;
   const query = useInfiniteQuery({
-    queryKey: taskActivityQueryKey(unreadOnly),
+    queryKey: TASK_ACTIVITY_QUERY_KEY,
     queryFn: ({ pageParam }) => {
       if (!client) throw new Error("Not authenticated");
-      if (!pageParam && !options?.limit && !unreadOnly) {
-        return client.getTaskActivity();
-      }
-      return client.getTaskActivity({
-        ...pageParam,
-        ...(options?.limit ? { limit: options.limit } : {}),
-        ...(unreadOnly ? { unreadOnly: true } : {}),
-      });
+      return client.getTaskActivity(pageParam);
     },
     initialPageParam: undefined as
       | { before: string; beforeId: string }
