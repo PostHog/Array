@@ -484,6 +484,27 @@ describe("UpdatesService", () => {
         expect.anything(),
       );
     });
+
+    it("rejects install while a newer update is re-downloading", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      const result = await service.installUpdate();
+
+      expect(result).toEqual({ installed: false });
+      expect(mockUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+      expect(service.hasUpdateReady).toBe(true);
+    });
   });
 
   describe("triggerMenuCheck", () => {
@@ -805,6 +826,75 @@ describe("UpdatesService", () => {
         "Update state transition",
         expect.objectContaining({ reason: "update available" }),
       );
+    });
+
+    it("runs a foreground check when the user re-checks while available", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      mockUpdater.check.mockClear();
+
+      const result = service.checkForUpdates("user");
+
+      expect(result).toEqual({ success: true });
+      expect(mockUpdater.check).toHaveBeenCalled();
+      expect(statusHandler).toHaveBeenCalledWith({ checking: true });
+    });
+
+    it("re-emits the available status when a background check errors", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: "Notes",
+      });
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      service.checkForUpdates("periodic");
+
+      updaterHandlers.error?.(new Error("Network error"));
+
+      expect(statusHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          checking: false,
+          available: true,
+          availableVersion: "v2.0.0",
+        }),
+      );
+      expect(service.getStatus()).toMatchObject({
+        available: true,
+        availableVersion: "v2.0.0",
+      });
+    });
+
+    it("re-emits the available status when a background check times out", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      service.checkForUpdates("periodic");
+
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+
+      expect(statusHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          available: true,
+          availableVersion: "v2.0.0",
+        }),
+      );
+      expect(service.getStatus()).toMatchObject({ available: true });
     });
 
     it.each([
@@ -1251,6 +1341,147 @@ describe("UpdatesService", () => {
         version: "v2.0.0",
       });
     });
+
+    it("re-stages an older build when the feed rolls back below the staged version", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v3.0.0");
+
+      mockUpdater.download.mockClear();
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+
+      expect(mockUpdater.download).toHaveBeenCalled();
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
+
+    it("falls back to the staged update when a user re-check errors while a newer version is available", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({
+        available: true,
+        availableVersion: "v3.0.0",
+      });
+
+      service.checkForUpdates("user");
+      updaterHandlers.error?.(new Error("Network error"));
+
+      expect(service.hasUpdateReady).toBe(true);
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
+
+    it("falls back to the staged update when the feed empties mid-redownload", async () => {
+      await initializeService(service);
+      service.setAutoDownloadEnabled(true);
+
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      updaterHandlers.noUpdate?.();
+
+      expect(service.hasUpdateReady).toBe(true);
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: false,
+        version: "v2.0.0",
+      });
+    });
+
+    it.each([
+      { source: "user" as const, emitsStatus: true },
+      { source: "periodic" as const, emitsStatus: false },
+    ])(
+      "$source checks while installing do not restart the state machine",
+      async ({ source, emitsStatus }) => {
+        await initializeService(service);
+        updaterHandlers.updateDownloaded?.("v2.0.0");
+        mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+          new Promise(() => {}),
+        );
+        void service.installUpdate();
+        await Promise.resolve();
+
+        const statusHandler = vi.fn();
+        service.on(UpdatesEvent.Status, statusHandler);
+        mockUpdater.check.mockClear();
+
+        const result = service.checkForUpdates(source);
+
+        expect(result).toEqual({ success: true });
+        expect(mockUpdater.check).not.toHaveBeenCalled();
+        if (emitsStatus) {
+          expect(statusHandler).toHaveBeenCalledWith(
+            expect.objectContaining({ updateReady: true, installing: true }),
+          );
+        } else {
+          expect(statusHandler).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it.each([
+      [
+        "update-available",
+        () =>
+          updaterHandlers.updateAvailable?.({
+            version: "v3.0.0",
+            releaseNotes: null,
+          }),
+      ],
+      ["update-downloaded", () => updaterHandlers.updateDownloaded?.("v3.0.0")],
+    ])("ignores %s while an install is in progress", async (_event, fire) => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      mockLifecycleService.shutdownWithoutContainer.mockReturnValue(
+        new Promise(() => {}),
+      );
+      void service.installUpdate();
+      await Promise.resolve();
+
+      const statusHandler = vi.fn();
+      const readyHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      service.on(UpdatesEvent.Ready, readyHandler);
+
+      fire();
+
+      expect(statusHandler).not.toHaveBeenCalled();
+      expect(readyHandler).not.toHaveBeenCalled();
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        updateReady: true,
+        installing: true,
+        version: "v2.0.0",
+      });
+    });
   });
 
   describe("transition logging", () => {
@@ -1319,6 +1550,45 @@ describe("UpdatesService", () => {
 
       // Should not throw
       expect(() => service.checkForUpdates()).not.toThrow();
+    });
+
+    it("keeps the staged state when a background check throws synchronously", async () => {
+      await initializeService(service);
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
+      mockUpdater.check.mockImplementationOnce(() => {
+        throw new Error("boom");
+      });
+
+      service.checkForUpdates("periodic");
+
+      expect(statusHandler).not.toHaveBeenCalled();
+      expect(service.hasUpdateReady).toBe(true);
+      expect(service.getStatus()).toMatchObject({
+        updateReady: true,
+        version: "v2.0.0",
+      });
+    });
+
+    it("surfaces an error when a download fails with nothing staged", async () => {
+      await initializeService(service);
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+      service.requestDownload();
+      expect(service.getStatus()).toMatchObject({ downloading: true });
+
+      updaterHandlers.error?.(new Error("Download failed"));
+
+      expect(service.hasUpdateReady).toBe(false);
+      expect(service.getStatus()).toEqual({
+        checking: false,
+        error: "Download failed",
+      });
     });
   });
 });

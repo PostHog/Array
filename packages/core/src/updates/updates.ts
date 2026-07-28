@@ -374,6 +374,12 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
+    // Re-emit so a menu check that deferred to this background check resolves.
+    if (this.state === "available") {
+      this.emitStatus(this.availableStatusPayload());
+      return;
+    }
+
     if (this.state === "checking" || this.state === "downloading") {
       if (this.downloadedVersion !== null) {
         this.availableInfo = null;
@@ -394,6 +400,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   }
 
   private handleUpdateAvailable(info: UpdateAvailableInfo): void {
+    this.clearCheckTimeout();
+
     if (this.state === "installing") {
       this.log.info(
         "Ignoring update-available because install is in progress",
@@ -404,8 +412,8 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
+    // Only the exact staged version is skipped so a feed rollback still re-stages.
     if (this.state === "ready" && info.version === this.downloadedVersion) {
-      this.clearCheckTimeout();
       this.log.info(
         "Ignoring update-available because that version is already staged",
         {
@@ -419,13 +427,11 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       this.state === "available" &&
       info.version === this.availableInfo?.version
     ) {
-      this.clearCheckTimeout();
       this.availableInfo = info;
       this.emitStatus(this.availableStatusPayload());
       return;
     }
 
-    this.clearCheckTimeout();
     this.availableInfo = info;
     this.downloadProgress = null;
 
@@ -580,6 +586,9 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
         this.transitionTo("error", { error: message });
         this.emitStatus({ checking: false, error: message });
         return;
+      }
+      if (this.state === "available") {
+        this.emitStatus(this.availableStatusPayload());
       }
       this.log.warn("Background update check timed out", { state: this.state });
     }, UpdatesService.CHECK_TIMEOUT_MS);
