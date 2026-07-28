@@ -220,6 +220,21 @@ export interface ListTicketsOptions {
   offset?: number;
 }
 
+/**
+ * One message in a ticket's thread. Not in the generated spec yet — shape
+ * mirrors TicketMessageSerializer in products/conversations (posthog).
+ * `author_type` is server-defined and open-ended ("customer", "agent", "AI").
+ */
+export interface TicketMessage {
+  id: string;
+  content: string;
+  rich_content: unknown;
+  author_type: string;
+  author_name: string;
+  is_private: boolean;
+  created_at: string;
+}
+
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -6282,6 +6297,43 @@ export class PostHogAPIClient {
       },
     );
     return data.results ?? [];
+  }
+
+  /**
+   * Message thread for a ticket, oldest first. The endpoint is paginated but
+   * absent from the generated spec, so this pages via the raw fetcher.
+   */
+  async listTicketMessages(ticketId: string): Promise<TicketMessage[]> {
+    const TICKET_MESSAGES_MAX_PAGES = 20;
+    const teamId = await this.getTeamId();
+    const all: TicketMessage[] = [];
+    let urlPath: string = `/api/projects/${teamId}/conversations/tickets/${ticketId}/messages/`;
+    for (let i = 0; i < TICKET_MESSAGES_MAX_PAGES; i++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: urlPath,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch ticket messages: ${response.statusText}`,
+        );
+      }
+      const page = (await response.json()) as {
+        results: TicketMessage[];
+        next?: string | null;
+      };
+      all.push(...(page.results ?? []));
+      if (!page.next) return all;
+      const nextUrl = new URL(page.next);
+      urlPath = `${nextUrl.pathname}${nextUrl.search}`;
+    }
+    log.warn(
+      `listTicketMessages hit MAX_PAGES (${TICKET_MESSAGES_MAX_PAGES}); returning partial thread`,
+      { ticketId, returned: all.length },
+    );
+    return all;
   }
 
   /**

@@ -173,6 +173,17 @@ export function navigateToEditLoop(loopId: string): void {
   });
 }
 
+export function navigateToSupport(): void {
+  void getRouterOrNull()?.navigate({ to: "/code/support" });
+}
+
+export function navigateToSupportTicketDetail(ticketId: string): void {
+  void getRouterOrNull()?.navigate({
+    to: "/code/support/$ticketId",
+    params: { ticketId },
+  });
+}
+
 export function navigateToAgents(): void {
   void getRouterOrNull()?.navigate({ to: "/code/agents" });
 }
