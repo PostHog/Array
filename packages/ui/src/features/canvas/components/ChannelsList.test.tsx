@@ -120,6 +120,14 @@ describe("ChannelsList", () => {
       renderList();
       expect(screen.getByText("Channels")).toBeTruthy();
     });
+
+    it("shows section icons until the heading is hovered", () => {
+      renderList();
+
+      expect(screen.getByTestId("starred-section-icon")).toBeTruthy();
+      expect(screen.getByTestId("spaces-section-icon")).toBeTruthy();
+      expect(screen.getByTestId("channels:all-caret-up")).toBeTruthy();
+    });
   });
 
   describe("search", () => {

@@ -33,6 +33,7 @@ export function ChannelHeader({ channelId }: { channelId: string }) {
       >
         {channelGlyph(channelName, {
           size: 20,
+          space: channelsLayout,
           className: "shrink-0 text-muted-foreground/80",
         })}
         <Text className="min-w-0 truncate font-medium" title={channelName}>

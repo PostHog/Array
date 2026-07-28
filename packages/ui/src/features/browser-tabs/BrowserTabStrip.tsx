@@ -1,5 +1,6 @@
 import {
   BrainIcon,
+  CubeIcon,
   HashIcon,
   PlugsConnectedIcon,
   RobotIcon,
@@ -505,7 +506,7 @@ export function BrowserTabStrip() {
           };
         }
         // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
-        // The section drives the label; the channel name carries the `#` hover
+        // The section drives the label; the channel name carries the space
         // context. Home has no section, so it labels by the channel name.
         if (channelId) {
           const meta = channelSectionFor(section);
@@ -513,7 +514,11 @@ export function BrowserTabStrip() {
             id: t.id,
             label:
               meta?.label ?? channel ?? (spacesLayout ? "Space" : "Channel"),
-            icon: <HashIcon size={14} />,
+            icon: spacesLayout ? (
+              <CubeIcon size={14} />
+            ) : (
+              <HashIcon size={14} />
+            ),
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,

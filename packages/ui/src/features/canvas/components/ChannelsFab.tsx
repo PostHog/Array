@@ -1,5 +1,6 @@
 import {
   ChartBarIcon,
+  CubeIcon,
   FileTextIcon,
   HashIcon,
   PlusIcon,
@@ -70,7 +71,7 @@ export function ChannelsFab({ channelId }: { channelId?: string }) {
 
   const newChannelItem = (
     <DropdownMenuItem onClick={() => setModalOpen(true)}>
-      <HashIcon size={14} className="text-gray-9" />
+      {channelsLayout ? <CubeIcon size={14} /> : <HashIcon size={14} />}
       {channelsLayout ? "New space" : "New channel"}
     </DropdownMenuItem>
   );

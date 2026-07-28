@@ -1,7 +1,7 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import {
   CaretDownIcon,
-  CaretRightIcon,
+  CaretUpIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -9,6 +9,7 @@ import {
   LinkIcon,
   PencilSimpleIcon,
   PlusIcon,
+  SquaresFourIcon,
   StarIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -442,6 +443,7 @@ function ChannelSection({
             >
               {channelGlyph(channel.name, {
                 size: 14,
+                space: spacesLayout,
                 weight: isUnread ? "bold" : undefined,
                 className: cn(
                   "shrink-0",
@@ -729,6 +731,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
       >
         {channelGlyph(PERSONAL_CHANNEL_NAME, {
           size: 14,
+          space: spacesLayout,
           weight: isUnread ? "bold" : undefined,
           className: cn(
             "shrink-0",
@@ -812,17 +815,16 @@ const CHANNELS_SECTION_ID = "channels:all";
 // the label styling) and animates the panel height (which janked on a list this
 // long). Unstyled parts give a plain label row that snaps.
 //
-// The whole header row is the trigger. Under the layout the icon well rests
-// empty and fills with a chevron on hover or keyboard focus, so the row only
-// advertises the disclosure when you're reaching for it — a "#" there read as a
-// channel named "Starred", and the glyph belongs to the rows, not the label
-// above them.
+// The whole header row is the trigger. Its section glyph swaps to the current
+// disclosure caret on hover or keyboard focus, matching the old sidebar while
+// keeping Starred and Spaces distinct at rest.
 function ChannelGroup({
   sectionId,
   label,
   className,
   flat,
   keepMounted = true,
+  icon,
   children,
 }: {
   sectionId: string;
@@ -836,6 +838,7 @@ function ChannelGroup({
    * rebuild on expand is better than highlighting a row nobody can see.
    */
   keepMounted?: boolean;
+  icon: ReactNode;
   children: ReactNode;
 }) {
   const collapsedSections = useSidebarStore((s) => s.collapsedSections);
@@ -860,20 +863,19 @@ function ChannelGroup({
         render={<MenuLabel render={<button type="button" />} />}
       >
         <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-          {!flat && (
-            <HashIcon
-              size={14}
-              className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden"
-            />
-          )}
+          <span className="group-hover/group-trigger:hidden group-focus-visible/group-trigger:hidden">
+            {icon}
+          </span>
           {isOpen ? (
-            <CaretDownIcon
+            <CaretUpIcon
               size={14}
+              data-testid={`${sectionId}-caret-up`}
               className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
             />
           ) : (
-            <CaretRightIcon
+            <CaretDownIcon
               size={14}
+              data-testid={`${sectionId}-caret-down`}
               className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
             />
           )}
@@ -1006,6 +1008,7 @@ export function ChannelsList() {
           label="Starred"
           flat={channelsLayout}
           keepMounted={!channelsLayout}
+          icon={<StarIcon size={14} data-testid="starred-section-icon" />}
         >
           {starred.map((channel) => (
             <ChannelSection
@@ -1023,6 +1026,13 @@ export function ChannelsList() {
         label={channelsLayout ? "Spaces" : "Channels"}
         flat={channelsLayout}
         keepMounted={!channelsLayout}
+        icon={
+          channelsLayout ? (
+            <SquaresFourIcon size={14} data-testid="spaces-section-icon" />
+          ) : (
+            <HashIcon size={14} />
+          )
+        }
       >
         {!isLoading && channels.length === 0 && (
           <Empty className="px-2 py-1 text-subtle-foreground text-xs">
