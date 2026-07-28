@@ -15,6 +15,7 @@ import {
 } from "@posthog/core/tasks/taskRename";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
+import { channelFeedQueryRoot } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -66,6 +67,9 @@ export function useRenameTask() {
       const previousListQueries = queryClient.getQueriesData<Task[]>({
         queryKey: taskKeys.lists(),
       });
+      const previousChannelFeedQueries = queryClient.getQueriesData<Task[]>({
+        queryKey: channelFeedQueryRoot,
+      });
       const previousSummaryQueries = queryClient.getQueriesData<
         Schemas.TaskSummary[]
       >({
@@ -77,6 +81,10 @@ export function useRenameTask() {
 
       queryClient.setQueriesData<Task[]>(
         { queryKey: taskKeys.lists() },
+        (old) => applyRenameToList(old, taskId, newTitle),
+      );
+      queryClient.setQueriesData<Task[]>(
+        { queryKey: channelFeedQueryRoot },
         (old) => applyRenameToList(old, taskId, newTitle),
       );
       queryClient.setQueriesData<Schemas.TaskSummary[]>(
@@ -102,14 +110,22 @@ export function useRenameTask() {
         const listTitles = queryClient
           .getQueriesData<Task[]>({ queryKey: taskKeys.lists() })
           .map(([, tasks]) => getTaskTitle(tasks, taskId));
+        const channelFeedTitles = queryClient
+          .getQueriesData<Task[]>({ queryKey: channelFeedQueryRoot })
+          .map(([, tasks]) => getTaskTitle(tasks, taskId));
         const rollbackSession = shouldRollbackSessionTitle({
           detailTitle: queryClient.getQueryData<Task>(taskKeys.detail(taskId))
             ?.title,
-          listTitles,
+          listTitles: [...listTitles, ...channelFeedTitles],
           newTitle,
         });
 
         for (const [queryKey, data] of previousListQueries) {
+          queryClient.setQueryData<Task[] | undefined>(queryKey, (current) =>
+            rollbackListData(current, data ?? [], taskId, newTitle),
+          );
+        }
+        for (const [queryKey, data] of previousChannelFeedQueries) {
           queryClient.setQueryData<Task[] | undefined>(queryKey, (current) =>
             rollbackListData(current, data ?? [], taskId, newTitle),
           );
