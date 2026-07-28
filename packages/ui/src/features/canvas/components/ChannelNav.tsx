@@ -3,6 +3,7 @@ import {
   EnvelopeSimple,
   Lightning,
   RepeatIcon,
+  SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { cn } from "@posthog/quill";
 import { LOOPS_FLAG } from "@posthog/shared";
@@ -18,6 +19,7 @@ import {
 import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { CountBadge } from "@posthog/ui/primitives/CountBadge";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
@@ -140,6 +142,12 @@ export function ChannelNav() {
           onClick={withTrack("loops", navigateToLoops)}
         />
       ) : null}
+      <NavIcon
+        icon={<SlidersHorizontal size={16} />}
+        label="Configure"
+        isActive={false}
+        onClick={withTrack("configure", () => openSettings("agents"))}
+      />
     </div>
   );
 }
