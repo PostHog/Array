@@ -25,6 +25,7 @@ export function resolveGatewayProduct({
   if (originProduct === "support_reply") {
     return "conversations";
   }
+  // Loop runs are internal but billed as posthog_code, not background_agents.
   if (originProduct === "loop") {
     return "posthog_code";
   }
