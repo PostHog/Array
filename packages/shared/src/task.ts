@@ -1,5 +1,40 @@
-// PostHog TaskRun models (match the desktop task API's OpenAPI schema)
+// PostHog Task model (matches the desktop task API's OpenAPI schema)
+import type { AgentRuntime } from "./agent-runtime";
 import type { UploadableSkillSource } from "./skills";
+
+export interface Task {
+  id: string;
+  task_number?: number;
+  slug?: string;
+  title: string;
+  description: string;
+  origin_product:
+    | "error_tracking"
+    | "eval_clusters"
+    | "user_created"
+    | "support_queue"
+    | "session_summaries"
+    | "signal_report"
+    | "signals_scout"
+    | "slack"
+    | "loop";
+  signal_report?: string | null; // Inbox report UUID when origin_product is "signal_report"
+  github_integration?: number | null;
+  repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
+  json_schema?: Record<string, unknown> | null; // JSON schema for task output validation
+  internal?: boolean;
+  runtime?: AgentRuntime;
+  created_at: string;
+  updated_at: string;
+  created_by?: {
+    id: number;
+    uuid: string;
+    distinct_id: string;
+    first_name: string;
+    email: string;
+  };
+  latest_run?: TaskRun;
+}
 
 export type ArtifactType =
   | "plan"
