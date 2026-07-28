@@ -10,7 +10,7 @@ import {
 } from "@posthog/ui/shell/queryClient";
 import type { InfiniteData } from "@tanstack/react-query";
 import { inject, injectable } from "inversify";
-import { taskActivityQueryKey } from "./taskActivityQuery";
+import { TASK_ACTIVITY_QUERY_KEY } from "./taskActivityQuery";
 
 @injectable()
 export class TaskActivityContribution implements Contribution {
@@ -28,22 +28,14 @@ export class TaskActivityContribution implements Contribution {
   }
 
   private apply(signal: TaskActivitySignal): void {
-    this.applyToQuery(signal, taskActivityQueryKey(false));
-    this.applyToQuery(signal, taskActivityQueryKey(true));
-  }
-
-  private applyToQuery(
-    signal: TaskActivitySignal,
-    queryKey: readonly unknown[],
-  ): void {
     const activityQuery = this.queryClient.getQueryCache().find({
-      queryKey,
+      queryKey: TASK_ACTIVITY_QUERY_KEY,
       exact: true,
     });
     if (activityQuery?.meta?.authScoped !== true) return;
 
     this.queryClient.setQueryData<InfiniteData<TaskActivityPage>>(
-      queryKey,
+      TASK_ACTIVITY_QUERY_KEY,
       (data) => {
         const previous = data?.pages
           .flatMap((page) => page.results)
