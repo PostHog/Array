@@ -113,6 +113,7 @@ export function ActivityRow({
   currentUser,
   surface = "activity",
   onNavigate,
+  compact = false,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
@@ -122,6 +123,7 @@ export function ActivityRow({
   currentUser?: UserBasic | null;
   surface?: "activity" | "activity_panel";
   onNavigate?: () => void;
+  compact?: boolean;
 }) {
   const isAgentActivity =
     item.activityKind === "awaiting_input" ||
@@ -150,7 +152,7 @@ export function ActivityRow({
       <button
         type="button"
         onClick={openTask}
-        className={`flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary ${item.isUnread ? "bg-fill-secondary" : ""}`}
+        className={`flex w-full gap-2 rounded-md px-2 text-left transition-colors hover:bg-fill-hover ${compact ? "py-1.5 pr-14" : "py-2"} ${item.isUnread ? "bg-fill-secondary" : ""}`}
       >
         <span className="relative mt-0.5 shrink-0">
           {isAgentActivity ? (
@@ -178,15 +180,17 @@ export function ActivityRow({
             >
               {activityHeadline(item, currentUser?.email)}
             </Text>
-            {item.isUnread && <Badge variant="info">New</Badge>}
-            <Text size="1" className="shrink-0 text-muted-foreground">
-              {formatRelativeTimeShort(item.activityAt)}
-            </Text>
+            {item.isUnread && !compact && <Badge variant="info">New</Badge>}
+            {!compact && (
+              <Text size="1" className="shrink-0 text-muted-foreground">
+                {formatRelativeTimeShort(item.activityAt)}
+              </Text>
+            )}
           </span>
           <Text size="1" className="block truncate text-muted-foreground">
             {item.taskTitle}
           </Text>
-          {item.snippet && (
+          {item.snippet && !compact && (
             <MentionText
               content={item.snippet}
               currentUserEmail={currentUser?.email}
@@ -195,19 +199,27 @@ export function ActivityRow({
           )}
         </span>
       </button>
+      {compact && (
+        <Text
+          size="1"
+          className="pointer-events-none absolute top-1.5 right-2 text-muted-foreground"
+        >
+          {formatRelativeTimeShort(item.activityAt)}
+        </Text>
+      )}
       {item.isUnread && (
         <Button
           variant="default"
           size="icon-xs"
           aria-label="Mark as read"
           title="Mark as read"
-          className={`absolute top-2 opacity-0 transition-opacity group-hover:opacity-100 ${folderChannelId ? "right-9" : "right-2"}`}
+          className={`absolute opacity-0 transition-opacity group-hover:opacity-100 ${compact ? "right-2 bottom-1" : `top-2 ${folderChannelId ? "right-9" : "right-2"}`}`}
           onClick={() => onMarkRead(item)}
         >
           <CheckIcon size={14} />
         </Button>
       )}
-      {folderChannelId && (
+      {folderChannelId && !compact && (
         <Button
           variant="default"
           size="icon-xs"
