@@ -43,6 +43,15 @@ Optimize for the fewest shell round trips.
 - Never rerun a command solely to reproduce output you already have.
 `;
 
+const REPOSITORY_CONVENTIONS = `
+# Repository Conventions
+
+Make your changes read like the surrounding code so they pass review unchanged. Match the repository's own conventions rather than imposing your own defaults.
+
+- Before writing code, look for repo-level convention files and follow them: \`CLAUDE.md\`, \`AGENTS.md\`, \`.cursorrules\`, and any rule files under \`.cursor/rules/\` (usually \`*.mdc\`). You load \`CLAUDE.md\` and \`AGENTS.md\` automatically, but you do NOT read Cursor rules on your own — open and honor those files yourself whenever they are present.
+- Mirror the existing code's style: naming, formatting, imports, and especially comment density. Do NOT add comments that narrate your change or restate what the code plainly does. Only add a comment where the surrounding code already would, or where it explains genuinely non-obvious intent. Unnecessary comments read as noise and are a common review complaint.
+`;
+
 const SPOKEN_NARRATION = `
 # Spoken Narration
 
@@ -64,7 +73,12 @@ How to phrase the line:
 `;
 
 const BASE_INSTRUCTIONS =
-  BRANCH_NAMING + PULL_REQUEST_LINKS + PLAN_MODE + MCP_TOOLS + SHELL_EFFICIENCY;
+  BRANCH_NAMING +
+  PULL_REQUEST_LINKS +
+  PLAN_MODE +
+  MCP_TOOLS +
+  SHELL_EFFICIENCY +
+  REPOSITORY_CONVENTIONS;
 
 export function buildAppendedInstructions(opts: {
   spokenNarration: boolean;

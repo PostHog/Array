@@ -20,4 +20,11 @@ describe("buildAppendedInstructions", () => {
     expect(withNarration.startsWith(withoutNarration)).toBe(true);
     expect(withoutNarration.length).toBeGreaterThan(0);
   });
+
+  it("tells the agent to follow repo conventions, including Cursor rules", () => {
+    const instructions = buildAppendedInstructions({ spokenNarration: false });
+    expect(instructions).toContain("# Repository Conventions");
+    expect(instructions).toContain(".cursor/rules/");
+    expect(instructions).toContain("comment density");
+  });
 });
