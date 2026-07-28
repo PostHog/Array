@@ -95,6 +95,7 @@
     "react-hotkeys-hook": "^4.4.4",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^3.0.6",
+    "react-zoom-pan-pinch": "^4.0.3",
     "reflect-metadata": "catalog:",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",

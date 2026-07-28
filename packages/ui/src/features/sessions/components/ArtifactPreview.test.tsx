@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
@@ -121,7 +121,7 @@ describe("ArtifactPreview", () => {
     expect(blob.type).toBe(mimeType);
   });
 
-  it("shows image controls instead of an iframe", () => {
+  it("shows working image controls instead of an iframe", () => {
     useQuery.mockReturnValue({
       data: new Blob(["image"], { type: "image/png" }),
       isLoading: false,
@@ -146,6 +146,51 @@ describe("ArtifactPreview", () => {
       screen.getByRole("button", { name: "Fit to view" }),
     ).toBeInTheDocument();
     expect(screen.queryByTitle("Preview of image.png")).not.toBeInTheDocument();
+
+    const zoomOut = screen.getByRole("button", { name: "Zoom out" });
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    expect(screen.getByText("10%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fit to view" }));
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("zooms with a trackpad pinch gesture", async () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="image.png"
+      />,
+    );
+
+    const image = screen.getByRole("img", { name: "image.png" });
+    const viewport = image.closest(".react-transform-wrapper");
+    expect(viewport).not.toBeNull();
+    fireEvent.wheel(viewport as Element, {
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 100,
+      clientY: 100,
+    });
+
+    await waitFor(() => {
+      const percentage = Number.parseInt(
+        screen.getByText(/%$/).textContent ?? "0",
+        10,
+      );
+      expect(percentage).toBeGreaterThan(100);
+    });
   });
 
   it("renders GFM Markdown while escaping embedded HTML", () => {

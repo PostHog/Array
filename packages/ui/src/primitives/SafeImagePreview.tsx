@@ -10,7 +10,11 @@ import {
 } from "@posthog/shared";
 import { Flex, Text } from "@radix-ui/themes";
 import { useState } from "react";
-import { useImagePanAndZoom } from "./hooks/useImagePanAndZoom";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 8;
+const SCALE_STEP = 0.25;
 
 interface SafeImagePreviewProps {
   /** Base64-encoded image data (no data URL prefix). */
@@ -41,68 +45,83 @@ export function ZoomableImage({
   controls = false,
   onError,
 }: ZoomableImageProps) {
-  const zoom = useImagePanAndZoom();
+  const [scale, setScale] = useState(1);
 
   return (
     <div
-      ref={zoom.containerRef}
-      className={`relative flex touch-none select-none items-center justify-center overflow-hidden ${className ?? "max-h-full max-w-full"}`}
-      style={{
-        ...style,
-        cursor: zoom.isDragging
-          ? "grabbing"
-          : zoom.isZoomed
-            ? "grab"
-            : style?.cursor,
-      }}
+      className={`relative overflow-hidden ${className ?? "max-h-full max-w-full"}`}
+      style={style}
     >
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        className="max-h-full max-w-full object-contain"
-        style={{
-          transform: zoom.transform,
-          transformOrigin: "center center",
-          willChange: "transform",
-        }}
-        onError={onError}
-      />
-      {controls && (
-        <div className="-translate-x-1/2 absolute bottom-3 left-1/2 flex items-center gap-1 rounded-md border border-(--gray-a5) bg-(--color-panel-solid) p-1 shadow-sm">
-          <button
-            type="button"
-            title="Zoom out"
-            aria-label="Zoom out"
-            disabled={zoom.scale <= 1}
-            onClick={zoom.zoomOut}
-            className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3) disabled:opacity-40"
-          >
-            <MagnifyingGlassMinus size={16} />
-          </button>
-          <span className="w-11 text-center text-(--gray-11) text-xs">
-            {Math.round(zoom.scale * 100)}%
-          </span>
-          <button
-            type="button"
-            title="Zoom in"
-            aria-label="Zoom in"
-            onClick={zoom.zoomIn}
-            className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3)"
-          >
-            <MagnifyingGlassPlus size={16} />
-          </button>
-          <button
-            type="button"
-            title="Fit to view"
-            aria-label="Fit to view"
-            onClick={zoom.reset}
-            className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3)"
-          >
-            <ArrowsInSimple size={16} />
-          </button>
-        </div>
-      )}
+      <TransformWrapper
+        minScale={MIN_SCALE}
+        maxScale={MAX_SCALE}
+        centerOnInit
+        centerZoomedOut
+        smooth={false}
+        wheel={{ wheelDisabled: true }}
+        trackPadPanning={{ disabled: false }}
+        doubleClick={{ mode: "reset" }}
+        zoomAnimation={{ disabled: true }}
+        onTransform={(_, state) => setScale(state.scale)}
+      >
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <>
+            <TransformComponent
+              wrapperStyle={{ width: "100%", height: "100%" }}
+              contentStyle={{
+                width: "100%",
+                height: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <img
+                src={src}
+                alt={alt}
+                draggable={false}
+                className="max-h-full max-w-full object-contain"
+                onError={onError}
+              />
+            </TransformComponent>
+            {controls && (
+              <div className="-translate-x-1/2 absolute bottom-3 left-1/2 flex items-center gap-1 rounded-md border border-(--gray-a5) bg-(--color-panel-solid) p-1 shadow-sm">
+                <button
+                  type="button"
+                  title="Zoom out"
+                  aria-label="Zoom out"
+                  disabled={scale <= MIN_SCALE}
+                  onClick={() => zoomOut(SCALE_STEP, 0)}
+                  className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3) disabled:opacity-40"
+                >
+                  <MagnifyingGlassMinus size={16} />
+                </button>
+                <span className="w-11 text-center text-(--gray-11) text-xs">
+                  {Math.round(scale * 100)}%
+                </span>
+                <button
+                  type="button"
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                  disabled={scale >= MAX_SCALE}
+                  onClick={() => zoomIn(SCALE_STEP, 0)}
+                  className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3) disabled:opacity-40"
+                >
+                  <MagnifyingGlassPlus size={16} />
+                </button>
+                <button
+                  type="button"
+                  title="Fit to view"
+                  aria-label="Fit to view"
+                  onClick={() => resetTransform(0)}
+                  className="flex size-7 items-center justify-center rounded text-(--gray-11) hover:bg-(--gray-a3)"
+                >
+                  <ArrowsInSimple size={16} />
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </TransformWrapper>
     </div>
   );
 }
