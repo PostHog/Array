@@ -7,6 +7,7 @@ import {
   type Channel,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { showChannelList } from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
@@ -45,6 +46,7 @@ function RowStar({ channel }: { channel: Channel }) {
  * it. Leaving the channel scoped means the route (and the main pane) stay put.
  */
 export function ChannelBackRow({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const { channels, isLoading } = useChannels();
   const current = channels.find((c) => c.id === channelId);
   const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
@@ -77,6 +79,7 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
           <span className="flex w-4 shrink-0 items-center justify-center">
             {channelGlyph(current?.name, {
               size: 14,
+              space: spacesLayout,
               className: "text-muted-foreground",
             })}
           </span>

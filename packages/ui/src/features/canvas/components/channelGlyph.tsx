@@ -1,4 +1,5 @@
 import {
+  CubeIcon,
   HashIcon,
   type IconWeight,
   LockSimpleIcon,
@@ -23,14 +24,23 @@ export function isPrivateChannel(channelName: string | undefined): boolean {
 }
 
 /**
- * A channel's leading glyph: a lock when it's private, otherwise a hash — the
- * Slack convention, so privacy reads at a glance instead of having to be known.
+ * A channel's leading glyph: a lock when it's private, otherwise a cube for the
+ * Spaces layout or a hash for legacy Channels.
  */
 export function channelGlyph(
   channelName: string | undefined,
-  opts?: { size?: number; className?: string; weight?: IconWeight },
+  opts?: {
+    size?: number;
+    className?: string;
+    weight?: IconWeight;
+    space?: boolean;
+  },
 ): ReactNode {
-  const Icon = isPrivateChannel(channelName) ? LockSimpleIcon : HashIcon;
+  const Icon = isPrivateChannel(channelName)
+    ? LockSimpleIcon
+    : opts?.space
+      ? CubeIcon
+      : HashIcon;
   return (
     <Icon
       size={opts?.size ?? 16}
