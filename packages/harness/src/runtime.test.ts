@@ -65,6 +65,36 @@ describe("createHarnessRuntime", () => {
     },
   );
 
+  it("restores the session model before calculating context usage", async () => {
+    vi.stubEnv("PI_OFFLINE", "1");
+    const pi = await import("@earendil-works/pi-coding-agent");
+    const cwd = await temporaryDirectory();
+    const agentDir = await temporaryDirectory();
+    const sessionManager = pi.SessionManager.inMemory(cwd);
+    sessionManager.appendModelChange("posthog", "claude-haiku-4-5");
+    sessionManager.appendMessage({
+      role: "user",
+      content: "continue",
+      timestamp: Date.now(),
+    });
+
+    const runtime = await createHarnessRuntime({
+      agentDir,
+      apiKey: "proxy-key",
+      cwd,
+      sessionManager,
+    });
+
+    try {
+      expect(runtime.session.model?.id).toBe("claude-haiku-4-5");
+      expect(runtime.session.getSessionStats().contextUsage).toMatchObject({
+        contextWindow: 200_000,
+      });
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("keeps desktop-provided OAuth credentials in memory without touching auth.json", async () => {
     vi.stubEnv("PI_OFFLINE", "1");
     const pi = await import("@earendil-works/pi-coding-agent");

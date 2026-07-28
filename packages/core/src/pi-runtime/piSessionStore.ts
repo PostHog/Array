@@ -2,6 +2,7 @@ import type {
   PiCommand,
   PiNativeModelInfo,
   PiQueueSnapshot,
+  PiSessionStats,
   PiSessionStatus,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
@@ -35,6 +36,7 @@ export interface PiControllerSessionState {
   commands: PiCommand[];
   queue: PiQueueSnapshot;
   status?: PiSessionStatus;
+  stats?: PiSessionStats;
   cloudStatus?: TaskRunStatus;
   error?: PiSessionError;
   authRestoring: boolean;

@@ -25,12 +25,21 @@ describe("RemotePiRpcClient", () => {
       if (command.type === "get_available_thinking_levels") {
         return response(command, { levels: ["off", "high", "xhigh"] });
       }
+      if (command.type === "get_session_stats") {
+        return response(command, {
+          sessionId: "session-1",
+          totalMessages: 2,
+          tokens: { total: 120 },
+          cost: 0.01,
+        });
+      }
       return response(command);
     });
     const client = new RemotePiRpcClient({ request });
 
     const compaction = await client.compact("retain decisions");
     const thinkingLevels = await client.getAvailableThinkingLevels();
+    const stats = await client.getSessionStats();
 
     expect(request).toHaveBeenNthCalledWith(1, {
       id: expect.any(String),
@@ -41,8 +50,13 @@ describe("RemotePiRpcClient", () => {
       id: expect.any(String),
       type: "get_available_thinking_levels",
     });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      id: expect.any(String),
+      type: "get_session_stats",
+    });
     expect(compaction.summary).toBe("summary");
     expect(thinkingLevels).toEqual(["off", "high", "xhigh"]);
+    expect(stats).toMatchObject({ tokens: { total: 120 }, cost: 0.01 });
   });
 
   it("rejects malformed responses from every transport", async () => {

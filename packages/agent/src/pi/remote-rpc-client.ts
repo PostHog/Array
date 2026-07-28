@@ -14,6 +14,7 @@ export type PiRemoteRpcClient = Pick<
   | "followUp"
   | "abort"
   | "getState"
+  | "getSessionStats"
   | "setModel"
   | "getAvailableModels"
   | "getAvailableThinkingLevels"
@@ -77,6 +78,10 @@ export class RemotePiRpcClient implements PiRemoteRpcClient {
 
   async getState(): ReturnType<PiRemoteRpcClient["getState"]> {
     return this.data(await this.request({ type: "get_state" }));
+  }
+
+  async getSessionStats(): ReturnType<PiRemoteRpcClient["getSessionStats"]> {
+    return this.data(await this.request({ type: "get_session_stats" }));
   }
 
   async setModel(

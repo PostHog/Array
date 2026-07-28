@@ -137,13 +137,19 @@ export async function createHarnessRuntime(
     const fallbackModel = services.modelRuntime
       .getModels(POSTHOG_PROVIDER_NAME)
       .at(0);
+    const existingSession = sessionManager.buildSessionContext();
+    const hasRestorableModel =
+      existingSession.messages.length > 0 && existingSession.model !== null;
+    const defaultModel = hasRestorableModel
+      ? undefined
+      : (preferredModel ?? fallbackModel);
 
     const created = await pi.createAgentSessionFromServices({
       ...runtimeOptions,
       services,
       sessionManager,
       sessionStartEvent,
-      model: runtimeOptions.model ?? preferredModel ?? fallbackModel,
+      model: runtimeOptions.model ?? defaultModel,
     });
 
     return {

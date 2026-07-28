@@ -36,6 +36,24 @@ function createSession(): PiSession {
       messageCount: 0,
       pendingMessageCount: 0,
     })),
+    getSessionStats: vi.fn(async () => ({
+      sessionFile: undefined,
+      sessionId: "session-1",
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      toolResults: 0,
+      totalMessages: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+      cost: 0,
+      contextUsage: undefined,
+    })),
     getAvailableModels: vi.fn(async () => []),
     getAvailableThinkingLevels: vi.fn(async () => ["off" as const]),
     getCommands: vi.fn(async () => []),
@@ -966,8 +984,38 @@ describe("PiSessionController", () => {
     const controller = createController(session);
 
     await controller.connect("task-1");
+    vi.mocked(session.client.getSessionStats).mockResolvedValueOnce({
+      sessionFile: undefined,
+      sessionId: "session-1",
+      userMessages: 1,
+      assistantMessages: 1,
+      toolCalls: 0,
+      toolResults: 0,
+      totalMessages: 2,
+      tokens: {
+        input: 1_000,
+        output: 500,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 1_500,
+      },
+      cost: 0.03,
+      contextUsage: {
+        tokens: 12_000,
+        contextWindow: 100_000,
+        percent: 12,
+      },
+    });
     onEvent(turnCompleted);
 
+    await vi.waitFor(() => {
+      expect(
+        controller.store.getState().sessions["task-1"].stats,
+      ).toMatchObject({
+        cost: 0.03,
+        contextUsage: { tokens: 12_000, contextWindow: 100_000 },
+      });
+    });
     expect(session.getConversation).toHaveBeenCalledOnce();
     expect(controller.store.getState().sessions["task-1"].events).toEqual([
       turnCompleted,

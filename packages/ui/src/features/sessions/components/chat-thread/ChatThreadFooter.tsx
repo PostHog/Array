@@ -1,3 +1,4 @@
+import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
@@ -16,6 +17,7 @@ interface ChatThreadFooterProps {
   promptStartedAt?: number | null;
   task?: Task;
   taskId?: string;
+  usage?: ContextUsage | null;
 }
 
 /**
@@ -34,9 +36,11 @@ export function ChatThreadFooter({
   promptStartedAt,
   task,
   taskId,
+  usage,
 }: ChatThreadFooterProps) {
   const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
-  const contextUsage = useContextUsage(events);
+  const eventContextUsage = useContextUsage(events);
+  const contextUsage = usage === undefined ? eventContextUsage : usage;
   const { lastTurnInfo, isCompacting, completedToolCallCount } =
     useConversationItems(events, isPromptPending, { showDebugLogs });
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");

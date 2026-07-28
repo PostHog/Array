@@ -42,6 +42,7 @@ function createTerminalPiRpcClient(
       messageCount: 0,
       pendingMessageCount: 0,
     }),
+    getSessionStats: rejectCommand,
     setModel: rejectCommand,
     getAvailableModels: async () => [],
     getAvailableThinkingLevels: async () => [],

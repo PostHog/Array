@@ -7,6 +7,7 @@ import {
   Scroll,
 } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import { useService } from "@posthog/di/react";
 import {
   Button,
@@ -1099,6 +1100,7 @@ interface SharedChatThreadProps {
   repoPath?: string | null;
   task?: Task;
   taskId?: string;
+  usage?: ContextUsage | null;
 }
 
 export interface ChatThreadProps extends SharedChatThreadProps {
@@ -1149,6 +1151,7 @@ function ChatThreadRenderer({
   repoPath,
   task,
   taskId,
+  usage,
   promptRecallRef,
 }: ChatThreadRendererProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
@@ -1275,6 +1278,7 @@ function ChatThreadRenderer({
                   promptStartedAt={promptStartedAt}
                   task={task}
                   taskId={taskId}
+                  usage={usage}
                 />
               }
             />

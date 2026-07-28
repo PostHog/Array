@@ -415,6 +415,7 @@ export class PiSessionController {
       const session = await this.getPiSession(taskId);
       await session.client.setModel(model.provider, model.id);
       await this.refreshStatus(taskId);
+      await this.refreshStats(taskId);
       const thinkingLevels = await session.client.getAvailableThinkingLevels();
       this.updateSession(taskId, {
         thinkingLevels,
@@ -523,10 +524,12 @@ export class PiSessionController {
     try {
       const session = await this.getPiSession(taskId);
       const queueRevision = this.queueRevisions.get(taskId) ?? 0;
-      const [events, status, queue] = await Promise.all([
+      const retainedStats = this.getSession(taskId).stats;
+      const [events, status, queue, stats] = await Promise.all([
         session.getConversation(),
         session.client.getState(),
         session.getQueue(),
+        session.client.getSessionStats().catch(() => retainedStats),
       ]);
       if (this.getSessionVersion(taskId) !== connectedSessionVersion) {
         return;
@@ -572,6 +575,7 @@ export class PiSessionController {
         connectionState: "connected",
         events: reconciledEvents,
         status: resolvedStatus,
+        stats,
         models: currentSession.models,
         modelsLoaded: currentSession.modelsLoaded,
         thinkingLevels: currentSession.thinkingLevels,
@@ -694,6 +698,23 @@ export class PiSessionController {
           ? latestSession.error
           : undefined,
     });
+
+    if (event.type === "turn_completed") {
+      void this.refreshStats(taskId);
+    }
+  }
+
+  private async refreshStats(taskId: string): Promise<void> {
+    const sessionVersion = this.getSessionVersion(taskId);
+    try {
+      const session = await this.getPiSession(taskId);
+      const stats = await session.client.getSessionStats();
+      if (this.getSessionVersion(taskId) === sessionVersion) {
+        this.updateSession(taskId, { stats });
+      }
+    } catch {
+      return;
+    }
   }
 
   private reconcileLiveEvents(

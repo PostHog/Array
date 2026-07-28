@@ -9,6 +9,7 @@ import {
   type PiSessionController,
   type PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
+import { toPiContextUsage } from "@posthog/core/pi-runtime/piSessionUsage";
 import { useService } from "@posthog/di/react";
 import {
   Button,
@@ -301,6 +302,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const isAuthRestoring = session.authRestoring;
   const connectionError =
     session.error?.scope === "connection" ? session.error : undefined;
+  const contextUsage = toPiContextUsage(session.stats);
   const hasTranscript = session.events.some(
     (event) => event.type !== "progress",
   );
@@ -408,6 +410,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           isPromptPending={isStreaming}
           taskId={taskId}
           repoPath={repoPath}
+          usage={contextUsage}
           promptRecallRef={promptRecallRef}
         />
       </Box>

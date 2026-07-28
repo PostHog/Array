@@ -330,7 +330,7 @@ describe("CloudPiSessionClient", () => {
       totalEntryCount: 1,
     });
     await vi.waitFor(() => {
-      expect(cloud.client.sendCommand).toHaveBeenCalledTimes(2);
+      expect(cloud.client.sendCommand).toHaveBeenCalledTimes(3);
     });
     cloud.sendUpdate({
       taskId: "task-1",
