@@ -1,5 +1,5 @@
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +48,11 @@ vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => "/website",
 }));
 
+import {
+  showChannelList,
+  showChannelPane,
+} from "@posthog/ui/features/canvas/stores/channelPaneStore";
+import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { ChannelsList } from "./ChannelsList";
 
 const ME = { id: "me-id", name: "me", path: "/me" };
@@ -68,6 +73,12 @@ describe("ChannelsList", () => {
     mocks.channels = [ME, ENG, DESIGN];
     mocks.starredPaths = [];
     mocks.channelsLayout = true;
+    // The pane store is module state: reset to its resting value so a test that
+    // slides the slider can't hand the next one a pre-focused search box.
+    showChannelPane();
+    // Same for the collapse state — a test that folds a group away would
+    // otherwise hide its rows from every test that runs after it.
+    useSidebarStore.setState({ collapsedSections: new Set() });
   });
 
   it("pins #me above the channels, with its ⌘1 shortcut", () => {
@@ -155,6 +166,188 @@ describe("ChannelsList", () => {
       await user.type(screen.getByLabelText("Search spaces"), "zzz");
 
       expect(screen.getByText(/No spaces match/)).toBeTruthy();
+    });
+
+    // Searching is a keyboard flow start to finish: you never leave the input
+    // to reach the row you just named.
+    it("opens the highlighted result on Enter", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      await user.type(screen.getByLabelText("Search spaces"), "eng");
+      await user.keyboard("{Enter}");
+
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/website/$channelId",
+        params: { channelId: ENG.id },
+      });
+    });
+
+    it("moves the highlight with the arrow keys", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      // "me", "design" and "engineering" all contain an "e"; the first is
+      // highlighted to begin with, so one press down lands on the second.
+      await user.type(screen.getByLabelText("Search spaces"), "e");
+      await user.keyboard("{ArrowDown}{Enter}");
+
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/website/$channelId",
+        params: { channelId: ENG.id },
+      });
+    });
+
+    // Base UI's clear button is a tabIndex=-1 decoration by default, which left
+    // the keyboard with no way out of a query.
+    it("clears on Escape", async () => {
+      const user = userEvent.setup();
+      renderList();
+      const input = screen.getByLabelText("Search spaces");
+
+      await user.type(input, "eng");
+      expect(screen.queryByText("design")).toBeNull();
+
+      await user.keyboard("{Escape}");
+
+      expect((input as HTMLInputElement).value).toBe("");
+      expect(screen.getByText("design")).toBeTruthy();
+    });
+
+    it("gives the clear button a tab stop", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      await user.type(screen.getByLabelText("Search spaces"), "eng");
+
+      const clear = screen.getByLabelText("Clear search");
+      expect((clear as HTMLElement).tabIndex).toBe(0);
+
+      await user.tab();
+      expect(document.activeElement).toBe(clear);
+      await user.keyboard("{Enter}");
+      expect(
+        (screen.getByLabelText("Search spaces") as HTMLInputElement).value,
+      ).toBe("");
+    });
+  });
+
+  // The list is a switcher first: arrowing to a space has to work the moment
+  // the pane opens, not only once there's something to filter by.
+  describe("keyboard traversal with no query", () => {
+    it("walks the rows and opens the highlighted one", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      await user.click(screen.getByLabelText("Search spaces"));
+      await user.keyboard("{ArrowDown}{Enter}");
+
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/website/$channelId",
+        params: { channelId: ENG.id },
+      });
+    });
+
+    // Base UI resets the highlight when the pointer leaves a row, and
+    // `autoHighlight="always"` then snaps it back to the top — so drifting the
+    // mouse across the gap between two rows threw the keyboard back to #me.
+    it("keeps the highlight when the pointer leaves a row", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      await user.click(screen.getByLabelText("Search spaces"));
+      const row = screen.getByText("engineering");
+      await user.hover(row);
+      await user.unhover(row);
+      await user.keyboard("{Enter}");
+
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/website/$channelId",
+        params: { channelId: ENG.id },
+      });
+    });
+
+    // A kept-mounted collapsed row would still be an option, so ↓ would walk
+    // onto spaces that were folded away.
+    it("drops a collapsed group's rows from the list", async () => {
+      const user = userEvent.setup();
+      renderList();
+      expect(screen.getByText("engineering")).toBeTruthy();
+
+      await user.click(screen.getByText("Spaces"));
+
+      expect(screen.queryByText("engineering")).toBeNull();
+    });
+  });
+
+  // Sliding back from a space, the list is what you came here for — so it hands
+  // the search box the caret rather than making you click it.
+  describe("focus on returning to the list", () => {
+    it("focuses the search box when the pane slides back", async () => {
+      renderList();
+      expect(document.activeElement).not.toBe(
+        screen.getByLabelText("Search spaces"),
+      );
+
+      act(() => showChannelList());
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByLabelText("Search spaces"),
+        ),
+      );
+    });
+
+    // Opening a row would close an ordinary combobox, and a closed one stops
+    // answering the arrow keys — the pane came back with its keyboard dead and
+    // its highlight parked on the space you had just left.
+    it("returns the highlight to the top with the arrows live", async () => {
+      const user = userEvent.setup();
+      renderList();
+
+      await user.click(screen.getByText("engineering"));
+      act(() => showChannelList());
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByLabelText("Search spaces"),
+        ),
+      );
+      mocks.navigate.mockClear();
+
+      // From the top, one press down is "engineering" again. Left where it was,
+      // it would have been the row after it.
+      await user.keyboard("{ArrowDown}{Enter}");
+
+      expect(mocks.navigate).toHaveBeenCalledWith({
+        to: "/website/$channelId",
+        params: { channelId: ENG.id },
+      });
+    });
+
+    it("selects a stale query so the next keystroke replaces it", async () => {
+      const user = userEvent.setup();
+      renderList();
+      const input = screen.getByLabelText("Search spaces") as HTMLInputElement;
+
+      await user.type(input, "eng");
+      await user.click(screen.getByText("engineering"));
+      act(() => showChannelList());
+
+      await waitFor(() => expect(document.activeElement).toBe(input));
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe("eng".length);
+    });
+
+    it("leaves focus alone off the channels layout", async () => {
+      mocks.channelsLayout = false;
+      renderList();
+
+      act(() => showChannelList());
+
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Search spaces")).toBeNull(),
+      );
+      expect(document.activeElement).toBe(document.body);
     });
   });
 });
