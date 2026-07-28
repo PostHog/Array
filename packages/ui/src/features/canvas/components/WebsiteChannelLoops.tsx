@@ -16,6 +16,7 @@ import { useLoopLimits, useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
 import { defaultLoopContextOutputs } from "../../loops/loopFormTypes";
 import { useChannels } from "../hooks/useChannels";
+import { useOrgMembers } from "../hooks/useOrgMembers";
 
 function contextQuickStarts(name: string): { label: string; prompt: string }[] {
   return [
@@ -63,6 +64,12 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
       ),
     [loops, channelId],
   );
+  const {
+    members,
+    isLoading: membersLoading,
+    isError: membersError,
+    isComplete: membersComplete,
+  } = useOrgMembers({ enabled: attachedLoops.length > 0 });
 
   const startBlank = () => {
     useLoopDraftStore.getState().setPrefill({
@@ -139,7 +146,16 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Text>
               <Flex direction="column" gap="2">
                 {attachedLoops.map((loop) => (
-                  <LoopRow key={loop.id} loop={loop} />
+                  <LoopRow
+                    key={loop.id}
+                    loop={loop}
+                    creator={members.find(
+                      (member) => member.id === loop.created_by_id,
+                    )}
+                    creatorLoading={membersLoading}
+                    creatorError={membersError}
+                    creatorLookupComplete={membersComplete}
+                  />
                 ))}
               </Flex>
             </Flex>
