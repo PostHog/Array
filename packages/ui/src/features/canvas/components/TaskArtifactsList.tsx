@@ -21,15 +21,14 @@ import type {
   TaskRun,
   TaskThreadMessage,
 } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
+import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
-import { toast } from "@posthog/ui/primitives/toast";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { formatFileSize } from "@posthog/ui/utils/formatFileSize";
 import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
@@ -43,8 +42,8 @@ type ArtifactRow =
   | {
       kind: "file";
       key: string;
+      artifactId: string | null;
       name: string;
-      storagePath: string | null;
       runId: string | null;
       size: number | undefined;
     }
@@ -110,8 +109,8 @@ function buildRows(
     rows.push({
       kind: "file",
       key: `file:${file.id ?? file.storage_path ?? name}`,
+      artifactId: file.id ?? null,
       name,
-      storagePath: file.storage_path ?? null,
       runId,
       size: file.size,
     });
@@ -238,33 +237,25 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
 function FileRow({
   taskId,
   runId,
+  artifactId,
   name,
-  storagePath,
   size,
 }: {
   taskId: string;
   runId: string | null;
+  artifactId: string | null;
   name: string;
-  storagePath: string | null;
   size: number | undefined;
 }) {
-  const client = useOptionalAuthenticatedClient();
-  const canOpen = !!client && !!runId && !!storagePath;
+  const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
+  const canOpen = !!runId && !!artifactId;
   const onOpen = canOpen
     ? () => {
-        client
-          .presignTaskRunArtifact(
-            taskId,
-            runId as string,
-            storagePath as string,
-          )
-          .then((url) => openExternalUrl(url))
-          .catch((error: unknown) => {
-            toast.error("Couldn't open file", {
-              description:
-                error instanceof Error ? error.message : String(error),
-            });
-          });
+        openArtifactTab(taskId, {
+          runId: runId as string,
+          artifactId: artifactId as string,
+          name,
+        });
       }
     : undefined;
   return (
@@ -272,7 +263,6 @@ function FileRow({
       icon={<FileIcon filename={name} size={14} />}
       title={name}
       detail={["File", formatFileSize(size)].filter(Boolean).join(" · ")}
-      external={canOpen}
       onOpen={onOpen}
     />
   );
@@ -320,8 +310,8 @@ export function TaskArtifactsList({
             key={row.key}
             taskId={task.id}
             runId={row.runId}
+            artifactId={row.artifactId}
             name={row.name}
-            storagePath={row.storagePath}
             size={row.size}
           />
         ) : (

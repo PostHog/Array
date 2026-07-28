@@ -4,16 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runs: [] as TaskRun[],
-  presignTaskRunArtifact: vi.fn(),
+  openArtifactTab: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskRuns", () => ({
   useTaskRuns: () => ({ runs: mocks.runs, isLoading: false }),
 }));
-vi.mock("@posthog/ui/features/auth/authClient", () => ({
-  useOptionalAuthenticatedClient: () => ({
-    presignTaskRunArtifact: mocks.presignTaskRunArtifact,
-  }),
+vi.mock("@posthog/ui/features/panels/panelLayoutStore", () => ({
+  usePanelLayoutStore: () => mocks.openArtifactTab,
 }));
 vi.mock("@posthog/ui/features/git-interaction/usePrArtifact", () => ({
   usePrArtifact: (url: string) => ({
@@ -66,8 +64,7 @@ function outputFile(
 describe("TaskArtifactsList", () => {
   beforeEach(() => {
     mocks.runs = [run("run-1", { prNumber: 1 }), run("run-2", { prNumber: 2 })];
-    mocks.presignTaskRunArtifact.mockReset();
-    mocks.presignTaskRunArtifact.mockResolvedValue("https://signed.example/x");
+    mocks.openArtifactTab.mockReset();
     useReviewNavigationStore.setState({
       reviewModes: {},
       selectedPrUrls: {},
@@ -97,7 +94,22 @@ describe("TaskArtifactsList", () => {
     expect(screen.getByText("File · 17 KB")).toBeTruthy();
   });
 
-  it("presigns the artifact of the run that produced it", () => {
+  // The row should read like the chat's file list: markdown looks like
+  // markdown, HTML looks like HTML.
+  it.each([
+    { name: "notes.md", icon: "markdown" },
+    { name: "demo.html", icon: "html" },
+  ])("gives $name an icon for its file type", ({ name, icon }) => {
+    mocks.runs = [run("run-1", { artifacts: [outputFile({ id: "a", name })] })];
+
+    const { container } = render(
+      <TaskArtifactsList task={task} timeline={[]} />,
+    );
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain(icon);
+  });
+
+  it("opens the artifact of the run that produced it beside the chat", () => {
     mocks.runs = [
       run("run-1", { artifacts: [outputFile({ id: "a", name: "old.md" })] }),
       run("run-2", {
@@ -114,11 +126,11 @@ describe("TaskArtifactsList", () => {
     render(<TaskArtifactsList task={task} timeline={[]} />);
     fireEvent.click(screen.getByText("new.md"));
 
-    expect(mocks.presignTaskRunArtifact).toHaveBeenCalledWith(
-      "task-1",
-      "run-2",
-      "runs/2/new.md",
-    );
+    expect(mocks.openArtifactTab).toHaveBeenCalledWith("task-1", {
+      runId: "run-2",
+      artifactId: "b",
+      name: "new.md",
+    });
   });
 
   // Agents revise a deliverable and upload it again under the same name.
