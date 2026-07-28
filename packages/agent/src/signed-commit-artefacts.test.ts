@@ -12,10 +12,26 @@ import {
   vi,
 } from "vitest";
 import {
+  parseSandboxEnv,
   reportCommitArtefacts,
   reportTaskRunBranch,
   resolveSandboxPosthogApi,
 } from "./signed-commit-artefacts";
+
+describe("parseSandboxEnv", () => {
+  it("parses NUL-delimited entries into an object", () => {
+    expect(parseSandboxEnv("FIRST=one\0SECOND=two\0")).toEqual({
+      FIRST: "one",
+      SECOND: "two",
+    });
+  });
+
+  it("preserves equals signs in values and ignores malformed entries", () => {
+    expect(
+      parseSandboxEnv("TOKEN=header.payload=signature\0invalid\0=value\0"),
+    ).toEqual({ TOKEN: "header.payload=signature" });
+  });
+});
 
 const ENV = {
   POSTHOG_API_URL: "https://us.posthog.com",

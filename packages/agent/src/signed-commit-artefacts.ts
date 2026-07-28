@@ -24,17 +24,20 @@ interface SandboxPosthogApi {
   projectId: number;
 }
 
+export function parseSandboxEnv(raw: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const entry of raw.split("\0")) {
+    const separator = entry.indexOf("=");
+    if (separator > 0) {
+      env[entry.slice(0, separator)] = entry.slice(separator + 1);
+    }
+  }
+  return env;
+}
+
 function readSandboxEnvFile(envFilePath: string): Record<string, string> {
   try {
-    const raw = readFileSync(envFilePath, "utf8");
-    const env: Record<string, string> = {};
-    for (const entry of raw.split("\0")) {
-      const eq = entry.indexOf("=");
-      if (eq > 0) {
-        env[entry.slice(0, eq)] = entry.slice(eq + 1);
-      }
-    }
-    return env;
+    return parseSandboxEnv(readFileSync(envFilePath, "utf8"));
   } catch {
     // No env file (local/desktop or test) — fall back to the process env only.
     return {};
@@ -44,13 +47,7 @@ function readSandboxEnvFile(envFilePath: string): Record<string, string> {
 function readSandboxOauthToken(oauthEnvFilePath: string): string | undefined {
   try {
     const raw = readFileSync(oauthEnvFilePath, "utf8");
-    for (const entry of raw.split("\0")) {
-      const prefix = "POSTHOG_PERSONAL_API_KEY=";
-      if (entry.startsWith(prefix)) {
-        return entry.slice(prefix.length);
-      }
-    }
-    return "";
+    return parseSandboxEnv(raw).POSTHOG_PERSONAL_API_KEY ?? "";
   } catch {
     // The dedicated credential channel is mandatory. Missing and unreadable
     // files both fail closed.
