@@ -191,6 +191,83 @@ describe("reportCommitArtefacts", () => {
     }
   });
 
+  it("rereads the OAuth file when credentials rotate between requests", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+    await writeFile(oauthEnvFilePath, "POSTHOG_PERSONAL_API_KEY=pha_initial\0");
+
+    try {
+      fetchMock.mockImplementationOnce(async () => {
+        await writeFile(
+          oauthEnvFilePath,
+          "POSTHOG_PERSONAL_API_KEY=pha_rotated\0",
+        );
+        return jsonResponse({ results: [{ id: "report-1" }] });
+      });
+      fetchMock.mockImplementation(async () =>
+        jsonResponse({ id: "artefact" }),
+      );
+
+      await reportCommitArtefacts({
+        taskId: "task-1",
+        result: { ...RESULT, commits: [RESULT.commits[0]] },
+        message: "fix: foo",
+        env: ENV,
+        envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_initial");
+      expect(
+        (fetchMock.mock.calls[1]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_rotated");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rereads the OAuth file when retrying an auth failure", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+    await writeFile(oauthEnvFilePath, "POSTHOG_PERSONAL_API_KEY=pha_initial\0");
+
+    try {
+      fetchMock.mockImplementationOnce(async () => {
+        await writeFile(
+          oauthEnvFilePath,
+          "POSTHOG_PERSONAL_API_KEY=pha_rotated\0",
+        );
+        return new Response(null, { status: 401 });
+      });
+      fetchMock.mockImplementationOnce(async () =>
+        jsonResponse({ results: [] }),
+      );
+
+      await reportCommitArtefacts({
+        taskId: "task-1",
+        result: RESULT,
+        message: "fix: foo",
+        env: ENV,
+        envFilePath: NO_ENV_FILE,
+        oauthEnvFilePath,
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        (fetchMock.mock.calls[1]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer pha_rotated");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("is a no-op without a task id", async () => {
     await reportCommitArtefacts({
       taskId: undefined,

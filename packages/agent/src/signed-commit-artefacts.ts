@@ -42,22 +42,20 @@ function readSandboxEnvFile(envFilePath: string): Record<string, string> {
 }
 
 function readSandboxOauthToken(oauthEnvFilePath: string): string | undefined {
-  let raw: string;
   try {
-    raw = readFileSync(oauthEnvFilePath, "utf8");
+    const raw = readFileSync(oauthEnvFilePath, "utf8");
+    for (const entry of raw.split("\0")) {
+      const prefix = "POSTHOG_PERSONAL_API_KEY=";
+      if (entry.startsWith(prefix)) {
+        return entry.slice(prefix.length);
+      }
+    }
+    return "";
   } catch {
     // The dedicated credential channel is mandatory. Missing and unreadable
     // files both fail closed.
     return undefined;
   }
-
-  // The backend revokes OAuth access by truncating this managed file. Its
-  // presence is authoritative even when empty.
-  if (raw.trim() === "") {
-    return "";
-  }
-  const oauthEnv = readSandboxEnvFile(oauthEnvFilePath);
-  return oauthEnv.POSTHOG_PERSONAL_API_KEY ?? "";
 }
 
 export function resolveSandboxPosthogApi(
@@ -89,7 +87,10 @@ export function createSandboxPosthogClient(
   return new PostHogAPIClient({
     apiUrl: api.apiUrl,
     projectId: api.projectId,
-    getApiKey: () => api.apiKey,
+    getApiKey: () =>
+      readSandboxOauthToken(oauthEnvFilePath ?? SANDBOX_OAUTH_ENV_FILE) ?? "",
+    refreshApiKey: () =>
+      readSandboxOauthToken(oauthEnvFilePath ?? SANDBOX_OAUTH_ENV_FILE) ?? "",
   });
 }
 
