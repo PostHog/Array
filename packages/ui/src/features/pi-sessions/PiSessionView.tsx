@@ -446,7 +446,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
                   ? "A message is already queued"
                   : undefined
           }
-          enableBashMode={session.cloudStatus === undefined}
+          enableBashMode
           enableCommands
           modelSelector={modelSelector}
           reasoningSelector={reasoningSelector}
