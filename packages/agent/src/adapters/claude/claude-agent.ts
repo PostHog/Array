@@ -1963,8 +1963,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const settingsManager = new SettingsManager(cwd);
     await settingsManager.initialize();
 
+    // The session's explicit pick outranks the shared claude settings file:
+    // that file is cross-session state and must only ever be a fallback.
     const earlyModelId =
-      settingsManager.getSettings().model || meta?.model || "";
+      meta?.model || settingsManager.getSettings().model || "";
 
     // Register the in-process general local-tools MCP server. Tools self-gate
     // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
@@ -2198,7 +2200,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
-        settingsManager.getSettings().model || meta?.model || undefined,
+        meta?.model || settingsManager.getSettings().model || undefined,
         this.options?.gatewayEnv?.anthropicBaseUrl,
         this.options?.gatewayEnv?.anthropicAuthToken,
       ),
@@ -2263,8 +2265,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     const resolvedModelId = resolveInitialModelId(modelOptions, [
-      settingsManager.getSettings().model,
       meta?.model,
+      settingsManager.getSettings().model,
     ]);
     modelOptions.currentModelId = resolvedModelId;
     session.modelId = resolvedModelId;

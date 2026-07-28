@@ -234,6 +234,8 @@ export const reconnectSessionInput = z.object({
   model: z.string().optional(),
   customInstructions: customInstructionsField,
   effort: effortLevelSchema.optional(),
+  contextWindow: z.enum(["200k", "1m"]).optional(),
+  fastMode: z.boolean().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
   /** See startSessionInput.rtkEnabled. */
   rtkEnabled: z.boolean().optional(),

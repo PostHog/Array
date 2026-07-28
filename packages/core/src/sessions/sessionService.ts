@@ -50,6 +50,10 @@ import {
 } from "@posthog/shared/domain-types";
 import type { SpeechKind, SpeechSource } from "../speech/identifiers";
 import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "../task-detail/previewConfig";
+import {
   isNotification,
   POSTHOG_NOTIFICATIONS,
   SPEAK_TOOL_QUALIFIED_NAME,
@@ -2003,6 +2007,33 @@ export class SessionService {
       const persistedModel =
         modelOpt?.type === "select" ? modelOpt.currentValue : undefined;
 
+      // Same for effort, context window and fast mode: the session's own
+      // persisted config is authoritative on resume.
+      const effortOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "thought_level",
+      );
+      const persistedEffort =
+        effortOpt?.type === "select" &&
+        effortLevelSchema.safeParse(effortOpt.currentValue).success
+          ? (effortOpt.currentValue as EffortLevel)
+          : undefined;
+      const contextOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        CONTEXT_WINDOW_OPTION_CATEGORY,
+      );
+      const persistedContextWindow =
+        contextOpt?.type === "select" &&
+        (contextOpt.currentValue === "200k" || contextOpt.currentValue === "1m")
+          ? contextOpt.currentValue
+          : undefined;
+      const fastOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        FAST_MODE_OPTION_CATEGORY,
+      );
+      const persistedFastMode =
+        fastOpt?.type === "select" ? fastOpt.currentValue === "on" : undefined;
+
       this.d.trpc.workspace.verify
         .query({ taskId })
         .then((workspaceResult) => {
@@ -2038,6 +2069,9 @@ export class SessionService {
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
         model: persistedModel,
+        effort: persistedEffort,
+        contextWindow: persistedContextWindow,
+        fastMode: persistedFastMode,
         customInstructions: customInstructions || undefined,
       });
 
