@@ -259,6 +259,9 @@ jobs:
             /Users/runner/.posthog-code/logs/
             /Users/runner/Library/Caches/com.posthog.array.ShipIt/
             !/Users/runner/Library/Caches/com.posthog.array.ShipIt/update.*/**
+          # The app log dir lives under hidden ~/.posthog-code and is silently
+          # dropped without this.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 

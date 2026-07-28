@@ -153,6 +153,16 @@ test.describe("macOS chained auto-update", () => {
       );
       proof.downloaded = true;
 
+      // Wait for Squirrel to finish staging the intermediate update before
+      // offering the next one. This mirrors real release cadence and keeps
+      // the native updater idle when the replacement staging kicks off.
+      proof.failedStep = "first-stage";
+      await waitUntil(
+        () => shipItEvidence().exists,
+        120_000,
+        "Squirrel never staged the intermediate update",
+      );
+
       // Phase 2: bump the feed and prove the staged update is replaced.
       proof.failedStep = "feed-bump";
       bumpChainFeed();
