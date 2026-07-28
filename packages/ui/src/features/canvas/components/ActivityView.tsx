@@ -27,10 +27,7 @@ import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
-import {
-  useMarkAllTaskActivityRead,
-  useMarkTaskActivityRead,
-} from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
+import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
@@ -242,9 +239,8 @@ export function ActivityView() {
     isFetchingNextPage,
     fetchNextPage,
   } = useTaskActivity();
-  const { mutate: markTasksRead } = useMarkTaskActivityRead();
-  const { mutate: markAllRead, isPending: isMarkingRead } =
-    useMarkAllTaskActivityRead();
+  const { mutate: markTasksRead, isPending: isMarkingRead } =
+    useMarkTaskActivityRead();
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
@@ -252,6 +248,16 @@ export function ActivityView() {
       markTasksRead([{ task_id: item.taskId, seen_before: item.activityAt }]),
     [markTasksRead],
   );
+  const markAllRead = useCallback(() => {
+    markTasksRead(
+      items
+        .filter((item) => item.isUnread)
+        .map((item) => ({
+          task_id: item.taskId,
+          seen_before: item.activityAt,
+        })),
+    );
+  }, [items, markTasksRead]);
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
@@ -296,7 +302,7 @@ export function ActivityView() {
               size="sm"
               loading={isMarkingRead}
               disabled={isMarkingRead}
-              onClick={() => markAllRead()}
+              onClick={markAllRead}
             >
               <ChecksIcon size={14} />
               Mark all as read

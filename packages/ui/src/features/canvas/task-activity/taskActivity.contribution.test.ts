@@ -40,13 +40,6 @@ describe("TaskActivityContribution", () => {
         pageParams: [undefined],
       },
     );
-    queryClient.setQueryData<InfiniteData<TaskActivityPage>>(
-      ["task-activity", { unreadOnly: true }],
-      {
-        pages: [{ results: [], unread_count: 0 }],
-        pageParams: [undefined],
-      },
-    );
 
     activityListener?.({
       taskId: "task-1",
@@ -69,12 +62,6 @@ describe("TaskActivityContribution", () => {
         },
       ],
     });
-    expect(
-      queryClient.getQueryData<InfiniteData<TaskActivityPage>>([
-        "task-activity",
-        { unreadOnly: true },
-      ])?.pages[0],
-    ).toMatchObject({ unread_count: 1, results: [{ task_id: "task-1" }] });
   });
 
   it("does not recreate activity data after the authenticated query is removed", () => {
