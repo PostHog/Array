@@ -14,7 +14,7 @@ import { useEffect, useMemo } from "react";
 export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { items, isLoading } = useTaskActivity();
+  const { items, unreadCount, isLoading } = useTaskActivity();
   const unreadItems = items.filter((item) => item.isUnread);
   const { mutate: markTasksRead, isPending: isMarkingRead } =
     useMarkTaskActivityRead();
@@ -67,7 +67,9 @@ export function ActivityHoverCard({ onClose }: { onClose: () => void }) {
             onClick={markAllRead}
           >
             <ChecksIcon size={14} />
-            Mark all as read
+            {unreadItems.length === unreadCount
+              ? "Mark all as read"
+              : "Mark visible as read"}
           </Button>
         )}
       </div>

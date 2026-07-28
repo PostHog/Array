@@ -49,7 +49,7 @@ export function ActivityItem({
       <PopoverTrigger
         openOnHover
         delay={300}
-        closeDelay={30}
+        closeDelay={100}
         render={<div className="w-full">{item}</div>}
       />
       {open && <ActivityHoverCard onClose={() => setOpen(false)} />}
