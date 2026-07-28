@@ -7,6 +7,7 @@ interface TestableServer {
   configureEnvironment(args?: {
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
+    isWizardCloudRun?: boolean;
     signalReportId?: string | null;
     aiStage?: string | null;
     taskId?: string | null;
@@ -182,6 +183,35 @@ describe("AgentServer.configureEnvironment", () => {
       );
     },
   );
+
+  it("tags as onboarding when a wizard cloud run reaches the gateway", () => {
+    const env = buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "onboarding",
+      isWizardCloudRun: true,
+    });
+
+    expect(env.anthropicBaseUrl).toBe(
+      "https://gateway.us.posthog.com/onboarding",
+    );
+    expect(env.openaiBaseUrl).toBe(
+      "https://gateway.us.posthog.com/onboarding/v1",
+    );
+  });
+
+  // onboarding is unbilled, so a task that merely claims the origin (anyone with task:write
+  // can) must not reach it without the server-stamped wizard_config marker.
+  it("keeps a marker-less onboarding task on posthog_code", () => {
+    const env = buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "onboarding",
+      isWizardCloudRun: false,
+    });
+
+    expect(env.anthropicBaseUrl).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
+    );
+  });
 
   // The codex/OpenAI path sets provider http_headers rather than
   // ANTHROPIC_CUSTOM_HEADERS, so the same task metadata must be exposed as a

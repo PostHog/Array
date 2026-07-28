@@ -79,6 +79,26 @@ describe("resolveGatewayProduct", () => {
       );
     },
   );
+
+  // `onboarding` is unbilled, and origin_product is caller-supplied: any task:write holder can
+  // POST a task claiming it. Only the wizard_config marker, which the task API will not let a
+  // caller set, may unlock the free product. Everything else stays on the billed one.
+  it.each([
+    { isInternal: false, isWizardCloudRun: true, expected: "onboarding" },
+    { isInternal: false, isWizardCloudRun: false, expected: "posthog_code" },
+    { isInternal: true, isWizardCloudRun: false, expected: "posthog_code" },
+  ] as const)(
+    "originProduct=onboarding isWizardCloudRun=$isWizardCloudRun isInternal=$isInternal -> $expected",
+    ({ isInternal, isWizardCloudRun, expected }) => {
+      expect(
+        resolveGatewayProduct({
+          isInternal,
+          originProduct: "onboarding",
+          isWizardCloudRun,
+        }),
+      ).toBe(expected);
+    },
+  );
 });
 
 describe("resolveLlmGatewayUrl", () => {
