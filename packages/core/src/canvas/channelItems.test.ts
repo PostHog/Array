@@ -173,8 +173,8 @@ describe("filterChannelItems", () => {
     ["anyone", ["mine", "theirs"]],
   ] as const)("filters createdBy=%s", (createdBy, expected) => {
     const items = [
-      model({ id: "mine", authorUser: ME }),
-      model({ id: "theirs", authorUser: OTHER }),
+      model({ id: "mine", authorUser: ME, authorUuid: ME.uuid }),
+      model({ id: "theirs", authorUser: OTHER, authorUuid: OTHER.uuid }),
     ];
     const result = filterChannelItems(items, {
       query: "",
