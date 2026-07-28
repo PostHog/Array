@@ -24,6 +24,10 @@ function isGlmModelId(modelId: string): boolean {
   return modelId.toLowerCase().includes("glm");
 }
 
+function isKimiModelId(modelId: string): boolean {
+  return modelId === "moonshotai/kimi-k3";
+}
+
 // Served-catalog stand-in while the preview config loads or when the request
 // fails, so the picker never collapses to "Default" alone. Matches the
 // backend's per-adapter catalogs in process_task/utils.py minus client-blocked
@@ -40,6 +44,7 @@ const FALLBACK_MODEL_OPTIONS: Record<
     { value: "claude-sonnet-5", label: "Claude Sonnet 5" },
     { value: "claude-fable-5", label: "Claude Fable 5" },
     { value: "@cf/zai-org/glm-5.2", label: "GLM-5.2" },
+    { value: "moonshotai/kimi-k3", label: "Kimi K3" },
   ],
   codex: [
     { value: "gpt-5", label: "GPT-5" },
@@ -70,7 +75,11 @@ export function formatLoopModel(
 export function loopModelOptions(
   adapter: LoopSchemas.LoopRuntimeAdapterEnum,
   configOptions: SessionConfigOption[],
-  { glmEnabled, pinnedModel }: { glmEnabled: boolean; pinnedModel: string },
+  {
+    glmEnabled,
+    kimiEnabled,
+    pinnedModel,
+  }: { glmEnabled: boolean; kimiEnabled?: boolean; pinnedModel: string },
 ): LoopModelOption[] {
   const modelOption = configOptions.find(
     (option) => option.category === "model" || option.id === "model",
@@ -84,12 +93,19 @@ export function loopModelOptions(
             label: option.name ?? option.value,
           }))
       : [];
-  const options = (
-    served.length > 0 ? served : FALLBACK_MODEL_OPTIONS[adapter]
-  ).filter(
-    (option) =>
-      glmEnabled || option.value === pinnedModel || !isGlmModelId(option.value),
-  );
+  const options = (served.length > 0 ? served : FALLBACK_MODEL_OPTIONS[adapter])
+    .filter(
+      (option) =>
+        glmEnabled ||
+        option.value === pinnedModel ||
+        !isGlmModelId(option.value),
+    )
+    .filter(
+      (option) =>
+        kimiEnabled ||
+        option.value === pinnedModel ||
+        !isKimiModelId(option.value),
+    );
   if (pinnedModel && !options.some((option) => option.value === pinnedModel)) {
     options.push({ value: pinnedModel, label: pinnedModel });
   }

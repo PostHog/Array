@@ -9,6 +9,8 @@ import {
   isAnthropicModel,
   isBlockedModelId,
   isCloudflareModel,
+  isModalModel,
+  isModalModelId,
   pickAllowedModel,
 } from "./gateway-models";
 
@@ -85,6 +87,13 @@ describe("formatGatewayModelName", () => {
         allowed: true,
       }),
     ).toBe("llama-3.1-8b-instruct");
+  });
+
+  it("formats Kimi K3 for the model picker", () => {
+    const kimi = model("moonshotai/kimi-k3", "modal");
+    expect(formatGatewayModelName(kimi)).toBe("Kimi K3");
+    expect(isModalModel(kimi)).toBe(true);
+    expect(isModalModelId(kimi.id)).toBe(true);
   });
 
   it("blocks deprecated Claude gateway models", () => {

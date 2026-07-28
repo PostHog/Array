@@ -24,6 +24,7 @@ export const CHANNELS_LAYOUT_FLAG = "code-spaces-layout";
 export const LOOPS_FLAG = "loops";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
+export const KIMI_MODEL_FLAG = "tasks-kimi-k3";
 /** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */
 export const SPOKEN_NARRATION_FLAG = "posthog-code-spoken-narration";
 // Gates importing and relaying local MCP servers into cloud task runs.

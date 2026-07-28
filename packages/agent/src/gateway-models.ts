@@ -178,6 +178,14 @@ export function isCloudflareModel(model: GatewayModel): boolean {
   return isCloudflareModelId(model.id) || model.owned_by === "cloudflare";
 }
 
+export function isModalModel(model: GatewayModel): boolean {
+  return isModalModelId(model.id) || model.owned_by === "modal";
+}
+
+export function isModalModelId(modelId: string): boolean {
+  return modelId === "moonshotai/kimi-k3";
+}
+
 export interface ModelInfo {
   id: string;
   owned_by?: string;
@@ -320,6 +328,10 @@ function formatProviderModelName(modelId: string): string {
 export function formatGatewayModelName(model: GatewayModel): string {
   if (isCloudflareModel(model)) {
     return formatProviderModelName(model.id.split("/").pop() ?? model.id);
+  }
+
+  if (isModalModel(model)) {
+    return formatModelId(model.id.split("/").pop() ?? model.id);
   }
 
   if (isOpenAIModel(model)) {
