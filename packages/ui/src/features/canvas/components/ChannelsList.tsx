@@ -1025,11 +1025,7 @@ export function ChannelsList() {
         flat={channelsLayout}
         keepMounted={!channelsLayout}
         icon={
-          channelsLayout ? (
-            <CubeFocusIcon size={14} />
-          ) : (
-            <HashIcon size={14} />
-          )
+          channelsLayout ? <CubeFocusIcon size={14} /> : <HashIcon size={14} />
         }
       >
         {!isLoading && channels.length === 0 && (
