@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Kbd,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -27,7 +28,6 @@ import {
 } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { isContentEmpty } from "@posthog/ui/features/message-editor/content";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
-import { Tooltip as ShortcutTooltip } from "@posthog/ui/primitives/Tooltip";
 import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { useRouterState } from "@tanstack/react-router";
@@ -96,24 +96,21 @@ export function ChannelsFab({ channelId }: { channelId?: string }) {
   return (
     <>
       <DropdownMenu>
-        {channelsLayout ? (
-          // The draft dot needs saying out loud, and the button is where the
-          // create shortcut is worth advertising.
-          <ShortcutTooltip
-            content={hasDraft ? "Create — you have a draft" : "Create"}
-            shortcut={formatHotkey(SHORTCUTS.NEW_TASK)}
-            side="top"
-          >
-            <DropdownMenuTrigger render={trigger} />
-          </ShortcutTooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger render={<DropdownMenuTrigger render={trigger} />} />
-            <TooltipContent side="top" align="center">
-              Create something new
-            </TooltipContent>
-          </Tooltip>
-        )}
+        <Tooltip>
+          <TooltipTrigger render={<DropdownMenuTrigger render={trigger} />} />
+          <TooltipContent side="top" align="center">
+            {channelsLayout ? (
+              <>
+                {/* The draft dot needs saying out loud, and the button is where
+                    the create shortcut is worth advertising. */}
+                {hasDraft ? "Create — you have a draft" : "Create"}
+                <Kbd className="ml-1.5">{formatHotkey(SHORTCUTS.NEW_TASK)}</Kbd>
+              </>
+            ) : (
+              "Create something new"
+            )}
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenuContent
           align={channelId ? "end" : "center"}
           side="top"

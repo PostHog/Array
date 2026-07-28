@@ -142,12 +142,17 @@ function SpaceRowSurface({
   return (
     <AutocompleteItem
       value={optionValue}
-      // quill wraps an option's children in its own flex row; widening it is
-      // what keeps the shortcut hint at the row's right edge and lets the name
-      // truncate, exactly as they do in the button above.
       className={cn(
         "w-full min-w-0 data-selected:bg-fill-selected data-selected:text-foreground",
+        // quill wraps an option's children in its own flex row; widening it is
+        // what keeps the shortcut hint at the row's right edge and lets the
+        // name truncate, exactly as they do in the button above.
         "[&>span]:w-full [&>span]:gap-2",
+        // quill highlights an option with an offset focus ring, which suits a
+        // popup listbox but reads as a stray outline on a sidebar row — and at
+        // dark-theme contrast it outshouts the selected row it sits next to.
+        // Same fill the rows already hover to, matching ProjectSwitcher's list.
+        "ring-offset-0 data-highlighted:border-transparent data-highlighted:bg-fill-hover data-highlighted:ring-0",
         className,
       )}
       // The two branches take the same handlers typed against different
