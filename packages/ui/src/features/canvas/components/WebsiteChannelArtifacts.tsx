@@ -84,7 +84,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
       return [
         {
           kind: "pr" as const,
-          key: `pr:${f.id}`,
+          key: `pr:${f.taskId}`,
           title: task.title || "Pull request",
           ts: Date.parse(task.updated_at) || 0,
           prUrl,

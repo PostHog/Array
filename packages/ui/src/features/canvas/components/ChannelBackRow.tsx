@@ -13,7 +13,6 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
-import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { showChannelList } from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { track } from "@posthog/ui/shell/analytics";
 
@@ -53,7 +52,8 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
   const spacesLayout = useChannelsLayout();
   const { channels, isLoading } = useChannels();
   const current = channels.find((c) => c.id === channelId);
-  const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
+  // The private personal channel can't be starred; shared channels can.
+  const showStar = current != null && current.channelType !== "personal";
 
   return (
     <div className="relative mx-2 mt-1">

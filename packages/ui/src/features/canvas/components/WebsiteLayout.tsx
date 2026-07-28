@@ -6,6 +6,7 @@ import {
   PushPinIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { useHostTRPC } from "@posthog/host-router/react";
 import {
   Button,
   DropdownMenu,
@@ -31,7 +32,6 @@ import {
   useDashboardEditStore,
   useIsDashboardEditing,
 } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
-import { useFreeformThread } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import { copyCanvasLink } from "@posthog/ui/features/canvas/utils/copyCanvasLink";
 import { TaskHeaderActions } from "@posthog/ui/features/task-detail/components/TaskHeaderActions";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -39,13 +39,9 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-
-function threadIdFor(dashboardId: string): string {
-  return `dashboard:${dashboardId}`;
-}
 
 // Edit toggle + autosave status for a canvas. Source is server-versioned now —
 // version browsing and revert live in the canvas view's own toolbar — so the
@@ -93,8 +89,13 @@ function FreeformEditControls({
       });
   };
 
-  const threadId = threadIdFor(dashboardId);
-  const { isSavingContext } = useFreeformThread(threadId);
+  // Any in-flight saveContext mutation (the side panel's context editor
+  // commits through it) drives the toolbar's autosave spinner.
+  const trpc = useHostTRPC();
+  const isSavingContext =
+    useIsMutating({
+      mutationKey: trpc.dashboards.saveContext.mutationKey(),
+    }) > 0;
 
   const queryClient = useQueryClient();
   const remountFrame = useCanvasFrameStore((s) => s.remount);
