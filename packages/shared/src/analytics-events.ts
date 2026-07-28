@@ -872,6 +872,7 @@ export type ChannelsSurface =
   | "canvas"
   | "context"
   | "thread_panel"
+  | "activity_panel"
   | "activity";
 
 export type ChannelActionType =
