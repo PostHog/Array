@@ -1,6 +1,7 @@
 import type { Icon } from "@phosphor-icons/react";
 import { readAgentToolName, readMcpToolDescriptor } from "@posthog/shared";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 import {
   buildDoneLabel,
   type CollapseMode,
@@ -323,14 +324,12 @@ export function buildThreadGroups(
   };
 
   for (const item of items) {
+    if (isUserInitiatedConversationItem(item)) {
+      flush();
+      pushItemRow(item);
+      continue;
+    }
     switch (item.type) {
-      case "user_message":
-      case "git_action":
-      case "skill_button_action": {
-        flush();
-        pushItemRow(item);
-        break;
-      }
       case "session_update": {
         if (isGroupableItem(item)) {
           buffer.push(item);

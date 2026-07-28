@@ -27,6 +27,7 @@ const mockHost = vi.hoisted(() => ({
   uploadRunAttachments: vi.fn(),
   setProvisioningActive: vi.fn(),
   clearProvisioning: vi.fn(),
+  confirmEnvironmentSetup: vi.fn(async () => true),
   dispatchSetupAction: vi.fn(),
   importClaudeCliSession: vi.fn(),
   deleteClaudeCliImport: vi.fn(),
@@ -49,6 +50,7 @@ const piRunner = {
 const sessionService = {
   connectToTask: vi.fn(),
   disconnectFromTask: vi.fn(),
+  watchCreatedCloudTask: vi.fn(),
   rememberInitialCloudPrompt: vi.fn(),
   markTaskCreationInFlight: vi.fn(),
 } as unknown as SessionService;
@@ -189,6 +191,9 @@ describe("TaskCreationSaga", () => {
       pendingUserArtifactIds: undefined,
     });
     expect(sendRunCommandMock).not.toHaveBeenCalled();
+    expect(sessionService.watchCreatedCloudTask).toHaveBeenCalledWith(
+      startedTask,
+    );
     expect(onTaskReady).toHaveBeenCalledTimes(1);
     expect(onTaskReady.mock.calls[0][0].task.latest_run?.branch).toBe(
       "release/remembered-branch",
@@ -714,6 +719,9 @@ describe("TaskCreationSaga", () => {
     // Warm-activated at create time: no fresh run is created or started.
     expect(createTaskRunMock).not.toHaveBeenCalled();
     expect(startTaskRunMock).not.toHaveBeenCalled();
+    expect(sessionService.watchCreatedCloudTask).toHaveBeenCalledWith(
+      warmActivatedTask,
+    );
   });
 
   it("suppresses warm reuse when attachments exist but no warm lease is known", async () => {

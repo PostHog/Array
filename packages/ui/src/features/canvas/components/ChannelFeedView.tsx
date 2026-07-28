@@ -48,6 +48,7 @@ import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
+import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { taskCardNavigation } from "@posthog/ui/features/canvas/taskCardNavigation";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
@@ -274,10 +275,12 @@ export function TaskCard({
   task,
   channelId,
   inThread = false,
+  onOpen,
 }: {
   task: Task;
   channelId: string;
   inThread?: boolean;
+  onOpen?: () => void;
 }) {
   const statusDisplay = useTaskStatusDisplay(task);
   const prUrl =
@@ -289,6 +292,7 @@ export function TaskCard({
     <Link
       {...taskCardNavigation(channelId, task.id)}
       preload="intent"
+      onClick={onOpen}
       className={cn(
         "mt-1.5 block w-full text-inherit no-underline outline-none focus-visible:ring-(--accent-8) focus-visible:ring-2",
         inThread ? "rounded-none" : "rounded-sm",
@@ -362,6 +366,7 @@ function ReplyFooter({
   const { messages } = useTaskThread(taskId, {
     pollIntervalMs: FEED_REPLIES_POLL_INTERVAL_MS,
     enabled: inView,
+    markActivityRead: false,
   });
   const authors = useMemo(() => {
     const seen = new Map<string, (typeof messages)[number]["author"]>();
@@ -584,6 +589,17 @@ const FeedItem = memo(function FeedItem({
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
+  const { mutate: markTasksRead } = useMarkTaskActivityRead();
+  const markRead = useCallback(() => {
+    markTasksRead([
+      { task_id: task.id, seen_before: new Date().toISOString() },
+    ]);
+  }, [markTasksRead, task.id]);
+  const openTask = useCallback(() => {
+    markRead();
+    onOpenTask(task);
+  }, [markRead, onOpenTask, task]);
+
   return (
     <TaskFeedRow
       task={task}
@@ -602,13 +618,13 @@ const FeedItem = memo(function FeedItem({
           >
             <LinkIcon size={15} />
           </ThreadItemAction>
-          <ThreadItemAction label="Open task" onClick={() => onOpenTask(task)}>
+          <ThreadItemAction label="Open task" onClick={openTask}>
             <ArrowSquareOutIcon size={15} />
           </ThreadItemAction>
         </ThreadItemActions>
       }
     >
-      <TaskCard task={task} channelId={channelId} />
+      <TaskCard task={task} channelId={channelId} onOpen={markRead} />
       <ReplyFooter
         taskId={task.id}
         inView={inView}

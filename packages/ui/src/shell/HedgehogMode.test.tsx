@@ -100,6 +100,8 @@ describe("HedgehogMode", () => {
     expect(mocks.mount).toHaveBeenCalledTimes(1);
     expect(overlay.querySelector("canvas")).not.toBeNull();
     expect(overlay.style.visibility).toBe("visible");
+    expect(overlay).toHaveClass("absolute");
+    expect(overlay).not.toHaveClass("fixed");
   });
 
   it("destroys the game and reports when the context loss callback fires", async () => {

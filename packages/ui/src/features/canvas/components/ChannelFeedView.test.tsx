@@ -3,7 +3,37 @@ import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TaskFeedRow } from "./ChannelFeedView";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => (
+    <a
+      href="/task"
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.();
+      }}
+    >
+      {children}
+    </a>
+  ),
+}));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelTaskData", () => ({
+  useChannelTaskData: () => undefined,
+}));
+vi.mock("@posthog/ui/features/sidebar/useTaskPrStatus", () => ({
+  useTaskPrStatus: () => ({ prState: null }),
+}));
+vi.mock("@posthog/ui/features/browser-tabs/TaskTabIcon", () => ({
+  TaskTabIcon: () => <span />,
+}));
+
+import { TaskCard, TaskFeedRow } from "./ChannelFeedView";
 
 const task = {
   id: "task-1",
@@ -50,6 +80,20 @@ function mockLayout(charsPerLine: number) {
 }
 
 describe("TaskFeedRow", () => {
+  it("reports when its task is opened", async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(
+      <Theme>
+        <TaskCard task={task} channelId="channel-1" onOpen={onOpen} />
+      </Theme>,
+    );
+
+    await user.click(screen.getByText(task.title));
+
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   it("expands a truncated prompt", async () => {
     mockLayout(20);
     const user = userEvent.setup();

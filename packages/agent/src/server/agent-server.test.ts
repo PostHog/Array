@@ -952,6 +952,124 @@ describe("AgentServer HTTP Mode", () => {
       );
     });
 
+    // Sandbox teardown kills the exec'd agent-server without SIGTERM, so the
+    // trace's root span only exports if telemetry is shut down at the run's
+    // in-process terminal points.
+    it("shuts down telemetry after mirroring the terminal failure record", async () => {
+      const order: string[] = [];
+      const testServer = new AgentServer({
+        port,
+        jwtPublicKey: TEST_PUBLIC_KEY,
+        repositoryPath: repo.path,
+        apiUrl: "http://localhost:8000",
+        apiKey: "test-api-key",
+        projectId: 1,
+        mode: "interactive",
+        taskId: "test-task-id",
+        runId: "test-run-id",
+      }) as unknown as {
+        session: {
+          payload: { run_id: string };
+          logWriter: { flush: ReturnType<typeof vi.fn> };
+          telemetry: {
+            append: ReturnType<typeof vi.fn>;
+            shutdown: ReturnType<typeof vi.fn>;
+          };
+        };
+        eventStreamSender: {
+          enqueue: (event: Record<string, unknown>) => void;
+          stop: () => Promise<void>;
+        };
+        posthogAPI: {
+          updateTaskRun: (
+            taskId: string,
+            runId: string,
+            payload: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+        signalTaskComplete(
+          payload: JwtPayload,
+          stopReason: string,
+          errorMessage?: string,
+        ): Promise<void>;
+      };
+      testServer.eventStreamSender = {
+        enqueue: vi.fn(),
+        stop: vi.fn(async () => {}),
+      };
+      testServer.posthogAPI = {
+        updateTaskRun: vi.fn(async () => ({})),
+      };
+      testServer.session = {
+        payload: { run_id: "run-1" },
+        logWriter: { flush: vi.fn(async () => {}) },
+        telemetry: {
+          append: vi.fn(() => {
+            order.push("append");
+          }),
+          shutdown: vi.fn(async () => {
+            order.push("shutdown");
+          }),
+        },
+      };
+
+      await testServer.signalTaskComplete(
+        {
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode: "background",
+        },
+        "error",
+        "boom",
+      );
+
+      // The error mirror must land before shutdown so the root span exports
+      // with ERROR status.
+      expect(order).toEqual(["append", "shutdown"]);
+    });
+
+    it.each([
+      { mode: "background" as const, shutdownCalls: 1 },
+      { mode: "interactive" as const, shutdownCalls: 0 },
+    ])(
+      "finalizeRunTelemetry shuts down telemetry only for $mode runs",
+      async ({ mode, shutdownCalls }) => {
+        const testServer = new AgentServer({
+          port,
+          jwtPublicKey: TEST_PUBLIC_KEY,
+          repositoryPath: repo.path,
+          apiUrl: "http://localhost:8000",
+          apiKey: "test-api-key",
+          projectId: 1,
+          mode: "interactive",
+          taskId: "test-task-id",
+          runId: "test-run-id",
+        }) as unknown as {
+          session: { telemetry: { shutdown: ReturnType<typeof vi.fn> } };
+          finalizeRunTelemetry(payload: JwtPayload): Promise<void>;
+        };
+        testServer.session = {
+          telemetry: { shutdown: vi.fn(async () => {}) },
+        };
+
+        await testServer.finalizeRunTelemetry({
+          run_id: "run-1",
+          task_id: "task-1",
+          team_id: 1,
+          user_id: 1,
+          distinct_id: "distinct-id",
+          mode,
+        });
+
+        expect(testServer.session.telemetry.shutdown).toHaveBeenCalledTimes(
+          shutdownCalls,
+        );
+      },
+    );
+
     function createFailureTestServer() {
       const appendRawLine = vi.fn();
       const testServer = new AgentServer({
@@ -3288,11 +3406,27 @@ describe("AgentServer HTTP Mode", () => {
     });
 
     it.each([
-      { retryOutcome: "succeeds", retryFails: false },
-      { retryOutcome: "fails", retryFails: true },
+      {
+        retryOutcome: "succeeds",
+        retryFails: false,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      {
+        retryOutcome: "fails",
+        retryFails: true,
+        oversizedError: "Internal error: Prompt is too long",
+      },
+      // The LLM gateway phrases oversized rejections as HTTP 413; the
+      // fresh-session retry must trigger on that shape too.
+      {
+        retryOutcome: "succeeds after a gateway 413",
+        retryFails: false,
+        oversizedError:
+          'Internal error: API Error: 413 {"error":{"message":"litellm.ContextWindowExceededError: The estimated number of input and maximum output tokens (262334) exceeded this model context window limit (262144)","code":"5021"}}',
+      },
     ])(
       "clears resume state when the fresh-session retry $retryOutcome",
-      async ({ retryFails }) => {
+      async ({ retryFails, oversizedError }) => {
         const s = createServer();
         await s.start();
 
@@ -3300,7 +3434,7 @@ describe("AgentServer HTTP Mode", () => {
         const prompt = vi.fn(async (params: { prompt: ContentBlock[] }) => {
           prompts.push(params.prompt);
           if (prompts.length === 1) {
-            throw new Error("Internal error: Prompt is too long");
+            throw new Error(oversizedError);
           }
           if (retryFails) {
             throw new Error("Fresh-session retry failed");

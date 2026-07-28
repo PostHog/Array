@@ -194,6 +194,23 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     useProvisioningStore.getState().clear(taskId);
   }
 
+  async confirmEnvironmentSetup(args: {
+    repoPath: string;
+    environmentId: string;
+    name: string;
+    script: string;
+  }): Promise<boolean> {
+    // Asked every run, never remembered: the script text does not determine
+    // what the command does, so a stored approval for "npm run setup" would
+    // still hold after the repo changes what that runs.
+    return window.confirm(
+      `The environment "${args.name}" in ${args.repoPath} wants to run this ` +
+        `setup script on your machine:\n\n${args.script}\n\n` +
+        `It runs with your permissions and can execute other files in the ` +
+        `repository. Run it?`,
+    );
+  }
+
   dispatchSetupAction(args: SetupActionDispatch): void {
     const actionId = `setup-${args.taskId}-${Date.now()}`;
     usePanelLayoutStore

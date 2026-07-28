@@ -36,7 +36,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArchiveRunningTaskDialog } from "./ArchiveRunningTaskDialog";
 import { SidebarItem } from "./SidebarItem";
 import { TaskListView } from "./TaskListView";
-import { TasksHeader } from "./TasksHeader";
 
 const log = logger.scope("sidebar-menu");
 
@@ -484,8 +483,6 @@ function SidebarMenuComponent() {
       id="side-bar-menu"
       className="flex min-h-0 flex-col"
     >
-      <TasksHeader />
-
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <Flex direction="column" className="gap-px px-2 pb-2">
           {sidebarData.isLoading ? (

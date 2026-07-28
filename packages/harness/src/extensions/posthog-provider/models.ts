@@ -125,6 +125,12 @@ function toModelConfig(
 
 const FALLBACK_GATEWAY_MODELS: GatewayModel[] = [
   {
+    id: "claude-opus-5",
+    owned_by: "anthropic",
+    context_window: 1000000,
+    supports_vision: true,
+  },
+  {
     id: "claude-opus-4-8",
     owned_by: "anthropic",
     context_window: 1000000,

@@ -207,6 +207,44 @@ describe("formValuesToLoopWrite", () => {
   });
 });
 
+function baseLoop(): LoopSchemas.Loop {
+  return {
+    id: "loop-1",
+    team_id: 1,
+    created_by_id: 1,
+    name: "Digest",
+    description: "daily",
+    visibility: "team",
+    instructions: "Summarize.",
+    runtime_adapter: "claude",
+    model: "claude-sonnet-5",
+    reasoning_effort: "medium",
+    repositories: [],
+    sandbox_environment_id: null,
+    enabled: true,
+    disabled_reason: null,
+    overlap_policy: "skip",
+    behaviors: defaultLoopBehaviors(),
+    connectors: { mcp_installation_ids: [], posthog_mcp_scopes: "read_only" },
+    notifications: {
+      push: { enabled: false, events: [], params: {} },
+      email: { enabled: false, events: [], params: {} },
+      slack: { enabled: false, events: [], params: {} },
+    },
+    context_target: null,
+    internal: false,
+    origin_product: "user_created",
+    last_run_at: null,
+    last_run_status: null,
+    last_error: null,
+    consecutive_failures: 0,
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    triggers: [],
+    skill_bundles: [],
+  };
+}
+
 describe("loopToFormValues round trip", () => {
   it("maps a loop back into form values that write the same shape", () => {
     const loop = {
@@ -260,6 +298,7 @@ describe("loopToFormValues round trip", () => {
           updated_at: "2026-07-01T00:00:00Z",
         },
       ],
+      skill_bundles: [],
     } satisfies LoopSchemas.Loop;
 
     const values = loopToFormValues(loop);
@@ -290,6 +329,96 @@ describe("loopToFormValues round trip", () => {
         config: { cron_expression: "0 9 * * *", timezone: "UTC" },
       },
     ]);
+  });
+});
+
+describe("skill-driven loops", () => {
+  it("derives instructions from the skill and context on write", () => {
+    const write = formValuesToLoopWrite({
+      ...validFormValues(),
+      instructions: "stale free text",
+      skill: {
+        kind: "local",
+        name: "weekly-report",
+        source: "user",
+        path: "/skills/weekly-report",
+      },
+      skillContext: "Focus on churn.",
+    });
+    expect(write.instructions).toBe("/weekly-report\n\nFocus on churn.");
+  });
+
+  it("derives a bare invocation when the context is empty", () => {
+    const write = formValuesToLoopWrite({
+      ...validFormValues(),
+      skill: {
+        kind: "local",
+        name: "weekly-report",
+        source: "user",
+        path: "/skills/weekly-report",
+      },
+      skillContext: "  ",
+    });
+    expect(write.instructions).toBe("/weekly-report");
+  });
+
+  it.each([
+    {
+      name: "skill with no instructions",
+      skill: true,
+      instructions: "",
+      expected: true,
+    },
+    {
+      name: "no skill and no instructions",
+      skill: false,
+      instructions: "",
+      expected: false,
+    },
+    {
+      name: "no skill with instructions",
+      skill: false,
+      instructions: "Do it.",
+      expected: true,
+    },
+  ])(
+    "isLoopFormValid: $name → $expected",
+    ({ skill, instructions, expected }) => {
+      expect(
+        isLoopFormValid({
+          ...validFormValues(),
+          instructions,
+          skill: skill
+            ? { kind: "local", name: "s", source: "user", path: "/s" }
+            : null,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("maps an attached bundle back into an attached skill draft with its context", () => {
+    const bundle: LoopSchemas.LoopSkillBundle = {
+      id: "b1",
+      skill_name: "weekly-report",
+      skill_source: "user",
+      size: 10,
+      content_sha256: "a".repeat(64),
+      uploaded_at: "2026-07-01T00:00:00Z",
+    };
+    const loop = {
+      ...baseLoop(),
+      instructions: "/weekly-report\n\nFocus on churn.",
+      skill_bundles: [bundle],
+    };
+
+    const values = loopToFormValues(loop);
+    expect(values.skill).toEqual({
+      kind: "attached",
+      name: "weekly-report",
+      source: "user",
+    });
+    expect(values.skillContext).toBe("Focus on churn.");
+    expect(formValuesToLoopWrite(values).instructions).toBe(loop.instructions);
   });
 });
 

@@ -77,6 +77,7 @@ export const startSessionInput = z.object({
    * Lets a sandboxed surface deny file/shell/network tools.
    */
   disallowedTools: z.array(z.string()).optional(),
+  settingSources: z.array(z.enum(["user", "project", "local"])).optional(),
   effort: effortLevelSchema.optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),

@@ -46,6 +46,82 @@ const EXAMPLES: { icon: Icon; label: string }[] = [
   },
 ];
 
+function GeometricPattern() {
+  return (
+    <svg
+      className="absolute inset-0 h-full w-full text-white"
+      viewBox="0 0 232 96"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      <circle cx="26" cy="22" r="11" fill="currentColor" opacity="0.25" />
+      <circle
+        cx="204"
+        cy="66"
+        r="17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        opacity="0.3"
+      />
+      <rect
+        x="176"
+        y="10"
+        width="15"
+        height="15"
+        rx="2"
+        transform="rotate(18 183 17)"
+        fill="currentColor"
+        opacity="0.2"
+      />
+      <polygon points="64,10 75,30 53,30" fill="currentColor" opacity="0.3" />
+      <path
+        d="M8 62 l7 -8 7 8 7 -8 7 8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.35"
+      />
+      <circle cx="118" cy="14" r="4" fill="currentColor" opacity="0.35" />
+      <path
+        d="M148 78 h12 M154 72 v12"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        opacity="0.3"
+      />
+      <circle
+        cx="52"
+        cy="78"
+        r="6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        opacity="0.25"
+      />
+      <rect
+        x="96"
+        y="70"
+        width="10"
+        height="10"
+        transform="rotate(-12 101 75)"
+        fill="currentColor"
+        opacity="0.18"
+      />
+      <polygon
+        points="206,18 214,32 198,32"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+        opacity="0.3"
+      />
+    </svg>
+  );
+}
+
 export function LoopsPromoCard() {
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   const dismissed = useLoopsPromoStore((state) => state.dismissed);
@@ -92,18 +168,20 @@ export function LoopsPromoCard() {
     <>
       {!dismissed && (
         <Box className="shrink-0 px-2 pb-2">
-          <div className="group relative overflow-hidden rounded-md border border-gray-6 bg-gray-2">
+          <div className="group relative overflow-hidden rounded-md border border-gray-6 bg-gray-2 transition-shadow hover:shadow-md">
             <button
               type="button"
-              className="block w-full text-left transition-colors hover:bg-gray-3"
+              className="block w-full text-left"
               onClick={openDialog}
             >
-              <div className="flex h-24 items-center justify-center border-gray-6 border-b bg-gray-4">
+              <div className="relative flex h-24 items-center justify-center bg-[#2f80fa]">
+                <GeometricPattern />
                 <img
                   src={loopHog}
                   alt=""
-                  className="h-[72px] w-auto object-contain"
+                  className="relative h-[72px] w-auto object-contain"
                 />
+                <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-(--gray-2)" />
               </div>
               <div className="flex flex-col gap-0.5 px-3 pt-3 pb-3">
                 <span className="font-medium text-[13px] text-gray-12">
@@ -129,7 +207,7 @@ export function LoopsPromoCard() {
               type="button"
               aria-label="Dismiss Loops announcement"
               title="Dismiss"
-              className="absolute top-1.5 right-1.5 rounded-full bg-(--gray-a3) p-1 text-gray-11 opacity-0 transition-all hover:bg-(--gray-a5) hover:text-gray-12 focus-visible:opacity-100 group-hover:opacity-100"
+              className="absolute top-1.5 right-1.5 rounded-full bg-black/20 p-1 text-white opacity-0 transition-all hover:bg-black/30 focus-visible:opacity-100 group-hover:opacity-100"
               onClick={handleDismiss}
             >
               <XIcon size={10} weight="bold" />
@@ -140,8 +218,14 @@ export function LoopsPromoCard() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
-          <div className="flex h-48 items-center justify-center border-gray-6 border-b bg-gray-4">
-            <img src={loopHog} alt="" className="h-36 w-auto object-contain" />
+          <div className="relative flex h-48 items-center justify-center bg-[#2f80fa]">
+            <GeometricPattern />
+            <img
+              src={loopHog}
+              alt=""
+              className="relative h-36 w-auto object-contain"
+            />
+            <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-(--background)" />
           </div>
           <div className="flex flex-col gap-4 px-5 pt-4 pb-5">
             <div className="flex flex-col gap-1.5">

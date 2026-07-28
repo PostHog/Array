@@ -449,7 +449,11 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     ...params.userProvidedOptions,
     betas: ["context-1m-2025-08-07"],
     systemPrompt: params.systemPrompt ?? buildSystemPrompt(),
-    settingSources: ["user", "project", "local"],
+    settingSources: params.userProvidedOptions?.settingSources ?? [
+      "user",
+      "project",
+      "local",
+    ],
     stderr: (err) => params.logger.error(err),
     cwd: params.cwd,
     includePartialMessages: true,

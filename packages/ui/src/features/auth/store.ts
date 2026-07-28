@@ -13,6 +13,9 @@ export const ANONYMOUS_AUTH_STATE: AuthState = {
   currentProjectId: null,
   hasCodeAccess: null,
   needsScopeReauth: false,
+  sessionType: null,
+  sessionExpiresAt: null,
+  sessionEndReason: null,
 };
 
 interface AuthStoreState {

@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   forwardRef,
   type ReactNode,
+  type TouchEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -11,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type WheelEvent,
 } from "react";
 
 interface VirtualizedListProps<T> {
@@ -35,21 +37,10 @@ interface VirtualizedListProps<T> {
 export interface VirtualizedListHandle {
   scrollToBottom: () => void;
   scrollToIndex: (index: number) => void;
-  /** The scrolling element (the `overflow-y-auto` viewport). Exposed so a
-   * scrollbar marker rail can read `scrollTop`/`scrollHeight` and refresh on
-   * scroll. `null` until the list mounts. */
-  getScrollElement: () => HTMLDivElement | null;
-  /** The inner content element whose height == the virtual total size. Rows
-   * (and their `data-conversation-item-id` stamps) live inside this, so a
-   * marker rail measures row offsets against it. `null` until the list mounts. */
-  getContentElement: () => HTMLDivElement | null;
 }
 
 const AT_BOTTOM_THRESHOLD = 50;
 const ESTIMATED_ROW_SIZE = 80;
-// Render rows well ahead so tall, async rows (markdown, code, diffs) measure and
-// paint off-screen instead of shifting and stuttering as they enter view. 12
-// erases the scroll-up shift empirically; higher only adds DOM cost.
 const OVERSCAN = 12;
 // A real upward drift, not a 1-frame measure transient: the DOM bottom sits
 // this far below the viewport. Well above any single append's measure gap.
@@ -71,11 +62,11 @@ function VirtualizedListInner<T>(
   ref: React.ForwardedRef<VirtualizedListHandle>,
 ) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const isAtBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const settlingRef = useRef(false);
   const settleRafRef = useRef<number | null>(null);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
@@ -124,6 +115,16 @@ function VirtualizedListInner<T>(
     },
   });
 
+  const measureElementImmediately = useCallback(
+    (node: HTMLDivElement | null) => {
+      virtualizer.measureElement(node);
+      if (!node) return;
+      const index = Number(node.dataset.index);
+      virtualizer.resizeItem(index, node.offsetHeight);
+    },
+    [virtualizer],
+  );
+
   const settleAtEnd = useCallback(() => {
     if (settleRafRef.current !== null) {
       cancelAnimationFrame(settleRafRef.current);
@@ -165,8 +166,6 @@ function VirtualizedListInner<T>(
         isAtBottomRef.current = false;
         virtualizer.scrollToIndex(index, { align: "center" });
       },
-      getScrollElement: () => parentRef.current,
-      getContentElement: () => contentRef.current,
     }),
     [virtualizer, settleAtEnd],
   );
@@ -245,6 +244,37 @@ function VirtualizedListInner<T>(
     onScrollStateChangeRef.current?.(isAtBottomRef.current);
   }, [virtualizer]);
 
+  const handleWheelCapture = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY < 0) isAtBottomRef.current = false;
+    },
+    [],
+  );
+
+  const handleTouchStartCapture = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      touchStartRef.current = touch
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+    },
+    [],
+  );
+
+  const handleTouchMoveCapture = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const start = touchStartRef.current;
+      const touch = event.touches[0];
+      if (!start || !touch) return;
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+      if (deltaY > 0 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        isAtBottomRef.current = false;
+      }
+    },
+    [],
+  );
+
   const virtualItems = virtualizer.getVirtualItems();
 
   const renderedIndices = useMemo(() => {
@@ -265,11 +295,13 @@ function VirtualizedListInner<T>(
       <div
         ref={parentRef}
         onScroll={handleScroll}
+        onWheelCapture={handleWheelCapture}
+        onTouchStartCapture={handleTouchStartCapture}
+        onTouchMoveCapture={handleTouchMoveCapture}
         className={`scroll-mask-8 flex-1 overflow-y-auto ${scrollX ? "overflow-x-auto" : "overflow-x-hidden"}`}
         style={{ scrollbarGutter: "stable" }}
       >
         <div
-          ref={contentRef}
           style={{
             height: totalSize,
             position: "relative",
@@ -284,7 +316,7 @@ function VirtualizedListInner<T>(
             return (
               <div
                 key={virtualItem.key}
-                ref={virtualizer.measureElement}
+                ref={measureElementImmediately}
                 data-index={virtualItem.index}
                 style={{
                   position: "absolute",

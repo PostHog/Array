@@ -4,14 +4,19 @@ import type { Task } from "@posthog/shared/domain-types";
 import { useMemo } from "react";
 import { resolveCloudPrUrl } from "../../git-interaction/cloudPrUrl";
 import { useSessionForTask } from "../../sessions/useSession";
+import { pickFreshestTask } from "../../tasks/taskFreshness";
 import { useTasks } from "../../tasks/useTasks";
 import { useCloudEventSummary } from "./useCloudEventSummary";
 
 export function useCloudRunState(taskId: string, task: Task) {
   const { data: tasks = [] } = useTasks();
   const freshTask = useMemo(
-    () => tasks.find((t) => t.id === taskId) ?? task,
-    [tasks, taskId, task],
+    () =>
+      pickFreshestTask(
+        task,
+        tasks.find((t) => t.id === taskId),
+      ),
+    [task, taskId, tasks],
   );
 
   const session = useSessionForTask(taskId);

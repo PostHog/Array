@@ -10,7 +10,7 @@ import {
   type IUrlLauncher,
   URL_LAUNCHER_SERVICE,
 } from "@posthog/platform/url-launcher";
-import { TypedEventEmitter } from "@posthog/shared";
+import { parseMcpToolName, TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   BUILTIN_POSTHOG_SERVER_NAME,
@@ -52,6 +52,7 @@ function summarizeResult(result: unknown): Record<string, unknown> {
 
 const UI_MIME_TYPE = "text/html;profile=mcp-app";
 const MAX_HTML_SIZE = 5 * 1024 * 1024; // 5MB
+const DISCOVERY_FAILURE_BACKOFF_MS = 60_000;
 
 interface ServerConnection {
   name: string;
@@ -70,6 +71,9 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   private pendingConnections = new Map<string, Promise<ServerConnection>>();
   private pendingFetches = new Map<string, Promise<McpUiResource | null>>();
   private resourceMetaCache = new Map<string, McpResourceUiMeta>();
+  private discoveredServers = new Set<string>();
+  private pendingDiscoveries = new Map<string, Promise<void>>();
+  private discoveryFailedAt = new Map<string, number>();
   private readonly log: ScopedLogger;
 
   constructor(
@@ -124,11 +128,21 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
    * emits DiscoveryComplete.
    */
   async handleDiscovery(serverNames: string[]): Promise<void> {
-    await Promise.allSettled(
-      serverNames
-        .filter((name) => this.serverConfigs.has(name))
-        .map((name) => this.discoverServerUiTools(name)),
+    const names = serverNames.filter((name) => this.serverConfigs.has(name));
+    const results = await Promise.allSettled(
+      names.map((name) => this.discoverServer(name)),
     );
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        this.log.warn("Failed to discover UI tools for server", {
+          serverName: names[i],
+          error:
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason),
+        });
+      }
+    });
 
     const toolKeys = [...this.toolAssociations.keys()];
     this.log.info("Discovery complete", {
@@ -145,69 +159,132 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   /**
    * Connect to a single server and call listTools() to discover which
    * tools have _meta.ui fields. The connection is kept for later reuse
-   * (proxy calls, resource reads, lazy HTML fetches).
+   * (proxy calls, resource reads, lazy HTML fetches). Throws on connection
+   * or listTools failure — callers decide whether that is fatal.
    */
   private async discoverServerUiTools(serverName: string): Promise<void> {
-    try {
-      const conn = await this.getOrCreateConnection(serverName);
+    const conn = await this.getOrCreateConnection(serverName);
 
-      const [toolsList, resourcesList] = await Promise.all([
-        conn.client.listTools(),
-        conn.client.listResources().catch((err) => {
-          this.log.warn("listResources failed during discovery", {
-            serverName,
-            error: err instanceof Error ? err.message : String(err),
-          });
-          return null;
-        }),
-      ]);
-
-      this.log.info("discoverServerUiTools: listed tools", {
-        serverName,
-        toolNames: toolsList.tools.map((t) => t.name),
-        hasExecTool:
-          serverName === BUILTIN_POSTHOG_SERVER_NAME &&
-          toolsList.tools.some((t) => t.name === EXEC_TOOL_NAME),
-        resourceUris: resourcesList?.resources.map((r) => r.uri),
-      });
-
-      for (const tool of toolsList.tools) {
-        if (
-          serverName === BUILTIN_POSTHOG_SERVER_NAME &&
-          tool.name === EXEC_TOOL_NAME
-        ) {
-          this.toolDefinitions.set(POSTHOG_EXEC_TOOL_KEY, tool);
-        }
-
-        const uiMeta = (tool as McpToolUiMeta)._meta?.ui;
-        if (!uiMeta?.resourceUri) continue;
-
-        const toolKey = `mcp__${serverName}__${tool.name}`;
-        this.toolAssociations.set(toolKey, {
-          toolKey,
+    const [toolsList, resourcesList] = await Promise.all([
+      conn.client.listTools(),
+      conn.client.listResources().catch((err) => {
+        this.log.warn("listResources failed during discovery", {
           serverName,
-          toolName: tool.name,
-          resourceUri: uiMeta.resourceUri,
-          visibility: uiMeta.visibility,
+          error: err instanceof Error ? err.message : String(err),
         });
-        this.toolDefinitions.set(toolKey, tool);
+        return null;
+      }),
+    ]);
+
+    this.log.info("discoverServerUiTools: listed tools", {
+      serverName,
+      toolNames: toolsList.tools.map((t) => t.name),
+      hasExecTool:
+        serverName === BUILTIN_POSTHOG_SERVER_NAME &&
+        toolsList.tools.some((t) => t.name === EXEC_TOOL_NAME),
+      resourceUris: resourcesList?.resources.map((r) => r.uri),
+    });
+
+    for (const tool of toolsList.tools) {
+      if (
+        serverName === BUILTIN_POSTHOG_SERVER_NAME &&
+        tool.name === EXEC_TOOL_NAME
+      ) {
+        this.toolDefinitions.set(POSTHOG_EXEC_TOOL_KEY, tool);
       }
 
-      // Cache resource metadata (CSP, permissions) for use in fetchUiResource
-      if (resourcesList) {
-        for (const resource of resourcesList.resources) {
-          const meta = resource as McpResourceUiMeta;
-          if (meta._meta?.ui) {
-            this.resourceMetaCache.set(resource.uri, meta);
-          }
+      const uiMeta = (tool as McpToolUiMeta)._meta?.ui;
+      if (!uiMeta?.resourceUri) continue;
+
+      const toolKey = `mcp__${serverName}__${tool.name}`;
+      this.toolAssociations.set(toolKey, {
+        toolKey,
+        serverName,
+        toolName: tool.name,
+        resourceUri: uiMeta.resourceUri,
+        visibility: uiMeta.visibility,
+      });
+      this.toolDefinitions.set(toolKey, tool);
+    }
+
+    // Cache resource metadata (CSP, permissions) for use in fetchUiResource
+    if (resourcesList) {
+      for (const resource of resourcesList.resources) {
+        const meta = resource as McpResourceUiMeta;
+        if (meta._meta?.ui) {
+          this.resourceMetaCache.set(resource.uri, meta);
         }
       }
-    } catch (err) {
-      this.log.warn("Failed to discover UI tools for server", {
-        serverName,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
+  }
+
+  /**
+   * Run discovery for one server, deduplicating concurrent attempts. Always
+   * lists fresh (no discovered-cache short-circuit) so session starts pick up
+   * server-side tool changes.
+   */
+  private discoverServer(serverName: string): Promise<void> {
+    const pending = this.pendingDiscoveries.get(serverName);
+    if (pending) return pending;
+
+    const discovery = (async () => {
+      try {
+        await this.discoverServerUiTools(serverName);
+        this.discoveredServers.add(serverName);
+        this.discoveryFailedAt.delete(serverName);
+      } catch (err) {
+        this.discoveryFailedAt.set(serverName, Date.now());
+        throw err;
+      } finally {
+        this.pendingDiscoveries.delete(serverName);
+      }
+    })();
+    this.pendingDiscoveries.set(serverName, discovery);
+    return discovery;
+  }
+
+  /**
+   * Lazily discover a server's UI tools on first use. Cloud runs never start a
+   * local agent session, so handleDiscovery never fires for them and the
+   * association map stays empty — the review-card path then fails silently.
+   * Failures rethrow (with a short backoff against hammering the config
+   * resolver) so callers' queries surface an error and retry instead of
+   * caching a permanent miss.
+   */
+  private async ensureServerDiscovered(serverName: string): Promise<void> {
+    if (this.discoveredServers.has(serverName)) return;
+
+    // Only the caller that starts the discovery emits DiscoveryComplete —
+    // joiners would otherwise re-emit once per caller and stampede the
+    // renderer's query invalidations.
+    const startedHere = !this.pendingDiscoveries.has(serverName);
+    if (startedHere) {
+      const failedAt = this.discoveryFailedAt.get(serverName);
+      if (failedAt && Date.now() - failedAt < DISCOVERY_FAILURE_BACKOFF_MS) {
+        throw new Error(`UI tool discovery recently failed for: ${serverName}`);
+      }
+    }
+
+    await this.discoverServer(serverName);
+    if (startedHere) {
+      this.emit(McpAppsServiceEvent.DiscoveryComplete, {
+        toolKeys: [...this.toolAssociations.keys()],
+      } satisfies McpAppsDiscoveryCompleteEvent);
+    }
+  }
+
+  /**
+   * Look up a tool's UI association, lazily discovering its server on a miss.
+   */
+  private async resolveAssociation(
+    toolKey: string,
+  ): Promise<McpToolUiAssociation | undefined> {
+    const existing = this.toolAssociations.get(toolKey);
+    if (existing) return existing;
+    const mcp = parseMcpToolName(toolKey);
+    if (!mcp) return undefined;
+    await this.ensureServerDiscovered(mcp.server);
+    return this.toolAssociations.get(toolKey);
   }
 
   /**
@@ -294,7 +371,7 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
    * Fetch the UI resource for a registration-discovered tool, by its tool key.
    */
   async getUiResourceForTool(toolKey: string): Promise<McpUiResource | null> {
-    const association = this.toolAssociations.get(toolKey);
+    const association = await this.resolveAssociation(toolKey);
     if (!association) {
       this.log.debug("getUiResourceForTool: no association found", { toolKey });
       return null;
@@ -370,6 +447,21 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     serverName: string,
     resourceUri: string,
   ): Promise<McpUiResource | null> {
+    // Best-effort warm of resourceMetaCache so CSP/permissions attach on paths
+    // where handleDiscovery never ran (cloud runs fetching by result URI). The
+    // read below decides success on its own.
+    const warmed = await this.ensureServerDiscovered(serverName).then(
+      () => true,
+      (err) => {
+        this.log.warn("UI resource metadata warm-up failed", {
+          serverName,
+          uri: resourceUri,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      },
+    );
+
     let resourceResult: Awaited<ReturnType<Client["readResource"]>>;
     try {
       const conn = await this.getOrCreateConnection(serverName);
@@ -421,19 +513,25 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
       serverName,
     };
 
-    this.resourceCache.set(resourceUri, resource);
-    this.log.info("Lazily fetched and cached UI resource", {
+    // A failed warm-up with no known metadata may have produced a CSP-less
+    // copy; leave it uncached so a later fetch can attach the real CSP.
+    const cacheable = warmed || resourceMeta !== undefined;
+    if (cacheable) {
+      this.resourceCache.set(resourceUri, resource);
+    }
+    this.log.info("Lazily fetched UI resource", {
       serverName,
       uri: resourceUri,
       htmlLength: textContent.text.length,
       hasCsp: !!resource.csp,
+      cached: cacheable,
     });
 
     return resource;
   }
 
-  hasUiForTool(toolKey: string): boolean {
-    const has = this.toolAssociations.has(toolKey);
+  async hasUiForTool(toolKey: string): Promise<boolean> {
+    const has = !!(await this.resolveAssociation(toolKey));
     this.log.debug("hasUiForTool", { toolKey, result: has });
     return has;
   }
@@ -543,6 +641,9 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.toolDefinitions.clear();
     this.pendingConnections.clear();
     this.pendingFetches.clear();
+    this.discoveredServers.clear();
+    this.pendingDiscoveries.clear();
+    this.discoveryFailedAt.clear();
 
     // Re-discover using stored server configs
     const serverNames = [...this.serverConfigs.keys()];
@@ -556,6 +657,16 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   }
 
   async disconnectServer(serverName: string): Promise<void> {
+    // Let an in-flight lazy discovery land its connection first so it is
+    // closed here instead of lingering as a stray reconnect after teardown.
+    const pendingDiscovery = this.pendingDiscoveries.get(serverName);
+    if (pendingDiscovery) {
+      await pendingDiscovery.catch(() => undefined);
+    }
+
+    this.discoveredServers.delete(serverName);
+    this.discoveryFailedAt.delete(serverName);
+
     const conn = this.connections.get(serverName);
     if (!conn) return;
 
@@ -590,7 +701,12 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
   }
 
   async cleanup(): Promise<void> {
-    const serverNames = [...this.connections.keys()];
+    // Include servers whose lazy discovery is still connecting — they have no
+    // entry in `connections` yet but will land one that must be closed.
+    const serverNames = new Set([
+      ...this.connections.keys(),
+      ...this.pendingDiscoveries.keys(),
+    ]);
     for (const name of serverNames) {
       await this.disconnectServer(name);
     }
@@ -601,5 +717,8 @@ export class McpAppsService extends TypedEventEmitter<McpAppsServiceEvents> {
     this.serverConfigs.clear();
     this.pendingConnections.clear();
     this.pendingFetches.clear();
+    this.discoveredServers.clear();
+    this.pendingDiscoveries.clear();
+    this.discoveryFailedAt.clear();
   }
 }

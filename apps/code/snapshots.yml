@@ -317,41 +317,33 @@ snapshots:
     features-messageeditor-promptinput--with-multiple-chips--light:
         hash: v1.k4693efd2.f844653d745a308116b94546ec6605028e90246b6aa9fa640a1b8f9c579193e1.PkuP-7A0MOZk7V3mpsJDx4pwJA0VoIzMnp4BIgDQ45U
     features-sessions-conversationview--all-tool-calls--dark:
-        hash: v1.k4693efd2.602ee87d6d7a745d4b09d9e49bd12a70e52299b78ca97a48b5ca73a01532d801.Imd_IYgKXb6kcfjhRfBhmc4-AoPoKcfg1QRNXB4NL_I
+        hash: v1.k4693efd2.f4949811298614ff01aef988b12418ce3b99f1c9ce2428b81cb9d1ca201afa83.2sjUZgIeLsL94--VLigefyWa7Dt-CMgn6e3kZBwIbbs
     features-sessions-conversationview--all-tool-calls--light:
-        hash: v1.k4693efd2.1636dfc3ee0dd9d28065166f2fff0193f2d499692c74749d3afa7585aae898b5.7Ez0SM2DUXepp6Q8SgUyX3zVbdbf2kvglPqJsEc-eB4
+        hash: v1.k4693efd2.1b1de752527fdac9d07e0e4fadd22bebb6cedb9afe70b2f69cdc1f8efc1426cf.a9nv4k0LOdXfShX-O3KeQ8_fZZimICJhBfbFYSLEHvA
     features-sessions-conversationview--empty--dark:
         hash: v1.k4693efd2.f7b3396b9c83b952221044d2058df7ddf985fab959dba2c691c321ca528ca2af.0rJM8GT1SXRzo0MFo3OPgV6oL4d8sLPm9vz18-na5iw
     features-sessions-conversationview--empty--light:
         hash: v1.k4693efd2.8fe9c532387523d9642ec7e9265d88435137aa739cb3763a0024335997697b12.ZtBmVlV92Opv5y4NHYDTPt-xvgcel_Z8JMfgnZJ9ZOE
     features-sessions-conversationview--long-conversation--dark:
-        hash: v1.k4693efd2.34cfdd21ad9f643d7cf82b618f0e8e5c25856bc9675f816159bb0c4e4f67fa23.wrleGZzGujLjrbU_CMCGg30OLjDf63_XJlJ-7QJZS3A
+        hash: v1.k4693efd2.07392ebacdd12e07e700f11cccf04c3be2c362cb7e2f41976e26923e59b27160.jOla4JdWmbahmhpjrr0w8tCip212FVig7-XeVlSNjjg
     features-sessions-conversationview--long-conversation--light:
-        hash: v1.k4693efd2.46629a82ba4239edf9d576f46a9696b33e7f63115aa773ada55af910d1cfec0c.c_Dh3-59F1Y3ehdwhro7_ImEILRdDK_42mmHui-shSY
+        hash: v1.k4693efd2.e012849e1a5de1f56373b5e9160d2619bd337c982144284eb96a126f7a304416.YYx7K2lNsepUTPHfH3ySLJFCKB-n_4i33mz1rC5L4Q8
     features-sessions-conversationview--markdown-debug--dark:
-        hash: v1.k4693efd2.a1c2f118c135f553d72f1ed783782a8d9d37de47280c94a01f0aeed764f64d33.kZrv6ZRnKbRkFhgm_QYWvlqjC7VQbBlWCOnfi5pxZyY
+        hash: v1.k4693efd2.3d1d3f2223d8610891f2e9a7f24ad99e9a3b368f64148df4b7d8beb4bf816a0b.ujd-hdWnmS3f85tkT4ip4mdbYWaWj0zhJSjrBdwrMrc
     features-sessions-conversationview--markdown-debug--light:
-        hash: v1.k4693efd2.75d098556db1af478095a77c26d7672a17a1651b8630341bd987607254d5cba1.wqcro6zc8l95cDgebzeZt-h5HIxnlwQKCEHiNrlP1v8
+        hash: v1.k4693efd2.bfef475de0f4bbf6e8d75249764169782b55cd945b619a9c93e961ca8e65ce33.wjN3li8QUanEMSlbJO1y0k3VlGmLa_7z12rRqojY7wM
     features-sessions-conversationview--markdown-showcase--dark:
-        hash: v1.k4693efd2.b9901edc583c07111e8f515c557eeb547d767b2f29d61fa9a50523fa5275f6ec.KXz4KANV2VPPLFzt7_A0UTivT__wivJLBJSgJQfy2Es
+        hash: v1.k4693efd2.1f48560e8958d45cb99858a5d46055a8b53ed341ab19ef3afd0812686c6459cd.8QjEBONE-KR7xm0-dYJsf4I_ftvUzEz5DW5KHSEALIk
     features-sessions-conversationview--markdown-showcase--light:
-        hash: v1.k4693efd2.9ad5d2969e031ce98aeff5e9ff527118611ac6aaa73a83424d60acf777a32505.eNCuFlo2qByk8LARAV4cRqKE4UsIiknv920p6AyyfpQ
+        hash: v1.k4693efd2.999acf075dc1f41dee05f93a86f514a41e27e92f22ddbf441cfe204488d6aa71.163W210QTjmx3S8ZUO76-r8Qud5M15FD-78ZQFTd94I
     features-sessions-conversationview--single-turn--dark:
         hash: v1.k4693efd2.26b602bfb096c1b19ed2e9ed8d363d3c8c77a21828df32f71a83ff053b759a96.tpvBFAGHOcxqIfCbU49YjzSe0GwuDreM8fFCWhlDs58
     features-sessions-conversationview--single-turn--light:
         hash: v1.k4693efd2.20569531952a9f448601f8d0a0ccf5ae79341b904b4f79987142a2574c95e404.8HpLPHXhZpEX9kA5Hn78WskRYFAUev8X7SLPeWGSEbA
     features-sessions-conversationview--with-pending-prompt--dark:
-        hash: v1.k4693efd2.602ee87d6d7a745d4b09d9e49bd12a70e52299b78ca97a48b5ca73a01532d801.F_1XKDzCxzMm_opEt9FvzczBb_2n-vyvOyGFXHGJmTk
+        hash: v1.k4693efd2.f4949811298614ff01aef988b12418ce3b99f1c9ce2428b81cb9d1ca201afa83.tERhjA4UEzpFY061lsvkohwSyDIzQphlOOLb3sv73_g
     features-sessions-conversationview--with-pending-prompt--light:
-        hash: v1.k4693efd2.1636dfc3ee0dd9d28065166f2fff0193f2d499692c74749d3afa7585aae898b5.YxTPa4CsqI2YuGLUdck8340ITZQrpna_C6z-SgII4Ws
-    features-sessions-scrollbarrail--pure--dark:
-        hash: v1.k4693efd2.6baec21b1942848a3a376d2b90ca106b2c1b94de74382b4cd05673695d2649ee.UDDPtLDf1J2E3d3Oiy9is77Nm5xRSIfB7q5z0uUZRSQ
-    features-sessions-scrollbarrail--pure--light:
-        hash: v1.k4693efd2.33f02943fdbb1ea9774881f8909b580ab03ba02749614c533af1bf51dd817dca.ieP2bhDz0U_PTB4M6Zplvit0XlSTFiUn083GYBFNuC0
-    features-sessions-scrollbarrail--scrollable-conversation--dark:
-        hash: v1.k4693efd2.203b62b52d6365d6ec222f7529c35b3f46b17cd07ca792a8ce2de594af4d589b.3dfpnVM8yxor1PNO5aPk0pxn5THZjK4otA6mbz3XhtA
-    features-sessions-scrollbarrail--scrollable-conversation--light:
-        hash: v1.k4693efd2.fa7ef9cbdb09aef6108efcd3606cee32d889b3ad3b8f8be1ac637aed4e80cc72.0XcIKzM-sZHVG9hTZkAHdnBIPSrBiKmjq56QRQ6nasc
+        hash: v1.k4693efd2.1b1de752527fdac9d07e0e4fadd22bebb6cedb9afe70b2f69cdc1f8efc1426cf.CBx-n_SpJHiKhihAucVVc0AraAFqSQECVTEGsHE4jL4
     features-sessions-toolcallblock--create-new-file--dark:
         hash: v1.k4693efd2.8847f96037682460aba47f0e0f5113037918235fc98596933f2d1d06fd6f8f92.SHetexoVOtozsZGZQMcVbmpBlbk7M5D5Q0R_TJvPnyc
     features-sessions-toolcallblock--create-new-file--light:
@@ -569,17 +561,17 @@ snapshots:
     git-dialogs--sync-success--light:
         hash: v1.k4693efd2.8d79d77c9338aeaa73734836f0e17fde987f6d3239914f4013889d3110e5088d.Rq-w2o1uhes_a5hUWqMXeiDkfnoPCZPt932LkEQXCco
     loops-loopslistview--comprehensive--dark:
-        hash: v1.k4693efd2.3c2a6b87092674a3d395a6f5d36889ea231696d788b159f357be0926f3804c8a.Ihzlq7XIy9rRoA7DTbpLePlBhjP34o8ppgP__NXx-Yw
+        hash: v1.k4693efd2.c128012b7f910839e65e8eaf14d5456c93f90d77747d0625ca35fddd8d5adf7a.fuugB5Ov6boP7fg6fWP7A7IG2yYnPUAAWLKZLuV8rZ0
     loops-loopslistview--comprehensive--light:
-        hash: v1.k4693efd2.42c2994def56651de08f5be20e98dbe67bfbdb03e7edd8bdf008401468c1653a.EnH7NwNkvclS7g5Htf7OCZuYEm7fI5W6hEr4DmwZC8I
+        hash: v1.k4693efd2.4d25a48e0bd7e60d3bbb433e246486e4c9ac95979db86e20eb8bf5cb119d1eb2.EzrENjVHwVMyV00pEA-71TeVomJtchiym5DqWFkujlA
     loops-loopslistview--long-mixed-list--dark:
-        hash: v1.k4693efd2.384486583f8d9b66a4bf1d9cc45036a07310cb9e1943ea5b52ff466f55a03d7b.F_sXrJ13XWHzAF8yhoKun_k4BY8Jcb3EDtT0L1I6nKw
+        hash: v1.k4693efd2.fdbf0c24cb386c4345279db3e648efe72aa8a2a984d491361522f62074a771c9.2QmRxRMWYFFfBFrbMm0Dm9rWcvd1lfRbc0egfzoESnY
     loops-loopslistview--long-mixed-list--light:
-        hash: v1.k4693efd2.d80a0c55c4490276df53f781ac88ed9d9c6ec282bc14ddb80140b3ddcc44d32f.L6hw9ZixUiyTFKOybYzmjfUSIOayvmhueMTcmYt-IWo
+        hash: v1.k4693efd2.aa17d9b6f40fbd3914bd742951db9f90add0bd233c54170803c8483aeb45b43b.yXpqqGczOq1uW5k4Ie7ddNTnne-cFTglZ9cL800pXB4
     loops-loopslistview--with-builder-sessions--dark:
-        hash: v1.k4693efd2.bc59812bf49ff161cf20e75dcf043367ae3d2817aa2c2cf91c91d9771c6b62f8.yOBz-llmwDVay7GIHlMwlMT3EuKjkoW0Vwmwvi4noCM
+        hash: v1.k4693efd2.df4a1a4764e1de7b69905814b09c30d9b43f705f5e66c7ad83829c567d4faa1a.jthufoX_KPbbxScjj3pPBA4lEtT9Ym6zUCH-v1759GM
     loops-loopslistview--with-builder-sessions--light:
-        hash: v1.k4693efd2.fb97e3fe3205ddf71d98c4e35446c73e394aaa9761d3bb35b146ddafc438df4d.UUEWc0G12NQibZTyskIHGS62mB36gKJ594GrJp1E9II
+        hash: v1.k4693efd2.eb65c38bb0de7efedbc0d7a6c27a6695528e2e6b60949617e7d22335b1e68c8b.fJr9uykvc8S7LI_ASXk5KRqxXCwIqh6ld9zfzs4shP0
     scouts-scoutsfleetlist--filtered-to-you--dark:
         hash: v1.k4693efd2.a3af6e76ef36598eaa347bedc4430878ed62754660166398e0576a9978cd084b.x3Ky-O6HOw0srWdOmnnKJwFNpmGmQVWip0t7CwVaRXY
     scouts-scoutsfleetlist--filtered-to-you--light:

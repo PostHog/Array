@@ -4,7 +4,6 @@ import {
   Bell,
   DotsSixVertical,
   EnvelopeSimple,
-  HashIcon,
   Lightning,
   RepeatIcon,
   SlidersHorizontal,
@@ -31,7 +30,6 @@ const ITEM_ICONS: Record<
 > = {
   inbox: EnvelopeSimple,
   "command-center": Lightning,
-  contexts: HashIcon,
   activity: Bell,
   configure: SlidersHorizontal,
   loops: RepeatIcon,
@@ -50,7 +48,6 @@ export function CustomizeSidebarSettings() {
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const channelsEnabled = useSidebarStore((s) => s.channelsEnabled);
   const navItemOverrides = useSidebarStore((s) => s.navItemOverrides);
   const navItemOrder = useSidebarStore((s) => s.navItemOrder);
   const setNavItemVisible = useSidebarStore((s) => s.setNavItemVisible);
@@ -75,8 +72,7 @@ export function CustomizeSidebarSettings() {
   const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
     ({ id }) => {
       if (id === "loops") return loopsEnabled;
-      if (id === "contexts") return bluebirdEnabled;
-      if (id === "activity") return bluebirdEnabled && channelsEnabled;
+      if (id === "activity") return bluebirdEnabled;
       return true;
     },
   );

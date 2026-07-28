@@ -62,7 +62,7 @@ export function useSessionCallbacks({
   const messagingMode = useMessagingMode(taskId);
 
   const handleSendPrompt = useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       const currentSession = sessionRef.current;
       const currentEvents = currentSession?.events ?? [];
       const handled = await tryExecuteCodeCommand(text, {
@@ -77,7 +77,7 @@ export function useSessionCallbacks({
           : null,
         taskRun: task.latest_run ?? null,
       });
-      if (handled) return;
+      if (handled) return true;
 
       let promptText =
         rewriteLocalSkillCommandPrompt(
@@ -109,7 +109,7 @@ export function useSessionCallbacks({
           );
           if (updated) {
             markAsViewed(taskId);
-            return;
+            return true;
           }
           // Target no longer queued — drop the stale hold and send as new.
           sessionService.clearEditingQueuedMessage(taskId);
@@ -127,7 +127,7 @@ export function useSessionCallbacks({
             setPendingContent(taskId, xmlToContent(promptText ?? text));
             requestFocus(taskId);
           }
-          return;
+          return false;
         }
       }
 
@@ -144,18 +144,13 @@ export function useSessionCallbacks({
         if (isViewingTask) {
           markAsViewed(taskId);
         }
+        return true;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to send message";
-        // The composer clears optimistically on submit, so a failed send
-        // would otherwise lose the typed prompt. Restore it — unless the
-        // user has already started typing a new message.
-        if (isContentEmpty(useDraftStore.getState().drafts[taskId] ?? null)) {
-          setPendingContent(taskId, xmlToContent(text));
-          requestFocus(taskId);
-        }
         toast.error(message);
         log.error("Failed to send prompt", error);
+        return false;
       }
     },
     [

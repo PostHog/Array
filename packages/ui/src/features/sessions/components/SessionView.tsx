@@ -1,4 +1,5 @@
 import { Pause, Spinner, Warning } from "@phosphor-icons/react";
+import type { FileAttachment } from "@posthog/core/message-editor/content";
 import {
   createLatestPlanTracker,
   SESSION_SERVICE,
@@ -8,6 +9,7 @@ import { useService } from "@posthog/di/react";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
   type EditorHandle as PromptInputHandle,
@@ -35,6 +37,11 @@ import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
+import {
+  isSubmittedContentUnchanged,
+  shouldSubmitComposerOptimistically,
+  submitComposerPrompt,
+} from "@posthog/ui/features/sessions/components/submitComposerPrompt";
 import { ThreadView } from "@posthog/ui/features/sessions/components/ThreadView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useCancelQueuedMessageEdit } from "@posthog/ui/features/sessions/hooks/useEditQueuedMessage";
@@ -72,7 +79,7 @@ interface SessionViewProps {
   isPromptPending?: boolean | null;
   promptStartedAt?: number | null;
   onBeforeSubmit?: (text: string, clearEditor: () => void) => boolean;
-  onSendPrompt: (text: string) => void;
+  onSendPrompt: (text: string) => Promise<boolean>;
   onBashCommand?: (command: string) => void;
   onCancelPrompt: () => void;
   repoPath?: string | null;
@@ -109,7 +116,7 @@ function ComposerWidth({
 }) {
   return (
     <Box
-      className={compact ? "p-1" : "mx-auto px-2 pb-3"}
+      className={compact ? "p-1" : "mx-auto pb-3"}
       style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {children}
@@ -250,6 +257,56 @@ export function SessionView({
   ]);
 
   const isCloudRun = useIsWorkspaceCloudRun(taskId);
+  const editorRef = useRef<PromptInputHandle>(null);
+  const sendInFlightRef = useRef(false);
+  const composerSubmissionRef = useRef(0);
+  const attachmentUploadRef = useRef(0);
+  const [attachmentUploadStatuses, setAttachmentUploadStatuses] = useState<
+    Record<string, AttachmentUploadStatus>
+  >({});
+
+  const handleAttachmentsChange = useCallback(
+    (attachments: FileAttachment[]) => {
+      const requestId = ++attachmentUploadRef.current;
+      if (!isCloudRun || !taskId || attachments.length === 0) {
+        setAttachmentUploadStatuses({});
+        return;
+      }
+
+      setAttachmentUploadStatuses(
+        Object.fromEntries(attachments.map(({ id }) => [id, "uploading"])),
+      );
+      void sessionService
+        .prepareCloudAttachments(
+          taskId,
+          attachments.map(({ id }) => id),
+        )
+        .then(() => {
+          if (attachmentUploadRef.current === requestId) {
+            setAttachmentUploadStatuses({});
+          }
+        })
+        .catch((error) => {
+          if (attachmentUploadRef.current !== requestId) return;
+          setAttachmentUploadStatuses(
+            Object.fromEntries(attachments.map(({ id }) => [id, "error"])),
+          );
+          toast.error("Failed to upload attachments", {
+            description:
+              error instanceof Error
+                ? error.message
+                : "Remove and attach the files again to retry.",
+          });
+        });
+    },
+    [isCloudRun, sessionService, taskId],
+  );
+  const attachmentUploadFailed = Object.values(
+    attachmentUploadStatuses,
+  ).includes("error");
+  const attachmentsUploading = Object.values(attachmentUploadStatuses).includes(
+    "uploading",
+  );
 
   const latestPlanTrackerRef = useRef<ReturnType<
     typeof createLatestPlanTracker
@@ -260,11 +317,41 @@ export function SessionView({
     (): Plan | null => latestPlanTracker.update(events) as Plan | null,
     [events, latestPlanTracker],
   );
-
   const handleSubmit = useCallback(
-    (text: string) => {
-      if (text.trim()) {
-        onSendPrompt(text);
+    async (text: string): Promise<void> => {
+      if (!text.trim() || sendInFlightRef.current) return;
+
+      sendInFlightRef.current = true;
+      const submissionId = ++composerSubmissionRef.current;
+      const editor = editorRef.current;
+      const submittedContent = editor?.getContent() ?? null;
+      if (
+        editor &&
+        shouldSubmitComposerOptimistically(submittedContent, text)
+      ) {
+        const sendPromise = submitComposerPrompt(
+          editor,
+          submittedContent,
+          () => onSendPrompt(text),
+          () => submissionId === composerSubmissionRef.current,
+        );
+        sendInFlightRef.current = false;
+        await sendPromise;
+        return;
+      }
+
+      try {
+        if (await onSendPrompt(text)) {
+          const currentEditor = editorRef.current;
+          if (
+            currentEditor &&
+            isSubmittedContentUnchanged(currentEditor.getContent(), text)
+          ) {
+            currentEditor.clear();
+          }
+        }
+      } finally {
+        sendInFlightRef.current = false;
       }
     },
     [onSendPrompt],
@@ -288,7 +375,6 @@ export function SessionView({
   const cancelQueuedEdit = useCancelQueuedMessageEdit(taskId);
 
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const editorRef = useRef<PromptInputHandle>(null);
   const promptRecallRef = useRef<PromptRecallHandler | null>(null);
   const handlePromptRecall = useCallback<PromptRecallHandler>(
     (direction) => promptRecallRef.current?.(direction) ?? null,
@@ -629,10 +715,20 @@ export function SessionView({
                           placeholder="Type a message... @ to mention files, ! for bash mode, / for skills"
                           disabled={!isRunning && !handoffInProgress}
                           submitDisabledExternal={
-                            handoffInProgress || !isOnline
+                            handoffInProgress ||
+                            !isOnline ||
+                            attachmentsUploading ||
+                            attachmentUploadFailed
                           }
+                          clearOnSubmit={false}
                           submitTooltipOverride={
-                            !isOnline ? "No internet connection" : undefined
+                            !isOnline
+                              ? "No internet connection"
+                              : attachmentsUploading
+                                ? "Uploading attachments…"
+                                : attachmentUploadFailed
+                                  ? "Attachment upload failed"
+                                  : undefined
                           }
                           isLoading={!!isPromptPending}
                           isActiveSession={isActiveSession}
@@ -666,6 +762,8 @@ export function SessionView({
                             ) : undefined
                           }
                           onToggleMessagingMode={toggleMessagingMode}
+                          onAttachmentsChange={handleAttachmentsChange}
+                          attachmentUploadStatuses={attachmentUploadStatuses}
                           onPromptRecall={handlePromptRecall}
                           onBeforeSubmit={handleBeforeSubmit}
                           onSubmit={handleSubmit}

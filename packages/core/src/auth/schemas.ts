@@ -80,6 +80,9 @@ export const authStateSchema = z.object({
   currentProjectId: z.number().nullable(),
   hasCodeAccess: z.boolean().nullable(),
   needsScopeReauth: z.boolean(),
+  sessionType: z.enum(["persistent", "impersonated"]).nullable(),
+  sessionExpiresAt: z.number().nullable(),
+  sessionEndReason: z.enum(["impersonation_expired"]).nullable().optional(),
 });
 export type AuthState = z.infer<typeof authStateSchema>;
 
