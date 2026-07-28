@@ -25,6 +25,9 @@ export function resolveGatewayProduct({
   if (originProduct === "support_reply") {
     return "conversations";
   }
+  if (originProduct === "loop") {
+    return "posthog_code";
+  }
   if (isInternal) {
     return "background_agents";
   }

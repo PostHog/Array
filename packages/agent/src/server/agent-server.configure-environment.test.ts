@@ -92,6 +92,17 @@ describe("AgentServer.configureEnvironment", () => {
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
   });
 
+  it("tags as posthog_code when an internal task has origin_product 'loop'", () => {
+    const env = buildServer("background").configureEnvironment({
+      isInternal: true,
+      originProduct: "loop",
+    });
+
+    expect(env.anthropicBaseUrl).toBe(
+      "https://gateway.us.posthog.com/posthog_code",
+    );
+  });
+
   it("tags as posthog_code when isInternal is omitted (getTask failure fallback)", () => {
     const env = buildServer("background").configureEnvironment();
 

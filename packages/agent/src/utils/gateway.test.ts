@@ -59,6 +59,16 @@ describe("resolveGatewayProduct", () => {
       originProduct: "support_reply",
       expected: "conversations",
     },
+    {
+      isInternal: true,
+      originProduct: "loop",
+      expected: "posthog_code",
+    },
+    {
+      isInternal: false,
+      originProduct: "loop",
+      expected: "posthog_code",
+    },
   ] as const)(
     "isInternal=$isInternal originProduct=$originProduct -> $expected",
     ({ isInternal, originProduct, expected }) => {
