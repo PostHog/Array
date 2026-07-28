@@ -3,6 +3,7 @@ import type { SignedCommitResult } from "@posthog/git/signed-commit";
 import { PostHogAPIClient } from "./posthog-api";
 
 const SANDBOX_ENV_FILE = "/tmp/agent-env";
+const SANDBOX_OAUTH_ENV_FILE = "/tmp/agent-oauth-env";
 
 /**
  * Best-effort "commit hook": after a successful signed-commit push, record one `commit`
@@ -11,11 +12,10 @@ const SANDBOX_ENV_FILE = "/tmp/agent-env";
  * endpoint reads the `X-PostHog-Task-Id` header, never the model.
  *
  * Credentials come from the sandbox environment (`POSTHOG_API_URL` /
- * `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID`), preferring the live agentsh env file
- * for the key so a mid-session token refresh is picked up — the same pattern as
- * `resolveGithubToken`. Works identically from the Claude in-process server and the Codex
- * stdio child (both inherit the sandbox env). Never throws: a failed artefact post must not
- * fail the commit that already landed.
+ * `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID`), preferring the dedicated live agentsh
+ * OAuth file for the key so a mid-session token refresh is picked up — the same pattern as
+ * `resolveGithubToken`. Never throws: a failed artefact post must not fail the commit that
+ * already landed.
  */
 
 interface SandboxPosthogApi {
@@ -44,11 +44,15 @@ function readSandboxEnvFile(envFilePath: string): Record<string, string> {
 export function resolveSandboxPosthogApi(
   env: Record<string, string | undefined> = process.env,
   envFilePath: string = SANDBOX_ENV_FILE,
+  oauthEnvFilePath: string = SANDBOX_OAUTH_ENV_FILE,
 ): SandboxPosthogApi | undefined {
   const fileEnv = readSandboxEnvFile(envFilePath);
+  const oauthFileEnv = readSandboxEnvFile(oauthEnvFilePath);
   const apiUrl = fileEnv.POSTHOG_API_URL ?? env.POSTHOG_API_URL;
   const apiKey =
-    fileEnv.POSTHOG_PERSONAL_API_KEY ?? env.POSTHOG_PERSONAL_API_KEY;
+    oauthFileEnv.POSTHOG_PERSONAL_API_KEY ??
+    fileEnv.POSTHOG_PERSONAL_API_KEY ??
+    env.POSTHOG_PERSONAL_API_KEY;
   const projectId = Number(
     fileEnv.POSTHOG_PROJECT_ID ?? env.POSTHOG_PROJECT_ID,
   );
@@ -61,8 +65,9 @@ export function resolveSandboxPosthogApi(
 export function createSandboxPosthogClient(
   env?: Record<string, string | undefined>,
   envFilePath?: string,
+  oauthEnvFilePath?: string,
 ): PostHogAPIClient | undefined {
-  const api = resolveSandboxPosthogApi(env, envFilePath);
+  const api = resolveSandboxPosthogApi(env, envFilePath, oauthEnvFilePath);
   if (!api) {
     return undefined;
   }

@@ -1,7 +1,11 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   reportCommitArtefacts,
   reportTaskRunBranch,
+  resolveSandboxPosthogApi,
 } from "./signed-commit-artefacts";
 
 const ENV = {
@@ -12,6 +16,45 @@ const ENV = {
 
 // Point the env-file read at a path that never exists so only `env` is used.
 const NO_ENV_FILE = "/nonexistent/agent-env";
+
+describe("resolveSandboxPosthogApi", () => {
+  it("reads the rotating API key from the dedicated OAuth file", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PROJECT_ID=7\0",
+      );
+      await writeFile(
+        oauthEnvFilePath,
+        "POSTHOG_PERSONAL_API_KEY=pha_refreshed\0",
+      );
+
+      expect(
+        resolveSandboxPosthogApi({}, envFilePath, oauthEnvFilePath),
+      ).toEqual({
+        apiUrl: "https://us.posthog.com",
+        apiKey: "pha_refreshed",
+        projectId: 7,
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to the process environment without credential files", () => {
+    expect(resolveSandboxPosthogApi(ENV, NO_ENV_FILE, NO_ENV_FILE)).toEqual({
+      apiUrl: "https://us.posthog.com",
+      apiKey: "pha_test",
+      projectId: 7,
+    });
+  });
+});
 
 const RESULT = {
   branch: "posthog-code/fix-foo",
