@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentConversationEvent } from "@posthog/shared";
@@ -8,6 +7,8 @@ type AgentMessage = Extract<
   AgentSessionEvent,
   { type: "message_end" }
 >["message"];
+
+const utf8Encoder = new TextEncoder();
 
 function isMessage(message: AgentMessage): message is Message {
   return (
@@ -314,7 +315,7 @@ export function createPiConversationTranslator(): PiConversationTranslator {
       }
 
       directBash.output += event.delta;
-      directBash.outputBytes += Buffer.byteLength(event.delta, "utf8");
+      directBash.outputBytes += utf8Encoder.encode(event.delta).byteLength;
       if (directBash.outputBytes >= 4_096) {
         if (directBash.outputBytes < directBash.nextOutputBytes) {
           return [];
