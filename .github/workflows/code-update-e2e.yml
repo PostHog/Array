@@ -258,6 +258,7 @@ jobs:
             apps/code/playwright-results/
             /Users/runner/.posthog-code/logs/
             /Users/runner/Library/Caches/com.posthog.array.ShipIt/
+            !/Users/runner/Library/Caches/com.posthog.array.ShipIt/update.*/**
           if-no-files-found: ignore
           retention-days: 7
 

@@ -131,17 +131,21 @@ test.describe("macOS chained auto-update", () => {
         OLD_VERSION,
       );
 
+      // The renderer syncs the "download updates automatically" setting (on by
+      // default) shortly after boot, so each phase accepts both paths: manual
+      // (available, then an explicit download) and auto (straight to
+      // downloading/ready).
       proof.failedStep = "first-update-available";
       await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.check());
       await pollStatus(
         app,
-        (s) => s.available === true && s.availableVersion === MID_VERSION,
+        (s) => offersVersion(s, MID_VERSION),
         "intermediate update never became available",
       );
       proof.feedAvailableVersion = MID_VERSION;
 
       proof.failedStep = "first-download";
-      await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.download());
+      await downloadIfAvailable(app);
       await pollStatus(
         app,
         (s) => s.updateReady === true && s.version === MID_VERSION,
@@ -159,12 +163,12 @@ test.describe("macOS chained auto-update", () => {
       );
       await pollStatus(
         app,
-        (s) => s.available === true && s.availableVersion === FINAL_VERSION,
+        (s) => offersVersion(s, FINAL_VERSION),
         "newer update was never surfaced while one was staged",
       );
 
       proof.failedStep = "re-download";
-      await app.evaluate(() => (globalThis as Hooked).__e2eUpdates.download());
+      await downloadIfAvailable(app);
       await pollStatus(
         app,
         (s) => s.updateReady === true && s.version === FINAL_VERSION,
@@ -249,6 +253,25 @@ test.describe("macOS chained auto-update", () => {
     }
   });
 });
+
+function offersVersion(status: UpdateStatus, version: string): boolean {
+  if (status.updateReady === true) {
+    return status.version === version;
+  }
+  return (
+    (status.available === true || status.downloading === true) &&
+    status.availableVersion === version
+  );
+}
+
+async function downloadIfAvailable(app: ElectronApplication): Promise<void> {
+  await app.evaluate(() => {
+    const hook = (globalThis as Hooked).__e2eUpdates;
+    if (hook.status().available === true) {
+      hook.download();
+    }
+  });
+}
 
 async function pollStatus(
   app: ElectronApplication,
