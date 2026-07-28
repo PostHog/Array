@@ -52,10 +52,11 @@ type E2eHook = {
 };
 type Hooked = typeof globalThis & { __e2eUpdates: E2eHook };
 
-const FEED_PORT = 8789;
+const FEED_PORT = 8790;
 const FEED_URL = `http://127.0.0.1:${FEED_PORT}`;
 const OLD_VERSION = "1.0.0";
 const MID_VERSION = "2.0.0";
+// Must match CHAIN_VERSION in code-update-e2e.yml (feeds build-pair.sh).
 const FINAL_VERSION = "3.0.0";
 
 test.describe("macOS chained auto-update", () => {
