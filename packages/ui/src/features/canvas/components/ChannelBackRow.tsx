@@ -19,7 +19,7 @@ function RowStar({ channel }: { channel: Channel }) {
   return (
     <button
       type="button"
-      aria-label={isStarred ? "Unstar channel" : "Star channel"}
+      aria-label={isStarred ? "Unstar space" : "Star space"}
       onClick={() => {
         track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
           action_type: isStarred ? "unstar" : "star",
@@ -51,10 +51,10 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
 
   return (
     <div className="relative mx-2 mt-1">
-      <Tooltip content="Back to channels" side="bottom">
+      <Tooltip content="Back to spaces" side="bottom">
         <button
           type="button"
-          aria-label="Back to channels"
+          aria-label="Back to spaces"
           onClick={() => {
             track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
               action_type: "browse_channels",

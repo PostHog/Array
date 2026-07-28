@@ -7,6 +7,7 @@ import {
 } from "@posthog/ui/features/browser-tabs/useBrowserTabs";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { Flex, Text } from "@radix-ui/themes";
 import { Navigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
@@ -14,6 +15,7 @@ import { useState } from "react";
 // /website index: send the user to their first channel, or prompt them to
 // create one when none exist yet.
 export function WebsiteChannelsIndex() {
+  const spacesLayout = useChannelsLayout();
   const { channels, isLoading } = useChannels();
   const [modalOpen, setModalOpen] = useState(false);
   // A blank "+" tab parks at /website; RootLayout renders the placeholder for
@@ -60,15 +62,16 @@ export function WebsiteChannelsIndex() {
     >
       <Flex direction="column" gap="1">
         <Text size="3" weight="bold" className="text-gray-12">
-          No channels yet
+          No {spacesLayout ? "spaces" : "channels"} yet
         </Text>
         <Text size="2" className="text-gray-10">
-          Create a channel to get its own canvases, tasks, and settings.
+          Create a {spacesLayout ? "space" : "channel"} to get its own canvases,
+          tasks, and settings.
         </Text>
       </Flex>
       <Button variant="primary" onClick={() => setModalOpen(true)}>
         <PlusIcon size={14} />
-        Create channel
+        Create {spacesLayout ? "space" : "channel"}
       </Button>
       <CreateChannelModal open={modalOpen} onOpenChange={setModalOpen} />
     </Flex>

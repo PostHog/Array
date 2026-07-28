@@ -294,7 +294,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
                 <EmptyMedia variant="icon">
                   <PackageIcon size={18} />
                 </EmptyMedia>
-                <EmptyTitle>Channel unavailable</EmptyTitle>
+                <EmptyTitle>Space unavailable</EmptyTitle>
                 <EmptyDescription>
                   It may have been deleted, or belong to another project.
                 </EmptyDescription>
@@ -369,7 +369,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
                 </EmptyMedia>
                 <EmptyTitle>Nothing here yet</EmptyTitle>
                 <EmptyDescription>
-                  Tasks and canvases you create in this channel show up here.
+                  Tasks and canvases you create in this space show up here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

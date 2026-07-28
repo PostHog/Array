@@ -26,6 +26,7 @@ import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
 import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -222,6 +223,7 @@ function ActivityRow({
 // in, or messaged in — newest activity first. Rows clear as they are opened, not
 // when the page is; merely landing here shouldn't dismiss what you haven't read.
 export function ActivityView() {
+  const spacesLayout = useChannelsLayout();
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const {
@@ -285,7 +287,7 @@ export function ActivityView() {
               Activity
             </Text>
             <Text size="2" className="block text-muted-foreground">
-              Tasks you're involved in across channels.
+              Tasks you're involved in across {spacesLayout ? "spaces" : "channels"}.
             </Text>
           </div>
           {unreadCount > 0 && (
@@ -314,8 +316,7 @@ export function ActivityView() {
                 </EmptyMedia>
                 <EmptyTitle>No activity yet</EmptyTitle>
                 <EmptyDescription>
-                  Tasks you create, get tagged in, or reply to across channels
-                  land here.
+                  Tasks you create, get tagged in, or reply to across {spacesLayout ? "spaces" : "channels"} land here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

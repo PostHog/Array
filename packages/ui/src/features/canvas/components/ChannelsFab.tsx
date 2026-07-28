@@ -71,7 +71,7 @@ export function ChannelsFab({ channelId }: { channelId?: string }) {
   const newChannelItem = (
     <DropdownMenuItem onClick={() => setModalOpen(true)}>
       <HashIcon size={14} className="text-gray-9" />
-      New channel
+      {channelsLayout ? "New space" : "New channel"}
     </DropdownMenuItem>
   );
 

@@ -4,6 +4,7 @@ import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTas
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { ChannelContextPanel } from "@posthog/ui/features/canvas/components/ChannelContextPanel";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { useBackendChannel } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
@@ -24,6 +25,7 @@ import { useCallback, useMemo, useState } from "react";
 // files the task to the channel by creating an extra `task` row under the
 // channel folder on the project's desktop_file_system surface.
 export function WebsiteNewTask({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
   const view = useAppView();
   const queryClient = useQueryClient();
@@ -38,12 +40,12 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
     useMemo(
       () => (
         <ChannelBreadcrumb
-          channelName={channelName ?? "Channel"}
+          channelName={channelName ?? (spacesLayout ? "Space" : "Channel")}
           channelId={channelId}
           leafLabel="New task"
         />
       ),
-      [channelName, channelId],
+      [channelName, channelId, spacesLayout],
     ),
   );
   // The channel's CONTEXT.md, passed to the agent as optional background so

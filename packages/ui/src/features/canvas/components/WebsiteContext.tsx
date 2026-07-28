@@ -14,6 +14,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   useFolderInstructions,
   useFolderInstructionsMutations,
@@ -40,17 +41,24 @@ type Mode = "rendered" | "edit";
 
 // Initial markdown shown when a folder has no instructions yet — gives both
 // humans and agents a structural starting point instead of a blank screen.
-const EMPTY_TEMPLATE = "# Channel context\n\nDescribe what lives here.\n";
+const CHANNEL_EMPTY_TEMPLATE =
+  "# Channel context\n\nDescribe what lives here.\n";
+const SPACE_EMPTY_TEMPLATE = "# Space context\n\nDescribe what lives here.\n";
 
 interface WebsiteContextProps {
   channelId: string;
 }
 
 export function WebsiteContext({ channelId }: WebsiteContextProps) {
+  const spacesLayout = useChannelsLayout();
+  const emptyTemplate = spacesLayout
+    ? SPACE_EMPTY_TEMPLATE
+    : CHANNEL_EMPTY_TEMPLATE;
   // Channel name for the empty-state copy (the header reads its own).
   const { channels } = useChannels();
   const channelName =
-    channels.find((c) => c.id === channelId)?.name ?? "Channel";
+    channels.find((c) => c.id === channelId)?.name ??
+    (spacesLayout ? "Space" : "Channel");
 
   const {
     data: latest,
@@ -285,7 +293,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
                 channelId={channelId}
                 channelName={channelName}
                 onCreate={() => {
-                  setDraft(EMPTY_TEMPLATE);
+                  setDraft(emptyTemplate);
                   setHasDraft(true);
                   setMode("edit");
                 }}
@@ -301,7 +309,9 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
               size="2"
               rows={24}
               placeholder={
-                "# Channel context\n\nWrite markdown describing this channel…"
+                spacesLayout
+                  ? "# Space context\n\nWrite markdown describing this space…"
+                  : "# Channel context\n\nWrite markdown describing this channel…"
               }
               className="font-[var(--code-font-family)]"
             />
