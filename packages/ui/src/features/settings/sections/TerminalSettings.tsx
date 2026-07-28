@@ -113,7 +113,7 @@ export function TerminalSettings() {
       {localWorkspaces && (
         <SettingRow
           label="Default directory"
-          description="Directory new terminals open in. Leave unset to use the folder you most recently worked in."
+          description="Choose which directory new terminal sessions open in. Leave this unset to use the folder you most recently worked in."
         >
           <Flex align="center" gap="2" className="min-w-0">
             {terminalDefaultCwd && (
