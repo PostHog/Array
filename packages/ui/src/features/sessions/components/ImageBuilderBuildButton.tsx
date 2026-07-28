@@ -1,10 +1,12 @@
+import { Info } from "@phosphor-icons/react";
 import {
   isImageBuildFailed,
   isImageBuildInProgress,
 } from "@posthog/shared/domain-types";
 import { imageFailureDetail } from "@posthog/ui/features/settings/sections/environments/imageBuildWatcher";
 import { useSandboxCustomImages } from "@posthog/ui/features/settings/sections/environments/useSandboxCustomImages";
-import { Button, Flex, Text } from "@radix-ui/themes";
+import { Tooltip } from "@posthog/ui/primitives/Tooltip";
+import { Button, Flex, IconButton, Text } from "@radix-ui/themes";
 
 export function ImageBuilderBuildButton({ taskId }: { taskId: string }) {
   const { images, buildMutation } = useSandboxCustomImages();
@@ -25,13 +27,32 @@ export function ImageBuilderBuildButton({ taskId }: { taskId: string }) {
           ready · v{image.version}
         </Text>
       ) : isFailed ? (
-        <Text
-          color="red"
-          className="text-[12px]"
-          title={imageFailureDetail(image)}
-        >
-          {image.status === "scan_failed" ? "scan failed" : "build failed"}
-        </Text>
+        <Flex align="center" gap="1">
+          <Text color="red" className="text-[12px]">
+            {image.status === "scan_failed" ? "scan failed" : "build failed"}
+          </Text>
+          <Tooltip
+            side="top"
+            align="end"
+            content={
+              <div className="max-w-80 whitespace-pre-wrap">
+                <Text className="font-medium text-xs">Failure reason</Text>
+                <Text as="div" color="gray" className="mt-1 text-xs">
+                  {imageFailureDetail(image)}
+                </Text>
+              </div>
+            }
+          >
+            <IconButton
+              size="1"
+              variant="ghost"
+              color="red"
+              aria-label="Show image build failure reason"
+            >
+              <Info size={14} />
+            </IconButton>
+          </Tooltip>
+        </Flex>
       ) : null}
       <Button
         size="1"

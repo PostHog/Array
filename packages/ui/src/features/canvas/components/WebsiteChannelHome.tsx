@@ -28,6 +28,7 @@ import {
   useChannelFeedMessages,
 } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import {
@@ -50,6 +51,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 // pinned at the bottom and threads open in a right-hand panel. The channel's
 // artifacts/history/context views stay in the tabs above (ChannelHeader).
 export function WebsiteChannelHome({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { channels, isLoading: isLoadingChannels } = useChannels();
@@ -176,12 +178,23 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
             task_id: task.id,
             success: false,
           });
-          toast.error("Couldn't file task to channel", {
-            description: error instanceof Error ? error.message : String(error),
-          });
+          toast.error(
+            `Couldn't file task to ${spacesLayout ? "space" : "channel"}`,
+            {
+              description:
+                error instanceof Error ? error.message : String(error),
+            },
+          );
         });
     },
-    [backendChannel?.id, channelId, fileTask, invalidateFeed, queryClient],
+    [
+      backendChannel?.id,
+      channelId,
+      fileTask,
+      invalidateFeed,
+      queryClient,
+      spacesLayout,
+    ],
   );
 
   const handleOpenFull = useCallback(

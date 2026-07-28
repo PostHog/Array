@@ -332,10 +332,10 @@ app.whenReady().then(async () => {
     );
     dialog.showMessageBoxSync({
       type: "warning",
-      title: "Move PostHog Code to Applications",
-      message: `PostHog Code is running from a location with read-only access:\n\n${bundleRoot}`,
+      title: "Move PostHog to Applications",
+      message: `PostHog is running from a location with read-only access:\n\n${bundleRoot}`,
       detail:
-        "After quitting, move PostHog Code to your Applications folder, then open it from there.",
+        "After quitting, move PostHog to your Applications folder, then open it from there.",
       buttons: ["Quit"],
       defaultId: 0,
     });
@@ -347,7 +347,7 @@ app.whenReady().then(async () => {
   const buildDate = __BUILD_DATE__ ?? "dev";
   log.info(
     [
-      `PostHog Code electron v${app.getVersion()} booting up`,
+      `PostHog electron v${app.getVersion()} booting up`,
       `Commit: ${commit}`,
       `Date: ${buildDate}`,
       `Electron: ${process.versions.electron}`,

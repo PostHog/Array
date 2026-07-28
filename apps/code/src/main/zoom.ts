@@ -6,9 +6,11 @@ const ZOOM_MIN = -3;
 const ZOOM_MAX = 3;
 
 interface ZoomWebContents {
-  getZoomLevel(): number;
   isDestroyed(): boolean;
-  on(event: "did-finish-load", listener: () => void): void;
+  on(
+    event: "did-finish-load" | "did-navigate-in-page",
+    listener: () => void,
+  ): void;
   on(
     event: "zoom-changed",
     listener: (
@@ -88,9 +90,7 @@ export function restoreWindowZoom(window: ZoomWindow): void {
   runAfterWheelZoom(window, () => {
     if (window.webContents.isDestroyed()) return;
     const zoomLevel = getCurrentZoomLevel(window);
-    if (window.webContents.getZoomLevel() !== zoomLevel) {
-      window.webContents.setZoomLevel(zoomLevel);
-    }
+    window.webContents.setZoomLevel(zoomLevel);
   });
 }
 
@@ -113,6 +113,9 @@ export function setupWindowZoom(window: ZoomWindow): void {
   };
 
   window.webContents.on("did-finish-load", () => restoreWindowZoom(window));
+  window.webContents.on("did-navigate-in-page", () =>
+    restoreWindowZoom(window),
+  );
   window.webContents.on("zoom-changed", (event, zoomDirection) => {
     event.preventDefault();
     state.wheelZoomDelta += zoomDirection === "in" ? ZOOM_STEP : -ZOOM_STEP;

@@ -83,3 +83,15 @@ export function buildCspMetaTag(csp?: McpUiResourceCsp): string {
   const cspString = buildCspString(csp);
   return `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(cspString)}">`;
 }
+
+// After any doctype, which must stay first or the frame enters quirks mode.
+export function applyCspToHtml(html: string, csp?: McpUiResourceCsp): string {
+  const meta = buildCspMetaTag(csp);
+  const doctype = html.match(/^\s*<!doctype[^>]*>/i);
+  if (doctype) {
+    return (
+      html.slice(0, doctype[0].length) + meta + html.slice(doctype[0].length)
+    );
+  }
+  return meta + html;
+}

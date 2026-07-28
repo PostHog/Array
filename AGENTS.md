@@ -1,10 +1,10 @@
-# PostHog Code Development Guide
+# PostHog Development Guide
 
 `AGENTS.md` is the source of truth for architecture and development rules. `CLAUDE.md` is a symlink to this file. Edit this file only.
 
 ## Architecture
 
-PostHog Code uses a layered architecture. Business logic and UI live in shared `packages/*`. Each `apps/*` host boots those packages and binds host-specific implementations. `@posthog/core` and `@posthog/ui` must run unchanged on desktop, web, and mobile.
+PostHog uses a layered architecture. Business logic and UI live in shared `packages/*`. Each `apps/*` host boots those packages and binds host-specific implementations. `@posthog/core` and `@posthog/ui` must run unchanged on desktop, web, and mobile.
 
 Principle: logic is portable; hosts are thin.
 
@@ -126,6 +126,19 @@ node scripts/check-host-boundaries.mjs --prune
 
 Do not use `--init` to baseline new violations.
 
+## Web Host
+
+`apps/web` is a real host and the portability smoke test: if a `@posthog/core`/`@posthog/ui` change compiles and boots on desktop but not here, it leaked a host dependency. It is **cloud-only** — no local filesystem, git, pty, or worktrees — so it binds `HOST_CAPABILITIES` to `{ localWorkspaces: false }` and stubs local-only host clients to reject at call time.
+
+Building a feature for web means: the portable core/UI already runs unchanged; you only supply web adapters and bind them.
+
+- **Composition root** is `apps/web/src/web-container.ts` (`WebBindings` + `TypedContainer<WebBindings>`). It loads the same core/UI feature modules `apps/code`'s renderer does, then binds web adapters (the `web-*.ts` files) for each platform/host capability. Unlike desktop, module-loading and adapter-binding live in this one file, not split into `desktop-contributions.ts` / `desktop-services.ts`.
+- **Transport** is the entire desktop↔web difference. `web-trpc.ts` builds `HOST_TRPC_CLIENT` from an in-process `unstable_localLink` over `web-host-router.ts` (a subset of `HostRouter`, same procedure shapes) instead of Electron's `ipcLink` — no HTTP hop; the backing services are host-agnostic core code resolved from the root container per call. Both hosts use the `superjson` transformer; keep them in sync (the host-trpc base sets `transformer: superjson`).
+- **New host capability?** Add a `@posthog/platform` interface (host-neutral) and a web adapter under `apps/web/src`, then bind it in `web-container.ts`. If the shared app resolves it eagerly at `__root` via `useService`, an unbound token crashes the tree — `assertHostCapabilities(container, REQUIRED_HOST_CAPABILITIES)` at the end of `web-container.ts` catches that at boot instead of on first navigation.
+- **Persistence.** localStorage is the web host's single persistence layer; route all access through `web-local-store.ts` — `createRecordStore(key, entrySchema)` for the per-device `Record<string, Entry>` registries, `readValidated(key, schema, fallback)` for a single persisted object, the raw `readJson`/`writeJson`/`removeKey` primitives for anything without a schema, and `rawLocalStorage` for the zustand backend. Do not call `window.localStorage` directly. Persisted stores are discardable per-device caches validated against a Zod schema on read (invalid data is dropped and rebuilt), so evolving a shape is a schema edit, not a hand-written migration. IndexedDB is reserved for exactly one thing — the non-extractable auth cipher key in `web-auth-adapters.ts` — because localStorage cannot hold a `CryptoKey` without exposing its raw bytes; do not add other IndexedDB usage or move that key to localStorage.
+- **Boot** is `main.tsx`: import `./web-storage` first (registers the persistence backend before stores construct), then the container, `setRootContainer`, `boot()`.
+- **Commands.** `pnpm --filter @posthog/web dev` (Vite dev server), `build`, `typecheck`. E2E: `pnpm --filter @posthog/web test:e2e` (Playwright, `tests/e2e/`). There is no Vitest unit suite in `apps/web`.
+
 ## Structure
 
 ```text
@@ -246,6 +259,7 @@ See [docs/conventions.md](./docs/conventions.md).
 - Colocate tests as `.test.ts` or `.test.tsx`.
 - Put E2E tests in `tests/e2e/`.
 - Drive and screenshot the real running app (live data) with agent-browser over CDP `:9222`: run `pnpm app:cdp` or use the `test-electron-app` skill.
+- Treat virtualized-list overscan as a performance setting, not a scroll-correctness fix; preserve the visible anchor when measured row heights change.
 - After touching `@posthog/platform`, rebuild or typecheck its `dist/`.
 - After touching `packages/core`, run `biome lint packages/core` and verify zero `noRestrictedImports`.
 

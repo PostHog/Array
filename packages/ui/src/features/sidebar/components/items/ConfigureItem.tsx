@@ -3,12 +3,13 @@ import { SidebarItem } from "../SidebarItem";
 
 interface ConfigureItemProps {
   onClick: () => void;
+  depth?: number;
 }
 
-export function ConfigureItem({ onClick }: ConfigureItemProps) {
+export function ConfigureItem({ onClick, depth = 0 }: ConfigureItemProps) {
   return (
     <SidebarItem
-      depth={0}
+      depth={depth}
       icon={<SlidersHorizontal size={16} />}
       label="Configure"
       onClick={onClick}

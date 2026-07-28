@@ -55,8 +55,45 @@ describe("parseGithubIssueUrl", () => {
       },
     },
     {
-      name: "fragment is stripped from normalized URL",
+      name: "issue comment fragment is preserved",
       input: "https://github.com/PostHog/code/issues/1808#issuecomment-123",
+      expected: {
+        kind: "issue",
+        owner: "PostHog",
+        repo: "code",
+        number: 1808,
+        normalizedUrl:
+          "https://github.com/PostHog/code/issues/1808#issuecomment-123",
+      },
+    },
+    {
+      name: "PR review comment fragment is preserved",
+      input:
+        "https://github.com/PostHog/posthog/pull/72409#discussion_r3647131256",
+      expected: {
+        kind: "pr",
+        owner: "PostHog",
+        repo: "posthog",
+        number: 72409,
+        normalizedUrl:
+          "https://github.com/PostHog/posthog/pull/72409#discussion_r3647131256",
+      },
+    },
+    {
+      name: "files tab suffix is kept when a comment fragment needs it",
+      input: "https://github.com/PostHog/code/pull/1454/files#r3647131256",
+      expected: {
+        kind: "pr",
+        owner: "PostHog",
+        repo: "code",
+        number: 1454,
+        normalizedUrl:
+          "https://github.com/PostHog/code/pull/1454/files#r3647131256",
+      },
+    },
+    {
+      name: "empty fragment is stripped from normalized URL",
+      input: "https://github.com/PostHog/code/issues/1808#",
       expected: {
         kind: "issue",
         owner: "PostHog",

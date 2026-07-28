@@ -67,7 +67,7 @@ export function InviteCodeScreen() {
                       Enter your invite code
                     </Text>
                     <Text className="text-(--gray-11) text-sm">
-                      You need an invite code to access PostHog Code.
+                      You need an invite code to access PostHog.
                     </Text>
                   </Flex>
                 </motion.div>

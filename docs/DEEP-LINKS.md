@@ -1,6 +1,6 @@
 # Deep Links
 
-PostHog Code registers custom URL schemes so the desktop app can be opened with context from a browser, another app, or the shell. Opening a deep link focuses the app window and routes the URL to the matching handler.
+PostHog registers custom URL schemes so the desktop app can be opened with context from a browser, another app, or the shell. Opening a deep link focuses the app window and routes the URL to the matching handler.
 
 ## Schemes
 

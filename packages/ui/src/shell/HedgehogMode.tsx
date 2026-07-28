@@ -134,7 +134,7 @@ export function HedgehogMode() {
         zIndex: 999998,
         visibility: hedgehogMode && !gameDead ? "visible" : "hidden",
       }}
-      className="pointer-events-none fixed inset-0"
+      className="pointer-events-none absolute inset-0"
     />
   );
 }

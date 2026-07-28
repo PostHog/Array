@@ -25,25 +25,44 @@ The root `AGENTS.md` architecture rules still apply.
 - **Suffix `…` on anything that opens another step.** A menu item or button whose
   click opens a follow-up surface — a dialog, a nested menu, a picker, a
   confirmation — gets a trailing ellipsis (`…`, the character, not three dots) to
-  signal it isn't the final action: `New…`, `Rename channel…`, `Delete channel…`,
+  signal it isn't the final action: `New…`, `Rename space…`, `Delete space…`,
   `Choose a template…`. A label that performs its action immediately or navigates
   straight to a destination gets **no** ellipsis (`Edit CONTEXT.md`, `Star
-  channel`). When in doubt: does clicking it ask for more input or confirmation
+  space`). When in doubt: does clicking it ask for more input or confirmation
   before anything happens? If yes, add the `…`.
 
 ## Spaces & chrome
 
-- Channels is a **top-level space** reached through the app rail (`AppNav`),
+- Spaces is a **top-level space** reached through the app rail (`AppNav`),
   gated behind `project-bluebird` and wired in `routes/__root.tsx`. The rail's
-  spaces are Code (`/code`), Inbox (`/inbox`), and Channels (`/website`).
-- The Channels space has **its own chrome**: rail + a persistent channel-list
+  spaces are Code (`/code`), Inbox (`/inbox`), and Spaces (`/website`).
+- The Spaces UI has **its own chrome**: rail + a persistent channel-list
   sidebar (`ChannelsList`, rendered in `__root`) + the `WebsiteLayout` outlet. It
   does NOT use the code `HeaderRow`/`MainSidebar`, so breadcrumbs render in
   `WebsiteLayout`'s own top bar (below).
+- Under the channels layout the sidebar is a **master/detail slider**
+  (`ChannelPanes` in `ChannelsSidebar.tsx`): the searchable channel list, and the
+  channel you're in (`ChannelSidebar`, headed by `ChannelBackRow`). Both panes
+  stay mounted — the offscreen one is `inert` — so the slide has something to
+  slide and returning to the list doesn't rebuild every row. A two-finger
+  horizontal swipe moves between them (`useChannelPaneSwipe`, wheel `deltaX`
+  accumulated per gesture and locked until the wheel goes quiet).
+- In the list, "Starred"/"Spaces" are headings above lightly indented shared
+  rows; the pinned private "me" row aligns with the headings. The alpha's more
+  deeply indented Channels tree and hash glyphs are unchanged.
+- One `ChannelsFab` serves both panes: given a `channelId` it creates inside
+  that channel (task, canvas), and either way it can create a channel. Off the
+  layout it keeps its original two-item menu. Archived moves out of the sidebar
+  and into the account menu (`ProjectSwitcher`), beside Settings.
+- **Which pane shows is view state, not a route.** `channelPaneStore` holds it,
+  separately from the scoped channel (`currentChannelStore`): "back to channels"
+  browses the list while the route, the main pane and the scoped channel stay
+  put. Every way into a channel — a row click, a deep link, a mention, ⌘1-9 —
+  ends at `showChannelPane()`, directly or through the route effect.
 
 ## Breadcrumbs
 
-- **`WebsiteLayout` renders its own top bar.** The Channels space has no code
+- **`WebsiteLayout` renders its own top bar.** The Spaces UI has no code
   `HeaderRow`, so breadcrumbs (and the dashboard controls) are a local bar inside
   `WebsiteLayout`, not pushed through the header store.
 - **A page does not get its own crumb — its H1 is the title.** A view that

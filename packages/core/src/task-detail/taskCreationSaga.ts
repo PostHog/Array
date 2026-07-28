@@ -319,8 +319,11 @@ export class TaskCreationSaga extends Saga<
       );
     }
 
-    if (!hasProvisioning && !shouldStartCloudRun && this.deps.onTaskReady) {
-      this.deps.onTaskReady({ task, workspace });
+    if (!hasProvisioning && !shouldStartCloudRun) {
+      if (!taskId && workspaceMode === "cloud") {
+        await this.deps.sessionService.watchCreatedCloudTask(task);
+      }
+      this.deps.onTaskReady?.({ task, workspace });
     }
 
     if (hasProvisioning) {
@@ -408,7 +411,6 @@ export class TaskCreationSaga extends Saga<
             rtkEnabled: input.cloudRtkEnabled,
             runSource: input.cloudRunSource ?? "manual",
             signalReportId: input.signalReportId,
-            homeQuickAction: input.homeQuickActionLabel,
             importedMcpServers: input.importedMcpServers,
             relayedMcpServers: input.relayedMcpServers,
             initialPermissionMode:
@@ -470,8 +472,9 @@ export class TaskCreationSaga extends Saga<
         },
       });
 
-      if (!hasProvisioning && this.deps.onTaskReady) {
-        this.deps.onTaskReady({ task, workspace });
+      if (!hasProvisioning) {
+        await this.deps.sessionService.watchCreatedCloudTask(task);
+        this.deps.onTaskReady?.({ task, workspace });
       }
     }
 
@@ -638,8 +641,16 @@ export class TaskCreationSaga extends Saga<
   ): void {
     this.deps.host
       .getEnvironment({ repoPath, id: environmentId })
-      .then((env) => {
+      .then(async (env) => {
         if (!env?.setup?.script) return;
+
+        const approved = await this.deps.host.confirmEnvironmentSetup({
+          repoPath,
+          environmentId,
+          name: env.name,
+          script: env.setup.script,
+        });
+        if (!approved) return;
 
         this.deps.host.dispatchSetupAction({
           taskId,

@@ -1,6 +1,6 @@
 # PostHog Self-driving Inbox
 
-The Inbox is the PostHog Code surface for **Self-driving**: agents that watch product signals, summarize what matters, and can ship pull requests. This document is an architecture map for agents working in this area. It explains where responsibilities live, which backend contracts are relied on, and what not to accidentally rebuild.
+The Inbox is the PostHog surface for **Self-driving**: agents that watch product signals, summarize what matters, and can ship pull requests. This document is an architecture map for agents working in this area. It explains where responsibilities live, which backend contracts are relied on, and what not to accidentally rebuild.
 
 ## Product Model
 

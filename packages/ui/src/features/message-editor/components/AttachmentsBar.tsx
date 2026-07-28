@@ -1,4 +1,4 @@
-import { File, X } from "@phosphor-icons/react";
+import { File, WarningCircle, X } from "@phosphor-icons/react";
 import type { FileAttachment } from "@posthog/core/message-editor/content";
 import {
   isGifFile,
@@ -6,10 +6,28 @@ import {
   parseImageDataUrl,
 } from "@posthog/shared";
 import { SafeImagePreview } from "@posthog/ui/primitives/SafeImagePreview";
-import { Dialog, Flex, IconButton, Text } from "@radix-ui/themes";
+import { Dialog, Flex, IconButton, Spinner, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { readFileAsDataUrl } from "../hostApi";
+
+export type AttachmentUploadStatus = "uploading" | "error";
+
+function AttachmentStatusIcon({ status }: { status?: AttachmentUploadStatus }) {
+  if (status === "uploading") {
+    return <Spinner size="1" aria-label="Uploading attachment" />;
+  }
+  if (status === "error") {
+    return (
+      <WarningCircle
+        size={14}
+        className="text-red-9"
+        aria-label="Attachment upload failed"
+      />
+    );
+  }
+  return null;
+}
 
 function FrozenGifThumbnail({ src, alt }: { src: string; alt: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,9 +58,11 @@ function FrozenGifThumbnail({ src, alt }: { src: string; alt: string }) {
 function ImageThumbnail({
   attachment,
   onRemove,
+  uploadStatus,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  uploadStatus?: AttachmentUploadStatus;
 }) {
   const { data: dataUrl } = useQuery({
     queryKey: ["os", "readFileAsDataUrl", attachment.id],
@@ -75,6 +95,7 @@ function ImageThumbnail({
               <span className="size-3.5 rounded-sm bg-[var(--gray-a5)]" />
             )}
             <span className="max-w-[80px] truncate">{attachment.label}</span>
+            <AttachmentStatusIcon status={uploadStatus} />
           </button>
         </Dialog.Trigger>
         <IconButton
@@ -114,9 +135,11 @@ function ImageThumbnail({
 function FileChip({
   attachment,
   onRemove,
+  uploadStatus,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  uploadStatus?: AttachmentUploadStatus;
 }) {
   return (
     <span className="group/chip inline-flex flex-shrink-0 items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] p-1 font-medium text-[11px] text-[var(--gray-11)]">
@@ -138,6 +161,7 @@ function FileChip({
         </span>
       </button>
       <span className="max-w-[120px] truncate">{attachment.label}</span>
+      <AttachmentStatusIcon status={uploadStatus} />
     </span>
   );
 }
@@ -145,9 +169,14 @@ function FileChip({
 interface AttachmentsBarProps {
   attachments: FileAttachment[];
   onRemove: (id: string) => void;
+  uploadStatuses?: Record<string, AttachmentUploadStatus>;
 }
 
-export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
+export function AttachmentsBar({
+  attachments,
+  onRemove,
+  uploadStatuses,
+}: AttachmentsBarProps) {
   if (attachments.length === 0) return null;
 
   return (
@@ -158,12 +187,14 @@ export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
             key={att.id}
             attachment={att}
             onRemove={() => onRemove(att.id)}
+            uploadStatus={uploadStatuses?.[att.id]}
           />
         ) : (
           <FileChip
             key={att.id}
             attachment={att}
             onRemove={() => onRemove(att.id)}
+            uploadStatus={uploadStatuses?.[att.id]}
           />
         ),
       )}

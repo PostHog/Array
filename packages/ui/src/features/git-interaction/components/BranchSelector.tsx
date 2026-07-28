@@ -142,7 +142,6 @@ export function BranchSelector({
 
   const isCloudMode = workspaceMode === "cloud";
   const isSelectionOnly = workspaceMode === "worktree" || isCloudMode;
-  const displayedBranch = isSelectionOnly ? selectedBranch : currentBranch;
 
   // The branch we auto-selected, so we can tell our own pick apart from one the
   // user made. Lets us correct a stale default (e.g. a cached "trunk" that the
@@ -232,6 +231,14 @@ export function BranchSelector({
       });
     },
   });
+
+  const checkedOutBranch =
+    checkoutMutation.data &&
+    checkoutMutation.variables.directoryPath === repoPath &&
+    currentBranch === checkoutMutation.data.previousBranch
+      ? checkoutMutation.data.currentBranch
+      : currentBranch;
+  const displayedBranch = isSelectionOnly ? selectedBranch : checkedOutBranch;
 
   // In local mode, surface in-progress git operations (rebase/merge/etc.) so the
   // user understands why there's no current branch and why we won't let them

@@ -125,6 +125,12 @@ function toModelConfig(
 
 const FALLBACK_GATEWAY_MODELS: GatewayModel[] = [
   {
+    id: "claude-opus-5",
+    owned_by: "anthropic",
+    context_window: 1000000,
+    supports_vision: true,
+  },
+  {
     id: "claude-opus-4-8",
     owned_by: "anthropic",
     context_window: 1000000,
@@ -200,6 +206,12 @@ const FALLBACK_GATEWAY_MODELS: GatewayModel[] = [
     id: "@cf/zai-org/glm-5.2",
     owned_by: "cloudflare",
     context_window: 128000,
+    supports_vision: false,
+  },
+  {
+    id: "moonshotai/kimi-k3",
+    owned_by: "modal",
+    context_window: 262144,
     supports_vision: false,
   },
 ];

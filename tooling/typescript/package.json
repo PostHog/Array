@@ -2,7 +2,7 @@
   "name": "@posthog/tsconfig",
   "private": true,
   "version": "0.1.0",
-  "description": "Shared TypeScript configurations for PostHog Code workspace",
+  "description": "Shared TypeScript configurations for PostHog workspace",
   "exports": {
     "./base.json": "./base.json",
     "./node-package.json": "./node-package.json",

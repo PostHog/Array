@@ -8,7 +8,7 @@ export const GITHUB_CONNECT_TIMEOUT_MESSAGE =
 
 export const GITHUB_CONNECT_ERROR_MESSAGES: Record<string, string> = {
   access_denied:
-    "You declined access on GitHub. Try again to grant the permissions PostHog Code needs.",
+    "You declined access on GitHub. Try again to grant the permissions PostHog needs.",
   github_oauth_error: "GitHub returned an error during sign-in. Please retry.",
   missing_params: "GitHub returned an incomplete response. Please retry.",
   invalid_state:

@@ -16,6 +16,7 @@ import {
 } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useGenerateContext } from "@posthog/ui/features/canvas/hooks/useGenerateContext";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
@@ -52,6 +53,7 @@ export function CreateChannelModal({
   existingContext,
 }: CreateChannelModalProps) {
   const isDescribeMode = !!existingContext;
+  const spacesLayout = useChannelsLayout();
   const { createChannel, isCreating } = useChannelMutations();
   const { generate, isStarting } = useGenerateContext();
   const navigate = useNavigate();
@@ -119,7 +121,7 @@ export function CreateChannelModal({
         surface: "sidebar",
         success: false,
       });
-      toast.error("Couldn't create channel", {
+      toast.error(`Couldn't create ${spacesLayout ? "space" : "channel"}`, {
         description: error instanceof Error ? error.message : String(error),
       });
       return;
@@ -189,7 +191,7 @@ export function CreateChannelModal({
           label would just repeat it. */}
       {isDescribeMode && (
         <FieldLabel htmlFor="context-description">
-          What's this channel about?
+          What's this {spacesLayout ? "space" : "channel"} about?
         </FieldLabel>
       )}
       <Textarea
@@ -269,7 +271,9 @@ export function CreateChannelModal({
         style={{ "--quill-dialog-top-gap": "max(1rem, 10vh)" } as CSSProperties}
       >
         <DialogHeader>
-          <DialogTitle>Create a channel</DialogTitle>
+          <DialogTitle>
+            Create a {spacesLayout ? "space" : "channel"}
+          </DialogTitle>
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-4">
@@ -339,7 +343,9 @@ export function CreateChannelModal({
             }
           >
             <DialogHeader>
-              <DialogTitle>What's this channel about?</DialogTitle>
+              <DialogTitle>
+                What's this {spacesLayout ? "space" : "channel"} about?
+              </DialogTitle>
             </DialogHeader>
 
             <DialogBody viewportClassName="flex flex-col gap-4">

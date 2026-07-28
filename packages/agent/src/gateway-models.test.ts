@@ -9,6 +9,8 @@ import {
   isAnthropicModel,
   isBlockedModelId,
   isCloudflareModel,
+  isModalModel,
+  isModalModelId,
   pickAllowedModel,
 } from "./gateway-models";
 
@@ -87,6 +89,13 @@ describe("formatGatewayModelName", () => {
     ).toBe("llama-3.1-8b-instruct");
   });
 
+  it("formats Kimi K3 for the model picker", () => {
+    const kimi = model("moonshotai/kimi-k3", "modal");
+    expect(formatGatewayModelName(kimi)).toBe("Kimi K3");
+    expect(isModalModel(kimi)).toBe(true);
+    expect(isModalModelId(kimi.id)).toBe(true);
+  });
+
   it("blocks deprecated Claude gateway models", () => {
     expect(isBlockedModelId("claude-opus-4-5")).toBe(true);
     expect(isBlockedModelId("claude-opus-4-6")).toBe(true);
@@ -111,6 +120,7 @@ describe("getClaudeModelRecency", () => {
     ["claude-sonnet-4-6", 4006],
     ["claude-opus-4-7", 4007],
     ["claude-opus-4-8", 4008],
+    ["claude-opus-5", 5000],
     ["claude-sonnet-5", 5000],
     ["claude-fable-5", 5000],
   ])("ranks %s by its embedded version (%i)", (modelId, rank) => {
@@ -132,7 +142,9 @@ describe("getClaudeModelRecency", () => {
 });
 
 describe("compareModelsForPicker", () => {
-  it("groups models by family, most capable first, newest version first", () => {
+  it("groups models by family least capable first, newest version first", () => {
+    // The picker opens upward, so least-capable-first DOM order puts the most
+    // capable family (Fable) nearest the trigger — the visual top of the menu.
     // Models as the gateway might return them — arbitrary order.
     const gatewayOrder = [
       "claude-fable-5",
@@ -145,12 +157,12 @@ describe("compareModelsForPicker", () => {
     ];
     const displayed = [...gatewayOrder].sort(compareModelsForPicker);
     expect(displayed).toEqual([
-      "claude-fable-5",
-      "claude-opus-4-8",
-      "claude-opus-4-7",
+      "claude-haiku-4-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
-      "claude-haiku-4-5",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-fable-5",
       "claude-mystery",
     ]);
   });

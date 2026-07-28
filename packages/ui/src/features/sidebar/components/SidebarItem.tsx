@@ -1,15 +1,15 @@
-import {
-  Button,
-  cn,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@posthog/quill";
+import { Button, cn } from "@posthog/quill";
 import type { SidebarItemAction } from "@posthog/ui/features/sidebar/types";
-import { useCallback } from "react";
+import {
+  OverflowTickerText,
+  useOverflowTickerReveal,
+} from "@posthog/ui/primitives/OverflowTickerText";
 
 export const INDENT_SIZE = 8;
+
+export function getSidebarItemPaddingLeft(depth: number): string {
+  return `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`;
+}
 
 interface SidebarItemProps {
   depth: number;
@@ -31,46 +31,6 @@ interface SidebarItemProps {
   disabled?: boolean;
 }
 
-function SidebarItemLabel({
-  label,
-  grow,
-}: {
-  label: React.ReactNode;
-  grow: boolean;
-}) {
-  const canTooltip = typeof label === "string" || typeof label === "number";
-
-  const measureRef = useCallback((el: HTMLSpanElement | null) => {
-    if (!el) return;
-    const update = () => {
-      el.style.pointerEvents = el.scrollWidth > el.clientWidth ? "" : "none";
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const span = (
-    <span ref={measureRef} className={cn("min-w-0 truncate", grow && "flex-1")}>
-      {label}
-    </span>
-  );
-
-  if (!canTooltip) return span;
-
-  return (
-    <TooltipProvider delay={600}>
-      <Tooltip>
-        <TooltipTrigger render={span} />
-        <TooltipContent side="top" className="max-w-[900px] break-words">
-          {label}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 export function SidebarItem({
   depth,
   icon,
@@ -88,6 +48,8 @@ export function SidebarItem({
   endContent,
   disabled,
 }: SidebarItemProps) {
+  const { reveal, hoverProps, focusProps } = useOverflowTickerReveal();
+
   return (
     <Button
       type="button"
@@ -102,12 +64,14 @@ export function SidebarItem({
       draggable={draggable}
       onDragStart={onDragStart}
       style={{
-        paddingLeft: `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`,
+        paddingLeft: getSidebarItemPaddingLeft(depth),
         paddingRight: "8px",
       }}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      {...hoverProps}
+      {...focusProps}
       disabled={disabled}
     >
       {icon ? (
@@ -117,7 +81,12 @@ export function SidebarItem({
       ) : null}
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-h-[18px] items-center gap-1">
-          <SidebarItemLabel label={label} grow={!badge} />
+          <OverflowTickerText
+            reveal={reveal}
+            className={cn(!badge && "flex-1")}
+          >
+            {label}
+          </OverflowTickerText>
           {badge ? (
             <span className="mr-auto ml-1 flex shrink-0 items-center">
               {badge}

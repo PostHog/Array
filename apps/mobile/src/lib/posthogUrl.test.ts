@@ -11,7 +11,7 @@ describe("parsePostHogUrl", () => {
     });
   });
 
-  it("parses PostHog Code task run links", () => {
+  it("parses PostHog task run links", () => {
     expect(
       parsePostHogUrl("https://code.posthog.com/task/task-123/run/run-456"),
     ).toEqual({
@@ -46,7 +46,7 @@ describe("parsePostHogUrl", () => {
     });
   });
 
-  it("parses relative PostHog Code paths using the code host", () => {
+  it("parses relative PostHog paths using the code host", () => {
     expect(
       parsePostHogUrl("/task/task-123/run/run-456", {
         codeBaseUrl: "https://code.posthog.com",

@@ -20,20 +20,22 @@ describe("sandboxProxyHtml", () => {
     );
   });
 
-  it("creates inner iframe with allow-scripts, allow-same-origin, and allow-forms sandbox", () => {
+  it("creates inner iframe without allow-same-origin", () => {
     expect(sandboxProxyHtml).toContain(
-      "allow-scripts allow-same-origin allow-forms",
+      'inner.setAttribute("sandbox", "allow-scripts allow-forms")',
     );
   });
 
-  it("uses document.write to inject HTML instead of srcdoc", () => {
-    expect(sandboxProxyHtml).toContain("doc.open()");
-    expect(sandboxProxyHtml).toContain("doc.write(params.html)");
-    expect(sandboxProxyHtml).toContain("doc.close()");
+  it("uses srcdoc to inject HTML, never document.write", () => {
+    expect(sandboxProxyHtml).toContain('inner.setAttribute("srcdoc"');
+    expect(sandboxProxyHtml).not.toContain("doc.write(");
   });
 
-  it("uses location.origin for forwarding messages to inner iframe", () => {
-    expect(sandboxProxyHtml).toContain("postMessage(data, location.origin)");
+  it("forwards to the inner iframe with a wildcard target origin", () => {
+    expect(sandboxProxyHtml).toContain('postMessage(data, "*")');
+    expect(sandboxProxyHtml).not.toContain(
+      "postMessage(data, location.origin)",
+    );
   });
 
   it("builds permission policy allow attribute with cross-origin delegation", () => {
@@ -53,5 +55,24 @@ describe("sandboxProxyHtml", () => {
     expect(sandboxProxyHtml).toContain("var ");
     expect(sandboxProxyHtml).not.toContain("let ");
     expect(sandboxProxyHtml).not.toContain("const ");
+  });
+});
+
+describe("sandboxProxyHtml inner frame navigation", () => {
+  it("closes the bridge when the inner frame loads a second time", () => {
+    expect(sandboxProxyHtml).toContain(
+      'inner.addEventListener("load", onInnerLoad)',
+    );
+    expect(sandboxProxyHtml).toContain("bridgeClosed = true");
+  });
+
+  it("stops forwarding host messages once the bridge is closed", () => {
+    expect(sandboxProxyHtml).toContain(
+      "if (!bridgeClosed && inner && inner.contentWindow)",
+    );
+  });
+
+  it("drops messages relayed from a navigated inner frame", () => {
+    expect(sandboxProxyHtml).toContain("if (bridgeClosed) {");
   });
 });

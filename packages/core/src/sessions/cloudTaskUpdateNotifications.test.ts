@@ -6,14 +6,32 @@ import { SessionService, type SessionServiceDeps } from "./sessionService";
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
 
-function turnComplete(timestamp?: string): StoredLogEntry {
+function turnComplete(
+  timestamp?: string,
+  stopReason = "end_turn",
+): StoredLogEntry {
   return {
     type: "notification",
     timestamp,
     notification: {
       method: "_posthog/turn_complete",
-      params: { sessionId: RUN_ID, stopReason: "end_turn" },
+      params: { sessionId: RUN_ID, stopReason },
     },
+  };
+}
+
+// The agent's JSON-RPC response to `session/prompt`. Real logs carry it next
+// to `_posthog/turn_complete` in either order (the two writes race in the
+// agent's log stream), so completion cases must ring for both orderings.
+function promptResponse(
+  id: number,
+  stopReason = "end_turn",
+  timestamp?: string,
+): StoredLogEntry {
+  return {
+    type: "notification",
+    timestamp,
+    notification: { id, result: { stopReason } },
   };
 }
 
@@ -236,6 +254,50 @@ describe("cloud task update notifications", () => {
       expected: 1,
     },
     {
+      label: "a turn whose response precedes turn_complete",
+      updates: [
+        logsUpdate([sessionPrompt(1), promptResponse(1), turnComplete()], 3),
+      ],
+      expected: 1,
+    },
+    {
+      label: "a turn whose response follows turn_complete",
+      updates: [
+        logsUpdate([sessionPrompt(1), turnComplete(), promptResponse(1)], 3),
+      ],
+      expected: 1,
+    },
+    {
+      label: "a duplicate turn_complete after a response-first turn",
+      updates: [
+        logsUpdate([sessionPrompt(1), promptResponse(1), turnComplete()], 3),
+        logsUpdate([turnComplete()], 4),
+      ],
+      expected: 1,
+    },
+    {
+      label: "several turns with responses on both sides of turn_complete",
+      updates: [
+        logsUpdate([sessionPrompt(1), promptResponse(1), turnComplete()], 3),
+        logsUpdate([sessionPrompt(2), turnComplete(), promptResponse(2)], 6),
+      ],
+      expected: 2,
+    },
+    {
+      label: "a cancelled turn",
+      updates: [
+        logsUpdate(
+          [
+            sessionPrompt(1),
+            promptResponse(1, "cancelled"),
+            turnComplete(undefined, "cancelled"),
+          ],
+          3,
+        ),
+      ],
+      expected: 0,
+    },
+    {
       // Opening a task mid-turn: its session/prompt is already in history and
       // only the turn_complete arrives live. The completion must still ring.
       label: "a prompt seen only in the snapshot, completing live",
@@ -276,6 +338,27 @@ describe("cloud task update notifications", () => {
       expect.objectContaining({ kind: "done", source: "backstop" }),
     );
     expect(harness.markActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the turn duration when the response precedes turn_complete", () => {
+    const harness = createHarness();
+    harness.sendUpdate(
+      logsUpdate(
+        [
+          sessionPrompt(1, "2026-01-01T00:00:00Z"),
+          promptResponse(1, "end_turn", "2026-01-01T00:00:44Z"),
+          turnComplete("2026-01-01T00:00:45Z"),
+        ],
+        3,
+      ),
+    );
+
+    expect(harness.notifyPromptComplete).toHaveBeenCalledWith(
+      "Cloud Task",
+      "end_turn",
+      TASK_ID,
+      45_000,
+    );
   });
 
   it("notifies a pending permission once across repeated snapshots", () => {

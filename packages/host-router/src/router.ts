@@ -23,7 +23,6 @@ import { foldersRouter } from "./routers/folders.router";
 import { fsRouter } from "./routers/fs.router";
 import { gitRouter } from "./routers/git.router";
 import { githubIntegrationRouter } from "./routers/github-integration.router";
-import { githubReleasesRouter } from "./routers/github-releases.router";
 import { handoffRouter } from "./routers/handoff.router";
 import { integrationRouter } from "./routers/integration.router";
 import { linearIntegrationRouter } from "./routers/linear-integration.router";
@@ -40,6 +39,7 @@ import { osRouter } from "./routers/os.router";
 import { piSessionRouter } from "./routers/pi-session.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
+import { releaseFeedRouter } from "./routers/release-feed.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
 import { shellRouter } from "./routers/shell.router";
 import { skillsRouter } from "./routers/skills.router";
@@ -79,7 +79,7 @@ export const hostRouter = router({
   handoff: handoffRouter,
   integration: integrationRouter,
   githubIntegration: githubIntegrationRouter,
-  githubReleases: githubReleasesRouter,
+  releaseFeed: releaseFeedRouter,
   linearIntegration: linearIntegrationRouter,
   llmGateway: llmGatewayRouter,
   localMcp: localMcpRouter,

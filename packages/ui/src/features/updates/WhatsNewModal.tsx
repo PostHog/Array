@@ -56,7 +56,7 @@ export function WhatsNewModal() {
     isPending,
     isError: isReleasesError,
   } = useQuery({
-    ...hostTRPC.githubReleases.list.queryOptions(
+    ...hostTRPC.releaseFeed.list.queryOptions(
       currentVersion ? { expectVersion: currentVersion } : undefined,
     ),
     enabled: (isOpen || prefetchForActiveUpdate) && !!currentVersion,

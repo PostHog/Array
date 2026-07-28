@@ -23,12 +23,16 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
-import type { WorkspaceMode } from "@posthog/shared";
+import { PROJECT_BLUEBIRD_FLAG, type WorkspaceMode } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useMeQuery } from "@posthog/ui/features/auth/useMeQuery";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useFolders } from "@posthog/ui/features/folders/useFolders";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import { toast } from "@posthog/ui/primitives/toast";
+import { track } from "@posthog/ui/shell/analytics";
 import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { logger } from "@posthog/ui/shell/logger";
 import { useState } from "react";
@@ -105,8 +109,10 @@ function TaskFilterMenu() {
   const { data: currentUser } = useMeQuery();
   const isStaff = currentUser?.is_staff === true;
 
+  const handleOpenChange = useHoldSidebarPeek();
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
           <Button type="button" aria-label="Filter tasks" size="icon-sm">
@@ -211,16 +217,69 @@ function TaskFilterMenu() {
 }
 
 export function TasksHeader() {
+  const bluebirdEnabled = useFeatureFlag(
+    PROJECT_BLUEBIRD_FLAG,
+    import.meta.env.DEV,
+  );
+  const channelsEnabled =
+    useSidebarStore((state) => state.channelsEnabled) && bluebirdEnabled;
+  const setChannelsEnabled = useSidebarStore(
+    (state) => state.setChannelsEnabled,
+  );
+
+  const handleModeChange = (showChannels: boolean) => {
+    if (showChannels === channelsEnabled) return;
+    setChannelsEnabled(showChannels);
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "toggle_channels",
+      surface: "nav",
+    });
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: showChannels ? "enter_space" : "leave_space",
+      surface: "nav",
+    });
+  };
+
   return (
     <div className="shrink-0 px-2">
-      <MenuLabel className="flex items-center justify-between pt-0 pr-0 pb-0.5">
-        Tasks
-        <span className="flex items-center">
-          <AddFolderButton />
-          <TaskSearchButton />
-          <TaskFilterMenu />
-        </span>
-      </MenuLabel>
+      <div className="flex min-h-7 items-center justify-between pb-0.5">
+        {bluebirdEnabled ? (
+          <fieldset
+            className="m-0 flex min-w-0 items-center gap-px rounded border-0 bg-fill-secondary p-px"
+            aria-label="Sidebar content"
+          >
+            <Button
+              type="button"
+              size="xs"
+              className="px-1.5 font-normal text-gray-10 text-xs normal-case hover:text-gray-12 data-[active]:bg-accent-4 data-[active]:font-medium data-[active]:text-gray-12 data-[active]:shadow-sm"
+              aria-pressed={channelsEnabled}
+              data-active={channelsEnabled || undefined}
+              onClick={() => handleModeChange(true)}
+            >
+              Channels
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              className="px-1.5 font-normal text-gray-10 text-xs normal-case hover:text-gray-12 data-[active]:bg-accent-4 data-[active]:font-medium data-[active]:text-gray-12 data-[active]:shadow-sm"
+              aria-pressed={!channelsEnabled}
+              data-active={!channelsEnabled || undefined}
+              onClick={() => handleModeChange(false)}
+            >
+              List
+            </Button>
+          </fieldset>
+        ) : (
+          <span className="font-medium text-xs">List</span>
+        )}
+        {!channelsEnabled && (
+          <span className="flex items-center">
+            <AddFolderButton />
+            <TaskSearchButton />
+            <TaskFilterMenu />
+          </span>
+        )}
+      </div>
     </div>
   );
 }

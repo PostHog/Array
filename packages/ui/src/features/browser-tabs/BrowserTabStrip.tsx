@@ -1,7 +1,5 @@
 import {
   BrainIcon,
-  HashIcon,
-  HouseIcon,
   PlugsConnectedIcon,
   RobotIcon,
   SquaresFourIcon,
@@ -25,11 +23,13 @@ import {
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   useDashboard,
   useDashboards,
@@ -125,16 +125,9 @@ type TabRef = {
 // The top-level app pages that can be a tab. Keyed by useAppView's view.type;
 // each maps to its canonical route (a task/canvas/channel tab has its own
 // route, these don't) plus the strip's label + icon.
-type AppView =
-  | "home"
-  | "inbox"
-  | "agents"
-  | "skills"
-  | "mcp-servers"
-  | "command-center";
+type AppView = "inbox" | "agents" | "skills" | "mcp-servers" | "command-center";
 
 const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
-  home: { label: "Home", icon: <HouseIcon size={14} /> },
   inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
   agents: { label: "Agents", icon: <RobotIcon size={14} /> },
   skills: { label: "Skills", icon: <BrainIcon size={14} /> },
@@ -153,6 +146,7 @@ function isAppView(value: string): value is AppView {
 }
 
 export function BrowserTabStrip() {
+  const spacesLayout = useChannelsLayout();
   const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
@@ -171,8 +165,8 @@ export function BrowserTabStrip() {
   // plain task tab (no channel) belongs to the Code experience. The space
   // decides where a task/blank tab navigates.
   const inChannels = pathname.startsWith("/website");
-  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center,
-  // Home) are tab targets too. useAppView normalizes both the /code routes and
+  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center)
+  // are tab targets too. useAppView normalizes both the /code routes and
   // their /website mirrors to the same view.type, so a tab survives either space.
   const view = useAppView();
   const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
@@ -511,14 +505,18 @@ export function BrowserTabStrip() {
           };
         }
         // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
-        // The section drives the label; the channel name carries the `#` hover
+        // The section drives the label; the channel name carries the space
         // context. Home has no section, so it labels by the channel name.
         if (channelId) {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Channel",
-            icon: <HashIcon size={14} />,
+            label:
+              meta?.label ?? channel ?? (spacesLayout ? "Space" : "Channel"),
+            icon: channelGlyph(channel ?? undefined, {
+              size: 14,
+              space: spacesLayout,
+            }),
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,
@@ -553,6 +551,7 @@ export function BrowserTabStrip() {
     params.taskId,
     routeChannelSection,
     routeAppView,
+    spacesLayout,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is
@@ -597,9 +596,6 @@ export function BrowserTabStrip() {
       // A top-level app page — back to its canonical route (literal `to` per
       // case so the router types stay checked).
       switch (tab.appView) {
-        case "home":
-          navigate({ to: "/code/home", state });
-          break;
         case "inbox":
           navigate({ to: "/code/inbox", state });
           break;

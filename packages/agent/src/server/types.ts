@@ -24,6 +24,12 @@ export interface AgentServerConfig {
   eventIngestBaseUrl?: string;
   eventIngestStreamWindowMs?: number;
   eventIngestKeepStreamOpen?: boolean;
+  /** Full OTLP logs URL for run telemetry, e.g. https://us.i.posthog.com/i/v1/logs */
+  otelLogsUrl?: string;
+  /** Project API key for the OTLP logs/traces endpoints */
+  otelLogsToken?: string;
+  /** Full OTLP traces URL for run spans, e.g. https://us.i.posthog.com/i/v1/traces */
+  otelTracesUrl?: string;
   mode: AgentMode;
   taskId: string;
   runId: string;

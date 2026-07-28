@@ -10,7 +10,7 @@ import {
   ComboboxListFooter,
   ComboboxTrigger,
 } from "@posthog/quill";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useEnvironments } from "./useEnvironments";
 
 interface EnvironmentSelectorProps {
@@ -35,11 +35,7 @@ export function EnvironmentSelector({
 
   const { data: environments = [] } = useEnvironments(repoPath);
 
-  useEffect(() => {
-    if (value === null && environments.length > 0) {
-      onChange(environments[0].id);
-    }
-  }, [value, environments, onChange]);
+  // Never auto-select: environments are repo-provided and run setup scripts.
 
   const selectedEnvironment = environments.find((env) => env.id === value);
   const displayText = selectedEnvironment?.name ?? "No environment";

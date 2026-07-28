@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { logger } from "../../../shell/logger";
 import { useDraftStore } from "../../message-editor/draftStore";
 import type { ToolCall } from "../../sessions/types";
+import { applyCspToHtml } from "../utils/mcp-app-csp";
 import {
   computeContainerDimensions,
   INLINE_MAX_HEIGHT,
@@ -315,9 +316,8 @@ export function useAppBridge(args: UseAppBridgeArgs): UseAppBridgeReturn {
         await bridge.connect(transport);
         bridgeRef.current = bridge;
 
-        // Send resource to proxy
         await bridge.sendSandboxResourceReady({
-          html: resource.html,
+          html: applyCspToHtml(resource.html, resource.csp),
           csp: resource.csp,
           permissions: resource.permissions,
         });

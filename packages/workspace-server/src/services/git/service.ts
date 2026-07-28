@@ -1236,6 +1236,9 @@ export class GitService extends TypedEventEmitter<GitCloneEvents> {
     ]);
 
     if (result.exitCode !== 0) {
+      if (/HTTP 404\b/.test(`${result.stderr} ${result.error ?? ""}`)) {
+        return [];
+      }
       throw new Error(
         `Failed to fetch branch files: ${result.stderr || result.error || "Unknown error"}`,
       );

@@ -1,16 +1,32 @@
 import { ArchiveIcon } from "@phosphor-icons/react";
-import { Separator } from "@posthog/quill";
+import { cn, Separator } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { ChannelNav } from "@posthog/ui/features/canvas/components/ChannelNav";
+import { ChannelSidebar } from "@posthog/ui/features/canvas/components/ChannelSidebar";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { ChannelsList } from "@posthog/ui/features/canvas/components/ChannelsList";
 import { useChannelsSidebarStore } from "@posthog/ui/features/canvas/components/channelsSidebarStore";
+import { useChannelPaneSwipe } from "@posthog/ui/features/canvas/hooks/useChannelPaneSwipe";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { useCurrentChannel } from "@posthog/ui/features/canvas/hooks/useCurrentChannel";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
+import { useTrackChannelsSpaceViewed } from "@posthog/ui/features/canvas/hooks/useTrackChannelsSpaceViewed";
+import {
+  showChannelList,
+  showChannelPane,
+  useChannelPaneStore,
+} from "@posthog/ui/features/canvas/stores/channelPaneStore";
+import { useCurrentChannelStore } from "@posthog/ui/features/canvas/stores/currentChannelStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { LoopsPromoCard } from "@posthog/ui/features/loops/components/LoopsPromoCard";
 import { useOnboardingStore } from "@posthog/ui/features/onboarding/onboardingStore";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarMenu } from "@posthog/ui/features/sidebar/components/SidebarMenu";
 import { SidebarNavSection } from "@posthog/ui/features/sidebar/components/SidebarNavSection";
+import { TasksHeader } from "@posthog/ui/features/sidebar/components/TasksHeader";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
+import { CHANNELS_SIDEBAR_MIN_WIDTH } from "@posthog/ui/features/sidebar/constants";
 import {
   beginSidebarPeek,
   cancelSidebarPeek,
@@ -19,16 +35,69 @@ import {
 } from "@posthog/ui/features/sidebar/sidebarPeekStore";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { ErrorBoundary } from "@posthog/ui/primitives/ErrorBoundary";
 import { useSidebarEdgeHoverPeek } from "@posthog/ui/primitives/hooks/useSidebarEdgeHoverPeek";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { Box, Flex } from "@radix-ui/themes";
-import { useDeferredValue, useEffect } from "react";
+import { useParams } from "@tanstack/react-router";
+import { useDeferredValue, useEffect, useRef } from "react";
 
-// The unified app sidebar (Code merged into the Bluebird chrome). Top to
-// bottom: workspace switcher, the merged global nav, the "Enable channels"
-// opt-in, then the body — the task list by default, swapped for the channel
-// tree once channels are enabled — and Settings pinned to the bottom.
+/**
+ * The sidebar slider: the channel list and the channel you're in, laid out side
+ * by side in a track that translates between them.
+ *
+ * Both panes stay mounted so the slide has something to slide, and so coming
+ * back to the list doesn't rebuild every row's menus and dialogs. The offscreen
+ * one is `inert`, keeping it out of the tab order and off screen readers.
+ *
+ * A two-finger horizontal swipe moves between them, so the back row isn't the
+ * only way out of a channel — and swiping the other way returns to the channel
+ * that stayed scoped the whole time.
+ */
+function ChannelPanes({
+  channelId,
+  showList,
+}: {
+  channelId: string | null;
+  showList: boolean;
+}) {
+  const panesRef = useRef<HTMLDivElement | null>(null);
+  useChannelPaneSwipe(panesRef, {
+    // With no channel to slide to, the list is all there is — leave the gesture
+    // to the platform rather than eat it for a slide that can't happen.
+    enabled: channelId != null,
+    onBack: showChannelList,
+    onForward: showChannelPane,
+  });
+
+  return (
+    <Box ref={panesRef} className="min-h-0 flex-1 overflow-hidden">
+      <div
+        className={cn(
+          "flex h-full w-[200%] transition-transform duration-200 ease-out motion-reduce:transition-none",
+          showList ? "translate-x-0" : "-translate-x-1/2",
+        )}
+      >
+        <div className="relative h-full w-1/2 min-w-0" inert={!showList}>
+          <ChannelsList />
+          <ChannelsFab />
+        </div>
+        <div className="h-full w-1/2 min-w-0" inert={showList}>
+          {channelId && (
+            <ErrorBoundary
+              name="channel-sidebar"
+              fallback={<ChannelsList />}
+              resetKey={channelId}
+            >
+              <ChannelSidebar channelId={channelId} />
+            </ErrorBoundary>
+          )}
+        </div>
+      </div>
+    </Box>
+  );
+}
 export function ChannelsSidebar() {
   const width = useChannelsSidebarStore((state) => state.width);
   const setWidth = useChannelsSidebarStore((state) => state.setWidth);
@@ -68,7 +137,7 @@ export function ChannelsSidebar() {
   // while peeked (route without it), a stale peek would greet the remount.
   useEffect(() => () => cancelSidebarPeek(), []);
 
-  // Channels stay behind project-bluebird: the toggle only appears where the
+  // Channels stay behind project-bluebird: the switch only appears where the
   // canvas backend is wired, and a persisted "on" is ignored when the flag is
   // off so the sidebar can't strand a user on an unsupported feature.
   const bluebirdEnabled = useFeatureFlag(
@@ -77,14 +146,68 @@ export function ChannelsSidebar() {
   );
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
-  // The Switch (in SidebarNavSection) reads the live value and flips instantly.
-  // Swapping the sidebar body mounts a heavy tree (ChannelsList: the channels
-  // query + a provider-laden row per channel), so defer that decision: the
-  // urgent commit keeps the current body and paints the toggle, then the tree
-  // mounts in a follow-up non-blocking render.
-  const bodyChannelsEnabled = useDeferredValue(channelsEnabled);
+  const channelsLayout = useChannelsLayout();
+  const channelsWorld = channelsLayout || channelsEnabled;
+  const bodyChannelsWorld = useDeferredValue(channelsWorld);
+  // Under the layout the row moves into the account menu (ProjectSwitcher),
+  // beside Settings — the bottom of the sidebar belongs to the channel list.
+  const showArchivedRow = !channelsLayout && !bodyChannelsWorld;
+  useTrackChannelsSpaceViewed({
+    enabled: channelsWorld,
+    layout: channelsLayout ? "channels" : "code",
+  });
+
+  const minWidth = channelsLayout ? CHANNELS_SIDEBAR_MIN_WIDTH : undefined;
+  useEffect(() => {
+    if (channelsLayout && width < CHANNELS_SIDEBAR_MIN_WIDTH) {
+      setWidth(CHANNELS_SIDEBAR_MIN_WIDTH);
+    }
+  }, [channelsLayout, width, setWidth]);
 
   const archivedTaskIds = useArchivedTaskIds();
+
+  const params = useParams({ strict: false });
+  const routeChannelId = params.channelId;
+  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
+  const { currentChannelId, channels } = useCurrentChannel({
+    enabled: channelsLayout,
+  });
+  useEffect(() => {
+    if (!channelsLayout || !routeChannelId) return;
+    setCurrentChannel(routeChannelId);
+    // Landing on a channel — a deep link, a mention, ⌘1-9 — is a request to see
+    // it, so the slider follows the route even if the list was being browsed.
+    showChannelPane();
+  }, [channelsLayout, routeChannelId, setCurrentChannel]);
+
+  // Browsing the list is view state, not navigation: you stay in the channel
+  // (route and main pane unchanged) while you look around. With no channel to
+  // slide to there's only the list.
+  const pane = useChannelPaneStore((s) => s.pane);
+  const showList = pane === "list" || currentChannelId == null;
+
+  const autoScopedRef = useRef(false);
+  useEffect(() => {
+    if (!channelsLayout) {
+      autoScopedRef.current = false;
+      return;
+    }
+    // A route-scoped channel wins over the default. Both effects run from the
+    // same render on a cold deep link, so without this guard the route effect
+    // writes its channel and this later effect immediately overwrites it with
+    // #me using the stale `currentChannelId` captured by that render.
+    if (routeChannelId || autoScopedRef.current || currentChannelId) return;
+    const me = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
+    if (!me) return;
+    autoScopedRef.current = true;
+    setCurrentChannel(me.id);
+  }, [
+    channelsLayout,
+    channels,
+    currentChannelId,
+    routeChannelId,
+    setCurrentChannel,
+  ]);
 
   return (
     <ResizableSidebar
@@ -94,6 +217,7 @@ export function ChannelsSidebar() {
       isResizing={isResizing}
       setIsResizing={setIsResizing}
       side="left"
+      minWidth={minWidth}
       setOpen={setOpen}
       peek={peek}
       onPeekEnter={beginSidebarPeek}
@@ -101,22 +225,23 @@ export function ChannelsSidebar() {
       onPeekDismiss={cancelSidebarPeek}
     >
       <Flex direction="column" className="h-full bg-chrome">
-        {/* The nav owns the "Enable channels" toggle + Canvas rows (gated by
-            the same flag), so this section carries the whole merged nav. */}
-        <SidebarNavSection />
+        {!channelsLayout && (
+          <>
+            <SidebarNavSection />
+            <TasksHeader />
+          </>
+        )}
 
-        {/* Body: the channel tree when channels are on, otherwise the task
-            list. Each owns its own scroll region. Gated on the deferred value so
-            the toggle paints before this heavy swap. */}
-        {bodyChannelsEnabled ? (
+        {channelsLayout ? (
+          <>
+            <ChannelNav />
+            <ChannelPanes channelId={currentChannelId} showList={showList} />
+          </>
+        ) : bodyChannelsWorld ? (
           <>
             <Separator />
-            {/* The fab is a sibling of the scroll region, not a child, so it
-                stays pinned to the bottom-right instead of scrolling away. */}
             <Box className="relative min-h-0 flex-1">
-              <Box className="scroll-mask-4 h-full overflow-y-auto">
-                <ChannelsList />
-              </Box>
+              <ChannelsList />
               <ChannelsFab />
             </Box>
           </>
@@ -128,9 +253,7 @@ export function ChannelsSidebar() {
 
         <UpdateBanner />
 
-        {/* Archived is a task-list affordance — hidden while channels are on,
-            since the body then shows the channel tree, not tasks. */}
-        {!channelsEnabled && archivedTaskIds.size > 0 && (
+        {showArchivedRow && archivedTaskIds.size > 0 && (
           <Box className="shrink-0 border-border border-t">
             <button
               type="button"
@@ -145,8 +268,8 @@ export function ChannelsSidebar() {
           </Box>
         )}
 
-        {/* Workspace switcher pinned to the bottom. Its dropdown carries the
-            Settings entry, so there's no separate Settings row. */}
+        <LoopsPromoCard />
+
         <Box className="shrink-0 px-2 pb-2">
           <ProjectSwitcher />
         </Box>

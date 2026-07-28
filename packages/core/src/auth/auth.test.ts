@@ -79,16 +79,21 @@ const mockLogger: RootLogger = {
 function mockTokenResponse(
   overrides: {
     accessToken?: string;
-    refreshToken?: string;
+    refreshToken?: string | null;
+    expiresIn?: number;
     scopedOrgs?: string[];
   } = {},
 ) {
+  const refreshToken =
+    overrides.refreshToken === undefined
+      ? "refresh-token"
+      : overrides.refreshToken;
   return {
     success: true as const,
     data: {
       access_token: overrides.accessToken ?? "access-token",
-      refresh_token: overrides.refreshToken ?? "refresh-token",
-      expires_in: 3600,
+      ...(refreshToken ? { refresh_token: refreshToken } : {}),
+      expires_in: overrides.expiresIn ?? 3600,
       token_type: "Bearer",
       scope: "",
       scoped_organizations: overrides.scopedOrgs ?? ["org-1"],
@@ -242,7 +247,155 @@ describe("AuthService", () => {
       currentProjectId: null,
       hasCodeAccess: null,
       needsScopeReauth: false,
+      sessionType: null,
+      sessionExpiresAt: null,
+      sessionEndReason: null,
     });
+  });
+
+  it("uses an impersonated session without persisting it", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({ refreshToken: null }),
+    );
+    stubAuthFetch();
+
+    await service.initialize();
+    await service.login("us");
+
+    expect(service.getState()).toMatchObject({
+      status: "authenticated",
+      sessionType: "impersonated",
+      sessionExpiresAt: expect.any(Number),
+    });
+    await expect(service.getValidAccessToken()).resolves.toMatchObject({
+      accessToken: "access-token",
+    });
+    expect(sessionPort.getCurrent()).toBeNull();
+  });
+
+  it("signs out an impersonated session when a refresh is required", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({ refreshToken: null }),
+    );
+    stubAuthFetch();
+
+    await service.initialize();
+    await service.login("us");
+
+    await expect(service.refreshAccessToken()).rejects.toThrow(
+      "Your impersonated session has expired",
+    );
+    expect(service.getState()).toMatchObject({
+      status: "anonymous",
+      sessionType: null,
+      sessionExpiresAt: null,
+      sessionEndReason: "impersonation_expired",
+    });
+    expect(oauthFlow.refreshToken).not.toHaveBeenCalled();
+  });
+
+  it("signs out when an impersonated access token expires", async () => {
+    vi.useFakeTimers();
+    try {
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ refreshToken: null, expiresIn: 61 }),
+      );
+      stubAuthFetch();
+
+      await service.initialize();
+      await service.login("us");
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      await expect(service.getValidAccessToken()).resolves.toMatchObject({
+        accessToken: "access-token",
+      });
+
+      await vi.advanceTimersByTimeAsync(1_001);
+
+      expect(service.getState()).toMatchObject({
+        status: "anonymous",
+        sessionEndReason: "impersonation_expired",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not persist or extend impersonated credentials after a project change", async () => {
+    vi.useFakeTimers();
+    try {
+      oauthFlow.startFlow.mockResolvedValue(
+        mockTokenResponse({ refreshToken: null, expiresIn: 61 }),
+      );
+      stubAuthFetch({
+        orgs: {
+          "org-1": {
+            name: "Org 1",
+            projects: [
+              { id: 42, name: "Project 42" },
+              { id: 84, name: "Project 84" },
+            ],
+          },
+        },
+      });
+
+      await service.initialize();
+      await service.login("us");
+      await service.selectProject(84);
+
+      expect(service.getState().currentProjectId).toBe(84);
+      expect(sessionPort.getCurrent()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(61_001);
+
+      expect(service.getState()).toMatchObject({
+        status: "anonymous",
+        sessionEndReason: "impersonation_expired",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not restore an impersonated session after restart", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({ refreshToken: null }),
+    );
+    stubAuthFetch();
+
+    await service.initialize();
+    await service.login("us");
+    service.shutdown();
+
+    service = createService();
+    service.init();
+    await service.initialize();
+
+    expect(service.getState()).toMatchObject({
+      status: "anonymous",
+      sessionType: null,
+    });
+    expect(oauthFlow.refreshToken).not.toHaveBeenCalled();
+  });
+
+  it("returns permission-denied responses without ending impersonation", async () => {
+    oauthFlow.startFlow.mockResolvedValue(
+      mockTokenResponse({ refreshToken: null }),
+    );
+    stubAuthFetch();
+
+    await service.initialize();
+    await service.login("us");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+
+    const response = await service.authenticatedFetch(
+      fetch,
+      "https://us.posthog.com/api/restricted/",
+    );
+
+    expect(response.status).toBe(403);
+    expect(service.getState().status).toBe("authenticated");
+    expect(oauthFlow.refreshToken).not.toHaveBeenCalled();
   });
 
   it("requires scope reauthentication when the stored scope version is stale", async () => {
@@ -263,6 +416,9 @@ describe("AuthService", () => {
       currentProjectId: 123,
       hasCodeAccess: null,
       needsScopeReauth: true,
+      sessionType: null,
+      sessionExpiresAt: null,
+      sessionEndReason: null,
     });
   });
 
@@ -309,6 +465,24 @@ describe("AuthService", () => {
 
     expect(sessionPort.getCurrent()?.refreshTokenEncrypted).toBe(
       "rotated-refresh-token",
+    );
+  });
+
+  it("keeps the existing refresh token when the server does not rotate it", async () => {
+    seedStoredSession({ refreshToken: "existing-refresh-token" });
+    oauthFlow.refreshToken.mockResolvedValue(
+      mockTokenResponse({ refreshToken: null }),
+    );
+    stubAuthFetch();
+
+    await service.initialize();
+
+    expect(service.getState()).toMatchObject({
+      status: "authenticated",
+      sessionType: "persistent",
+    });
+    expect(sessionPort.getCurrent()?.refreshTokenEncrypted).toBe(
+      "existing-refresh-token",
     );
   });
 

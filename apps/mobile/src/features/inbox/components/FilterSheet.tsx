@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { EXTERNAL_INBOX_SOURCES } from "@posthog/shared";
 import { Check } from "phosphor-react-native";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
@@ -68,17 +69,19 @@ function usePriorityDotColors(): Record<SignalReportPriority, string> {
   };
 }
 
-const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] = [
-  { value: "session_replay", label: "Session replay" },
-  { value: "error_tracking", label: "Error tracking" },
-  { value: "llm_analytics", label: "AI observability" },
-  { value: "github", label: "GitHub" },
-  { value: "linear", label: "Linear" },
-  { value: "zendesk", label: "Zendesk" },
-  { value: "conversations", label: "Conversations" },
-  { value: "signals_scout", label: "Scout" },
-  { value: "health_checks", label: "Health checks" },
-];
+export const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] =
+  [
+    { value: "session_replay", label: "Session replay" },
+    { value: "error_tracking", label: "Error tracking" },
+    { value: "llm_analytics", label: "AI observability" },
+    { value: "conversations", label: "Conversations" },
+    { value: "signals_scout", label: "Scout" },
+    { value: "health_checks", label: "Health checks" },
+    ...EXTERNAL_INBOX_SOURCES.map((source) => ({
+      value: source.product,
+      label: source.label,
+    })),
+  ];
 
 function SectionHeader({ title }: { title: string }) {
   return (

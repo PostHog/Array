@@ -18,7 +18,7 @@ interface ImportMeta {
 }
 
 interface Window {
-  readonly __posthogCodeDevFlags?: {
+  readonly __posthogDevFlags?: {
     readonly devMode: boolean;
   };
 }

@@ -93,8 +93,8 @@ export function PlanUsageSettings() {
               <Callout.Text>
                 <Flex direction="column" gap="2">
                   <Text className="text-sm">
-                    Your organization has reached its PostHog Code usage limit
-                    for this billing period.
+                    Your organization has reached its usage limit for this
+                    billing period.
                   </Text>
                   <Button
                     size="1"
@@ -126,7 +126,7 @@ export function PlanUsageSettings() {
                 <Text className="text-(--gray-11) text-sm">
                   {freeTier
                     ? "Your organization's first $20 of usage each month is included, with access to open models. Add a payment method to unlock premium models — you only pay for what you use."
-                    : "Your organization pays for PostHog Code usage at cost — no seats, no subscriptions. The first $20 each month is included."}
+                    : "Your organization pays for usage at cost — no seats, no subscriptions. The first $20 each month is included."}
                 </Text>
               </Flex>
               {subscribed && (

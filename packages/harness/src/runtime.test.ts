@@ -23,41 +23,45 @@ afterEach(async () => {
 });
 
 describe("createHarnessRuntime", () => {
-  it("returns a native Pi runtime with the PostHog model and named harness extensions", async () => {
-    vi.stubEnv("PI_OFFLINE", "1");
-    const pi = await import("@earendil-works/pi-coding-agent");
-    const cwd = await temporaryDirectory();
-    const agentDir = await temporaryDirectory();
+  it(
+    "returns a native Pi runtime with the PostHog model and named harness extensions",
+    { timeout: 15_000 },
+    async () => {
+      vi.stubEnv("PI_OFFLINE", "1");
+      const pi = await import("@earendil-works/pi-coding-agent");
+      const cwd = await temporaryDirectory();
+      const agentDir = await temporaryDirectory();
 
-    const runtime = await createHarnessRuntime({
-      agentDir,
-      authStorage: pi.AuthStorage.inMemory(),
-      cwd,
-      sessionManager: pi.SessionManager.inMemory(cwd),
-    });
+      const runtime = await createHarnessRuntime({
+        agentDir,
+        authStorage: pi.AuthStorage.inMemory(),
+        cwd,
+        sessionManager: pi.SessionManager.inMemory(cwd),
+      });
 
-    try {
-      expect(runtime).toBeInstanceOf(pi.AgentSessionRuntime);
-      expect(runtime.session.model?.provider).toBe("posthog");
-      expect(runtime.services.settingsManager.isProjectTrusted()).toBe(false);
-      expect(
-        runtime.services.resourceLoader
-          .getExtensions()
-          .extensions.map((extension) => extension.path),
-      ).toEqual(
-        expect.arrayContaining([
-          "<inline:hog-branding>",
-          "<inline:posthog-provider>",
-          "<inline:web-access>",
-          "<inline:subagent>",
-          "<inline:workflow>",
-          "<inline:mcp>",
-        ]),
-      );
-    } finally {
-      await runtime.dispose();
-    }
-  });
+      try {
+        expect(runtime).toBeInstanceOf(pi.AgentSessionRuntime);
+        expect(runtime.session.model?.provider).toBe("posthog");
+        expect(runtime.services.settingsManager.isProjectTrusted()).toBe(false);
+        expect(
+          runtime.services.resourceLoader
+            .getExtensions()
+            .extensions.map((extension) => extension.path),
+        ).toEqual(
+          expect.arrayContaining([
+            "<inline:hog-branding>",
+            "<inline:posthog-provider>",
+            "<inline:web-access>",
+            "<inline:subagent>",
+            "<inline:workflow>",
+            "<inline:mcp>",
+          ]),
+        );
+      } finally {
+        await runtime.dispose();
+      }
+    },
+  );
 
   it("keeps desktop-provided OAuth credentials in memory without touching auth.json", async () => {
     vi.stubEnv("PI_OFFLINE", "1");

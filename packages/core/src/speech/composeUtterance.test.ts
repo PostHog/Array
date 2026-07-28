@@ -17,7 +17,7 @@ describe("composeUtterance", () => {
   it("prefixes the task name", () => {
     expect(
       composeUtterance({ text: "moving on to search", taskTitle: "fix login" }),
-    ).toBe("PostHog Code task 'fix login' — moving on to search");
+    ).toBe("PostHog task 'fix login' — moving on to search");
   });
 
   it("addresses the user by name for agent needs-user lines", () => {
@@ -30,7 +30,7 @@ describe("composeUtterance", () => {
         firstName: "Jon",
       }),
     ).toBe(
-      "PostHog Code task 'search index' — Hey Jon, I need your call on which branch",
+      "PostHog task 'search index' — Hey Jon, I need your call on which branch",
     );
   });
 
@@ -42,7 +42,7 @@ describe("composeUtterance", () => {
         needsUser: true,
         firstName: "Jon",
       }),
-    ).toBe("PostHog Code task 'deploy' — needs your input");
+    ).toBe("PostHog task 'deploy' — needs your input");
   });
 
   it("normalizes an agent-added greeting into the real name", () => {
@@ -54,7 +54,7 @@ describe("composeUtterance", () => {
         addressByName: true,
         firstName: "Jon",
       }),
-    ).toBe("PostHog Code task 'deploy' — Hey Jon, blocked on the API key");
+    ).toBe("PostHog task 'deploy' — Hey Jon, blocked on the API key");
   });
 
   it("does not add a name when it is unknown", () => {
@@ -64,35 +64,35 @@ describe("composeUtterance", () => {
         taskTitle: "deploy",
         needsUser: true,
       }),
-    ).toBe("PostHog Code task 'deploy' — I need your input");
+    ).toBe("PostHog task 'deploy' — I need your input");
   });
 
   it("does not double-prefix when the agent already added one", () => {
     expect(
       composeUtterance({
-        text: "PostHog Code task 'x' — already prefixed",
+        text: "PostHog task 'x' — already prefixed",
         taskTitle: "y",
       }),
-    ).toBe("PostHog Code task 'x' — already prefixed");
+    ).toBe("PostHog task 'x' — already prefixed");
   });
 
   it("does not double-prefix even when addressing by name", () => {
     expect(
       composeUtterance({
-        text: "PostHog Code task 'x' — already prefixed",
+        text: "PostHog task 'x' — already prefixed",
         taskTitle: "y",
         needsUser: true,
         addressByName: true,
         firstName: "Jon",
       }),
-    ).toBe("PostHog Code task 'x' — already prefixed");
+    ).toBe("PostHog task 'x' — already prefixed");
   });
 
   it("truncates a long task title", () => {
     const long = "a".repeat(60);
     const out = composeUtterance({ text: "hi", taskTitle: long });
     expect(out).toContain("…");
-    expect(out.length).toBeLessThan(`PostHog Code task '${long}' — hi`.length);
+    expect(out.length).toBeLessThan(`PostHog task '${long}' — hi`.length);
   });
 
   it("falls back to the body when there is no task title", () => {

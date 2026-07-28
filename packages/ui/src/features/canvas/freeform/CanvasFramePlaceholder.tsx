@@ -2,8 +2,7 @@ import type {
   CanvasAnalyticsConfig,
   CanvasNavIntent,
 } from "@posthog/core/canvas/freeformSchemas";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useCanvasRefreshNonce } from "../stores/canvasRefreshStore";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useCanvasFrameStore } from "./canvasFrameStore";
 
 // Stands in for the canvas inside the route tree. It renders nothing visible —
@@ -29,7 +28,6 @@ export function CanvasFramePlaceholder({
   onNavigate?: (intent: CanvasNavIntent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const refreshKey = useCanvasRefreshNonce(`dashboard:${dashboardId}`);
 
   const register = useCanvasFrameStore((s) => s.register);
   const setRect = useCanvasFrameStore((s) => s.setRect);
@@ -40,24 +38,21 @@ export function CanvasFramePlaceholder({
     () => ({
       code,
       analytics,
-      refreshKey,
       onDataRequest,
       onError,
       onRendered,
       onNavigate,
     }),
-    [
-      code,
-      analytics,
-      refreshKey,
-      onDataRequest,
-      onError,
-      onRendered,
-      onNavigate,
-    ],
+    [code, analytics, onDataRequest, onError, onRendered, onNavigate],
   );
 
-  useEffect(() => {
+  // Layout effect (not passive) and declared first, so the slot exists before the
+  // rect-measure effect below runs its initial synchronous measure. Otherwise the
+  // slot is created too late (setRect no-ops with no slot) and the frame only
+  // becomes visible once a later scroll/resize re-measures — which never happens
+  // on a settled layout, so a canvas opened while the app has been running a while
+  // (e.g. via a deep link) stays hidden until a hard refresh.
+  useLayoutEffect(() => {
     register(dashboardId, inputs);
   }, [dashboardId, inputs, register]);
 

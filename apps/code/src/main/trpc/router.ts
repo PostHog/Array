@@ -24,7 +24,6 @@ import { foldersRouter } from "@posthog/host-router/routers/folders.router";
 import { fsRouter } from "@posthog/host-router/routers/fs.router";
 import { gitRouter } from "@posthog/host-router/routers/git.router";
 import { githubIntegrationRouter } from "@posthog/host-router/routers/github-integration.router";
-import { githubReleasesRouter } from "@posthog/host-router/routers/github-releases.router";
 import { handoffRouter } from "@posthog/host-router/routers/handoff.router";
 import { integrationRouter } from "@posthog/host-router/routers/integration.router";
 import { linearIntegrationRouter } from "@posthog/host-router/routers/linear-integration.router";
@@ -41,6 +40,7 @@ import { osRouter } from "@posthog/host-router/routers/os.router";
 import { piSessionRouter } from "@posthog/host-router/routers/pi-session.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
+import { releaseFeedRouter } from "@posthog/host-router/routers/release-feed.router";
 import { secureStoreRouter } from "@posthog/host-router/routers/secure-store.router";
 import { shellRouter } from "@posthog/host-router/routers/shell.router";
 import { skillsRouter } from "@posthog/host-router/routers/skills.router";
@@ -86,7 +86,7 @@ export const trpcRouter = router({
   fs: fsRouter,
   git: gitRouter,
   githubIntegration: githubIntegrationRouter,
-  githubReleases: githubReleasesRouter,
+  releaseFeed: releaseFeedRouter,
   handoff: handoffRouter,
   integration: integrationRouter,
   linearIntegration: linearIntegrationRouter,

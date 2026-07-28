@@ -25,6 +25,9 @@ interface ResizableSidebarProps {
   isResizing: boolean;
   setIsResizing: (isResizing: boolean) => void;
   side: "left" | "right";
+  // Floor for drag-resize. Defaults to SIDEBAR_MIN_WIDTH; callers whose chrome
+  // needs more room can raise it.
+  minWidth?: number;
   // Enables drag-to-close/reopen. Without it, dragging just clamps at min.
   setOpen?: (open: boolean) => void;
   // While closed, the panel can "peek" — slide out over the content as a
@@ -45,6 +48,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   isResizing,
   setIsResizing,
   side,
+  minWidth = SIDEBAR_MIN_WIDTH,
   setOpen,
   peek = false,
   onPeekEnter,
@@ -101,7 +105,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
       const pointer =
         side === "left" ? e.clientX : window.innerWidth - e.clientX;
       const maxWidth = window.innerWidth * 0.5;
-      const clamped = Math.max(SIDEBAR_MIN_WIDTH, Math.min(maxWidth, pointer));
+      const clamped = Math.max(minWidth, Math.min(maxWidth, pointer));
 
       if (open) {
         if (pointer < DRAG_COLLAPSE_AT && setOpen) {
@@ -166,6 +170,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
     isResizing,
     setIsResizing,
     side,
+    minWidth,
     open,
     peek,
     width,

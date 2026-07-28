@@ -128,6 +128,12 @@ export interface ITaskCreationHost {
   ): Promise<string[]>;
   setProvisioningActive(taskId: string): void;
   clearProvisioning(taskId: string): void;
+  confirmEnvironmentSetup(args: {
+    repoPath: string;
+    environmentId: string;
+    name: string;
+    script: string;
+  }): Promise<boolean>;
   dispatchSetupAction(args: SetupActionDispatch): void;
   track(event: string, props?: Record<string, unknown>): void;
   importClaudeCliSession(args: {

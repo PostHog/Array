@@ -239,7 +239,7 @@ export interface CodexAppServerAgentOptions {
 
 /**
  * ACP Agent backed by the native Codex `app-server` JSON-RPC protocol,
- * presenting the ACP surface PostHog Code expects.
+ * presenting the ACP surface PostHog expects.
  */
 export class CodexAppServerAgent extends BaseAcpAgent {
   readonly adapterName = "codex";
@@ -346,7 +346,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     await this.rpc.request(APP_SERVER_METHODS.INITIALIZE, {
       clientInfo: {
         name: "posthog-code",
-        title: "PostHog Code",
+        title: "PostHog",
         version: "0.1.0",
       },
       // Opt into codex's experimental API so experimental turn/start fields are honored.

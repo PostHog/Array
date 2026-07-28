@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Point PostHog Code's analytics + feature-flag client at your LOCAL PostHog
+ * Point the desktop app's analytics + feature-flag client at your LOCAL PostHog
  * (localhost:8010) for dev. Code reads feature flags through posthog-js, which
  * is configured by the `VITE_POSTHOG_*` vars in `.env` — by default these point
  * at PostHog's internal analytics instance, so flags you sync locally (e.g.
@@ -104,7 +104,7 @@ env = upsertEnv(env, "VITE_POSTHOG_UI_HOST", host);
 env = upsertEnv(env, "VITE_POSTHOG_API_KEY", projectKey);
 writeFileSync(envPath, env);
 
-console.log(`✓ Pointed PostHog Code's flags/analytics at local PostHog.`);
+console.log(`✓ Pointed the desktop app's flags/analytics at local PostHog.`);
 console.log(`  VITE_POSTHOG_API_HOST=${host}`);
 console.log(`  VITE_POSTHOG_UI_HOST=${host}`);
 console.log(`  VITE_POSTHOG_API_KEY=${projectKey.slice(0, 8)}… (project key)`);

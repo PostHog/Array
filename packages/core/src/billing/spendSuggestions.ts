@@ -14,7 +14,7 @@ export function deriveSpendSuggestions(data: SpendAnalysisResponse): string[] {
     summary.scoped_cost_usd / Math.max(summary.total_cost_usd, 0.0001);
   if (codeShare > 0.7) {
     suggestions.push(
-      `PostHog Code is ${Math.round(codeShare * 100)}% of your spend. Other AI products (background agents, posthog_ai) are minor here.`,
+      `This app is ${Math.round(codeShare * 100)}% of your spend. Other AI products (background agents, posthog_ai) are minor here.`,
     );
   }
 
@@ -23,7 +23,7 @@ export function deriveSpendSuggestions(data: SpendAnalysisResponse): string[] {
     const top = toolItems[0];
     if (top.share_of_scoped > 0.35 && top.tool) {
       suggestions.push(
-        `${top.tool} drives ${Math.round(top.share_of_scoped * 100)}% of your PostHog Code spend, averaging ${formatTokens(top.avg_input_tokens)} input tokens per call.`,
+        `${top.tool} drives ${Math.round(top.share_of_scoped * 100)}% of your spend in this app, averaging ${formatTokens(top.avg_input_tokens)} input tokens per call.`,
       );
     }
     const noToolRow = toolItems.find((r) => r.tool === null);
