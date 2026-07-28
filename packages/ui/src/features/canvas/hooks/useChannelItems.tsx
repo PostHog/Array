@@ -18,7 +18,6 @@ import {
   PERSONAL_CHANNEL_NAME,
   useBackendChannel,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
-import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useNavigate } from "@tanstack/react-router";
@@ -69,12 +68,10 @@ export function useChannelItems(channelId: string): {
   });
 
   const meUuid = currentUser?.uuid ?? null;
-  const meName = currentUser ? userDisplayName(currentUser) : null;
-  const me = useMemo<ChannelItemOwner>(
-    () => ({ uuid: meUuid, name: meName }),
-    [meUuid, meName],
-  );
-  const viewerKnown = meUuid != null || meName != null;
+  const me = useMemo<ChannelItemOwner>(() => ({ uuid: meUuid }), [meUuid]);
+  // Only a uuid establishes identity — ownership compares uuids, so a viewer
+  // resolved without one can't be matched against anything and reads as unknown.
+  const viewerKnown = meUuid != null;
 
   const items = useMemo<ChannelItemModel[]>(
     () =>

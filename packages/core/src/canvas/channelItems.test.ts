@@ -121,7 +121,7 @@ describe("buildChannelItems", () => {
         task({ id: "mine-task", created_by: ME }),
         task({ id: "their-task", created_by: OTHER }),
       ],
-      ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
+      ownedBy: { uuid: ME.uuid },
     });
     expect(items.map((i) => i.id).sort()).toEqual(["mine", "mine-task"]);
   });
@@ -129,7 +129,7 @@ describe("buildChannelItems", () => {
   it("never claims ownership from a matching display name", () => {
     const items = build({
       dashboards: [canvas({ id: "name-twin", createdBy: "Ada Lovelace" })],
-      ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
+      ownedBy: { uuid: ME.uuid },
     });
     expect(items).toEqual([]);
   });
@@ -138,7 +138,7 @@ describe("buildChannelItems", () => {
     const items = build({
       dashboards: [canvas({ id: "orphan", createdBy: undefined })],
       feedTasks: [task({ id: "orphan-task", created_by: null })],
-      ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
+      ownedBy: { uuid: ME.uuid },
     });
     expect(items).toEqual([]);
   });
@@ -162,7 +162,7 @@ function model(over: Partial<ChannelItemModel> = {}): ChannelItemModel {
 }
 
 describe("filterChannelItems", () => {
-  const me = { uuid: ME.uuid, name: "Ada Lovelace" };
+  const me = { uuid: ME.uuid };
 
   it("matches titles case-insensitively", () => {
     const items = [model({ title: "Ship IT" }), model({ title: "Other" })];
@@ -192,6 +192,24 @@ describe("filterChannelItems", () => {
     });
     expect(result.map((i) => i.id)).toEqual(expected);
   });
+
+  // The backend returns `created_by: null` once a creator is deleted, so an
+  // item with no uuid is "unknown", not "someone else".
+  it.each(["me", "others"] as const)(
+    "keeps a creator-less item out of createdBy=%s",
+    (createdBy) => {
+      const items = [
+        model({ id: "orphan", authorUser: null, authorUuid: null }),
+      ];
+      const result = filterChannelItems(items, {
+        query: "",
+        createdBy,
+        status: null,
+        me,
+      });
+      expect(result).toEqual([]);
+    },
+  );
 
   it("filters by run status, including not_started", () => {
     const items = [

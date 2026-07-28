@@ -16,7 +16,7 @@ function dashboardRow(
   updatedAt: number,
 ): FsEntryBase & {
   meta: Record<string, unknown>;
-  created_by?: { uuid: string };
+  created_by?: { uuid: string } | null;
 } {
   return {
     id,
@@ -78,6 +78,20 @@ describe("DashboardsService.list", () => {
     );
 
     expect(result.createdByUuid).toBe("creator-uuid");
+  });
+
+  // The backend sends `created_by: null` once the creator is deleted. Leaving
+  // the uuid undefined is what makes such a row fail closed out of #me.
+  it("leaves the creator uuid undefined when the row has no creator", async () => {
+    const row = dashboardRow("a", "Canvas", "chan-1", 100);
+    row.created_by = null;
+    const { fs } = fakeFs([row]);
+
+    const [result] = await new DashboardsService(fs, {} as never).list(
+      "chan-1",
+    );
+
+    expect(result.createdByUuid).toBeUndefined();
   });
 });
 

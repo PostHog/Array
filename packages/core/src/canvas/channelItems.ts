@@ -21,7 +21,6 @@ export interface ChannelItemModel {
 
 export interface ChannelItemOwner {
   uuid: string | null;
-  name: string | null;
 }
 
 // Ownership is decided solely by the stable creator uuid (canvases via
@@ -112,6 +111,10 @@ export function filterChannelItems(
       return false;
     }
     if (createdBy !== "anyone") {
+      // An item with no creator uuid (e.g. the backend returns `created_by:
+      // null` once a creator is deleted) belongs to neither bucket: it isn't
+      // mine, but "others" means a *known* other person, not "unknown".
+      if (item.authorUuid == null) return false;
       const mine = isOwnedBy(item, me);
       if (createdBy === "me" ? !mine : mine) return false;
     }
