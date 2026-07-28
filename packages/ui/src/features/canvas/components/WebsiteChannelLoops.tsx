@@ -139,7 +139,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Text>
               <Flex direction="column" gap="2">
                 {attachedLoops.map((loop) => (
-                  <LoopRow key={loop.id} loop={loop} />
+                  <LoopRow key={loop.id} loop={loop} channelId={channelId} />
                 ))}
               </Flex>
             </Flex>
