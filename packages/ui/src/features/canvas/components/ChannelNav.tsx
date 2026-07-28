@@ -142,35 +142,30 @@ export function ChannelNav() {
         open={!isActivity && activityOpen}
         onOpenChange={(open) => setActivityOpen(!isActivity && open)}
       >
-        <Tooltip content="Activity" side="bottom">
-          <PopoverTrigger
-            openOnHover
-            delay={300}
-            closeDelay={100}
-            render={
-              <NavButton
-                icon={
-                  <BellIcon
-                    size={16}
-                    weight={isActivity ? "fill" : "regular"}
-                  />
-                }
-                label="Activity"
-                isActive={isActivity}
-                onClick={() => {
-                  setActivityOpen(false);
-                  withTrack("activity", navigateToActivity)();
-                }}
-                badge={
-                  <CountBadge
-                    count={unseenActivity}
-                    className={ICON_BADGE_CLASS}
-                  />
-                }
-              />
-            }
-          />
-        </Tooltip>
+        <PopoverTrigger
+          openOnHover
+          delay={300}
+          closeDelay={100}
+          render={
+            <NavButton
+              icon={
+                <BellIcon size={16} weight={isActivity ? "fill" : "regular"} />
+              }
+              label="Activity"
+              isActive={isActivity}
+              onClick={() => {
+                setActivityOpen(false);
+                withTrack("activity", navigateToActivity)();
+              }}
+              badge={
+                <CountBadge
+                  count={unseenActivity}
+                  className={ICON_BADGE_CLASS}
+                />
+              }
+            />
+          }
+        />
         {!isActivity && activityOpen && (
           <ActivityHoverCard
             side="bottom"
