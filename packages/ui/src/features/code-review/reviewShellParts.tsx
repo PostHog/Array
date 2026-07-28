@@ -301,6 +301,38 @@ export function isFileViewed(
   return storedSig === currentSig;
 }
 
+export function filterReviewItemsByViewedState(
+  items: ReviewListItem[],
+  currentSignatures: ReadonlyMap<string, string>,
+  viewedRecord: Readonly<Record<string, string>>,
+): ReviewListItem[] {
+  const filteredItems: ReviewListItem[] = [];
+  let pendingSectionItems: ReviewListItem[] = [];
+
+  for (const item of items) {
+    if (!item.filePaths) {
+      pendingSectionItems = [item];
+      continue;
+    }
+
+    const signature = item.scrollKey
+      ? currentSignatures.get(item.scrollKey)
+      : undefined;
+    if (
+      signature !== undefined &&
+      item.scrollKey !== undefined &&
+      isFileViewed(viewedRecord[item.scrollKey], signature)
+    ) {
+      continue;
+    }
+
+    filteredItems.push(...pendingSectionItems, item);
+    pendingSectionItems = [];
+  }
+
+  return filteredItems;
+}
+
 function ViewedCheckbox({ viewedKey }: { viewedKey: string }) {
   const ctx = useReviewViewedContext();
   if (!ctx) return null;

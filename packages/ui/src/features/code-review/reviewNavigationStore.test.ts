@@ -9,6 +9,7 @@ describe("reviewNavigationStore", () => {
       reviewModes: {},
       selectedPrUrls: {},
       commentFileFilters: {},
+      hideViewedFiles: {},
     });
   });
 
@@ -26,6 +27,20 @@ describe("reviewNavigationStore", () => {
     expect(
       useReviewNavigationStore.getState().selectedPrUrls["task-1"],
     ).toBeUndefined();
+  });
+
+  it("stores and clears the viewed-file filter per task", () => {
+    const store = useReviewNavigationStore.getState();
+    store.setHideViewedFiles("task-1", true);
+
+    expect(useReviewNavigationStore.getState().hideViewedFiles["task-1"]).toBe(
+      true,
+    );
+
+    store.clearTask("task-1");
+    expect(useReviewNavigationStore.getState().hideViewedFiles["task-1"]).toBe(
+      false,
+    );
   });
 
   it("clears the comment filter when navigating to a file", () => {

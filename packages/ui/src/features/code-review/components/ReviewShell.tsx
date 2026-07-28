@@ -29,6 +29,7 @@ import { useReviewNavigationStore } from "../reviewNavigationStore";
 import type { ReviewShellProps } from "../reviewShellParts";
 import {
   buildItemIndex,
+  filterReviewItemsByViewedState,
   findActiveScrollKey,
   findRenderedScrollAnchor,
   isFileViewed,
@@ -155,6 +156,12 @@ export function ReviewShell({
   const setCommentFileFilter = useReviewNavigationStore(
     (state) => state.setCommentFileFilter,
   );
+  const hideViewedFiles = useReviewNavigationStore(
+    (state) => state.hideViewedFiles[taskId] ?? false,
+  );
+  const setHideViewedFiles = useReviewNavigationStore(
+    (state) => state.setHideViewedFiles,
+  );
   const {
     activeFilter: activeCommentFilter,
     visibleItems,
@@ -170,9 +177,21 @@ export function ReviewShell({
       }),
     [commentFilter, commentedFilePaths, items, unresolvedCommentedFilePaths],
   );
+  const filteredItems = useMemo(() => {
+    if (!hideViewedFiles) return visibleItems;
+    return filterReviewItemsByViewedState(
+      visibleItems,
+      currentSignatures,
+      viewedRecord,
+    );
+  }, [currentSignatures, hideViewedFiles, viewedRecord, visibleItems]);
+  const filteredFileCount = useMemo(
+    () => filteredItems.filter((item) => item.filePaths).length,
+    [filteredItems],
+  );
   const visibleItemIndexByFilePath = useMemo(
-    () => buildItemIndex(visibleItems),
-    [visibleItems],
+    () => buildItemIndex(filteredItems),
+    [filteredItems],
   );
 
   const workerFactory = useCallback(
@@ -348,11 +367,13 @@ export function ReviewShell({
         <Spinner size="2" />
       </Flex>
     );
-  } else if (isEmpty || visibleItems.length === 0) {
+  } else if (isEmpty || filteredItems.length === 0) {
     reviewContent = (
       <Flex align="center" justify="center" className="min-h-0 flex-1">
         <Text color="gray" className="text-sm">
-          {getEmptyReviewMessage(activeCommentFilter)}
+          {hideViewedFiles
+            ? "No unviewed file changes"
+            : getEmptyReviewMessage(activeCommentFilter)}
         </Text>
       </Flex>
     );
@@ -366,7 +387,7 @@ export function ReviewShell({
         shift={false}
         style={{ scrollbarGutter: "stable" }}
         onScroll={handleScroll}
-        data={visibleItems}
+        data={filteredItems}
       >
         {renderItem}
       </VList>
@@ -412,6 +433,11 @@ export function ReviewShell({
               commentedFilePaths && unresolvedCommentedFilePaths
                 ? (filter) => setCommentFileFilter(taskId, filter)
                 : undefined
+            }
+            hideViewedFiles={hideViewedFiles}
+            filteredFileCount={filteredFileCount}
+            onHideViewedFilesChange={(hideViewed) =>
+              setHideViewedFiles(taskId, hideViewed)
             }
             linesAdded={linesAdded}
             linesRemoved={linesRemoved}

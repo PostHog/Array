@@ -23,6 +23,7 @@ import {
 import {
   DeferredDiffPlaceholder,
   DiffFileHeader,
+  filterReviewItemsByViewedState,
   findActiveScrollKey,
   findRenderedScrollAnchor,
 } from "./reviewShellParts";
@@ -169,6 +170,36 @@ describe("review scroll anchors", () => {
 });
 
 describe("commented file filtering", () => {
+  it("keeps only unviewed files and their section headers", () => {
+    const items: ReviewListItem[] = [
+      { key: "section:staged", node: <span>Staged</span> },
+      {
+        key: "staged:a.ts",
+        scrollKey: "staged:a.ts",
+        filePaths: ["a.ts"],
+        node: <span>A</span>,
+      },
+      { key: "section:changes", node: <span>Changes</span> },
+      {
+        key: "unstaged:b.ts",
+        scrollKey: "unstaged:b.ts",
+        filePaths: ["b.ts"],
+        node: <span>B</span>,
+      },
+    ];
+
+    expect(
+      filterReviewItemsByViewedState(
+        items,
+        new Map([
+          ["staged:a.ts", "signature-a"],
+          ["unstaged:b.ts", "signature-b"],
+        ]),
+        { "staged:a.ts": "signature-a" },
+      ).map((item) => item.key),
+    ).toEqual(["section:changes", "unstaged:b.ts"]);
+  });
+
   it("collects paths for all and unresolved comment threads", () => {
     const commentedPaths = getCommentedFilePaths(
       new Map([
