@@ -16,7 +16,7 @@ export interface UpdateDownloadProgress {
 export interface IUpdater {
   isSupported(): boolean;
   check(): void;
-  download(): void;
+  download(): Promise<void>;
   quitAndInstall(): void;
   onCheckStart(handler: () => void): () => void;
   onUpdateAvailable(handler: (info: UpdateAvailableInfo) => void): () => void;

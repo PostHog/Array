@@ -61,8 +61,13 @@ export class ElectronUpdater implements IUpdater {
     void autoUpdater.checkForUpdates().catch(() => undefined);
   }
 
-  public download(): void {
-    void autoUpdater.downloadUpdate().catch(() => undefined);
+  // Failures surface through the "error" event; the returned promise only
+  // signals settlement so the service can serialize downloads.
+  public download(): Promise<void> {
+    return autoUpdater.downloadUpdate().then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   public quitAndInstall(): void {

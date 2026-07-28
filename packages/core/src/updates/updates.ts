@@ -96,6 +96,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
   private downloadProgress: UpdateDownloadProgress | null = null;
   private autoDownloadEnabled = false;
   private lastProgressEmit = 0;
+  private activeDownload: Promise<void> | null = null;
 
   get hasUpdateReady(): boolean {
     return this.isUpdateStaged();
@@ -149,8 +150,16 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
     this.log.info("Downloading update...", {
       version: this.availableInfo?.version,
     });
-    this.updater.download();
+    this.queueDownload();
     this.emitStatus(this.downloadingStatusPayload());
+  }
+
+  // electron-updater silently returns the in-flight promise while a previous
+  // download is still fetching or staging, so a re-download must wait its turn.
+  private queueDownload(): void {
+    const start = () => Promise.resolve(this.updater.download());
+    this.activeDownload =
+      this.activeDownload === null ? start() : this.activeDownload.then(start);
   }
 
   getStatus(): UpdatesStatusPayload {
@@ -443,7 +452,7 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       this.log.info("Update available, auto-downloading...", {
         version: info.version,
       });
-      this.updater.download();
+      this.queueDownload();
       this.emitStatus(this.downloadingStatusPayload());
       return;
     }

@@ -53,7 +53,7 @@ const {
           return () => {};
         },
       ),
-      download: vi.fn(),
+      download: vi.fn(() => Promise.resolve()),
       onNoUpdate: vi.fn((h: () => void) => {
         updaterHandlers.noUpdate = h;
         return () => {};
@@ -1340,6 +1340,43 @@ describe("UpdatesService", () => {
         installing: false,
         version: "v2.0.0",
       });
+    });
+
+    it("queues a re-download behind an in-flight download", async () => {
+      await initializeService(service);
+
+      let resolveFirstDownload = () => {};
+      mockUpdater.download.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstDownload = resolve;
+          }),
+      );
+
+      updaterHandlers.updateAvailable?.({
+        version: "v2.0.0",
+        releaseNotes: null,
+      });
+      service.requestDownload();
+      expect(mockUpdater.download).toHaveBeenCalledTimes(1);
+
+      // electron-updater dispatches update-downloaded while its download
+      // promise is still pending on the native staging.
+      updaterHandlers.updateDownloaded?.("v2.0.0");
+      service.setAutoDownloadEnabled(true);
+
+      service.checkForUpdates("periodic");
+      updaterHandlers.updateAvailable?.({
+        version: "v3.0.0",
+        releaseNotes: null,
+      });
+
+      expect(mockUpdater.download).toHaveBeenCalledTimes(1);
+
+      resolveFirstDownload();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockUpdater.download).toHaveBeenCalledTimes(2);
     });
 
     it("re-stages an older build when the feed rolls back below the staged version", async () => {
