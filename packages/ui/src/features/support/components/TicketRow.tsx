@@ -1,4 +1,5 @@
 import type { Ticket } from "@posthog/api-client/posthog-client";
+import type { AttentionState } from "@posthog/core/support/attention";
 import { Badge } from "@posthog/quill";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
 import { Flex, Text } from "@radix-ui/themes";
@@ -8,14 +9,14 @@ import {
   hasPriority,
   priorityLabel,
   requesterLabel,
-  slaState,
   statusLabel,
   ticketPreview,
 } from "../ticketPresentation";
+import { AttentionChip } from "./AttentionChip";
 
 interface TicketRowProps {
   ticket: Ticket;
-  now: Date;
+  state: AttentionState;
   onClick: () => void;
 }
 
@@ -30,9 +31,8 @@ const STATUS_BADGE_VARIANT: Record<
   resolved: "completed",
 };
 
-export function TicketRow({ ticket, now, onClick }: TicketRowProps) {
+export function TicketRow({ ticket, state, onClick }: TicketRowProps) {
   const assignee = assigneeDisplay(ticket.assignee);
-  const sla = slaState(ticket.sla_due_at, now);
   const preview = ticketPreview(ticket);
 
   return (
@@ -56,6 +56,8 @@ export function TicketRow({ ticket, now, onClick }: TicketRowProps) {
         />
       </Flex>
       <Flex align="center" gap="2" mt="1" className="min-w-0">
+        {/* The reason chip explains this row's rank; SLA urgency lives here. */}
+        <AttentionChip state={state} ticket={ticket} />
         <Badge variant={STATUS_BADGE_VARIANT[ticket.status ?? "new"]}>
           {statusLabel(ticket.status)}
         </Badge>
@@ -63,14 +65,6 @@ export function TicketRow({ ticket, now, onClick }: TicketRowProps) {
         <Badge variant={hasPriority(ticket.priority) ? "default" : "warning"}>
           {priorityLabel(ticket.priority)}
         </Badge>
-        {sla.kind === "breached" && (
-          <Badge variant="destructive">SLA breached</Badge>
-        )}
-        {sla.kind === "due" && (
-          <Badge variant="warning">
-            SLA <RelativeTimestamp timestamp={sla.dueAt} />
-          </Badge>
-        )}
         <Text className="text-(--gray-9) text-[11px]">
           {channelLabel(ticket.channel_source)}
         </Text>

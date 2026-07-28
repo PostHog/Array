@@ -207,6 +207,16 @@ a flag defined on the PostHog side.
    dogfoods; the flag gates the whole surface.
 4. **No checklist templates for now.** Freeform entry only; templates move to
    [Deferred](#deferred).
+5. **Ticket↔task linkage rides with PR 4a** (2026-07-28). `Task.origin_product`
+   already has a `support_queue` value but no ticket reference; add a
+   `Task.ticket` field mirroring the `signal_report` precedent in the same
+   posthog/posthog PR as the checklist model. Until it lands, the queue ships
+   with three of the four populations — `agent-handed-back` is typed and
+   ranked but never produced.
+6. **Placement: top-level sidebar destination** at `/code/support` (Loops
+   pattern: `CUSTOMIZABLE_NAV_ITEMS` entry, flag-gated, Alpha badge). Flag
+   creation in the PostHog project deferred until closer to dogfood; dev
+   builds default the flag on (`import.meta.env.DEV`).
 
 ### Checklist model (the posthog/posthog piece)
 

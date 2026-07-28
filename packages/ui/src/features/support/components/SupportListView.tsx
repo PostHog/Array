@@ -7,6 +7,7 @@ import {
   EmptyTitle,
   Spinner,
 } from "@posthog/quill";
+import { rankQueue } from "@posthog/core/support/attention";
 import { navigateToSupportTicketDetail } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
@@ -14,16 +15,20 @@ import { useSupportTickets } from "../hooks/useSupportTickets";
 import { TicketRow } from "./TicketRow";
 
 /**
- * PR 1 read path: newest-activity-first ticket list. Ranking (the attention
- * queue) replaces this ordering in PR 2 — keep this view dumb.
+ * The attention queue: tickets ranked by what needs attention now, every row
+ * carrying the reason for its rank. Ranking is pure core logic
+ * (@posthog/core/support/attention); this view just fetches and renders.
  */
 export function SupportListView() {
   const { data, isPending, isError } = useSupportTickets({
     orderBy: "-updated_at",
   });
-  const tickets = data?.results ?? [];
-  // One clock per render keeps SLA chips consistent across rows.
-  const now = useMemo(() => new Date(), []);
+  // One clock per data refresh keeps classification consistent across rows
+  // and the order stable between renders.
+  const ranked = useMemo(
+    () => rankQueue(data?.results ?? [], new Date()),
+    [data],
+  );
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -31,7 +36,7 @@ export function SupportListView() {
         <Heading size="4">Support</Heading>
         {data && (
           <Text className="text-(--gray-10) text-[12px]">
-            {data.count} tickets
+            {ranked.length} open
           </Text>
         )}
       </Flex>
@@ -60,7 +65,7 @@ export function SupportListView() {
             </EmptyHeader>
           </Empty>
         )}
-        {!isPending && !isError && tickets.length === 0 && (
+        {!isPending && !isError && ranked.length === 0 && (
           <Empty className="h-full border-0">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -73,11 +78,11 @@ export function SupportListView() {
             </EmptyHeader>
           </Empty>
         )}
-        {tickets.map((ticket) => (
+        {ranked.map(({ ticket, state }) => (
           <TicketRow
             key={ticket.id}
             ticket={ticket}
-            now={now}
+            state={state}
             onClick={() => navigateToSupportTicketDetail(ticket.id)}
           />
         ))}

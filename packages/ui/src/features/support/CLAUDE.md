@@ -10,7 +10,9 @@ Do not confuse this with:
 
 ## Product model
 
-The unit of work is an **attention decision**, not a ticket: resume an existing ticket (customer replied, agent handed back) vs pick something new. PR 1 is the dumb read path; the ranked queue (PR 2) and the 30-minute re-prioritisation loop (PR 3) build on it. Keep this file's Backend Contracts section current as those land.
+The unit of work is an **attention decision**, not a ticket: resume an existing ticket (customer replied, agent handed back) vs pick something new. The queue is ranked by `rankQueue` in `@posthog/core/support/attention` — pure, deterministic for a fixed `now`, unit-tested per state. Every row renders an `AttentionChip` explaining its rank; an unexplained ranking gets ignored.
+
+`agent-handed-back` is typed and ranked but never produced yet: it needs the `Task.ticket` linkage that ships with the server-side checklist PR (plan decision 5). The 30-minute re-prioritisation loop is PR 3. Keep this file's Backend Contracts section current as those land.
 
 ## Information architecture
 
