@@ -1,11 +1,11 @@
 import {
   ArrowSquareOutIcon,
-  ClipboardTextIcon,
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
 import {
-  parseRunPlans,
+  OUTPUT_ARTIFACT_TYPES,
+  parseRunArtifacts,
   type RunArtifact,
 } from "@posthog/core/canvas/runArtifactSchemas";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
@@ -28,8 +28,10 @@ import { useReviewNavigationStore } from "@posthog/ui/features/code-review/revie
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
+import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { toast } from "@posthog/ui/primitives/toast";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
+import { formatFileSize } from "@posthog/ui/utils/formatFileSize";
 import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -39,23 +41,20 @@ type ArtifactRow =
   | { kind: "pr"; key: string; url: string }
   | { kind: "canvas"; key: string; name: string; url: string | null }
   | {
-      kind: "plan";
+      kind: "file";
       key: string;
       name: string;
       storagePath: string | null;
       runId: string | null;
+      size: number | undefined;
     }
   | { kind: "slack"; key: string; url: string };
 
-function readRunPlans(run: TaskRun): RunArtifact[] {
-  return parseRunPlans((run as { artifacts?: unknown }).artifacts);
-}
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-function planTitle(name: string | undefined): string {
-  if (!name || UUID_RE.test(name)) return "Plan";
-  return name;
+function readRunOutputs(run: TaskRun): RunArtifact[] {
+  return parseRunArtifacts(
+    (run as { artifacts?: unknown }).artifacts,
+    OUTPUT_ARTIFACT_TYPES,
+  );
 }
 
 function buildRows(
@@ -65,7 +64,6 @@ function buildRows(
 ): ArtifactRow[] {
   const rows: ArtifactRow[] = [];
   const seenPrUrls = new Set<string>();
-  const seenPlanKeys = new Set<string>();
 
   const addPr = (url: string, key: string) => {
     if (seenPrUrls.has(url)) return;
@@ -89,23 +87,34 @@ function buildRows(
 
   const allRuns =
     runs.length > 0 ? runs : task.latest_run ? [task.latest_run] : [];
+
+  // Re-uploading a file replaces it rather than adding a second one: agents
+  // revise a deliverable and upload it again under the same name, so keeping
+  // every copy would bury the current one under its own drafts.
+  const newestByName = new Map<string, { file: RunArtifact; runId: string }>();
   for (const run of allRuns) {
     const outputPr = run.output?.pr_url;
     if (typeof outputPr === "string" && outputPr) {
       addPr(outputPr, `output-pr:${outputPr}`);
     }
-    for (const plan of readRunPlans(run)) {
-      const key = `plan:${plan.id ?? plan.storage_path ?? plan.name}`;
-      if (seenPlanKeys.has(key)) continue;
-      seenPlanKeys.add(key);
-      rows.push({
-        kind: "plan",
-        key,
-        name: planTitle(plan.name),
-        storagePath: plan.storage_path ?? null,
-        runId: run.id,
-      });
+    for (const file of readRunOutputs(run)) {
+      if (!file.name) continue;
+      const previous = newestByName.get(file.name);
+      const isNewer =
+        !previous ||
+        (file.uploaded_at ?? "") >= (previous.file.uploaded_at ?? "");
+      if (isNewer) newestByName.set(file.name, { file, runId: run.id });
     }
+  }
+  for (const [name, { file, runId }] of newestByName) {
+    rows.push({
+      kind: "file",
+      key: `file:${file.id ?? file.storage_path ?? name}`,
+      name,
+      storagePath: file.storage_path ?? null,
+      runId,
+      size: file.size,
+    });
   }
 
   const slackUrl = task.latest_run?.state?.slack_thread_url;
@@ -226,16 +235,18 @@ function CanvasRow({ name, url }: { name: string; url: string | null }) {
   );
 }
 
-function PlanRow({
+function FileRow({
   taskId,
   runId,
   name,
   storagePath,
+  size,
 }: {
   taskId: string;
   runId: string | null;
   name: string;
   storagePath: string | null;
+  size: number | undefined;
 }) {
   const client = useOptionalAuthenticatedClient();
   const canOpen = !!client && !!runId && !!storagePath;
@@ -249,7 +260,7 @@ function PlanRow({
           )
           .then((url) => openExternalUrl(url))
           .catch((error: unknown) => {
-            toast.error("Couldn't open plan", {
+            toast.error("Couldn't open file", {
               description:
                 error instanceof Error ? error.message : String(error),
             });
@@ -258,9 +269,9 @@ function PlanRow({
     : undefined;
   return (
     <ArtifactListRow
-      icon={<ClipboardTextIcon size={14} className="shrink-0 text-amber-9" />}
+      icon={<FileIcon filename={name} size={14} />}
       title={name}
-      detail="Plan"
+      detail={["File", formatFileSize(size)].filter(Boolean).join(" · ")}
       external={canOpen}
       onOpen={onOpen}
     />
@@ -289,8 +300,8 @@ export function TaskArtifactsList({
           </EmptyMedia>
           <EmptyTitle>No artifacts yet</EmptyTitle>
           <EmptyDescription>
-            Pull requests and canvases produced while working on this task show
-            up here.
+            Pull requests, canvases, and files produced while working on this
+            task show up here.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -304,13 +315,14 @@ export function TaskArtifactsList({
           <PrRow key={row.key} url={row.url} taskId={task.id} />
         ) : row.kind === "canvas" ? (
           <CanvasRow key={row.key} name={row.name} url={row.url} />
-        ) : row.kind === "plan" ? (
-          <PlanRow
+        ) : row.kind === "file" ? (
+          <FileRow
             key={row.key}
             taskId={task.id}
             runId={row.runId}
             name={row.name}
             storagePath={row.storagePath}
+            size={row.size}
           />
         ) : (
           <ArtifactListRow

@@ -1,13 +1,19 @@
-import type { Task, TaskRun } from "@posthog/shared/domain-types";
+import type { Task, TaskRun, TaskRunArtifact } from "@posthog/shared";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runs: [] as TaskRun[],
+  presignTaskRunArtifact: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskRuns", () => ({
   useTaskRuns: () => ({ runs: mocks.runs, isLoading: false }),
+}));
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useOptionalAuthenticatedClient: () => ({
+    presignTaskRunArtifact: mocks.presignTaskRunArtifact,
+  }),
 }));
 vi.mock("@posthog/ui/features/git-interaction/usePrArtifact", () => ({
   usePrArtifact: (url: string) => ({
@@ -33,16 +39,35 @@ const task = {
   latest_run: null,
 } as unknown as Task;
 
-function run(id: string, prNumber: number): TaskRun {
+function run(
+  id: string,
+  options: { prNumber?: number; artifacts?: Partial<TaskRunArtifact>[] } = {},
+): TaskRun {
   return {
     id,
-    output: { pr_url: `https://github.com/acme/repo/pull/${prNumber}` },
+    output: options.prNumber
+      ? { pr_url: `https://github.com/acme/repo/pull/${options.prNumber}` }
+      : null,
+    artifacts: options.artifacts,
   } as unknown as TaskRun;
+}
+
+function outputFile(
+  overrides: Partial<TaskRunArtifact>,
+): Partial<TaskRunArtifact> {
+  return {
+    type: "output",
+    name: "report.md",
+    storage_path: "runs/1/report.md",
+    ...overrides,
+  };
 }
 
 describe("TaskArtifactsList", () => {
   beforeEach(() => {
-    mocks.runs = [run("run-1", 1), run("run-2", 2)];
+    mocks.runs = [run("run-1", { prNumber: 1 }), run("run-2", { prNumber: 2 })];
+    mocks.presignTaskRunArtifact.mockReset();
+    mocks.presignTaskRunArtifact.mockResolvedValue("https://signed.example/x");
     useReviewNavigationStore.setState({
       reviewModes: {},
       selectedPrUrls: {},
@@ -59,5 +84,78 @@ describe("TaskArtifactsList", () => {
       "https://github.com/acme/repo/pull/2",
     );
     expect(state.reviewModes[task.id]).toBe("split");
+  });
+
+  it("lists the files the agent uploaded, with their size", () => {
+    mocks.runs = [
+      run("run-1", { artifacts: [outputFile({ id: "a", size: 16861 })] }),
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("report.md")).toBeTruthy();
+    expect(screen.getByText("File · 17 KB")).toBeTruthy();
+  });
+
+  it("presigns the artifact of the run that produced it", () => {
+    mocks.runs = [
+      run("run-1", { artifacts: [outputFile({ id: "a", name: "old.md" })] }),
+      run("run-2", {
+        artifacts: [
+          outputFile({
+            id: "b",
+            name: "new.md",
+            storage_path: "runs/2/new.md",
+          }),
+        ],
+      }),
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+    fireEvent.click(screen.getByText("new.md"));
+
+    expect(mocks.presignTaskRunArtifact).toHaveBeenCalledWith(
+      "task-1",
+      "run-2",
+      "runs/2/new.md",
+    );
+  });
+
+  // Agents revise a deliverable and upload it again under the same name.
+  it("keeps only the newest upload of a repeatedly revised file", () => {
+    mocks.runs = [
+      run("run-1", {
+        artifacts: [
+          outputFile({
+            id: "a",
+            size: 1000,
+            uploaded_at: "2026-07-27T08:00:00+00:00",
+          }),
+          outputFile({
+            id: "b",
+            size: 2000,
+            storage_path: "runs/1/report-v2.md",
+            uploaded_at: "2026-07-27T09:00:00+00:00",
+          }),
+        ],
+      }),
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    expect(screen.getAllByText("report.md")).toHaveLength(1);
+    expect(screen.getByText("File · 2 KB")).toBeTruthy();
+  });
+
+  it.each([
+    { name: "a plan", type: "plan" as const },
+    { name: "a user attachment", type: "user_attachment" as const },
+    { name: "a skill bundle", type: "skill_bundle" as const },
+  ])("shows the empty state for a run with only $name", ({ type }) => {
+    mocks.runs = [run("run-1", { artifacts: [outputFile({ id: "a", type })] })];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("No artifacts yet")).toBeTruthy();
   });
 });
