@@ -182,7 +182,6 @@ export function ChannelNav() {
             openOnHover
             delay={300}
             closeDelay={100}
-            disabled={isActivity}
             render={
               <NavButton
                 icon={
@@ -201,7 +200,10 @@ export function ChannelNav() {
             }
           />
           {!isActivity && activityOpen && (
-            <ActivityHoverCard onClose={() => setActivityOpen(false)} />
+            <ActivityHoverCard
+              side="bottom"
+              onClose={() => setActivityOpen(false)}
+            />
           )}
         </Popover>
         <NavIcon

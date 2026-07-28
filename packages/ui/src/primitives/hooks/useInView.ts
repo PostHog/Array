@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface UseInViewOptions {
+  root?: Element | null;
   rootMargin?: string;
   once?: boolean;
 }
@@ -8,13 +9,12 @@ interface UseInViewOptions {
 export function useInView<T extends HTMLElement = HTMLDivElement>(
   options: UseInViewOptions = {},
 ) {
-  const { rootMargin = "1500px 0px", once = false } = options;
-  const ref = useRef<T | null>(null);
+  const { root = null, rootMargin = "1500px 0px", once = false } = options;
+  const [element, setElement] = useState<T | null>(null);
   const [inView, setInView] = useState(false);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    if (!element) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -22,11 +22,11 @@ export function useInView<T extends HTMLElement = HTMLDivElement>(
         setInView(visible);
         if (visible && once) observer.disconnect();
       },
-      { rootMargin },
+      { root, rootMargin },
     );
-    observer.observe(el);
+    observer.observe(element);
     return () => observer.disconnect();
-  }, [rootMargin, once]);
+  }, [element, once, root, rootMargin]);
 
-  return [ref, inView] as const;
+  return [setElement, inView] as const;
 }
