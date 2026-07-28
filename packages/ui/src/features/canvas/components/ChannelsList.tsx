@@ -19,6 +19,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Autocomplete,
+  AutocompleteClear,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteList,
   Button,
   ButtonGroup,
   AlertDialog as ConfirmDialog,
@@ -35,7 +40,6 @@ import {
   DropdownMenuTrigger,
   Empty,
   EmptyHeader,
-  Input,
   Kbd,
   MenuLabel,
   Tooltip,
@@ -65,7 +69,10 @@ import {
   useTaskChannels,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useIsChannelUnread } from "@posthog/ui/features/canvas/hooks/useUnreadChannels";
-import { showChannelPane } from "@posthog/ui/features/canvas/stores/channelPaneStore";
+import {
+  showChannelPane,
+  useChannelPaneStore,
+} from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import {
   resetCurrentChannel,
   useCurrentChannelStore,
@@ -82,8 +89,75 @@ import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useState } from "react";
+import {
+  type ComponentProps,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { hostClient } from "../hostClient";
+
+/**
+ * A row's clickable surface.
+ *
+ * Under the layout every row is an Autocomplete option, so ↑/↓/⏎ walk the list
+ * whether or not there's a query — the search box is the only thing that ever
+ * holds focus, and the list is what it drives. Off the layout there is no
+ * search box to drive anything, so the rows stay plain buttons.
+ *
+ * Both render the same quill Button underneath; the option just routes its
+ * clicks and highlight through Autocomplete. Rest props are forwarded because
+ * this is handed to `ContextMenuTrigger` as its rendered element.
+ */
+function SpaceRowSurface({
+  asOption,
+  optionValue,
+  className,
+  children,
+  ...rest
+}: ComponentProps<typeof Button> & {
+  asOption: boolean;
+  /** Identifies the row to Autocomplete; unused off the layout. */
+  optionValue: string;
+}) {
+  if (!asOption) {
+    return (
+      <Button
+        variant="default"
+        size="default"
+        left
+        className={cn(
+          "w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground",
+          className,
+        )}
+        {...rest}
+      >
+        {children}
+      </Button>
+    );
+  }
+  return (
+    <AutocompleteItem
+      value={optionValue}
+      // quill wraps an option's children in its own flex row; widening it is
+      // what keeps the shortcut hint at the row's right edge and lets the name
+      // truncate, exactly as they do in the button above.
+      className={cn(
+        "w-full min-w-0 data-selected:bg-fill-selected data-selected:text-foreground",
+        "[&>span]:w-full [&>span]:gap-2",
+        className,
+      )}
+      // The two branches take the same handlers typed against different
+      // elements — quill's option renders a button of its own, so what the
+      // callers pass is a button's props either way.
+      {...(rest as ComponentProps<typeof AutocompleteItem>)}
+    >
+      {children}
+    </AutocompleteItem>
+  );
+}
 
 // One actionable entry in a channel's menu, rendered the same whether it
 // surfaces in the hover "..." dropdown or the right-click context menu.
@@ -328,9 +402,8 @@ function ChannelSection({
 }) {
   const spacesLayout = useChannelsLayout();
   const noun = spacesLayout ? "space" : "channel";
-  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
+  const openChannel = useOpenChannel();
   const base = `/website/${channel.id}`;
   // Highlight the row whenever any of the channel's routes is open.
   const isActive = pathname === base || pathname.startsWith(`${base}/`);
@@ -360,28 +433,12 @@ function ChannelSection({
       <ContextMenu>
         <ContextMenuTrigger
           render={
-            <Button
-              variant="default"
-              size="default"
-              left
+            <SpaceRowSurface
+              asOption={spacesLayout}
+              optionValue={channel.id}
               data-selected={isActive || undefined}
-              onClick={() => {
-                track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-                  action_type: "nav_click",
-                  surface: "sidebar",
-                  channel_id: channel.id,
-                });
-                // Slide before navigating: the route effect would get there
-                // too, but not until the navigation resolves.
-                showChannelPane();
-                setCurrentChannel(channel.id);
-                void navigate({
-                  to: "/website/$channelId",
-                  params: { channelId: channel.id },
-                });
-              }}
+              onClick={() => openChannel(channel)}
               {...focusProps}
-              className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
             >
               {channelGlyph(channel.name, {
                 size: 14,
@@ -415,7 +472,7 @@ function ChannelSection({
                   {formatHotkey(`mod+${hotkeySlot}`)}
                 </Kbd>
               )}
-            </Button>
+            </SpaceRowSurface>
           }
         />
         <ContextMenuContent>
@@ -552,12 +609,76 @@ function ChannelSection({
 // The feed and task ownership live on the per-user backend personal channel;
 // the "me" folder is the bridge that keeps the folder-keyed surfaces
 // (CONTEXT.md, artifacts) routable, created lazily on first open.
-function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
+/**
+ * Opening the "me" row, shared by the row itself and the search results.
+ *
+ * The folder is created on first use, so every action resolves the id rather
+ * than closing over it — "me" is actionable before it exists. The create is
+ * shared (ensurePersonalChannel) so a row click racing its "+" menu can't
+ * provision two.
+ */
+function useOpenPersonalChannel(): {
+  ensureFolderId: () => Promise<string | undefined>;
+  openPersonalChannel: () => Promise<void>;
+  isCreating: boolean;
+} {
   const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const { channels } = useChannels();
   const { createChannel, isCreating } = useChannelMutations();
+
+  const ensureFolderId = async (): Promise<string | undefined> => {
+    try {
+      return (await ensurePersonalChannel(channels, createChannel)).id;
+    } catch (error) {
+      toast.error("Couldn't open me", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  };
+
+  const openPersonalChannel = async () => {
+    const channelId = await ensureFolderId();
+    if (!channelId) return;
+    showChannelPane();
+    setCurrentChannel(channelId);
+    void navigate({ to: "/website/$channelId", params: { channelId } });
+  };
+
+  return { ensureFolderId, openPersonalChannel, isCreating };
+}
+
+/**
+ * Navigating into a channel, shared by the tree rows and the search results.
+ * Slides before navigating: the route effect would get there too, but not until
+ * the navigation resolves.
+ */
+function useOpenChannel(): (channel: Channel) => void {
+  const navigate = useNavigate();
+  const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
+
+  return (channel: Channel) => {
+    track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
+      action_type: "nav_click",
+      surface: "sidebar",
+      channel_id: channel.id,
+    });
+    showChannelPane();
+    setCurrentChannel(channel.id);
+    void navigate({
+      to: "/website/$channelId",
+      params: { channelId: channel.id },
+    });
+  };
+}
+
+function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
+  const spacesLayout = useChannelsLayout();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { channels } = useChannels();
+  const { ensureFolderId, openPersonalChannel, isCreating } =
+    useOpenPersonalChannel();
   // Listing backend channels lazily provisions the personal channel server-side.
   useTaskChannels();
   // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
@@ -571,28 +692,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
     (pathname === `/website/${meFolder.id}` ||
       pathname.startsWith(`/website/${meFolder.id}/`));
 
-  // The "me" folder is created on first use, so every action resolves the id
-  // rather than closing over it — the row is actionable before it exists. The
-  // create is shared (ensurePersonalChannel) so a row click racing its "+" menu
-  // can't provision two.
-  const ensureFolderId = async (): Promise<string | undefined> => {
-    try {
-      return (await ensurePersonalChannel(channels, createChannel)).id;
-    } catch (error) {
-      toast.error("Couldn't open me", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    }
-  };
-
-  const open = async () => {
-    const channelId = await ensureFolderId();
-    if (!channelId) return;
-    showChannelPane();
-    setCurrentChannel(channelId);
-    void navigate({ to: "/website/$channelId", params: { channelId } });
-  };
+  const open = openPersonalChannel;
 
   const newTask = async () => {
     const channelId = await ensureFolderId();
@@ -618,14 +718,14 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
 
   return (
     <Box className="group/chan relative">
-      <Button
-        variant="default"
-        size="default"
-        left
+      <SpaceRowSurface
+        asOption={spacesLayout}
+        // "me" is provisioned on first use, so before it exists there is no id
+        // to identify the option by — its name is unique among spaces either way.
+        optionValue={meFolder?.id ?? PERSONAL_CHANNEL_NAME}
         data-selected={isActive || undefined}
         disabled={isCreating}
         onClick={() => void open()}
-        className="w-full min-w-0 justify-start gap-2 data-selected:bg-fill-selected data-selected:text-foreground"
       >
         {channelGlyph(PERSONAL_CHANNEL_NAME, {
           size: 14,
@@ -653,7 +753,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
             {formatHotkey(`mod+${hotkeySlot}`)}
           </Kbd>
         )}
-      </Button>
+      </SpaceRowSurface>
       <div className="absolute top-0 right-1">
         <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
           <Tooltip>
@@ -722,6 +822,7 @@ function ChannelGroup({
   label,
   className,
   flat,
+  keepMounted = true,
   children,
 }: {
   sectionId: string;
@@ -729,6 +830,12 @@ function ChannelGroup({
   className?: string;
   /** Layout-only: rows sit at the label's level instead of indented under it. */
   flat?: boolean;
+  /**
+   * Off under the layout: a kept-mounted collapsed row is still an Autocomplete
+   * option, so ↓ would walk onto spaces the user has folded away. Paying the
+   * rebuild on expand is better than highlighting a row nobody can see.
+   */
+  keepMounted?: boolean;
   children: ReactNode;
 }) {
   const collapsedSections = useSidebarStore((s) => s.collapsedSections);
@@ -777,7 +884,7 @@ function ChannelGroup({
           dropdown, a tooltip and two dialogs up front, so unmounting on close
           makes each expand rebuild the lot (~940ms for 46 channels, vs ~80ms
           to collapse). */}
-      <Collapsible.Panel keepMounted>
+      <Collapsible.Panel keepMounted={keepMounted}>
         <div className={cn(!flat && "pl-5")}>{children}</div>
       </Collapsible.Panel>
     </Collapsible.Root>
@@ -822,95 +929,214 @@ export function ChannelsList() {
   const noMatches =
     normalizedQuery !== "" && !meMatches && !searchResults.length;
 
+  // The option values, in the order the rows below render them. The rows are
+  // elements rather than a rendered collection, but Autocomplete still needs the
+  // list to map a highlight index onto — without it the first ArrowDown after a
+  // keystroke is swallowed re-establishing the highlight it already shows.
+  // A collapsed group renders no rows, so it contributes none.
+  const collapsedSections = useSidebarStore((s) => s.collapsedSections);
+  // "me" is provisioned on first use; before it exists it has no id to go by.
+  const meValue = me?.id ?? PERSONAL_CHANNEL_NAME;
+  const optionValues = normalizedQuery
+    ? [
+        ...(meMatches ? [meValue] : []),
+        ...searchResults.map((channel) => channel.id),
+      ]
+    : [
+        meValue,
+        ...(collapsedSections.has(STARRED_SECTION_ID)
+          ? []
+          : starred.map((channel) => channel.id)),
+        ...(collapsedSections.has(CHANNELS_SECTION_ID)
+          ? []
+          : others.map((channel) => channel.id)),
+      ];
+
+  // Coming back from a space, the list is what you came here to browse — so the
+  // search box takes focus and any previous query is selected, ready to be typed
+  // over. Only on the transition: a cold start rests on the channel pane, and
+  // re-focusing on every render would steal focus from the rows themselves.
+  const pane = useChannelPaneStore((s) => s.pane);
+  const previousPane = useRef(pane);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const cameFromChannel = previousPane.current === "channel";
+    previousPane.current = pane;
+    if (!channelsLayout || pane !== "list" || !cameFromChannel) return;
+    const input = searchRef.current;
+    if (!input) return;
+    input.focus();
+    // Autocomplete leaves its highlight on the row you opened and exposes no
+    // way to move it, so the pane would come back mid-list. Home is the key it
+    // listens for; sending it is how the list reopens at the top.
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
+    );
+    // After Home, so the caret it parks at the start doesn't undo the selection.
+    input.select();
+  }, [pane, channelsLayout]);
+
+  const rows = normalizedQuery ? (
+    <>
+      {meMatches && <PersonalChannelRow />}
+      {searchResults.map((channel) => (
+        <ChannelSection
+          key={channel.id}
+          channel={channel}
+          isUnread={isUnread(channel.name)}
+        />
+      ))}
+      {noMatches && (
+        <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+          <EmptyHeader className="text-left">
+            No {channelsLayout ? "spaces" : "channels"} match “{query.trim()}”.
+          </EmptyHeader>
+        </Empty>
+      )}
+    </>
+  ) : (
+    <>
+      <PersonalChannelRow
+        hotkeySlot={channelsLayout && me ? slotFor(me) : undefined}
+      />
+
+      {starred.length > 0 && (
+        <ChannelGroup
+          sectionId={STARRED_SECTION_ID}
+          label="Starred"
+          flat={channelsLayout}
+          keepMounted={!channelsLayout}
+        >
+          {starred.map((channel) => (
+            <ChannelSection
+              key={channel.id}
+              channel={channel}
+              isUnread={isUnread(channel.name)}
+              hotkeySlot={channelsLayout ? slotFor(channel) : undefined}
+            />
+          ))}
+        </ChannelGroup>
+      )}
+
+      <ChannelGroup
+        sectionId={CHANNELS_SECTION_ID}
+        label={channelsLayout ? "Spaces" : "Channels"}
+        flat={channelsLayout}
+        keepMounted={!channelsLayout}
+      >
+        {!isLoading && channels.length === 0 && (
+          <Empty className="px-2 py-1 text-subtle-foreground text-xs">
+            <EmptyHeader className="text-left">
+              No {channelsLayout ? "spaces" : "channels"} yet.
+            </EmptyHeader>
+          </Empty>
+        )}
+        {others.map((channel) => (
+          <ChannelSection
+            key={channel.id}
+            channel={channel}
+            isUnread={isUnread(channel.name)}
+          />
+        ))}
+      </ChannelGroup>
+    </>
+  );
+
+  // Bottom padding clears the floating create button (ChannelsFab), so the last
+  // channel stays reachable at full scroll.
+  const scrollClass =
+    "scroll-mask-4 min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-16";
+  // quill sizes its list as a popup — a ~250px cap and its own 4px padding —
+  // and ships it unlayered, so plain utilities lose to it however they're
+  // ordered. Here the list *is* the pane, so the cap has to go and the pane's
+  // own padding has to win: `!` is what outranks an unlayered rule.
+  const listClass = cn(
+    "flex flex-col gap-px",
+    "!max-h-none !px-2 !pt-2 !pb-16",
+    scrollClass,
+  );
+
+  const body = (
+    <Flex direction="column" className="h-full min-h-0">
+      {channelsLayout && (
+        <Box className="shrink-0 px-2 pt-1">
+          <AutocompleteInput
+            ref={searchRef}
+            placeholder="Search spaces…"
+            aria-label="Search spaces"
+            showSearchIcon={false}
+            className="h-7 text-[13px]"
+            onKeyDown={(event) => {
+              // Base UI's clear is a tabIndex=-1 decoration, so Escape is the
+              // keyboard way out of a query. With the box already empty there's
+              // nothing to clear, and Escape belongs to whoever is listening
+              // above (closing the sidebar, dismissing a dialog).
+              if (event.key !== "Escape" || query === "") return;
+              event.preventDefault();
+              event.stopPropagation();
+              setQuery("");
+            }}
+          >
+            {/* Rendered here rather than via `showClear` so it can be given a
+                tab stop: quill passes no props to the one it renders itself. */}
+            <AutocompleteClear
+              tabIndex={0}
+              aria-label="Clear search"
+              onClick={() => setQuery("")}
+            />
+          </AutocompleteInput>
+        </Box>
+      )}
+      {channelsLayout ? (
+        // Every row is an option, filtered or not, so ↑/↓/⏎ work the moment the
+        // pane opens rather than only once you've typed something.
+        <AutocompleteList className={listClass}>{rows}</AutocompleteList>
+      ) : (
+        <Flex direction="column" gap="px" className={scrollClass}>
+          {rows}
+        </Flex>
+      )}
+    </Flex>
+  );
+
   return (
     // One shared provider groups every row tooltip so that once one shows,
     // moving to the next row reveals its tooltip instantly (no re-delay).
     <TooltipProvider delay={600}>
-      <Flex direction="column" className="h-full min-h-0">
-        {channelsLayout && (
-          <Box className="shrink-0 px-2 pt-1">
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search spaces…"
-              aria-label="Search spaces"
-              className="h-7 text-[13px]"
-            />
-          </Box>
-        )}
-        {/* Bottom padding clears the floating create button (ChannelsFab), so
-            the last channel stays reachable at full scroll. */}
-        <Flex
-          direction="column"
-          gap="px"
-          className="scroll-mask-4 min-h-0 flex-1 overflow-y-auto px-2 pt-2 pb-16"
+      {channelsLayout ? (
+        // The rows render as elements — they're a tree of collapsible groups,
+        // not a flat collection — so `items` carries their values alone, in the
+        // same order. Filtering is ours (hence `filter={null}`; Base UI's matcher
+        // would run over an already-narrowed set). `inline` renders the list in
+        // the pane instead of a popup, and `defaultOpen` keeps it rendered
+        // without a trigger to open it.
+        <Autocomplete<string>
+          inline
+          // Pinned open, not `defaultOpen`: picking a row closes an ordinary
+          // combobox, and a closed one stops answering the arrow keys. This list
+          // is the pane itself — there is nothing to close, and coming back from
+          // a space has to find it live.
+          open
+          items={optionValues}
+          filter={null}
+          value={query}
+          autoHighlight="always"
+          // Without this the highlight resets on pointer-leave, and "always"
+          // then snaps it back to the first row — so drifting the mouse across
+          // the gap between two rows threw the keyboard back to the top.
+          keepHighlight
+          onValueChange={(value, eventDetails) => {
+            // Selecting a row would otherwise write the row's value back into
+            // the input; only what the user types moves the query.
+            if (eventDetails.reason !== "input-change") return;
+            if (typeof value === "string") setQuery(value);
+          }}
         >
-          {normalizedQuery ? (
-            <>
-              {meMatches && <PersonalChannelRow />}
-              {searchResults.map((channel) => (
-                <ChannelSection
-                  key={channel.id}
-                  channel={channel}
-                  isUnread={isUnread(channel.name)}
-                />
-              ))}
-              {noMatches && (
-                <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-                  <EmptyHeader className="text-left">
-                    No {channelsLayout ? "spaces" : "channels"} match “
-                    {query.trim()}”.
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </>
-          ) : (
-            <>
-              <PersonalChannelRow
-                hotkeySlot={channelsLayout && me ? slotFor(me) : undefined}
-              />
-
-              {starred.length > 0 && (
-                <ChannelGroup
-                  sectionId={STARRED_SECTION_ID}
-                  label="Starred"
-                  flat={channelsLayout}
-                >
-                  {starred.map((channel) => (
-                    <ChannelSection
-                      key={channel.id}
-                      channel={channel}
-                      isUnread={isUnread(channel.name)}
-                      hotkeySlot={channelsLayout ? slotFor(channel) : undefined}
-                    />
-                  ))}
-                </ChannelGroup>
-              )}
-
-              <ChannelGroup
-                sectionId={CHANNELS_SECTION_ID}
-                label={channelsLayout ? "Spaces" : "Channels"}
-                flat={channelsLayout}
-              >
-                {!isLoading && channels.length === 0 && (
-                  <Empty className="px-2 py-1 text-subtle-foreground text-xs">
-                    <EmptyHeader className="text-left">
-                      No {channelsLayout ? "spaces" : "channels"} yet.
-                    </EmptyHeader>
-                  </Empty>
-                )}
-                {others.map((channel) => (
-                  <ChannelSection
-                    key={channel.id}
-                    channel={channel}
-                    isUnread={isUnread(channel.name)}
-                  />
-                ))}
-              </ChannelGroup>
-            </>
-          )}
-        </Flex>
-      </Flex>
+          {body}
+        </Autocomplete>
+      ) : (
+        body
+      )}
     </TooltipProvider>
   );
 }
