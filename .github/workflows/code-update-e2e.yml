@@ -6,20 +6,25 @@ name: Code Update E2E (macOS)
 # installed app became 2.0.0. Nightly and on demand only, never on PRs: it builds
 # twice and exercises a real install, so it is too slow and too flaky for the gate.
 #
-# Two legs run against the same new (2.0.0) feed:
-#   1. electron-builder -> electron-builder: the forward-compatibility baseline.
-#   2. Forge -> electron-builder: a real Electron Forge build (v0.55.132, the last
+# Three legs run:
+#   1. electron-builder -> electron-builder: the forward-compatibility baseline
+#      against the new (2.0.0) feed.
+#   2. Chained re-stage: with 2.0.0 already staged, the feed bumps to 3.0.0 and
+#      the background poll downloads and re-stages it; the restart must land on
+#      3.0.0. Proves replacing a staged Squirrel.Mac update is safe.
+#   3. Forge -> electron-builder: a real Electron Forge build (v0.55.132, the last
 #      Forge release, what users run today) updating via the genuine built-in
 #      Squirrel.Mac client to the electron-builder build we ship now.
 
 on:
-  # Temporary: also run on this branch so the harness can be exercised on the PR.
-  # Remove this push trigger once merged; nightly + dispatch is the steady state.
-  # Docs and the local-only run-from-ci helper do not affect CI, so skip rebuilds
-  # for those and use workflow_dispatch / the nightly schedule on demand instead.
+  # Temporary: also run on these branches so the harness can be exercised on the
+  # PR. Remove this push trigger once merged; nightly + dispatch is the steady
+  # state. Docs and the local-only run-from-ci helper do not affect CI, so skip
+  # rebuilds for those and use workflow_dispatch / the nightly schedule instead.
   push:
     branches:
       - test/macos-auto-update-e2e
+      - fix/update-repolling
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -109,8 +114,10 @@ jobs:
           pnpm --filter @posthog/harness run build
           pnpm --filter @posthog/agent run build
 
-      - name: Build old + new update pair
+      - name: Build old + new update pair (and 3.0.0 chain feed)
         working-directory: apps/code
+        env:
+          CHAIN_VERSION: "3.0.0"
         run: bash scripts/dev-update/build-pair.sh
 
       - name: Install Playwright
@@ -128,6 +135,24 @@ jobs:
             console.log("update e2e stats:", JSON.stringify(s));
             if (s.expected !== 1 || s.skipped || s.unexpected || s.flaky) {
               console.error("FAIL: expected exactly one passing update test");
+              process.exit(1);
+            }
+          '
+
+      # Chained re-stage leg: reuses the same old app and feeds built above, so
+      # it only costs one more download/install cycle, not another build.
+      - name: Run macOS chained update E2E
+        working-directory: apps/code
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/apps/code/out/update-chain-report.json
+        run: |
+          pnpm exec playwright test --config=tests/e2e/playwright.update-chain.config.ts
+          node -e '
+            const r = require(process.env.GITHUB_WORKSPACE + "/apps/code/out/update-chain-report.json");
+            const s = r.stats || {};
+            console.log("chain update e2e stats:", JSON.stringify(s));
+            if (s.expected !== 1 || s.skipped || s.unexpected || s.flaky) {
+              console.error("FAIL: expected exactly one passing chained update test");
               process.exit(1);
             }
           '
@@ -186,6 +211,7 @@ jobs:
             const fs = require("fs");
             const proofs = [
               ["out/update-proof/proof.json", "macOS auto-update proof (builder -> builder)"],
+              ["out/update-proof-chain/proof.json", "macOS auto-update proof (chained re-stage)"],
               ["out/update-proof-forge/proof.json", "macOS auto-update proof (Forge -> builder)"],
             ];
             const cell = (v) => v === undefined || v === null ? "-" : String(v).replace(/\|/g, "\\|").replace(/\n/g, " ");
@@ -198,6 +224,8 @@ jobs:
                 ["New version", d.newVersion],
                 ["Booted on", d.bootedOn],
                 ["Feed offered", d.feedAvailableVersion],
+                ["Intermediate version", d.intermediateVersion],
+                ["Re-staged version", d.restagedVersion],
                 ["Downloaded", d.downloaded],
                 ["Bundle after swap", d.bundleVersionAfterSwap],
                 ["Auto-relaunched exe", d.autoRelaunchedExecutable],
@@ -222,8 +250,10 @@ jobs:
           name: update-e2e-macos
           path: |
             apps/code/out/update-proof/
+            apps/code/out/update-proof-chain/
             apps/code/out/update-proof-forge/
             apps/code/out/update-report.json
+            apps/code/out/update-chain-report.json
             apps/code/out/update-forge-report.json
             apps/code/playwright-results/
             /Users/runner/.posthog-code/logs/
