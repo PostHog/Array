@@ -918,6 +918,8 @@ export type ChannelActionType =
   | "view_activity"
   | "open_mention"
   | "canvas_mode_toggle"
+  /** Submitted a canvas-mode prompt (the agent resolves or creates the canvas). */
+  | "canvas_generate"
   | "activity_tab_change";
 
 export interface ChannelActionProperties {
