@@ -63,7 +63,9 @@ export function useChannelItems(channelId: string): {
   );
   const { tasks: filedTaskRecords, isLoading: filedTasksLoading } =
     useChannelTasks(channelId);
-  const { data: allTasks = [], isLoading: allTasksLoading } = useTasks();
+  const { data: allTasks = [], isLoading: allTasksLoading } = useTasks({
+    showAllUsers: true,
+  });
   const archivedTaskIds = useArchivedTaskIds();
   const { pinnedTaskIds, togglePin } = usePinnedTasks();
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });

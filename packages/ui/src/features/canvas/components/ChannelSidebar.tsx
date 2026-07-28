@@ -38,6 +38,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
@@ -212,6 +213,11 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const assignTaskToCommandCenter = useCommandCenterStore(
     (state) => state.assignTask,
   );
+  const { data: allTasks = [] } = useTasks({ showAllUsers: true });
+  const allTaskIds = useMemo(
+    () => new Set(allTasks.map((task) => task.id)),
+    [allTasks],
+  );
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -253,12 +259,16 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               void showContextMenu(item, event, {
                 isPinned: item.pinned,
                 isInCommandCenter: commandCenterCells.includes(item.id),
-                hasEmptyCommandCenterCell: commandCenterCells.includes(null),
+                hasEmptyCommandCenterCell: commandCenterCells.some(
+                  (taskId) => taskId == null || !allTaskIds.has(taskId),
+                ),
                 showArchivePrior: false,
                 onTogglePin: () => actions.togglePin(item),
                 onArchive: () => actions.archive(item),
                 onAddToCommandCenter: () => {
-                  const cellIndex = commandCenterCells.indexOf(null);
+                  const cellIndex = commandCenterCells.findIndex(
+                    (taskId) => taskId == null || !allTaskIds.has(taskId),
+                  );
                   if (cellIndex === -1) return;
                   assignTaskToCommandCenter(cellIndex, item.id);
                   navigateToCommandCenter();

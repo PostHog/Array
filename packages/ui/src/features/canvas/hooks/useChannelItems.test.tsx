@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   currentUser: undefined as { uuid: string; first_name?: string } | undefined,
   currentUserLoading: false,
   useBackendChannel: vi.fn(),
+  useTasks: vi.fn(),
   // Stable identities, mirroring the real hooks — a fresh function per render
   // would hide the very memoization this file asserts.
   setPinned: vi.fn(),
@@ -35,7 +36,10 @@ vi.mock("@posthog/ui/features/canvas/hooks/useChannelTasks", () => ({
   useChannelTasks: () => mocks.filedTasks,
 }));
 vi.mock("@posthog/ui/features/tasks/useTasks", () => ({
-  useTasks: () => mocks.allTasks,
+  useTasks: (filters: unknown) => {
+    mocks.useTasks(filters);
+    return mocks.allTasks;
+  },
 }));
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskChannels", () => ({
   PERSONAL_CHANNEL_NAME: "me",
@@ -203,6 +207,7 @@ describe("useChannelItems", () => {
     const { result, rerender } = renderHook(() => useChannelItems("c1"));
 
     expect(result.current.items.map((item) => item.id)).toEqual(["task-1"]);
+    expect(mocks.useTasks).toHaveBeenCalledWith({ showAllUsers: true });
 
     mocks.feed = { tasks: [filedTask], isLoading: false };
     rerender();
