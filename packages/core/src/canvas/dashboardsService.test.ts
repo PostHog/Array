@@ -14,7 +14,10 @@ function dashboardRow(
   name: string,
   channelId: string,
   updatedAt: number,
-): FsEntryBase & { meta: Record<string, unknown> } {
+): FsEntryBase & {
+  meta: Record<string, unknown>;
+  created_by?: { uuid: string };
+} {
   return {
     id,
     path: `Channels/${channelId}/${name}`,
@@ -63,6 +66,18 @@ describe("DashboardsService.list", () => {
 
     expect(result.map((d) => d.id)).toEqual(["b", "c", "a"]);
     expect(result[0]).toMatchObject({ name: "Newer", channelId: "chan-1" });
+  });
+
+  it("maps the backend creator uuid onto summaries", async () => {
+    const row = dashboardRow("a", "Canvas", "chan-1", 100);
+    row.created_by = { uuid: "creator-uuid" };
+    const { fs } = fakeFs([row]);
+
+    const [result] = await new DashboardsService(fs, {} as never).list(
+      "chan-1",
+    );
+
+    expect(result.createdByUuid).toBe("creator-uuid");
   });
 });
 

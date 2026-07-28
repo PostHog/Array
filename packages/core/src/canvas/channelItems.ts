@@ -15,6 +15,7 @@ export interface ChannelItemModel {
   rawStatus: TaskRunStatus | null;
   authorUser: UserBasic | null;
   authorName: string | null;
+  authorUuid: string | null;
   templateId: string | null;
 }
 
@@ -24,12 +25,13 @@ export interface ChannelItemOwner {
 }
 
 function isOwnedBy(
-  item: Pick<ChannelItemModel, "authorUser" | "authorName">,
+  item: Pick<ChannelItemModel, "authorUser" | "authorName" | "authorUuid">,
   owner: ChannelItemOwner,
 ): boolean {
   if (item.authorUser) return item.authorUser.uuid === owner.uuid;
+  if (item.authorUuid) return item.authorUuid === owner.uuid;
   if (item.authorName && owner.name) return item.authorName === owner.name;
-  return true;
+  return false;
 }
 
 export function buildChannelItems({
@@ -55,6 +57,7 @@ export function buildChannelItems({
     rawStatus: null,
     authorUser: null,
     authorName: d.createdBy ?? null,
+    authorUuid: d.createdByUuid ?? null,
     templateId: d.templateId,
   }));
 
@@ -72,6 +75,7 @@ export function buildChannelItems({
             rawStatus: task.latest_run?.status ?? null,
             authorUser: task.created_by ?? null,
             authorName: null,
+            authorUuid: task.created_by?.uuid ?? null,
             templateId: null,
           },
         ],

@@ -126,13 +126,13 @@ describe("buildChannelItems", () => {
     expect(items.map((i) => i.id).sort()).toEqual(["mine", "mine-task"]);
   });
 
-  it("keeps items whose author is unknown", () => {
+  it("excludes items whose author is unknown from the personal channel", () => {
     const items = build({
       dashboards: [canvas({ id: "orphan", createdBy: undefined })],
       feedTasks: [task({ id: "orphan-task", created_by: null })],
       ownedBy: { uuid: ME.uuid, name: "Ada Lovelace" },
     });
-    expect(items).toHaveLength(2);
+    expect(items).toEqual([]);
   });
 });
 
@@ -147,6 +147,7 @@ function model(over: Partial<ChannelItemModel> = {}): ChannelItemModel {
     rawStatus: null,
     authorUser: ME,
     authorName: null,
+    authorUuid: ME.uuid,
     templateId: null,
     ...over,
   };
