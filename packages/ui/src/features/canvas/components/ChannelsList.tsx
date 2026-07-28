@@ -1,7 +1,7 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import {
   CaretDownIcon,
-  CaretUpIcon,
+  CaretRightIcon,
   ChartBarIcon,
   DotsThreeIcon,
   FileTextIcon,
@@ -440,6 +440,7 @@ function ChannelSection({
               data-selected={isActive || undefined}
               onClick={() => openChannel(channel)}
               {...focusProps}
+              className={spacesLayout ? "pl-4" : undefined}
             >
               {channelGlyph(channel.name, {
                 size: 14,
@@ -728,6 +729,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
         data-selected={isActive || undefined}
         disabled={isCreating}
         onClick={() => void open()}
+        className={spacesLayout ? "pl-4" : undefined}
       >
         {channelGlyph(PERSONAL_CHANNEL_NAME, {
           size: 14,
@@ -815,9 +817,9 @@ const CHANNELS_SECTION_ID = "channels:all";
 // the label styling) and animates the panel height (which janked on a list this
 // long). Unstyled parts give a plain label row that snaps.
 //
-// The whole header row is the trigger. Its section glyph swaps to the current
-// disclosure caret on hover or keyboard focus, matching the old sidebar while
-// keeping Starred and Spaces distinct at rest.
+// The whole header row is the trigger. Its section glyph swaps to a down/right
+// disclosure caret on hover or keyboard focus while keeping Starred and Spaces
+// distinct at rest.
 function ChannelGroup({
   sectionId,
   label,
@@ -867,15 +869,15 @@ function ChannelGroup({
             {icon}
           </span>
           {isOpen ? (
-            <CaretUpIcon
-              size={14}
-              data-testid={`${sectionId}-caret-up`}
-              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
-            />
-          ) : (
             <CaretDownIcon
               size={14}
               data-testid={`${sectionId}-caret-down`}
+              className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
+            />
+          ) : (
+            <CaretRightIcon
+              size={14}
+              data-testid={`${sectionId}-caret-right`}
               className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
             />
           )}

@@ -93,23 +93,28 @@ describe("ChannelsList", () => {
     expect(me.parentElement?.textContent).toMatch(/me(⌘|Ctrl)/);
   });
 
-  // "Starred" and "Channels" are headings over the rows, not parents of them —
-  // under the layout the rows sit at the heading's level and keep the "#" for
-  // themselves. The alpha's tree is unchanged.
+  // "Starred" and "Spaces" are headings over the rows. Spaces receive a small
+  // Slack-style inset; the alpha keeps its deeper tree indentation.
   describe("group headings", () => {
     beforeEach(() => {
       mocks.starredPaths = [ENG.path];
     });
 
-    it("does not indent rows under the layout", () => {
+    it("slightly indents rows under the layout", () => {
       renderList();
-      expect(screen.getByText("engineering").closest(".pl-5")).toBeNull();
+      expect(screen.getByText("engineering").closest("button")).toHaveClass(
+        "pl-4",
+      );
+      expect(screen.getByText("me").closest("button")).toHaveClass("pl-4");
     });
 
     it("keeps the indented tree off the layout", () => {
       mocks.channelsLayout = false;
       renderList();
       expect(screen.getByText("engineering").closest(".pl-5")).toBeTruthy();
+      expect(screen.getByText("engineering").closest("button")).not.toHaveClass(
+        "pl-4",
+      );
     });
 
     it("rebrands only the spaces layout", () => {
@@ -121,12 +126,17 @@ describe("ChannelsList", () => {
       expect(screen.getByText("Channels")).toBeTruthy();
     });
 
-    it("shows section icons until the heading is hovered", () => {
+    it("shows section icons and the caret for the current state", async () => {
+      const user = userEvent.setup();
       renderList();
 
       expect(screen.getByTestId("starred-section-icon")).toBeTruthy();
       expect(screen.getByTestId("spaces-section-icon")).toBeTruthy();
-      expect(screen.getByTestId("channels:all-caret-up")).toBeTruthy();
+      expect(screen.getByTestId("channels:all-caret-down")).toBeTruthy();
+
+      await user.click(screen.getByText("Spaces"));
+
+      expect(screen.getByTestId("channels:all-caret-right")).toBeTruthy();
     });
   });
 
