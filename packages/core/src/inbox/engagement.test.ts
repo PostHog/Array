@@ -65,6 +65,19 @@ describe("buildBulkActionEvents", () => {
     expect(events.every((e) => e.action_type === "delete")).toBe(true);
   });
 
+  it("passes through the remove-suggested-reviewer action type", () => {
+    const events = buildBulkActionEvents({
+      reports: [fakeReport({ id: "a" }), fakeReport({ id: "b" })],
+      actionType: "remove_suggested_reviewer",
+      surface: "toolbar",
+    });
+
+    expect(
+      events.every((e) => e.action_type === "remove_suggested_reviewer"),
+    ).toBe(true);
+    expect(events.every((e) => e.dismissal_reason === undefined)).toBe(true);
+  });
+
   it("attaches dismissal reason/note only for dismiss, truncating the note", () => {
     const longNote = "x".repeat(600);
     const [dismissed] = buildBulkActionEvents({
