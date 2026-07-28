@@ -1,5 +1,11 @@
-import { BellIcon, EnvelopeSimple, Lightning } from "@phosphor-icons/react";
+import {
+  BellIcon,
+  EnvelopeSimple,
+  Lightning,
+  RepeatIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@posthog/quill";
+import { LOOPS_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type SidebarNavItem,
@@ -10,12 +16,14 @@ import {
   SHORTCUTS,
 } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { CountBadge } from "@posthog/ui/primitives/CountBadge";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import {
   navigateToActivity,
   navigateToInbox,
+  navigateToLoops,
   navigateToWebsiteCommandCenter,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
@@ -64,6 +72,7 @@ function NavIcon({
 
 export function ChannelNav() {
   const view = useAppView();
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -118,6 +127,19 @@ export function ChannelNav() {
           />
         }
       />
+      {loopsEnabled ? (
+        <NavIcon
+          icon={
+            <RepeatIcon
+              size={16}
+              weight={view.type === "loops" ? "fill" : "regular"}
+            />
+          }
+          label="Loops"
+          isActive={view.type === "loops"}
+          onClick={withTrack("loops", navigateToLoops)}
+        />
+      ) : null}
     </div>
   );
 }
