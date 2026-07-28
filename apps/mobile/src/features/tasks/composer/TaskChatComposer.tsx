@@ -18,11 +18,13 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Keyboard,
@@ -43,6 +45,7 @@ import {
   pickPhotoFromLibrary,
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
+import { validateAttachment } from "./attachments/validation";
 import {
   DEFAULT_EXECUTION_MODE,
   DEFAULT_MODEL,
@@ -187,6 +190,19 @@ export function TaskChatComposer({
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
+  // Errors are a pure function of the picked attachments, so derive rather
+  // than mirror them in state.
+  const attachmentErrors = useMemo(
+    () =>
+      Object.fromEntries(
+        attachments.flatMap((att) => {
+          const reason = validateAttachment(att);
+          return reason ? [[att.id, reason]] : [];
+        }),
+      ),
+    [attachments],
+  );
+
   // Mirror composer state into refs so a failed send can read the current
   // value after awaiting, rather than the value captured when it was sent.
   const messageRef = useRef(message);
@@ -234,6 +250,13 @@ export function TaskChatComposer({
 
   const handleSend = () => {
     if (!hasContent || disabled) return;
+    if (attachments.some((att) => validateAttachment(att))) {
+      Alert.alert(
+        "Attachment can't be sent",
+        "Remove the highlighted attachment before sending.",
+      );
+      return;
+    }
     const submitted: ComposerContent = { text: message.trim(), attachments };
     const submissionId = ++submissionRef.current;
     Keyboard.dismiss();
@@ -256,7 +279,10 @@ export function TaskChatComposer({
   ) => {
     try {
       const att = await picker();
-      if (att) setAttachments((prev) => [...prev, att]);
+      if (!att) return;
+      setAttachments((prev) => [...prev, att]);
+      const reason = validateAttachment(att);
+      if (reason) Alert.alert("Attachment problem", reason);
     } catch (err) {
       log.error("Failed to pick attachment", err);
     }
@@ -325,6 +351,7 @@ export function TaskChatComposer({
             <AttachmentsBar
               attachments={attachments}
               onRemove={removeAttachment}
+              errors={attachmentErrors}
             />
             <TextInput
               className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"

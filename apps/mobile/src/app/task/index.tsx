@@ -15,9 +15,10 @@ import {
   Sparkle,
   StopIcon,
 } from "phosphor-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   TextInput,
@@ -43,6 +44,7 @@ import {
   pickPhotoFromLibrary,
 } from "@/features/tasks/composer/attachments/pickers";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
+import { validateAttachment } from "@/features/tasks/composer/attachments/validation";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
   DEFAULT_EXECUTION_MODE,
@@ -205,6 +207,19 @@ export default function NewTaskScreen() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
+  // Errors are a pure function of the picked attachments, so derive rather
+  // than mirror them in state.
+  const attachmentErrors = useMemo(
+    () =>
+      Object.fromEntries(
+        attachments.flatMap((att) => {
+          const reason = validateAttachment(att);
+          return reason ? [[att.id, reason]] : [];
+        }),
+      ),
+    [attachments],
+  );
+
   const appendTranscript = useCallback((transcript: string) => {
     setPrompt((prev) => (prev ? `${prev} ${transcript}` : transcript));
   }, []);
@@ -236,7 +251,10 @@ export default function NewTaskScreen() {
     async (picker: () => Promise<PendingAttachment | null>) => {
       try {
         const att = await picker();
-        if (att) setAttachments((prev) => [...prev, att]);
+        if (!att) return;
+        setAttachments((prev) => [...prev, att]);
+        const reason = validateAttachment(att);
+        if (reason) Alert.alert("Attachment problem", reason);
       } catch (err) {
         log.error("Failed to pick attachment", err);
       }
@@ -265,6 +283,13 @@ export default function NewTaskScreen() {
   const handleCreateTask = useCallback(async () => {
     const hasContent = !!prompt.trim() || attachments.length > 0;
     if (!hasContent || !isRepositorySelectionComplete(selection) || creating) {
+      return;
+    }
+    if (attachments.some((att) => validateAttachment(att))) {
+      Alert.alert(
+        "Attachment can't be sent",
+        "Remove the highlighted attachment before sending.",
+      );
       return;
     }
 
@@ -560,6 +585,7 @@ export default function NewTaskScreen() {
               <AttachmentsBar
                 attachments={attachments}
                 onRemove={removeAttachment}
+                errors={attachmentErrors}
               />
               <TextInput
                 className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
