@@ -3,7 +3,6 @@ import type { Adapter } from "./adapter";
 import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
-import type { TaskRunArtifact } from "./task";
 import type { UploadableSkillSource } from "./skills";
 
 // Execution mode schema and type - shared between main and renderer
