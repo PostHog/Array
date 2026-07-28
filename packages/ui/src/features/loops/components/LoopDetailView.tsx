@@ -35,8 +35,8 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
-import { useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
