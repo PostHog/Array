@@ -278,6 +278,86 @@ describe("canUseTool MCP approval enforcement", () => {
     },
   );
 
+  // The destructive regex gates update/delete/patch/destroy; a `create`
+  // sub-tool doesn't match it, so in a local hands-off mode it must be
+  // auto-allowed just like the write/shell tools rather than prompting.
+  it.each(["auto", "bypassPermissions"] as const)(
+    "auto-allows a non-destructive PostHog exec sub-tool in local %s mode",
+    async (permissionMode) => {
+      setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+      const hasPostHogExecApproval = vi.fn().mockReturnValue(false);
+      const context = createContext("mcp__posthog__exec", {
+        toolInput: { command: "call insight-create {}" },
+        session: {
+          permissionMode,
+          cloudMode: false,
+          posthogExecPermissionRegex,
+          settingsManager: {
+            getRepoRoot: vi.fn().mockReturnValue("/repo"),
+            hasPostHogExecApproval,
+            addPostHogExecApproval: vi.fn(),
+          },
+        },
+      });
+
+      const result = await canUseTool(context);
+
+      expect(result.behavior).toBe("allow");
+      expect(context.client.requestPermission).not.toHaveBeenCalled();
+    },
+  );
+
+  // Guard against the fix leaking into interactive modes: a non-destructive
+  // sub-tool must still route to the manual permission prompt there.
+  it("still prompts for a non-destructive PostHog exec sub-tool in default mode", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "call insight-create {}" },
+      session: {
+        permissionMode: "default",
+        cloudMode: false,
+        posthogExecPermissionRegex,
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval: vi.fn(),
+        },
+      },
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalled();
+  });
+
+  // Cloud sessions relay every non-destructive sub-tool to AgentServer
+  // regardless of mode; the local hands-off shortcut must not apply.
+  it("relays a non-destructive PostHog exec sub-tool to the prompt in cloud auto mode", async () => {
+    setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
+
+    const context = createContext("mcp__posthog__exec", {
+      toolInput: { command: "call insight-create {}" },
+      session: {
+        permissionMode: "auto",
+        cloudMode: true,
+        posthogExecPermissionRegex,
+        settingsManager: {
+          getRepoRoot: vi.fn().mockReturnValue("/repo"),
+          hasPostHogExecApproval: vi.fn().mockReturnValue(false),
+          addPostHogExecApproval: vi.fn(),
+        },
+      },
+    });
+
+    const result = await canUseTool(context);
+
+    expect(result.behavior).toBe("allow");
+    expect(context.client.requestPermission).toHaveBeenCalled();
+  });
+
   it("skips the prompt for a remembered PostHog exec sub-tool", async () => {
     setMcpToolApprovalStates({ mcp__posthog__exec: "approved" });
 

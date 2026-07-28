@@ -780,22 +780,30 @@ export async function canUseTool(
 
     if (session.posthogExecPermissionRegex && isPostHogExecTool(toolName)) {
       const subTool = extractPostHogSubTool(toolInput);
-      if (
-        subTool &&
-        matchesPostHogExecPermission(
+      if (subTool) {
+        const isDestructive = matchesPostHogExecPermission(
           subTool,
           session.posthogExecPermissionRegex,
-        )
-      ) {
-        if (session.settingsManager.hasPostHogExecApproval(subTool)) {
+        );
+        // A remembered approval is only ever recorded for a destructive
+        // sub-tool (the only ones that reach the approval prompt), so it only
+        // applies here.
+        if (
+          isDestructive &&
+          session.settingsManager.hasPostHogExecApproval(subTool)
+        ) {
           return {
             behavior: "allow",
             updatedInput: toolInput as Record<string, unknown>,
           };
         }
-        // Local hands-off modes retain their normal no-prompt behavior. Cloud
-        // sessions must send the request to AgentServer, which uses the run's
-        // effective mode to relay interactive approvals and auto-approve
+        // Local hands-off modes retain their normal no-prompt behavior for
+        // both destructive and non-destructive sub-tools. Because the single
+        // `exec` dispatcher isn't annotated read-only, a non-destructive
+        // sub-tool (e.g. `insight-create`) would otherwise fall through to a
+        // manual prompt even though auto mode advertises hands-off approval.
+        // Cloud sessions must send the request to AgentServer, which uses the
+        // run's effective mode to relay interactive approvals and auto-approve
         // background runs.
         if (
           !session.cloudMode &&
@@ -807,7 +815,13 @@ export async function canUseTool(
             updatedInput: toolInput as Record<string, unknown>,
           };
         }
-        return handlePostHogExecApprovalFlow(context, subTool);
+        // Destructive sub-tools that weren't auto-allowed above prompt for
+        // approval. Non-destructive sub-tools fall through to the standard
+        // mode handling below (interactive prompt for local default/acceptEdits,
+        // AgentServer relay for cloud), leaving that behavior unchanged.
+        if (isDestructive) {
+          return handlePostHogExecApprovalFlow(context, subTool);
+        }
       }
     }
   }
