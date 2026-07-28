@@ -185,7 +185,10 @@ export function ChannelNav() {
             render={
               <NavButton
                 icon={
-                  <BellIcon size={16} weight={isActivity ? "fill" : "regular"} />
+                  <BellIcon
+                    size={16}
+                    weight={isActivity ? "fill" : "regular"}
+                  />
                 }
                 label="Activity"
                 isActive={isActivity}
@@ -194,7 +197,10 @@ export function ChannelNav() {
                   withTrack("activity", navigateToActivity)();
                 }}
                 badge={
-                  <CountBadge count={unseenActivity} className={ICON_BADGE_CLASS} />
+                  <CountBadge
+                    count={unseenActivity}
+                    className={ICON_BADGE_CLASS}
+                  />
                 }
               />
             }
