@@ -1,5 +1,6 @@
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import {
+  Archive,
   ArrowSquareOut,
   Buildings,
   Check,
@@ -39,6 +40,7 @@ import {
   ItemTitle,
 } from "@posthog/quill";
 import { EXTERNAL_LINKS } from "@posthog/shared";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
@@ -47,10 +49,12 @@ import {
   useSwitchOrgMutation,
 } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
+import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -77,6 +81,12 @@ export function ProjectSwitcher() {
   const switchOrgMutation = useSwitchOrgMutation();
   const logoutMutation = useLogoutMutation();
   const { groupedProjects, currentProject, currentProjectId } = useProjects();
+  // The channels layout has no room for a standing Archived row, so archived
+  // tasks live here — a peer of Settings, not buried inside it. Still hidden
+  // when there is nothing archived, exactly as the row was.
+  const channelsLayout = useChannelsLayout();
+  const archivedTaskIds = useArchivedTaskIds();
+  const showArchived = channelsLayout && archivedTaskIds.size > 0;
 
   const currentOrgGroup =
     groupedProjects.find((group) => group.orgId === currentOrgId) ?? null;
@@ -151,6 +161,11 @@ export function ProjectSwitcher() {
     const url = getPostHogUrl("/create-organization");
     if (url) openExternalUrl(url);
     setPopoverOpen(false);
+  };
+
+  const handleArchived = () => {
+    setPopoverOpen(false);
+    navigateToArchived();
   };
 
   const handleSettings = () => {
@@ -338,6 +353,13 @@ export function ProjectSwitcher() {
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+
+            {showArchived && (
+              <DropdownMenuItem onClick={handleArchived}>
+                <Archive size={14} className="text-gray-11" />
+                Archived
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuItem onClick={handleSettings}>
               <Gear size={14} className="text-gray-11" />

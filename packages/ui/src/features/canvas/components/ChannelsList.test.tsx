@@ -6,10 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   channels: [] as { id: string; name: string; path: string }[],
   starredPaths: [] as string[],
+  channelsLayout: true,
   navigate: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ track: vi.fn() }));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => mocks.channelsLayout,
+}));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
   useChannels: () => ({ channels: mocks.channels, isLoading: false }),
   useChannelMutations: () => ({ createChannel: vi.fn(), isDeleting: false }),
@@ -63,6 +67,7 @@ describe("ChannelsList", () => {
     vi.clearAllMocks();
     mocks.channels = [ME, ENG, DESIGN];
     mocks.starredPaths = [];
+    mocks.channelsLayout = true;
   });
 
   it("pins #me above the channels, with its ⌘1 shortcut", () => {
@@ -103,6 +108,15 @@ describe("ChannelsList", () => {
 
       expect(screen.queryByText("Starred")).toBeNull();
       expect(screen.getByText("engineering")).toBeTruthy();
+    });
+
+    // The alpha renders this list as a plain tree with no slider around it, and
+    // ChannelHotkeys doesn't bind ⌘1-9 there either — so neither shows.
+    it("is absent off the channels layout, along with the shortcut hints", () => {
+      mocks.channelsLayout = false;
+      renderList();
+      expect(screen.queryByLabelText("Search channels")).toBeNull();
+      expect(screen.getByText("me").parentElement?.textContent).toBe("me");
     });
 
     it("says so when nothing matches", async () => {
