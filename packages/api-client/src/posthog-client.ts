@@ -192,6 +192,34 @@ export type {
 
 export type Evaluation = Schemas.Evaluation;
 
+export type Ticket = Schemas.Ticket;
+export type TicketStatus = Schemas.TicketStatusEnum;
+export type TicketPriority = Schemas.PriorityEnum;
+export type TicketAssignment = Schemas.TicketAssignment;
+export type TicketPerson = Schemas.TicketPerson;
+export type TicketView = Schemas.TicketView;
+export type PaginatedTicketList = Schemas.PaginatedTicketList;
+
+export interface ListTicketsOptions {
+  status?: string;
+  assignee?: string;
+  priority?: string;
+  sla?: "at-risk" | "breached" | "on-track";
+  orderBy?:
+    | "-created_at"
+    | "-sla_due_at"
+    | "-ticket_number"
+    | "-updated_at"
+    | "created_at"
+    | "sla_due_at"
+    | "ticket_number"
+    | "updated_at";
+  search?: string;
+  channelSource?: "email" | "slack" | "teams" | "widget";
+  limit?: number;
+  offset?: number;
+}
+
 export interface UserGitHubIntegration {
   id: string;
   kind: "github";
@@ -6205,5 +6233,70 @@ export class PostHogAPIClient {
       { kpi, daily, perAgent, byModel, toolErrors },
       nameById,
     );
+  }
+
+  // --- Conversations (support tickets) ---
+
+  async listTickets(
+    options?: ListTicketsOptions,
+  ): Promise<Schemas.PaginatedTicketList> {
+    const teamId = await this.getTeamId();
+    const query: Record<string, string | number> = {
+      limit: options?.limit ?? 100,
+    };
+    if (options?.offset !== undefined) query.offset = options.offset;
+    if (options?.status) query.status = options.status;
+    if (options?.assignee) query.assignee = options.assignee;
+    if (options?.priority) query.priority = options.priority;
+    if (options?.sla) query.sla = options.sla;
+    if (options?.orderBy) query.order_by = options.orderBy;
+    if (options?.search) query.search = options.search;
+    if (options?.channelSource) query.channel_source = options.channelSource;
+
+    return await this.api.get(
+      "/api/projects/{project_id}/conversations/tickets/",
+      {
+        path: { project_id: teamId.toString() },
+        query,
+      },
+    );
+  }
+
+  async getTicket(ticketId: string): Promise<Schemas.Ticket> {
+    const teamId = await this.getTeamId();
+    return await this.api.get(
+      "/api/projects/{project_id}/conversations/tickets/{id}/",
+      {
+        path: { project_id: teamId.toString(), id: ticketId },
+      },
+    );
+  }
+
+  async listTicketViews(): Promise<Schemas.TicketView[]> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.get(
+      "/api/environments/{project_id}/conversations/views/",
+      {
+        path: { project_id: teamId.toString() },
+        query: { limit: 100 },
+      },
+    );
+    return data.results ?? [];
+  }
+
+  /**
+   * Sum of unread_team_count across the team's non-resolved tickets. The
+   * generated spec mis-annotates the response as a full Ticket; the server
+   * actually returns `{ count }` (cached in Redis for 30s server-side).
+   */
+  async getTicketUnreadCount(): Promise<number> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.get(
+      "/api/projects/{project_id}/conversations/tickets/unread_count/",
+      {
+        path: { project_id: teamId.toString() },
+      },
+    );
+    return (data as unknown as { count?: number }).count ?? 0;
   }
 }
