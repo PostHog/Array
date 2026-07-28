@@ -289,9 +289,9 @@ export function ThreadLoadingState() {
   );
 }
 
-/** The panel's title row and window controls. Shared with ActivityPanel, which
- *  is the same chrome under a different title. */
-export function ThreadPanelHeader({
+/** The panel's title row and window controls. ActivityPanel has its own header
+ *  (the tabs are its title row), so this is the legacy panel's alone. */
+function ThreadPanelHeader({
   title,
   onClose,
   onToggleCollapsed,
