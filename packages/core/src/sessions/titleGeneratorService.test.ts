@@ -220,6 +220,42 @@ describe("generateTitleAndSummary", () => {
     expect(result?.title).toBe("Fix login bug");
   });
 
+  it("does not parse SUMMARY in a PR title as the summary", async () => {
+    prompt.mockResolvedValue({
+      content:
+        "TITLE: Review PR #123: Fix SUMMARY: parsing\nSUMMARY: Fixing title and summary parsing.",
+    });
+
+    const result = await makeService().generateTitleAndSummary(
+      '<github_pr number="123" title="Fix SUMMARY: parsing" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(result).toEqual({
+      title: "Review PR #123: Fix SUMMARY: parsing",
+      summary: "Fixing title and summary parsing.",
+    });
+  });
+
+  it("instructs the model to include existing GitHub PR titles", async () => {
+    prompt.mockResolvedValue({
+      content:
+        "TITLE: Review PR #123: Fix login redirect\nSUMMARY: Reviewing the existing pull request.",
+    });
+
+    await makeService().generateTitleAndSummary(
+      '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(prompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        system: expect.stringContaining(
+          "the generated TITLE MUST include both the PR number and the PR title verbatim",
+        ),
+      }),
+    );
+  });
+
   it("returns null on error", async () => {
     prompt.mockRejectedValue(new Error("network error"));
     const result = await makeService().generateTitleAndSummary("some content");
