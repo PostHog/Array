@@ -6,6 +6,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
@@ -41,6 +42,7 @@ type ArtifactItem =
 // most recent first. Sibling of the History tab, but scoped to outputs rather
 // than the full activity stream.
 export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -130,7 +132,8 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
               No artifacts yet
             </Text>
             <Text className="text-[13px] text-gray-10">
-              Canvases and pull requests from this channel's tasks show up here.
+              Canvases and pull requests from this{" "}
+              {spacesLayout ? "space's" : "channel's"} tasks show up here.
             </Text>
           </div>
         ) : (

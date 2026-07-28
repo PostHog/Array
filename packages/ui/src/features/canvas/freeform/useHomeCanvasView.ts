@@ -6,9 +6,9 @@ import { useFreeformChatStore } from "@posthog/ui/features/canvas/stores/freefor
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToChannelDashboard,
-  navigateToChannelNewTask,
   navigateToChannelTask,
 } from "@posthog/ui/router/navigationBridge";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
@@ -28,7 +28,8 @@ export function useCanvasNavigation(
           navigateToChannelTask(channelId, intent.taskId);
           break;
         case "new-task":
-          navigateToChannelNewTask(channelId);
+          // Via openTaskInput so a stale prefill can't leak into the composer.
+          openTaskInput({ channelId });
           break;
         case "canvas":
           navigateToChannelDashboard(channelId, intent.dashboardId);

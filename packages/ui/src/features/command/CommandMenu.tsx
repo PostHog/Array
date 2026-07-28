@@ -3,7 +3,6 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  HashIcon,
   RepeatIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
@@ -32,7 +31,9 @@ import {
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
@@ -134,6 +135,7 @@ function TaskCommandIcon({ task }: { task: Task }) {
 }
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
+  const spacesLayout = useChannelsLayout();
   const openSettingsDialog = openSettings;
   const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
@@ -524,12 +526,15 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (channels.length === 0) return [];
     return [
       {
-        label: "Channels",
+        label: spacesLayout ? "Spaces" : "Channels",
         items: channels.map((channel) => ({
           id: `channel-${channel.id}`,
           label: channel.name,
-          keywords: "channel",
-          icon: <HashIcon size={12} className="text-gray-11" />,
+          keywords: "space channel",
+          icon: channelGlyph(channel.name, {
+            size: 12,
+            className: "text-muted-foreground",
+          }),
           action: "open-channel" as CommandMenuAction,
           channelId: channel.id,
           onRun: () => {
@@ -539,7 +544,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         })),
       },
     ];
-  }, [channels, closeSettingsDialog]);
+  }, [channels, closeSettingsDialog, spacesLayout]);
 
   // Commands, channels, and tasks share a single filterable list.
   const sections = useMemo(
@@ -593,7 +598,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           <AutocompleteInput
             placeholder={
               bluebirdEnabled
-                ? "Search commands, channels, and tasks…"
+                ? `Search commands, ${spacesLayout ? "spaces" : "channels"}, and tasks…`
                 : "Search commands and tasks…"
             }
             autoFocus
