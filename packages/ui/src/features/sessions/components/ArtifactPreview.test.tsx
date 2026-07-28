@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
   artifactHtmlDocument,
+  artifactPreviewBlob,
   markdownDocument,
 } from "./artifactPreviewDocument";
 
@@ -100,6 +101,118 @@ describe("ArtifactPreview", () => {
     const frame = screen.getByTitle("Preview of report.html");
     expect(frame).toHaveAttribute("src", "blob:preview");
     expect(frame).toHaveAttribute("sandbox", "");
+  });
+
+  it.each([
+    ["image.png", "image/png"],
+    ["image.jpg", "image/jpeg"],
+    ["image.gif", "image/gif"],
+    ["image.webp", "image/webp"],
+    ["image.bmp", "image/bmp"],
+    ["image.ico", "image/x-icon"],
+    ["image.tiff", "image/tiff"],
+    ["image.avif", "image/avif"],
+  ])("normalizes %s served as octet-stream", async (name, mimeType) => {
+    const blob = await artifactPreviewBlob(
+      new Blob(["image"], { type: "application/octet-stream" }),
+      name,
+    );
+
+    expect(blob.type).toBe(mimeType);
+  });
+
+  it("shows working image controls instead of an iframe", () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="image.png"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "image.png" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Zoom out" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Fit to view" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTitle("Preview of image.png")).not.toBeInTheDocument();
+
+    const zoomOut = screen.getByRole("button", { name: "Zoom out" });
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    fireEvent.click(zoomOut);
+    expect(screen.getByText("10%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fit to view" }));
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("zooms with a trackpad pinch gesture", async () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="image.png"
+      />,
+    );
+
+    const image = screen.getByRole("img", { name: "image.png" });
+    const viewport = image.closest(".react-transform-wrapper");
+    expect(viewport).not.toBeNull();
+    fireEvent.wheel(viewport as Element, {
+      ctrlKey: true,
+      deltaY: -100,
+      clientX: 100,
+      clientY: 100,
+    });
+
+    await waitFor(() => {
+      const percentage = Number.parseInt(
+        screen.getByText(/%$/).textContent ?? "0",
+        10,
+      );
+      expect(percentage).toBeGreaterThan(100);
+    });
+  });
+
+  it("shows the preview error when an image cannot be decoded", () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["not an image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="broken.png"
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "broken.png" }));
+    expect(
+      screen.getByText("This artifact can’t be previewed."),
+    ).toBeInTheDocument();
   });
 
   it("renders GFM Markdown while escaping embedded HTML", () => {
