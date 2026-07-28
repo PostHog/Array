@@ -2514,6 +2514,8 @@ export class PostHogAPIClient {
   async getTaskActivity(options?: {
     before?: string;
     beforeId?: string;
+    limit?: number;
+    unreadOnly?: boolean;
   }): Promise<TaskActivityPage> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/task_activity/`;
@@ -2521,6 +2523,12 @@ export class PostHogAPIClient {
     if (options?.before && options.beforeId) {
       url.searchParams.set("before", options.before);
       url.searchParams.set("before_id", options.beforeId);
+    }
+    if (options?.limit) {
+      url.searchParams.set("limit", String(options.limit));
+    }
+    if (options?.unreadOnly) {
+      url.searchParams.set("unread_only", "true");
     }
     const response = await this.api.fetcher.fetch({
       method: "get",
@@ -2551,6 +2559,22 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to mark task activity read: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskActivityMarkReadResult;
+  }
+
+  async markAllTaskActivityRead(): Promise<TaskActivityMarkReadResult> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/mark_all_read/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to mark all task activity read: ${response.statusText}`,
       );
     }
     return (await response.json()) as TaskActivityMarkReadResult;

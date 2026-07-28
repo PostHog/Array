@@ -25,8 +25,8 @@ export function useMarkTaskActivityRead() {
       const marked = new Map(
         activities.map((activity) => [activity.task_id, activity.seen_before]),
       );
-      queryClient.setQueryData<InfiniteData<TaskActivityPage>>(
-        TASK_ACTIVITY_QUERY_KEY,
+      queryClient.setQueriesData<InfiniteData<TaskActivityPage>>(
+        { queryKey: TASK_ACTIVITY_QUERY_KEY },
         (data) => {
           if (!data) return data;
           const clearing = data.pages
@@ -51,6 +51,36 @@ export function useMarkTaskActivityRead() {
                   ? { ...row, is_unread: false }
                   : row;
               }),
+            })),
+          };
+        },
+      );
+    },
+  });
+}
+
+export function useMarkAllTaskActivityRead() {
+  const client = useOptionalAuthenticatedClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!client) throw new Error("Not authenticated");
+      return client.markAllTaskActivityRead();
+    },
+    onMutate: async () => {
+      queryClient.setQueriesData<InfiniteData<TaskActivityPage>>(
+        { queryKey: TASK_ACTIVITY_QUERY_KEY },
+        (data) => {
+          if (!data) return data;
+          return {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              unread_count: 0,
+              results: page.results.map((row) => ({
+                ...row,
+                is_unread: false,
+              })),
             })),
           };
         },
