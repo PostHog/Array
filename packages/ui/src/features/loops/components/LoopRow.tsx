@@ -12,6 +12,12 @@ import {
   summarizeNotificationDestinations,
 } from "../loopDisplay";
 
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    loopListOrigin?: boolean;
+  }
+}
+
 export function LoopRow({
   loop,
   creator,
@@ -55,6 +61,7 @@ export function LoopRow({
     <Link
       to="/code/loops/$loopId"
       params={{ loopId: loop.id }}
+      state={{ loopListOrigin: true }}
       className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
       <Flex align="center" gap="3" className="min-w-0">
