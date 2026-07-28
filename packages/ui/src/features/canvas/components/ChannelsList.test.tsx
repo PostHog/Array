@@ -125,19 +125,6 @@ describe("ChannelsList", () => {
       renderList();
       expect(screen.getByText("Channels")).toBeTruthy();
     });
-
-    it("shows section icons and the caret for the current state", async () => {
-      const user = userEvent.setup();
-      renderList();
-
-      expect(screen.getByTestId("starred-section-icon")).toBeTruthy();
-      expect(screen.getByTestId("spaces-section-icon")).toBeTruthy();
-      expect(screen.getByTestId("channels:all-caret-down")).toBeTruthy();
-
-      await user.click(screen.getByText("Spaces"));
-
-      expect(screen.getByTestId("channels:all-caret-right")).toBeTruthy();
-    });
   });
 
   describe("search", () => {

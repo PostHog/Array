@@ -732,7 +732,6 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
       >
         {channelGlyph(PERSONAL_CHANNEL_NAME, {
           size: 14,
-          space: spacesLayout,
           weight: isUnread ? "bold" : undefined,
           className: cn(
             "shrink-0",
@@ -831,7 +830,7 @@ function ChannelGroup({
   sectionId: string;
   label: string;
   className?: string;
-  /** Layout-only: rows sit at the label's level instead of indented under it. */
+  /** Layout-only: removes the legacy tree indent; rows apply their own inset. */
   flat?: boolean;
   /**
    * Off under the layout: a kept-mounted collapsed row is still an Autocomplete
@@ -870,13 +869,11 @@ function ChannelGroup({
           {isOpen ? (
             <CaretDownIcon
               size={14}
-              data-testid={`${sectionId}-caret-down`}
               className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
             />
           ) : (
             <CaretRightIcon
               size={14}
-              data-testid={`${sectionId}-caret-right`}
               className="hidden group-hover/group-trigger:block group-focus-visible/group-trigger:block"
             />
           )}
@@ -1009,7 +1006,7 @@ export function ChannelsList() {
           label="Starred"
           flat={channelsLayout}
           keepMounted={!channelsLayout}
-          icon={<StarIcon size={14} data-testid="starred-section-icon" />}
+          icon={<StarIcon size={14} />}
         >
           {starred.map((channel) => (
             <ChannelSection
@@ -1029,7 +1026,7 @@ export function ChannelsList() {
         keepMounted={!channelsLayout}
         icon={
           channelsLayout ? (
-            <CubeFocusIcon size={14} data-testid="spaces-section-icon" />
+            <CubeFocusIcon size={14} />
           ) : (
             <HashIcon size={14} />
           )

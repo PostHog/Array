@@ -1,7 +1,8 @@
-import { CubeIcon, HashIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
@@ -114,7 +115,7 @@ export function RenameChannelModal({
             }}
           >
             <TextField.Slot>
-              {spacesLayout ? <CubeIcon size={16} /> : <HashIcon size={16} />}
+              {channelGlyph(channel.name, { size: 16, space: spacesLayout })}
             </TextField.Slot>
             <TextField.Slot side="right">
               <Text className="text-gray-9 text-sm tabular-nums">
