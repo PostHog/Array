@@ -47,6 +47,7 @@ describe("uploadArtifactTool", () => {
         size: 7,
         storage_path: "tasks/artifacts/report.csv",
         uploaded_at: "2026-01-01T00:00:00Z",
+        url: "https://storage.example/download/report.csv",
       },
     ]);
   });
@@ -82,6 +83,9 @@ describe("uploadArtifactTool", () => {
           storage_path: "tasks/artifacts/report.csv",
         }),
       ],
+    );
+    expect(result.content[0]?.text).toContain(
+      "https://storage.example/download/report.csv",
     );
   });
 
