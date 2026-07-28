@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcClient } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { createPiRpcClient, getPiRpcClientProcess } from "./rpc-client";
+import { createPiRpcClient } from "./rpc-client";
 
 describe("createPiRpcClient", () => {
   it("does not put provider credentials in the child environment", () => {
@@ -64,7 +64,7 @@ process.on("message", (request) => {
         followUp: [],
       });
     } finally {
-      getPiRpcClientProcess(client)?.kill();
+      await client.stop();
       await rm(directory, { recursive: true });
     }
   });
