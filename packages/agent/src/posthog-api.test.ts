@@ -198,6 +198,27 @@ describe("PostHogAPIClient", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it("treats a missing stored task session object as empty", async () => {
+    const client = new PostHogAPIClient({
+      apiUrl: "https://app.posthog.com",
+      getApiKey: vi.fn().mockResolvedValue("token"),
+      projectId: 7,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+
+    await expect(
+      client.downloadTaskSession({
+        id: "session-1",
+        download_url: "https://storage.example/missing.jsonl",
+        content_sha256: "old-hash",
+      }),
+    ).resolves.toBe("");
+  });
+
   it("surfaces an uncertain task session replacement without retrying", async () => {
     const client = new PostHogAPIClient({
       apiUrl: "https://app.posthog.com",

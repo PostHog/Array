@@ -690,10 +690,46 @@ describe("PiSessionController", () => {
     expect(session.getConversation).not.toHaveBeenCalled();
   });
 
+  it("does not mark direct bash events as assistant streaming", async () => {
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    onEvent({
+      type: "tool_call_started",
+      timestamp: 1,
+      toolCall: {
+        id: "pi-bash-live-1-1",
+        title: "printf hello",
+        kind: "execute",
+        status: "in_progress",
+        rawInput: { command: "printf hello" },
+      },
+    });
+    onEvent({
+      type: "tool_call_updated",
+      timestamp: 2,
+      toolCall: {
+        id: "pi-bash-live-1-1",
+        status: "completed",
+      },
+    });
+
+    expect(
+      controller.store.getState().sessions["task-1"].status?.isStreaming,
+    ).toBe(false);
+  });
+
   it("resumes a terminal cloud run only when a message is submitted", async () => {
     const terminalSession = {
       ...createSession(),
       resumeRequired: true,
+      taskRunId: "run-1",
     };
     const resumedSession = createSession();
     const provider = {
@@ -706,7 +742,7 @@ describe("PiSessionController", () => {
     const taskService = { resumeCloudPiRun } as unknown as TaskService;
     const controller = new PiSessionController(provider, taskService);
 
-    await controller.connect("task-1", "run-1");
+    await controller.connect("task-1");
 
     expect(resumeCloudPiRun).not.toHaveBeenCalled();
 
@@ -714,6 +750,46 @@ describe("PiSessionController", () => {
 
     expect(resumeCloudPiRun).toHaveBeenCalledWith("task-1", "run-1");
     expect(resumedSession.client.prompt).toHaveBeenCalledWith("continue");
+  });
+
+  it("resumes and retries a message when the prior sandbox is gone", async () => {
+    const staleSession = {
+      ...createSession(),
+      taskRunId: "run-1",
+      sendUserMessage: vi.fn(async () => {
+        throw new Error("No active sandbox for this task run");
+      }),
+    };
+    const resumedSession = {
+      ...createSession(),
+      sendUserMessage: vi.fn(async () => {}),
+    };
+    const provider = {
+      get: vi
+        .fn()
+        .mockResolvedValueOnce(staleSession)
+        .mockResolvedValue(resumedSession),
+    } as PiSessionProvider;
+    const resumeCloudPiRun = vi.fn(async () => ({ id: "run-2" }));
+    const taskService = {
+      prepareCloudPiMessage: vi.fn(async () => ({
+        content: "continue",
+        artifactIds: [],
+      })),
+      resumeCloudPiRun,
+    } as unknown as TaskService;
+    const controller = new PiSessionController(provider, taskService);
+
+    await controller.connect("task-1");
+    await controller.submit("task-1", "continue", false, "steer");
+
+    expect(resumeCloudPiRun).toHaveBeenCalledWith("task-1", "run-1");
+    expect(resumedSession.sendUserMessage).toHaveBeenCalledWith(
+      "prompt",
+      "continue",
+      [],
+      expect.any(String),
+    );
   });
 
   it("keeps a connected transcript usable when a command fails", async () => {
@@ -948,6 +1024,46 @@ describe("PiSessionController", () => {
     expect(controller.store.getState().sessions["task-1"].events).toEqual([
       nativeEvent,
     ]);
+  });
+
+  it("does not briefly duplicate retained events during reconnect snapshots", async () => {
+    const retainedEvent: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "retained" },
+      sourceId: "pi-entry-1:0",
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const session = createSession();
+    vi.mocked(session.onConversationEvent).mockImplementation((handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+    onEvent(retainedEvent);
+    controller.disconnect("task-1");
+
+    let resolveConversation: (events: AgentConversationEvent[]) => void =
+      () => {};
+    vi.mocked(session.getConversation).mockReturnValue(
+      new Promise((resolve) => {
+        resolveConversation = resolve;
+      }),
+    );
+    const reconnect = controller.connect("task-1", "run-1");
+    await vi.waitFor(() =>
+      expect(session.onConversationEvent).toHaveBeenCalledTimes(2),
+    );
+    onEvent(retainedEvent);
+
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      retainedEvent,
+    ]);
+
+    resolveConversation([retainedEvent]);
+    await reconnect;
   });
 
   it("does not append streamed assistant text already present in native history", async () => {

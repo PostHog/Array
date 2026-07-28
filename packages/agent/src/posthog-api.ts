@@ -236,6 +236,9 @@ export class PostHogAPIClient {
     const response = await fetch(access.download_url, {
       signal: AbortSignal.timeout(30_000),
     });
+    if (response.status === 404) {
+      return "";
+    }
     if (!response.ok) {
       throw new Error(
         `Failed to download task session: [${response.status}] ${response.statusText}`,

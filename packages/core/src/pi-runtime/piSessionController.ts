@@ -43,6 +43,7 @@ export interface PiSession {
   client: PiRemoteRpcClient;
   readonly resumeRequired?: boolean;
   readonly cloudStatus?: TaskRunStatus;
+  readonly taskRunId?: string;
   retry?(): Promise<void>;
   getQueue(): Promise<PiQueueSnapshot>;
   clearQueue(): Promise<PiQueueSnapshot>;
@@ -386,7 +387,9 @@ export class PiSessionController {
                 message,
               )
             : { content: message, artifactIds: [] };
-          await session.sendUserMessage(
+          await this.sendCloudUserMessage(
+            taskId,
+            session,
             commandType,
             prepared.content,
             prepared.artifactIds,
@@ -641,6 +644,14 @@ export class PiSessionController {
       return;
     }
 
+    const session = this.getSession(taskId);
+    if (
+      event.sourceId &&
+      session.events.some((existing) => existing.sourceId === event.sourceId)
+    ) {
+      return;
+    }
+
     if (event.type === "runtime_error") {
       this.recordOperationFailure(
         taskId,
@@ -652,7 +663,6 @@ export class PiSessionController {
 
     const liveEvents = [...(this.liveEvents.get(taskId) ?? []), event];
     this.liveEvents.set(taskId, liveEvents);
-    const session = this.getSession(taskId);
     let status = session.status;
     if (status && event.type === "runtime_status") {
       if (event.status === "compacting") {
@@ -666,11 +676,16 @@ export class PiSessionController {
         );
       }
     }
+    const isDirectBashEvent =
+      (event.type === "tool_call_started" ||
+        event.type === "tool_call_updated") &&
+      event.toolCall.id.startsWith("pi-bash-");
     const hasTurnActivity =
-      event.type === "assistant_message_chunk" ||
-      event.type === "assistant_thought_chunk" ||
-      event.type === "tool_call_started" ||
-      event.type === "tool_call_updated";
+      !isDirectBashEvent &&
+      (event.type === "assistant_message_chunk" ||
+        event.type === "assistant_thought_chunk" ||
+        event.type === "tool_call_started" ||
+        event.type === "tool_call_updated");
     if (status && hasTurnActivity) {
       status = { ...status, isStreaming: true };
     }
@@ -1020,9 +1035,50 @@ export class PiSessionController {
     this.updateSession(taskId, { status });
   }
 
+  private async sendCloudUserMessage(
+    taskId: string,
+    session: PiSession,
+    type: "prompt" | "steer" | "follow_up",
+    content: string,
+    artifactIds: string[],
+    messageId: string,
+  ): Promise<void> {
+    if (!session.sendUserMessage) {
+      throw new Error("Cloud Pi session cannot send messages");
+    }
+
+    try {
+      await session.sendUserMessage(type, content, artifactIds, messageId);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const taskRunId = this.taskRunIds.get(taskId) ?? session.taskRunId;
+      if (!taskRunId || !message.includes("No active sandbox")) {
+        throw error;
+      }
+
+      const resumedRun = await this.taskService.resumeCloudPiRun(
+        taskId,
+        taskRunId,
+      );
+      this.resetTransport(taskId);
+      await this.ensureConnected(taskId, resumedRun.id);
+      const resumedSession = await this.getPiSession(taskId);
+      if (!resumedSession.sendUserMessage) {
+        throw new Error("Resumed cloud Pi session cannot send messages");
+      }
+      await resumedSession.sendUserMessage(
+        type,
+        content,
+        artifactIds,
+        messageId,
+      );
+    }
+  }
+
   private async getWritablePiSession(taskId: string): Promise<PiSession> {
     const session = await this.getPiSession(taskId);
-    const taskRunId = this.taskRunIds.get(taskId);
+    const taskRunId = this.taskRunIds.get(taskId) ?? session.taskRunId;
     if (!session.resumeRequired || !taskRunId) {
       return session;
     }
@@ -1064,7 +1120,14 @@ export class PiSessionController {
       return existing;
     }
 
-    const session = this.provider.get(taskId, this.taskRunIds.get(taskId));
+    const session = this.provider
+      .get(taskId, this.taskRunIds.get(taskId))
+      .then((resolved) => {
+        if (resolved.taskRunId && !this.taskRunIds.has(taskId)) {
+          this.taskRunIds.set(taskId, resolved.taskRunId);
+        }
+        return resolved;
+      });
     this.sessions.set(taskId, session);
     void session.catch(() => {
       if (this.sessions.get(taskId) === session) {

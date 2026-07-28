@@ -420,6 +420,9 @@ export class PiAgentServer {
       }
     });
     await client.start();
+    if (this.config.reasoningEffort) {
+      await client.setThinkingLevel(this.config.reasoningEffort);
+    }
     const runtimeState = await client.getState();
     this.sessionFile = runtimeState.sessionFile ?? restoredSessionFile ?? null;
     const unsubscribe = () => {

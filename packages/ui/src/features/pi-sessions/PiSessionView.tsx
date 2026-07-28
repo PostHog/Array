@@ -84,7 +84,6 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     return () => piSessionController.disconnect(taskId);
   }, [piSessionController, taskId, taskRunId]);
 
-  const sessionAvailable = session?.connectionState === "connected";
   const status = session?.status;
   const isStreaming = status?.isStreaming ?? false;
   const isCompacting = status?.isCompacting ?? false;
@@ -314,6 +313,8 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const hasTranscript = session.events.some(
     (event) => event.type !== "progress",
   );
+  const sessionAvailable =
+    session.connectionState === "connected" || hasTranscript;
   if (isConnecting && !hasTranscript) {
     return (
       <Box className="relative h-full">
@@ -354,11 +355,15 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   const controlsPending = status ? isStreaming || isBashRunning : false;
   const hasQueuedMessage =
     session.queue.steering.length + session.queue.followUp.length > 0;
-  let modelSelector: ReactElement = <Skeleton className="h-7 w-32" />;
-  let reasoningSelector: ReactElement | null = (
-    <Skeleton className="h-7 w-20" />
+  let modelSelector: ReactElement = (
+    <Skeleton className="h-7 w-32 bg-foreground/15" />
   );
-  let messagingModeToggle: ReactElement = <Skeleton className="h-7 w-24" />;
+  let reasoningSelector: ReactElement | null = (
+    <Skeleton className="h-7 w-20 bg-foreground/15" />
+  );
+  let messagingModeToggle: ReactElement = (
+    <Skeleton className="h-7 w-24 bg-foreground/15" />
+  );
 
   if (status && session.modelsLoaded) {
     modelSelector = (
@@ -400,9 +405,6 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     <Flex direction="column" height="100%">
       {isAuthRestoring && (
         <CloudConnectionBanner message="Restoring authentication..." />
-      )}
-      {isConnecting && hasTranscript && !isAuthRestoring && (
-        <CloudConnectionBanner message="Connecting to cloud runner..." />
       )}
       {connectionError && hasTranscript && (
         <CloudStreamDisconnectedBanner

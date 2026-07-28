@@ -119,6 +119,10 @@ export class CloudPiSessionClient implements PiSession {
     return isTerminalStatus(this.runStatus);
   }
 
+  get taskRunId(): string {
+    return this.context.runId;
+  }
+
   get cloudStatus(): TaskRunStatus {
     return this.runStatus;
   }
@@ -237,8 +241,10 @@ export class CloudPiSessionClient implements PiSession {
     onError: (error: unknown) => void,
     onCloudStatus?: (status: TaskRunStatus) => void,
   ): void {
+    const snapshotCanProveReadiness =
+      update.kind === "snapshot" && update.status === "in_progress";
     const hasCurrentReadinessEvent =
-      (update.kind === "logs" || update.kind === "snapshot") &&
+      (update.kind === "logs" || snapshotCanProveReadiness) &&
       update.newEntries.some((entry) => entry.type === "pi_run_started");
     if (hasCurrentReadinessEvent) {
       this.markRuntimeReady();

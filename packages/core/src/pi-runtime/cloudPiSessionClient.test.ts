@@ -126,7 +126,7 @@ describe("CloudPiSessionClient", () => {
     }
   });
 
-  it("accepts a reconnect snapshot with a start entry as runtime readiness", async () => {
+  it("waits for a fresh start when a queued resume snapshot contains an old start", async () => {
     const cloud = createCloudTaskClient();
     vi.mocked(cloud.client.sendCommand).mockResolvedValue({
       success: true,
@@ -148,6 +148,16 @@ describe("CloudPiSessionClient", () => {
       status: "queued",
       newEntries: [{ type: "pi_run_started" }],
       totalEntryCount: 1,
+    });
+
+    expect(cloud.client.sendCommand).not.toHaveBeenCalled();
+
+    cloud.sendUpdate({
+      taskId: "task-1",
+      runId: "run-1",
+      kind: "logs",
+      newEntries: [{ type: "pi_run_started" }],
+      totalEntryCount: 2,
     });
 
     await expect(state).resolves.toMatchObject({ isStreaming: false });
