@@ -54,6 +54,48 @@ describe("resolveSandboxPosthogApi", () => {
       projectId: 7,
     });
   });
+
+  it("does not resurrect a stale token when the OAuth file is empty", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+    const oauthEnvFilePath = path.join(directory, "agent-oauth-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PERSONAL_API_KEY=pha_stale\0POSTHOG_PROJECT_ID=7\0",
+      );
+      await writeFile(oauthEnvFilePath, "");
+
+      expect(
+        resolveSandboxPosthogApi(ENV, envFilePath, oauthEnvFilePath),
+      ).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the managed OAuth file is unreadable", async () => {
+    const directory = await mkdtemp(
+      path.join(tmpdir(), "sandbox-posthog-api-"),
+    );
+    const envFilePath = path.join(directory, "agent-env");
+
+    try {
+      await writeFile(
+        envFilePath,
+        "POSTHOG_API_URL=https://us.posthog.com\0POSTHOG_PROJECT_ID=7\0",
+      );
+
+      expect(
+        resolveSandboxPosthogApi(ENV, envFilePath, directory),
+      ).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 const RESULT = {

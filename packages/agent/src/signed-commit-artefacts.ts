@@ -41,16 +41,36 @@ function readSandboxEnvFile(envFilePath: string): Record<string, string> {
   }
 }
 
+function readSandboxOauthToken(oauthEnvFilePath: string): string | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(oauthEnvFilePath, "utf8");
+  } catch (error) {
+    // Only a missing file means the sandbox predates the dedicated credential
+    // channel. Any other read failure must fail closed instead of resurrecting
+    // the frozen launch-time token.
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : "";
+  }
+
+  // The backend revokes OAuth access by truncating this managed file. Its
+  // presence is authoritative even when empty.
+  if (raw.trim() === "") {
+    return "";
+  }
+  const oauthEnv = readSandboxEnvFile(oauthEnvFilePath);
+  return oauthEnv.POSTHOG_PERSONAL_API_KEY ?? "";
+}
+
 export function resolveSandboxPosthogApi(
   env: Record<string, string | undefined> = process.env,
   envFilePath: string = SANDBOX_ENV_FILE,
   oauthEnvFilePath: string = SANDBOX_OAUTH_ENV_FILE,
 ): SandboxPosthogApi | undefined {
   const fileEnv = readSandboxEnvFile(envFilePath);
-  const oauthFileEnv = readSandboxEnvFile(oauthEnvFilePath);
+  const oauthToken = readSandboxOauthToken(oauthEnvFilePath);
   const apiUrl = fileEnv.POSTHOG_API_URL ?? env.POSTHOG_API_URL;
   const apiKey =
-    oauthFileEnv.POSTHOG_PERSONAL_API_KEY ??
+    oauthToken ??
     fileEnv.POSTHOG_PERSONAL_API_KEY ??
     env.POSTHOG_PERSONAL_API_KEY;
   const projectId = Number(
