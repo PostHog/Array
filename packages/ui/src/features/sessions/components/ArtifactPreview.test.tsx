@@ -193,6 +193,28 @@ describe("ArtifactPreview", () => {
     });
   });
 
+  it("shows the preview error when an image cannot be decoded", () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["not an image"], { type: "image/png" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="broken.png"
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "broken.png" }));
+    expect(
+      screen.getByText("This artifact can’t be previewed."),
+    ).toBeInTheDocument();
+  });
+
   it("renders GFM Markdown while escaping embedded HTML", () => {
     const document = markdownDocument(
       "# Report\n\n**Ready**\n\n| Name | Value |\n| --- | --- |\n| Cost | 12 |\n\n<script>alert('no')</script>",
