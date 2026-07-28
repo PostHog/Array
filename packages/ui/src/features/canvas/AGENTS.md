@@ -44,7 +44,12 @@ The root `AGENTS.md` architecture rules still apply.
   (`ChannelPanes` in `ChannelsSidebar.tsx`): the searchable channel list, and the
   channel you're in (`ChannelSidebar`, headed by `ChannelBackRow`). Both panes
   stay mounted — the offscreen one is `inert` — so the slide has something to
-  slide and returning to the list doesn't rebuild every row.
+  slide and returning to the list doesn't rebuild every row. A two-finger
+  horizontal swipe moves between them (`useChannelPaneSwipe`, wheel `deltaX`
+  accumulated per gesture and locked until the wheel goes quiet).
+- In the list, "Starred"/"Channels" are headings, not parents: under the layout
+  the rows sit at the heading's level (no indent) and the "#"/lock glyph belongs
+  to the rows. The alpha's indented tree is unchanged.
 - One `ChannelsFab` serves both panes: given a `channelId` it creates inside
   that channel (task, canvas), and either way it can create a channel. Off the
   layout it keeps its original two-item menu. Archived moves out of the sidebar

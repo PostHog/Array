@@ -82,6 +82,26 @@ describe("ChannelsList", () => {
     expect(me.parentElement?.textContent).toMatch(/me(⌘|Ctrl)/);
   });
 
+  // "Starred" and "Channels" are headings over the rows, not parents of them —
+  // under the layout the rows sit at the heading's level and keep the "#" for
+  // themselves. The alpha's tree is unchanged.
+  describe("group headings", () => {
+    beforeEach(() => {
+      mocks.starredPaths = [ENG.path];
+    });
+
+    it("does not indent rows under the layout", () => {
+      renderList();
+      expect(screen.getByText("engineering").closest(".pl-5")).toBeNull();
+    });
+
+    it("keeps the indented tree off the layout", () => {
+      mocks.channelsLayout = false;
+      renderList();
+      expect(screen.getByText("engineering").closest(".pl-5")).toBeTruthy();
+    });
+  });
+
   describe("search", () => {
     // The list is the only way to switch channels now, so with a few dozen
     // channels it has to be filterable rather than only scrollable.
