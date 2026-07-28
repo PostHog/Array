@@ -18,7 +18,6 @@ export interface IUpdater {
   check(): void;
   download(): void;
   quitAndInstall(): void;
-  setAutoDownload(enabled: boolean): void;
   onCheckStart(handler: () => void): () => void;
   onUpdateAvailable(handler: (info: UpdateAvailableInfo) => void): () => void;
   onDownloadProgress(

@@ -35,9 +35,8 @@ export class ElectronUpdater implements IUpdater {
   constructor() {
     autoUpdater.logger = log;
     autoUpdater.disableDifferentialDownload = true;
-    // Default to manual download; the "Download updates automatically" setting
-    // flips this via setAutoDownload(). A downloaded update always installs on the
-    // next quit, with an in-app Restart button for immediate install.
+    // Must stay false: UpdatesService is the sole caller of download(). If true,
+    // every checkForUpdates() poll re-downloads and re-stages the same build.
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
 
@@ -68,10 +67,6 @@ export class ElectronUpdater implements IUpdater {
 
   public quitAndInstall(): void {
     autoUpdater.quitAndInstall(false, true);
-  }
-
-  public setAutoDownload(enabled: boolean): void {
-    autoUpdater.autoDownload = enabled;
   }
 
   public onCheckStart(handler: () => void): () => void {
