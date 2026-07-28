@@ -287,7 +287,8 @@ export function ActivityView() {
               Activity
             </Text>
             <Text size="2" className="block text-muted-foreground">
-              Tasks you're involved in across {spacesLayout ? "spaces" : "channels"}.
+              Tasks you're involved in across{" "}
+              {spacesLayout ? "spaces" : "channels"}.
             </Text>
           </div>
           {unreadCount > 0 && (
