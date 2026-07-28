@@ -18,12 +18,12 @@ export function CommandSearchBar({ onClick }: { onClick: () => void }) {
   return (
     // The row is a window-drag region; the field has to opt out of it or the
     // press that should open the menu drags the window instead.
-    <div className="no-drag min-w-0 flex-1 px-3">
+    <div className="no-drag mt-px min-w-0 flex-1 px-3">
       <button
         type="button"
         aria-label="Search"
         onClick={onClick}
-        className="mx-auto flex h-7 w-full max-w-140 items-center gap-2 rounded-sm border border-border bg-fill-hover pr-1 pl-2"
+        className="mx-auto flex h-7 w-full max-w-120 items-center gap-2 rounded-sm bg-fill-hover pr-1 pl-2 hover:bg-fill-selected dark:hover:bg-input/80"
       >
         <MagnifyingGlass size={14} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left text-[13px]">
