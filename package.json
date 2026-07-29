@@ -50,7 +50,7 @@
   "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
-    "@posthog/cli": "^0.7.3",
+    "@posthog/cli": "^0.8.2",
     "fflate": "^0.8.2",
     "husky": "^9.1.7",
     "knip": "^5.66.3",
