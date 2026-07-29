@@ -16,7 +16,8 @@ export interface Task {
     | "session_summaries"
     | "signal_report"
     | "signals_scout"
-    | "slack";
+    | "slack"
+    | "loop";
   signal_report?: string | null; // Inbox report UUID when origin_product is "signal_report"
   github_integration?: number | null;
   repository: string; // Format: "organization/repository" (e.g., "posthog/posthog-js")
