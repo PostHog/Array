@@ -149,7 +149,10 @@ function buildMcpServers(
   };
 }
 
-function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
+function buildEnvironment(
+  gateway?: GatewayEnv,
+  sessionId?: string,
+): Record<string, string> {
   // Custom HTTP headers reach the model only through the Claude CLI subprocess,
   // which reads them from this env var (newline-delimited `name: value` lines)
   // — the SDK has no direct header option. We finalize them here, the single
@@ -171,6 +174,11 @@ function buildEnvironment(gateway?: GatewayEnv): Record<string, string> {
   const projectId = gateway?.posthogProjectId ?? process.env.POSTHOG_PROJECT_ID;
   if (projectId) {
     headerLines.push(buildGatewayPropertyHeaders({ team_id: projectId }));
+  }
+  if (sessionId) {
+    headerLines.push(
+      buildGatewayPropertyHeaders({ $ai_session_id: sessionId }),
+    );
   }
   // Route to AWS Bedrock as a fallback when Anthropic returns 5xx
   headerLines.push("x-posthog-use-bedrock-fallback: true");
@@ -471,7 +479,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
       params.mcpServers,
       loadUserClaudeJsonMcpServers(params.cwd, params.logger),
     ),
-    env: buildEnvironment(params.gatewayEnv),
+    env: buildEnvironment(params.gatewayEnv, params.sessionId),
     hooks: buildHooks(
       params.userProvidedOptions?.hooks,
       params.onModeChange,
