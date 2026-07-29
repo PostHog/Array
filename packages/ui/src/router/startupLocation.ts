@@ -1,28 +1,45 @@
 import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
-import {
-  readRendererState,
-  writeRendererState,
-} from "@posthog/ui/shell/rendererStorage";
+import { rendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 
-const KEY_PREFIX = "startup-location:";
+type ChannelClient = Pick<
+  PostHogAPIClient,
+  "createDesktopFileSystemChannel" | "getDesktopFileSystemChannels"
+>;
+type RestoreClient = Pick<
+  PostHogAPIClient,
+  "getDesktopFileSystemChannels" | "getTask"
+>;
+type StartupClient = ChannelClient & RestoreClient;
 
-function key(identity: string): string {
-  return `${KEY_PREFIX}${identity}`;
+const storageKey = (identity: string): string => `startup-location:${identity}`;
+const channelFromPath = ({
+  id,
+  path,
+}: {
+  id: string;
+  path: string;
+}): Channel => ({ id, name: path.replace(/^\/+/, ""), path });
+
+export async function resolveStartupLocation(
+  identity: string,
+  client: StartupClient,
+): Promise<string> {
+  const saved = await rendererStateStorage.getItem(storageKey(identity));
+  if (
+    saved &&
+    isRestorableLocation(saved) &&
+    (await canRestoreLocation(client, saved))
+  ) {
+    return saved;
+  }
+  return await personalNewTaskLocation(client);
 }
 
-export async function readStartupLocation(
-  identity: string,
-): Promise<string | null> {
-  return await readRendererState(key(identity));
-}
-
-export async function writeStartupLocation(
-  identity: string,
-  href: string,
-): Promise<void> {
-  await writeRendererState(key(identity), href);
+export function rememberStartupLocation(identity: string, href: string): void {
+  if (!isRestorableLocation(href)) return;
+  void rendererStateStorage.setItem(storageKey(identity), href);
 }
 
 export function isRestorableLocation(href: string): boolean {
@@ -37,7 +54,7 @@ export function isRestorableLocation(href: string): boolean {
 }
 
 export async function canRestoreLocation(
-  client: PostHogAPIClient,
+  client: RestoreClient,
   href: string,
 ): Promise<boolean> {
   const taskId = href.match(/^\/code\/tasks\/([^/?#]+)/)?.[1];
@@ -64,18 +81,13 @@ export async function canRestoreLocation(
 }
 
 export async function personalNewTaskLocation(
-  client: PostHogAPIClient,
+  client: ChannelClient,
 ): Promise<string> {
-  const toChannel = (channel: { id: string; path: string }): Channel => ({
-    id: channel.id,
-    name: channel.path.replace(/^\/+/, ""),
-    path: channel.path,
-  });
   const channels = (await client.getDesktopFileSystemChannels())
     .filter((channel) => channel.type === "folder")
-    .map(toChannel);
+    .map(channelFromPath);
   const personal = await ensurePersonalChannel(channels, async (name) =>
-    toChannel(await client.createDesktopFileSystemChannel(name)),
+    channelFromPath(await client.createDesktopFileSystemChannel(name)),
   );
   return `/website/${personal.id}/new`;
 }

@@ -21,7 +21,7 @@ describe("startupLocation", () => {
       createDesktopFileSystemChannel: vi.fn(),
     };
 
-    await expect(personalNewTaskLocation(client as never)).resolves.toBe(
+    await expect(personalNewTaskLocation(client)).resolves.toBe(
       "/website/me-id/new",
     );
     expect(client.createDesktopFileSystemChannel).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe("startupLocation", () => {
         .mockResolvedValue({ id: "new-me-id", path: "me", type: "folder" }),
     };
 
-    await expect(personalNewTaskLocation(client as never)).resolves.toBe(
+    await expect(personalNewTaskLocation(client)).resolves.toBe(
       "/website/new-me-id/new",
     );
   });
@@ -47,10 +47,10 @@ describe("startupLocation", () => {
     };
 
     await expect(
-      canRestoreLocation(client as never, "/code/tasks/deleted"),
+      canRestoreLocation(client, "/code/tasks/deleted"),
     ).resolves.toBe(false);
     await expect(
-      canRestoreLocation(client as never, "/website/deleted/context"),
+      canRestoreLocation(client, "/website/deleted/context"),
     ).resolves.toBe(false);
   });
 });

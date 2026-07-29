@@ -22,11 +22,8 @@ import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBann
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
 import { router } from "@posthog/ui/router/router";
 import {
-  canRestoreLocation,
-  isRestorableLocation,
-  personalNewTaskLocation,
-  readStartupLocation,
-  writeStartupLocation,
+  rememberStartupLocation,
+  resolveStartupLocation,
 } from "@posthog/ui/router/startupLocation";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
@@ -115,18 +112,10 @@ function App({ devToolbar }: AppProps) {
     }
     if (initialRouteLoaded) return;
     let cancelled = false;
-    void readStartupLocation(startupIdentity)
-      .then(async (saved) => {
-        const canRestore =
-          saved !== null &&
-          isRestorableLocation(saved) &&
-          (await canRestoreLocation(authenticatedClient, saved));
-        const href =
-          canRestore && saved
-            ? saved
-            : await personalNewTaskLocation(authenticatedClient);
+    void resolveStartupLocation(startupIdentity, authenticatedClient)
+      .then(async (href) => {
         router.history.replace(href);
-        await writeStartupLocation(startupIdentity, href);
+        rememberStartupLocation(startupIdentity, href);
         await router.load();
       })
       .catch(() => undefined)
@@ -146,9 +135,7 @@ function App({ devToolbar }: AppProps) {
   useEffect(() => {
     if (!initialRouteLoaded || !startupIdentity) return;
     return router.history.subscribe(({ location }) => {
-      if (isRestorableLocation(location.href)) {
-        void writeStartupLocation(startupIdentity, location.href);
-      }
+      rememberStartupLocation(startupIdentity, location.href);
     });
   }, [initialRouteLoaded, startupIdentity]);
 
