@@ -107,4 +107,25 @@ describe("ActivityTimeline", () => {
     expect(screen.getByText("#73874 - Loading…")).toBeInTheDocument();
     expect(screen.queryByText(/<github_pr/)).toBeNull();
   });
+
+  it("folds injected channel context by default", () => {
+    renderTimeline(true, [
+      {
+        type: "user_message",
+        id: "context-message",
+        content:
+          'Review this\n\n<channel_context channel="code">Saved workspace context</channel_context>',
+        timestamp: Date.parse("2026-07-17T09:05:00Z"),
+      },
+    ]);
+
+    expect(screen.getByText("Review this")).toBeInTheDocument();
+    expect(screen.queryByText(/<channel_context/)).toBeNull();
+    expect(screen.queryByText("Saved workspace context")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "#code CONTEXT.md" }));
+
+    expect(screen.getByText("Saved workspace context")).toBeVisible();
+    expect(useThreadNavigationStore.getState().scrollRequests).toEqual({});
+  });
 });
