@@ -96,6 +96,30 @@ describe("ThreadMessageRow", () => {
       screen.getByText(/Second line with more detail/),
     ).toBeInTheDocument();
   });
+
+  it("collapses authored newlines in one-line timeline previews", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: multiline,
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        preview
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Second line with more detail/).parentElement,
+    ).toHaveClass("line-clamp-1", "whitespace-normal");
+  });
 });
 
 describe("ThreadArtifactRow", () => {

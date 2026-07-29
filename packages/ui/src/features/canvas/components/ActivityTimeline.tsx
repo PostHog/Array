@@ -109,9 +109,7 @@ function UserMessageRow({
           <ThreadItemAuthor className="text-[13px]">{name}</ThreadItemAuthor>
           <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        {/* `whitespace-pre-wrap` makes the clamp land on the first *written*
-            line rather than the first wrapped one. */}
-        <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-pre-wrap text-[13px]">
+        <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-normal text-[13px]">
           <MentionText content={content} />
         </ThreadItemBody>
       </ThreadItemContent>

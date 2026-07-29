@@ -101,9 +101,7 @@ export function ThreadMessageRow({
         <ThreadItemBody
           className={cn(
             "mt-1.5 text-[13px]",
-            // `whitespace-pre-wrap` makes the clamp land on the first *written*
-            // line rather than the first wrapped one.
-            preview && "line-clamp-1 whitespace-pre-wrap",
+            preview && "line-clamp-1 whitespace-normal",
           )}
         >
           <MentionText
