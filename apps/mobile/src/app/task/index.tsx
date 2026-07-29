@@ -11,6 +11,7 @@ import {
   type ExecutionMode,
   getReasoningEffortOptions,
   isSupportedReasoningEffort,
+  KIMI_MODEL_FLAG,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
 } from "@posthog/shared";
@@ -24,7 +25,8 @@ import {
   PaperclipIcon,
   StopIcon,
 } from "phosphor-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useFeatureFlag } from "posthog-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -53,6 +55,7 @@ import {
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
+  filterKimiModelConfigOptions,
   getMobileExecutionModes,
   getModelConfigOption,
 } from "@/features/tasks/composer/options";
@@ -104,8 +107,16 @@ export default function NewTaskScreen() {
   const keyboard = useReanimatedKeyboardAnimation();
   const restingBottom = bottom("compact");
   const [adapter, setAdapter] = useState<Adapter>("claude");
-  const { configOptions, hasLiveConfig, isConfigReady } =
-    useCloudTaskConfigOptions(adapter);
+  const {
+    configOptions: liveConfigOptions,
+    hasLiveConfig,
+    isConfigReady,
+  } = useCloudTaskConfigOptions(adapter);
+  const kimiEnabled = !!useFeatureFlag(KIMI_MODEL_FLAG);
+  const configOptions = useMemo(
+    () => filterKimiModelConfigOptions(liveConfigOptions, kimiEnabled),
+    [liveConfigOptions, kimiEnabled],
+  );
   const modelConfigOption = getModelConfigOption(configOptions);
   const {
     error,
