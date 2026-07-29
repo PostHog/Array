@@ -1,22 +1,8 @@
 import { PaperPlaneRightIcon, XIcon } from "@phosphor-icons/react";
 import { InputGroupAddon, InputGroupButton } from "@posthog/quill";
-import { splitMentionSegments } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
-
-export function mentionIdsFromContent(
-  content: string,
-  members: UserBasic[],
-): number[] {
-  const emails = new Set(
-    splitMentionSegments(content).flatMap((segment) =>
-      segment.type === "mention" ? [segment.email.toLowerCase()] : [],
-    ),
-  );
-  return members
-    .filter((member) => emails.has(member.email.toLowerCase()))
-    .map((member) => member.id);
-}
+import { mentionIdsFromContent } from "./artifactCommentMentions";
 
 export function ArtifactCommentComposer({
   value,

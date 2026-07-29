@@ -35,6 +35,8 @@ interface ZoomableImageProps {
   style?: React.CSSProperties;
   controls?: boolean;
   onError?: () => void;
+  /** Content positioned over the image and transformed with zoom/pan. */
+  overlay?: React.ReactNode;
 }
 
 export function ZoomableImage({
@@ -44,6 +46,7 @@ export function ZoomableImage({
   style,
   controls = false,
   onError,
+  overlay,
 }: ZoomableImageProps) {
   const [scale, setScale] = useState(1);
 
@@ -75,13 +78,16 @@ export function ZoomableImage({
                 justifyContent: "center",
               }}
             >
-              <img
-                src={src}
-                alt={alt}
-                draggable={false}
-                className="max-h-full max-w-full object-contain"
-                onError={onError}
-              />
+              <div className="relative flex max-h-full max-w-full">
+                <img
+                  src={src}
+                  alt={alt}
+                  draggable={false}
+                  className="max-h-full max-w-full object-contain"
+                  onError={onError}
+                />
+                {overlay && <div className="absolute inset-0">{overlay}</div>}
+              </div>
             </TransformComponent>
             {controls && (
               <div className="-translate-x-1/2 absolute bottom-3 left-1/2 flex items-center gap-1 rounded-md border border-(--gray-a5) bg-(--color-panel-solid) p-1 shadow-sm">

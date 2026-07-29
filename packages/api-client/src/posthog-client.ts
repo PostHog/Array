@@ -192,12 +192,10 @@ export interface ArtifactComment {
   created_by: ArtifactCommentUser | null;
   content: string | null;
   created_at: string;
-  deleted?: boolean | null;
   item_id: string | null;
   item_context: unknown;
   scope: string;
   source_comment: string | null;
-  is_task?: boolean;
   completed_at?: string | null;
 }
 
@@ -3326,33 +3324,17 @@ export class PostHogAPIClient {
   async getArtifactComments(artifactId: string): Promise<ArtifactComment[]> {
     const teamId = await this.getTeamId();
     const comments: ArtifactComment[] = [];
-    let urlPath = `/api/projects/${teamId}/comments/?scope=task_artifact&item_id=${encodeURIComponent(artifactId)}`;
-
-    // Comments use cursor pagination. Follow it so a long-running review never
-    // silently loses older threads, while retaining a defensive page ceiling.
-    for (let page = 0; page < 20; page++) {
-      const url = new URL(`${this.api.baseUrl}${urlPath}`);
-      const response = await this.api.fetcher.fetch({
-        method: "get",
-        url,
-        path: url.pathname,
+    let cursor: string | undefined;
+    do {
+      const page = await this.api.get("/api/projects/{project_id}/comments/", {
+        path: { project_id: String(teamId) },
+        query: { scope: "task_artifact", item_id: artifactId, cursor },
       });
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch artifact comments: ${response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as {
-        results?: ArtifactComment[];
-        next?: string | null;
-      };
-      comments.push(...(data.results ?? []));
-      if (!data.next) return comments;
-      const next = new URL(data.next);
-      urlPath = `${next.pathname}${next.search}`;
-    }
-
-    log.warn("getArtifactComments hit the pagination limit", { artifactId });
+      comments.push(...(page.results as unknown as ArtifactComment[]));
+      cursor = page.next
+        ? (new URL(page.next).searchParams.get("cursor") ?? undefined)
+        : undefined;
+    } while (cursor);
     return comments;
   }
 
@@ -3360,32 +3342,21 @@ export class PostHogAPIClient {
     request: CreateArtifactCommentRequest,
   ): Promise<ArtifactComment> {
     const teamId = await this.getTeamId();
-    const path = `/api/projects/${teamId}/comments/`;
-    const url = new URL(`${this.api.baseUrl}${path}`);
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url,
-      path,
-      overrides: {
-        body: JSON.stringify({
-          content: request.content,
-          scope: "task_artifact",
-          item_id: request.artifactId,
-          item_context: request.context,
-          source_comment: request.sourceCommentId ?? null,
-          mentions: request.mentions ?? [],
-          // Resolution is represented by a thread-state reply. This keeps the
-          // write path compatible with personal API key authentication.
-          is_task: false,
-        }),
-      },
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to create artifact comment: ${response.statusText}`,
-      );
-    }
-    return (await response.json()) as ArtifactComment;
+    const payload = {
+      content: request.content,
+      scope: "task_artifact",
+      item_id: request.artifactId,
+      item_context: request.context,
+      source_comment: request.sourceCommentId ?? null,
+      mentions: request.mentions ?? [],
+      // Resolution is represented by a thread-state reply so this stays on the
+      // same PAT-compatible write path as ordinary comments.
+      is_task: false,
+    };
+    return (await this.api.post("/api/projects/{project_id}/comments/", {
+      path: { project_id: String(teamId) },
+      body: payload as unknown as Schemas.Comment,
+    })) as unknown as ArtifactComment;
   }
 
   async getTaskSessionStorageAccess(

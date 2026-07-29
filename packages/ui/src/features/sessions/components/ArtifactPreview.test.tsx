@@ -1,3 +1,4 @@
+import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
@@ -10,7 +11,9 @@ const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
   type: "text/html",
 });
 const auth = vi.hoisted(() => ({ identity: "auth-1" as string | null }));
-const artifactComments = vi.hoisted(() => ({ data: [] }));
+const artifactComments = vi.hoisted(() => ({
+  data: [] as ArtifactComment[],
+}));
 const useQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@posthog/core/sessions/sessionService", () => ({
@@ -56,6 +59,7 @@ vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
 describe("ArtifactPreview", () => {
   beforeEach(() => {
     auth.identity = "auth-1";
+    artifactComments.data = [];
     useQuery.mockReset();
     useQuery.mockReturnValue({
       data: previewBlob,
@@ -287,6 +291,59 @@ describe("ArtifactPreview", () => {
     expect(
       screen.getByRole("button", { name: "View preview" }),
     ).toBeInTheDocument();
+  });
+
+  it("does not render resolved comment highlights", () => {
+    const root: ArtifactComment = {
+      id: "comment-1",
+      created_by: null,
+      content: "Review this",
+      created_at: "2026-01-01T00:00:00Z",
+      item_id: "artifact-1",
+      item_context: {
+        anchor: {
+          kind: "text",
+          quote: "Report",
+          prefix: "# ",
+          suffix: "",
+          start: 2,
+          end: 8,
+        },
+      },
+      scope: "task_artifact",
+      source_comment: null,
+      completed_at: null,
+    };
+    artifactComments.data = [
+      root,
+      {
+        ...root,
+        id: "state-1",
+        content: "Resolved this thread",
+        created_at: "2026-01-01T00:01:00Z",
+        source_comment: root.id,
+        item_context: {
+          anchor: { kind: "document" },
+          threadState: "resolved",
+        },
+      },
+    ];
+    useQuery.mockReturnValue({
+      data: "# Report",
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="report.md"
+      />,
+    );
+
+    expect(screen.queryByLabelText("Open comment thread")).toBeNull();
   });
 
   it("preserves authored styles and injects the inline-comment bridge", () => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createTextArtifactAnchor, resolveTextArtifactAnchor } from "./anchors";
+import {
+  createTextArtifactAnchor,
+  isArtifactThreadResolved,
+  resolveTextArtifactAnchor,
+} from "./anchors";
 
 describe("artifact text anchors", () => {
   it("creates and resolves a verified positional anchor", () => {
@@ -61,5 +65,29 @@ describe("artifact text anchors", () => {
 
   it("rejects whitespace-only selections", () => {
     expect(createTextArtifactAnchor("a   b", 1, 4)).toBeNull();
+  });
+
+  it("uses the latest thread-state event for resolution", () => {
+    const root = { completed_at: null };
+    const event = (state: "resolved" | "open", created_at: string) => ({
+      created_at,
+      item_context: {
+        anchor: { kind: "document" as const },
+        threadState: state,
+      },
+    });
+
+    expect(
+      isArtifactThreadResolved(root, [
+        event("resolved", "2026-01-01T00:00:00Z"),
+        event("open", "2026-01-01T00:01:00Z"),
+      ]),
+    ).toBe(false);
+    expect(
+      isArtifactThreadResolved(root, [
+        event("open", "2026-01-01T00:00:00Z"),
+        event("resolved", "2026-01-01T00:01:00Z"),
+      ]),
+    ).toBe(true);
   });
 });

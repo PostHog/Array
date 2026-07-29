@@ -1,7 +1,5 @@
 import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import {
-  type ArtifactCommentContext,
-  artifactCommentContextSchema,
   createTextArtifactAnchor,
   resolveTextArtifactAnchor,
   type TextArtifactAnchor,
@@ -14,11 +12,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-
-export type HighlightResolution = "exact" | "reanchored" | "orphaned";
-export type ArtifactLocateRequest = { id: string; nonce: number };
+import {
+  type ArtifactLocateRequest,
+  type HighlightResolution,
+  readArtifactCommentContext,
+} from "./artifactCommentViewTypes";
 
 type HighlightRect = {
   id: string;
@@ -28,13 +29,6 @@ type HighlightRect = {
   height: number;
   active: boolean;
 };
-
-export function parseArtifactCommentContext(
-  comment: ArtifactComment,
-): ArtifactCommentContext | null {
-  const parsed = artifactCommentContextSchema.safeParse(comment.item_context);
-  return parsed.success ? parsed.data : null;
-}
 
 function rangeFromOffsets(
   root: HTMLElement,
@@ -128,7 +122,7 @@ export function ArtifactTextAnnotations({
     const resolutions = new Map<string, HighlightResolution>();
 
     for (const comment of rootComments) {
-      const context = parseArtifactCommentContext(comment);
+      const context = readArtifactCommentContext(comment);
       if (!context || context.anchor.kind !== "text") continue;
       const resolved = resolveTextArtifactAnchor(text, context.anchor);
       if (!resolved) {
@@ -159,27 +153,31 @@ export function ArtifactTextAnnotations({
     rootRef,
   ]);
 
+  const recalculateRef = useRef(recalculate);
+  recalculateRef.current = recalculate;
+
   useEffect(() => {
-    recalculate();
+    recalculateRef.current();
     const container = containerRef.current;
     const root = rootRef.current;
     if (!container || !root) return;
-    const observer = new ResizeObserver(recalculate);
+    const update = () => recalculateRef.current();
+    const observer = new ResizeObserver(update);
     observer.observe(root);
-    window.addEventListener("resize", recalculate);
-    container.addEventListener("scroll", recalculate, { passive: true });
+    window.addEventListener("resize", update);
+    container.addEventListener("scroll", update, { passive: true });
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", recalculate);
-      container.removeEventListener("scroll", recalculate);
+      window.removeEventListener("resize", update);
+      container.removeEventListener("scroll", update);
     };
-  }, [containerRef, recalculate, rootRef]);
+  }, [containerRef, rootRef]);
 
   useEffect(() => {
     if (!locateRequest) return;
     const root = rootRef.current;
     const comment = rootComments.find(({ id }) => id === locateRequest.id);
-    const context = comment ? parseArtifactCommentContext(comment) : null;
+    const context = comment ? readArtifactCommentContext(comment) : null;
     if (!root || context?.anchor.kind !== "text") return;
     const resolved = resolveTextArtifactAnchor(
       root.textContent ?? "",

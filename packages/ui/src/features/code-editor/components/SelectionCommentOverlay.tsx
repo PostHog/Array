@@ -105,7 +105,8 @@ function SelectionComposerCard({
   initiallyExpanded: boolean;
   members?: UserBasic[];
 }) {
-  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [userExpanded, setUserExpanded] = useState(false);
+  const expanded = initiallyExpanded || userExpanded;
   const [draft, setDraft] = useState("");
   const style = { top: anchor.top + 4, left: anchor.left };
 
@@ -119,7 +120,7 @@ function SelectionComposerCard({
           aria-label={actionLabel}
           className="fixed z-50 shadow-sm"
           style={style}
-          onClick={() => setExpanded(true)}
+          onClick={() => setUserExpanded(true)}
         >
           {showActionText ? (
             <>
@@ -162,8 +163,6 @@ function SelectionComposerCard({
           endLine={toLine}
           onDismiss={onDismiss}
           onSubmitText={(text) => onSubmit(fromLine, toLine, text)}
-          placeholder={placeholder}
-          submitLabel="Add comment"
         />
       )}
     </div>,

@@ -2,10 +2,6 @@ import { getImageMimeType, isAllowedImageMimeType } from "@posthog/shared";
 import { applyCspToHtml } from "../../mcp-apps/utils/mcp-app-csp";
 import { injectArtifactHtmlCommentBridge } from "./artifactHtmlCommentBridge";
 
-function extension(filename: string): string {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
-}
-
 export function artifactHtmlDocument(
   html: string,
   commentBridgeChannel?: string,
@@ -29,11 +25,6 @@ export async function artifactPreviewBlob(
 
   if (isAllowedImageMimeType(imageMimeType)) {
     return new Blob([blob], { type: imageMimeType });
-  }
-  if (["html", "htm"].includes(extension(filename))) {
-    return new Blob([artifactHtmlDocument(await blob.text())], {
-      type: "text/html",
-    });
   }
   return blob;
 }

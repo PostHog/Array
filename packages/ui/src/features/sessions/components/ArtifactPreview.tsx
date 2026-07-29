@@ -29,12 +29,13 @@ import { MarkdownDocumentPreview } from "../../code-editor/components/MarkdownDo
 import { AnnotatedArtifactHtml } from "./AnnotatedArtifactHtml";
 import { AnnotatedArtifactImage } from "./AnnotatedArtifactImage";
 import { ArtifactCommentsSidebar } from "./ArtifactCommentsSidebar";
+import { ArtifactTextAnnotations } from "./ArtifactTextAnnotations";
 import {
   type ArtifactLocateRequest,
-  ArtifactTextAnnotations,
+  buildArtifactCommentThreads,
   type HighlightResolution,
-  parseArtifactCommentContext,
-} from "./ArtifactTextAnnotations";
+  readArtifactCommentContext,
+} from "./artifactCommentViewTypes";
 import { artifactPreviewBlob } from "./artifactPreviewDocument";
 import {
   useArtifactCommentsQuery,
@@ -44,6 +45,7 @@ import {
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
 const HTML_EXTENSIONS = new Set(["html", "htm"]);
+const EMPTY_COMMENTS: ArtifactComment[] = [];
 
 type HtmlPreview = { kind: "html"; html: string };
 type PreviewData = string | Blob | HtmlPreview;
@@ -179,24 +181,22 @@ export function ArtifactPreview({
     () => (data instanceof Blob ? URL.createObjectURL(data) : null),
     [data],
   );
-  const comments = commentsQuery.data ?? [];
-  const threadCount = comments.filter(
-    (comment) => !comment.source_comment,
-  ).length;
-  // Uploaded run artifacts are immutable; the artifact UUID is therefore their
-  // stable version identifier. Re-uploads receive a new UUID.
-  const currentVersion = artifactId;
+  const comments = commentsQuery.data ?? EMPTY_COMMENTS;
+  const threads = useMemo(
+    () => buildArtifactCommentThreads(comments),
+    [comments],
+  );
+  const openRootComments = useMemo(
+    () => threads.flatMap((thread) => (thread.resolved ? [] : [thread.root])),
+    [threads],
+  );
+  const threadCount = threads.length;
 
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
-
-  useEffect(() => {
-    setImageError(false);
-    setImageCommenting(false);
-  }, []);
 
   const activateThread = useCallback((id: string, pulse = false) => {
     setSelectedThreadId(id);
@@ -221,27 +221,16 @@ export function ArtifactPreview({
     [],
   );
 
-  const contextFor = useCallback(
-    (anchor: ArtifactAnchor) => ({
-      taskId,
-      runId,
-      artifactId,
-      artifactVersion: currentVersion,
-      anchor,
-    }),
-    [artifactId, currentVersion, runId, taskId],
-  );
-
   const createAnchoredComment = useCallback(
     (anchor: ArtifactAnchor, content: string, mentions: number[] = []) => {
       createComment.mutate({
         content,
-        context: contextFor(anchor),
+        context: { anchor },
         mentions,
       });
       setCommentsOpen(true);
     },
-    [contextFor, createComment],
+    [createComment],
   );
 
   const commentsAction = (
@@ -256,7 +245,6 @@ export function ArtifactPreview({
     <ArtifactCommentsSidebar
       comments={comments}
       members={members}
-      currentVersion={currentVersion}
       selectedThreadId={selectedThreadId}
       pulseThreadId={pulseThreadId}
       resolutions={resolutions}
@@ -268,11 +256,11 @@ export function ArtifactPreview({
         createAnchoredComment({ kind: "document" }, content, mentions)
       }
       onReply={(root: ArtifactComment, content, mentions) => {
-        const rootContext = parseArtifactCommentContext(root);
+        const rootContext = readArtifactCommentContext(root);
         createComment.mutate({
           content,
           sourceCommentId: root.id,
-          context: rootContext ?? contextFor({ kind: "document" }),
+          context: rootContext ?? { anchor: { kind: "document" } },
           mentions,
         });
       }}
@@ -315,7 +303,7 @@ export function ArtifactPreview({
                 artifactName={name}
                 rootRef={markdownRootRef}
                 containerRef={markdownContainerRef}
-                comments={comments}
+                comments={openRootComments}
                 activeThreadId={selectedThreadId}
                 locateRequest={locateRequest}
                 members={members}
@@ -342,7 +330,7 @@ export function ArtifactPreview({
           <AnnotatedArtifactHtml
             html={data.html}
             name={name}
-            comments={comments}
+            comments={openRootComments}
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
             members={members}
@@ -378,7 +366,7 @@ export function ArtifactPreview({
           <AnnotatedArtifactImage
             src={previewUrl}
             name={name}
-            comments={comments}
+            comments={openRootComments}
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
             commenting={imageCommenting}

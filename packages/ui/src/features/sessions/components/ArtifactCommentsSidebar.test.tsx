@@ -15,10 +15,6 @@ const comment: ArtifactComment = {
   created_at: new Date().toISOString(),
   item_id: "artifact-1",
   item_context: {
-    taskId: "task-1",
-    runId: "run-1",
-    artifactId: "artifact-1",
-    artifactVersion: "artifact-1",
     anchor: {
       kind: "text",
       quote: "paragraph",
@@ -30,7 +26,6 @@ const comment: ArtifactComment = {
   },
   scope: "task_artifact",
   source_comment: null,
-  is_task: true,
   completed_at: null,
 };
 
@@ -40,7 +35,6 @@ describe("ArtifactCommentsSidebar", () => {
       <ArtifactCommentsSidebar
         comments={[comment]}
         members={[]}
-        currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}
         resolutions={new Map()}
@@ -79,7 +73,6 @@ describe("ArtifactCommentsSidebar", () => {
       <ArtifactCommentsSidebar
         comments={[comment, stateEvent]}
         members={[]}
-        currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}
         resolutions={new Map()}
@@ -106,7 +99,6 @@ describe("ArtifactCommentsSidebar", () => {
       <ArtifactCommentsSidebar
         comments={[comment]}
         members={[]}
-        currentVersion="artifact-1"
         selectedThreadId="comment-1"
         pulseThreadId="comment-1"
         resolutions={new Map()}
@@ -131,7 +123,6 @@ describe("ArtifactCommentsSidebar", () => {
       <ArtifactCommentsSidebar
         comments={[comment]}
         members={[]}
-        currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}
         resolutions={new Map()}

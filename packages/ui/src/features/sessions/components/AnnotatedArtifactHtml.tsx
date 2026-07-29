@@ -10,8 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type ArtifactLocateRequest,
   type HighlightResolution,
-  parseArtifactCommentContext,
-} from "./ArtifactTextAnnotations";
+  readArtifactCommentContext,
+} from "./artifactCommentViewTypes";
 import { artifactHtmlDocument } from "./artifactPreviewDocument";
 
 const BRIDGE_MARKER = "__POSTHOG_ARTIFACT_COMMENT_BRIDGE__";
@@ -75,7 +75,7 @@ export function AnnotatedArtifactHtml({
     () =>
       comments.flatMap((comment) => {
         if (comment.source_comment) return [];
-        const context = parseArtifactCommentContext(comment);
+        const context = readArtifactCommentContext(comment);
         return context?.anchor.kind === "text"
           ? [
               {
@@ -122,6 +122,15 @@ export function AnnotatedArtifactHtml({
     sendLocate();
   }, [sendLocate]);
 
+  const activateThreadRef = useRef(onActivateThread);
+  activateThreadRef.current = onActivateThread;
+  const resolutionsChangeRef = useRef(onResolutionsChange);
+  resolutionsChangeRef.current = onResolutionsChange;
+  const sendCommentsRef = useRef(sendComments);
+  sendCommentsRef.current = sendComments;
+  const sendLocateRef = useRef(sendLocate);
+  sendLocateRef.current = sendLocate;
+
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
@@ -134,12 +143,12 @@ export function AnnotatedArtifactHtml({
         return;
       }
       if (data.type === "ready") {
-        sendComments();
-        sendLocate();
+        sendCommentsRef.current();
+        sendLocateRef.current();
         return;
       }
       if (data.type === "activate" && typeof data.id === "string") {
-        onActivateThread(data.id);
+        activateThreadRef.current(data.id);
         return;
       }
       if (data.type === "resolutions" && Array.isArray(data.items)) {
@@ -156,7 +165,7 @@ export function AnnotatedArtifactHtml({
             resolutions.set(id, status);
           }
         }
-        onResolutionsChange(resolutions);
+        resolutionsChangeRef.current(resolutions);
         return;
       }
       if (data.type !== "selection" || !isFrameRect(data.triggerRect)) return;
@@ -180,7 +189,7 @@ export function AnnotatedArtifactHtml({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onActivateThread, onResolutionsChange, sendComments, sendLocate]);
+  }, []);
 
   const dismiss = () => {
     setPendingAnchor(null);

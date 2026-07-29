@@ -37,8 +37,6 @@ interface CommentAnnotationProps {
   editingDraftId?: string;
   /** When set, submit calls this instead of the review-draft / agent flow. */
   onSubmitText?: (text: string) => void;
-  placeholder?: string;
-  submitLabel?: string;
 }
 
 export function CommentAnnotation({
@@ -51,8 +49,6 @@ export function CommentAnnotation({
   initialText,
   editingDraftId,
   onSubmitText,
-  placeholder = "Describe the changes you'd like...",
-  submitLabel,
 }: CommentAnnotationProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const addDraft = useReviewDraftsStore((s) => s.addDraft);
@@ -159,7 +155,7 @@ export function CommentAnnotation({
       <InputGroup>
         <InputGroupTextarea
           ref={setTextareaRef}
-          placeholder={placeholder}
+          placeholder="Describe the changes you'd like..."
           onKeyDown={handleKeyDown}
           onChange={(e) => setIsEmpty(!e.currentTarget.value.trim())}
           className="min-h-[48px] resize-none text-[13px]"
@@ -194,7 +190,7 @@ export function CommentAnnotation({
                 variant="primary"
                 onClick={handleSubmit}
                 disabled={isEmpty}
-                aria-label={submitLabel ?? (editingDraftId ? "Save" : "Submit")}
+                aria-label={editingDraftId ? "Save" : "Submit"}
               >
                 <ArrowUp size={14} weight="bold" />
               </InputGroupButton>

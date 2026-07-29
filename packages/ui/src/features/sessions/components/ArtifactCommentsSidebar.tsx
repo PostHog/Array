@@ -33,9 +33,10 @@ import { MentionText } from "@posthog/ui/features/canvas/components/MentionText"
 import { useMemo, useState } from "react";
 import { ArtifactCommentComposer } from "./ArtifactCommentComposer";
 import {
+  buildArtifactCommentThreads,
   type HighlightResolution,
-  parseArtifactCommentContext,
-} from "./ArtifactTextAnnotations";
+  readArtifactCommentContext,
+} from "./artifactCommentViewTypes";
 
 function authorName(comment: ArtifactComment): string {
   const user = comment.created_by;
@@ -76,34 +77,12 @@ function CommentBody({ comment }: { comment: ArtifactComment }) {
   );
 }
 
-function isThreadResolved(
-  root: ArtifactComment,
-  replies: ArtifactComment[],
-): boolean {
-  const latestState = replies
-    .map((comment) => ({
-      createdAt: comment.created_at,
-      state: parseArtifactCommentContext(comment)?.threadState,
-    }))
-    .filter(
-      (
-        entry,
-      ): entry is {
-        createdAt: string;
-        state: "resolved" | "open";
-      } => !!entry.state,
-    )
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .at(-1)?.state;
-  return latestState ? latestState === "resolved" : !!root.completed_at;
-}
-
 function Thread({
   root,
   replies,
   selected,
   pulsing,
-  currentVersion,
+  resolved,
   members,
   resolution,
   busy,
@@ -115,7 +94,7 @@ function Thread({
   replies: ArtifactComment[];
   selected: boolean;
   pulsing: boolean;
-  currentVersion: string;
+  resolved: boolean;
   members: UserBasic[];
   resolution?: HighlightResolution;
   busy: boolean;
@@ -125,13 +104,9 @@ function Thread({
 }) {
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
-  const resolved = isThreadResolved(root, replies);
   const visibleReplies = replies.filter(
-    (comment) => !parseArtifactCommentContext(comment)?.threadState,
+    (comment) => !readArtifactCommentContext(comment)?.threadState,
   );
-  const context = parseArtifactCommentContext(root);
-  const anotherVersion =
-    context?.artifactVersion && context.artifactVersion !== currentVersion;
 
   return (
     <Card
@@ -142,12 +117,10 @@ function Thread({
     >
       <CardContent className="p-3">
         <button type="button" className="w-full text-left" onClick={onSelect}>
-          {(resolution === "orphaned" || anotherVersion) && (
+          {resolution === "orphaned" && (
             <div className="mb-1.5 flex items-center gap-1 text-amber-700 text-xs dark:text-amber-300">
               <WarningCircle />
-              {resolution === "orphaned"
-                ? "The highlighted text changed"
-                : "Re-anchored from another artifact version"}
+              The highlighted text changed
             </div>
           )}
           <CommentBody comment={root} />
@@ -200,7 +173,6 @@ function Thread({
 export function ArtifactCommentsSidebar({
   comments,
   members,
-  currentVersion,
   selectedThreadId,
   pulseThreadId,
   resolutions,
@@ -214,7 +186,6 @@ export function ArtifactCommentsSidebar({
 }: {
   comments: ArtifactComment[];
   members: UserBasic[];
-  currentVersion: string;
   selectedThreadId: string | null;
   pulseThreadId: string | null;
   resolutions: Map<string, HighlightResolution>;
@@ -228,27 +199,14 @@ export function ArtifactCommentsSidebar({
 }) {
   const [draft, setDraft] = useState("");
   const [filter, setFilter] = useState<"open" | "resolved">("open");
-  const { roots, repliesByRoot } = useMemo(() => {
-    const roots = comments
-      .filter((comment) => !comment.source_comment)
-      .sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const repliesByRoot = new Map<string, ArtifactComment[]>();
-    for (const comment of comments) {
-      if (!comment.source_comment) continue;
-      const existing = repliesByRoot.get(comment.source_comment) ?? [];
-      existing.push(comment);
-      repliesByRoot.set(comment.source_comment, existing);
-    }
-    return { roots, repliesByRoot };
-  }, [comments]);
-  const openCount = roots.filter(
-    (root) => !isThreadResolved(root, repliesByRoot.get(root.id) ?? []),
-  ).length;
-  const resolvedCount = roots.length - openCount;
-  const visibleRoots = roots.filter(
-    (root) =>
-      isThreadResolved(root, repliesByRoot.get(root.id) ?? []) ===
-      (filter === "resolved"),
+  const threads = useMemo(
+    () => buildArtifactCommentThreads(comments),
+    [comments],
+  );
+  const openCount = threads.filter((thread) => !thread.resolved).length;
+  const resolvedCount = threads.length - openCount;
+  const visibleThreads = threads.filter(
+    (thread) => thread.resolved === (filter === "resolved"),
   );
 
   return (
@@ -256,7 +214,7 @@ export function ArtifactCommentsSidebar({
       <header className="flex h-11 shrink-0 items-center justify-between border-border border-b px-3">
         <div className="flex items-center gap-2 font-medium text-sm">
           Comments
-          {comments.length > 0 && <Badge>{visibleRoots.length}</Badge>}
+          {comments.length > 0 && <Badge>{visibleThreads.length}</Badge>}
         </div>
         <div className="flex items-center gap-1">
           <DropdownMenu>
@@ -299,7 +257,7 @@ export function ArtifactCommentsSidebar({
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
-        ) : visibleRoots.length === 0 ? (
+        ) : visibleThreads.length === 0 ? (
           <Empty className="py-8">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -316,14 +274,14 @@ export function ArtifactCommentsSidebar({
             </EmptyHeader>
           </Empty>
         ) : (
-          visibleRoots.map((root) => (
+          visibleThreads.map(({ root, replies, resolved }) => (
             <Thread
               key={root.id}
               root={root}
-              replies={repliesByRoot.get(root.id) ?? []}
+              replies={replies}
               selected={root.id === selectedThreadId}
               pulsing={root.id === pulseThreadId}
-              currentVersion={currentVersion}
+              resolved={resolved}
               members={members}
               resolution={resolutions.get(root.id)}
               busy={busy}

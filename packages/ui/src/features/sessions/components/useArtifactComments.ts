@@ -59,7 +59,6 @@ export function useCreateArtifactComment(artifactId: string) {
         item_context: request.context,
         scope: "task_artifact",
         source_comment: request.sourceCommentId ?? null,
-        is_task: false,
         completed_at: null,
       };
       queryClient.setQueryData<ArtifactComment[]>(queryKey, [
@@ -122,7 +121,6 @@ export function useSetArtifactCommentResolved(artifactId: string) {
         },
         scope: "task_artifact",
         source_comment: root.id,
-        is_task: false,
         completed_at: null,
       };
       queryClient.setQueryData<ArtifactComment[]>(queryKey, [

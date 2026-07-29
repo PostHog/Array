@@ -34,10 +34,6 @@ export type RegionArtifactAnchor = z.infer<typeof regionArtifactAnchorSchema>;
 export type ArtifactAnchor = z.infer<typeof artifactAnchorSchema>;
 
 export const artifactCommentContextSchema = z.object({
-  taskId: z.string(),
-  runId: z.string(),
-  artifactId: z.string(),
-  artifactVersion: z.string(),
   anchor: artifactAnchorSchema,
   threadState: z.enum(["resolved", "open"]).optional(),
 });
@@ -45,6 +41,40 @@ export const artifactCommentContextSchema = z.object({
 export type ArtifactCommentContext = z.infer<
   typeof artifactCommentContextSchema
 >;
+
+export function parseArtifactCommentContext(
+  value: unknown,
+): ArtifactCommentContext | null {
+  const parsed = artifactCommentContextSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+export type ArtifactThreadStateComment = {
+  created_at: string;
+  item_context: unknown;
+};
+
+export function isArtifactThreadResolved(
+  root: { completed_at?: string | null },
+  replies: ArtifactThreadStateComment[],
+): boolean {
+  const latestState = replies
+    .map((comment) => ({
+      createdAt: comment.created_at,
+      state: parseArtifactCommentContext(comment.item_context)?.threadState,
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        createdAt: string;
+        state: "resolved" | "open";
+      } => !!entry.state,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1)?.state;
+  return latestState ? latestState === "resolved" : !!root.completed_at;
+}
 
 export type ResolvedTextAnchor = {
   start: number;
