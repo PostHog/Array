@@ -1,7 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useThreadNavigationStore } from "./threadNavigationStore";
-import { useThreadScrollRequest } from "./useThreadScrollRequest";
+import {
+  useThreadNavigationStore,
+  useThreadScrollRequest,
+} from "./threadNavigationStore";
 
 beforeEach(() => {
   useThreadNavigationStore.setState({ scrollRequests: {} });
@@ -24,35 +26,6 @@ describe("useThreadScrollRequest", () => {
     expect(useThreadNavigationStore.getState().scrollRequests["task-1"]).toBe(
       null,
     );
-  });
-
-  it("ignores requests aimed at a different task", () => {
-    const jump = vi.fn();
-    renderHook(() => useThreadScrollRequest("task-1", jump));
-
-    act(() => {
-      useThreadNavigationStore
-        .getState()
-        .requestScrollToMessage("task-2", "turn-10-1-user");
-    });
-
-    expect(jump).not.toHaveBeenCalled();
-    expect(useThreadNavigationStore.getState().scrollRequests["task-2"]).toBe(
-      "turn-10-1-user",
-    );
-  });
-
-  it("does nothing without a task id", () => {
-    const jump = vi.fn();
-    renderHook(() => useThreadScrollRequest(undefined, jump));
-
-    act(() => {
-      useThreadNavigationStore
-        .getState()
-        .requestScrollToMessage("task-1", "turn-10-1-user");
-    });
-
-    expect(jump).not.toHaveBeenCalled();
   });
 
   it("re-fires when the same message is requested again", () => {

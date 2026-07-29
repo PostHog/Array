@@ -63,35 +63,6 @@ import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-/** One text size for the whole pane: an author's name reads at the same size as
- *  the message under it, so no row looks like a heading over its own content. */
-export const THREAD_TEXT_CLASS = "text-[13px]";
-
-/** Timeline nodes are all `sm` avatars / `size-6` bubbles, centered in the
- *  2.5rem gutter so every row's node sits on the timeline's vertical line. */
-export const THREAD_GUTTER_CLASS = "justify-center";
-
-/** Timestamps sit at the row's right edge, so they form a column instead of
- *  trailing names of varying length, and read a step below the row's 13px copy.
- *  Applied per row rather than as an ancestor `[data-slot]` rule, which
- *  `TooltipTrigger` defeats — see `ThreadTimestamp`. */
-export const THREAD_TIMESTAMP_CLASS = "ml-auto shrink-0 pl-2 text-[11px]";
-
-/** Content sits a little below its author line, so a card or a message never
- *  looks jammed against the name above it. */
-export const THREAD_BODY_SPACING_CLASS = "mt-1.5";
-
-/** The first non-empty line of a message. Timeline rows preview one line and
- *  truncate, so neither a leading blank line nor a wall of text makes a row
- *  tall enough to bury the entries around it. */
-export function messagePreview(content: string): string {
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed) return trimmed;
-  }
-  return "";
-}
-
 export function ThreadMessageRow({
   message,
   isTaskAuthor,
@@ -117,30 +88,26 @@ export function ThreadMessageRow({
 
   return (
     <ThreadItem>
-      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+      <ThreadItemGutter className="justify-center">
         <UserAvatar user={message.author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
+          <ThreadItemAuthor className="text-[13px]">
             {userDisplayName(message.author)}
           </ThreadItemAuthor>
-          <ThreadTimestamp
-            dateTime={message.created_at}
-            className={THREAD_TIMESTAMP_CLASS}
-          />
+          <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
         <ThreadItemBody
           className={cn(
-            THREAD_TEXT_CLASS,
-            THREAD_BODY_SPACING_CLASS,
-            preview && "truncate",
+            "mt-1.5 text-[13px]",
+            // `whitespace-pre-wrap` makes the clamp land on the first *written*
+            // line rather than the first wrapped one.
+            preview && "line-clamp-1 whitespace-pre-wrap",
           )}
         >
           <MentionText
-            content={
-              preview ? messagePreview(message.content) : message.content
-            }
+            content={message.content}
             currentUserEmail={currentUserEmail}
           />
         </ThreadItemBody>
@@ -207,7 +174,6 @@ function ArtifactCardButton({
   detail,
   onOpen,
   onOpenExternal,
-  externalLabel,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -216,7 +182,6 @@ function ArtifactCardButton({
   /** Renders a trailing button that leaves the app instead of opening the
    *  artifact in place. Absent when there is nowhere safe to send the user. */
   onOpenExternal?: () => void;
-  externalLabel?: string;
 }) {
   const body = (
     <>
@@ -230,12 +195,7 @@ function ArtifactCardButton({
   const innerClass = "flex min-w-0 items-center gap-2 px-2 py-1.5";
   return (
     // overflow-hidden so each half's hover fill is clipped to the card's radius.
-    <div
-      className={cn(
-        "flex w-fit max-w-full items-center overflow-hidden rounded-md border border-border bg-muted",
-        THREAD_TEXT_CLASS,
-      )}
-    >
+    <div className="flex w-fit max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-[13px]">
       {onOpen ? (
         <button
           type="button"
@@ -254,7 +214,7 @@ function ArtifactCardButton({
         <button
           type="button"
           onClick={onOpenExternal}
-          aria-label={externalLabel}
+          aria-label={`Open ${title} externally`}
           className="flex shrink-0 items-center self-stretch border-border border-l px-1.5 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
         >
           <ArrowSquareOutIcon size={12} />
@@ -296,7 +256,13 @@ function CanvasArtifactCard({
   );
 }
 
-function PrArtifactCard({ url, taskId }: { url: string; taskId: string }) {
+function PrArtifactCard({
+  url,
+  openInPlaceTaskId,
+}: {
+  url: string;
+  openInPlaceTaskId?: string;
+}) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   return (
     <ArtifactCardButton
@@ -310,9 +276,15 @@ function PrArtifactCard({ url, taskId }: { url: string; taskId: string }) {
       }
       title={title}
       detail={stateLabel}
-      onOpen={safeUrl ? () => openPrInReview(taskId, safeUrl) : undefined}
+      onOpen={
+        safeUrl
+          ? () =>
+              openInPlaceTaskId
+                ? openPrInReview(openInPlaceTaskId, safeUrl)
+                : openExternalUrl(safeUrl)
+          : undefined
+      }
       onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
-      externalLabel={`Open ${title} on GitHub`}
     />
   );
 }
@@ -320,15 +292,16 @@ function PrArtifactCard({ url, taskId }: { url: string; taskId: string }) {
 export function ThreadArtifactRow({
   artifact,
   createdAt,
-  taskId,
+  openInPlaceTaskId,
 }: {
   artifact: ThreadArtifact;
   createdAt: string;
-  taskId: string;
+  /** Task whose review pane is mounted alongside; absent means open externally. */
+  openInPlaceTaskId?: string;
 }) {
   return (
     <ThreadItem>
-      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+      <ThreadItemGutter className="justify-center">
         <Avatar size="sm" className="sticky top-2">
           <AvatarFallback>
             <RobotIcon size={12} />
@@ -337,21 +310,19 @@ export function ThreadArtifactRow({
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
+          <ThreadItemAuthor className="text-[13px]">
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
-          <ThreadTimestamp
-            dateTime={createdAt}
-            className={THREAD_TIMESTAMP_CLASS}
-          />
+          <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
-        <ThreadItemBody
-          className={cn(THREAD_TEXT_CLASS, THREAD_BODY_SPACING_CLASS)}
-        >
+        <ThreadItemBody className="mt-1.5 text-[13px]">
           {artifact.kind === "canvas" ? (
             <CanvasArtifactCard name={artifact.name} url={artifact.url} />
           ) : (
-            <PrArtifactCard url={artifact.url} taskId={taskId} />
+            <PrArtifactCard
+              url={artifact.url}
+              openInPlaceTaskId={openInPlaceTaskId}
+            />
           )}
         </ThreadItemBody>
       </ThreadItemContent>
@@ -426,7 +397,6 @@ function ThreadPanelHeader({
 
 export function ThreadTimeline({
   timeline,
-  taskId,
   isReady,
   currentUserUuid,
   currentUserEmail,
@@ -436,7 +406,6 @@ export function ThreadTimeline({
   onDelete,
 }: {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
-  taskId: string;
   isReady: boolean;
   currentUserUuid?: string;
   currentUserEmail?: string;
@@ -485,7 +454,6 @@ export function ThreadTimeline({
             key={row.message.id}
             artifact={row.artifact}
             createdAt={row.message.created_at}
-            taskId={taskId}
           />
         ),
       )}
@@ -599,7 +567,6 @@ function ThreadConversation({
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <ThreadTimeline
           timeline={timeline}
-          taskId={task.id}
           isReady={isReady}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}

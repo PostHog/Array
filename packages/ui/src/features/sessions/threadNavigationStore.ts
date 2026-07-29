@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 
 interface ThreadNavigationStoreState {
@@ -35,3 +36,24 @@ export const useThreadNavigationStore = create<ThreadNavigationStore>()(
       })),
   }),
 );
+
+/**
+ * Consumes a pending request for this task, handing it to the transcript's own
+ * jump and clearing it. Each transcript jumps differently (DOM registry,
+ * virtualizer index, grouped-row index), so the store carries only the target.
+ */
+export function useThreadScrollRequest(
+  taskId: string | undefined,
+  jumpToMessage: (messageId: string) => void,
+): void {
+  const requestedMessageId = useThreadNavigationStore((state) =>
+    taskId ? state.scrollRequests[taskId] : null,
+  );
+
+  useEffect(() => {
+    if (!taskId || !requestedMessageId) return;
+    jumpToMessage(requestedMessageId);
+    // Clear via getState so the action isn't an effect dependency.
+    useThreadNavigationStore.getState().clearScrollRequest(taskId);
+  }, [taskId, requestedMessageId, jumpToMessage]);
+}

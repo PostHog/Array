@@ -116,6 +116,7 @@ function ActivityConversation({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary,
+  canOpenInPlace,
 }: {
   task: Task;
   channelId: string;
@@ -123,6 +124,7 @@ function ActivityConversation({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary: boolean;
+  canOpenInPlace?: boolean;
 }) {
   const taskId = task.id;
   const {
@@ -180,13 +182,18 @@ function ActivityConversation({
 
   const body = () => {
     if (tab === "artifacts") {
-      return <TaskArtifactsList task={task} timeline={timeline} />;
+      return (
+        <TaskArtifactsList
+          task={task}
+          timeline={timeline}
+          canOpenInPlace={canOpenInPlace}
+        />
+      );
     }
     if (tab === "comments") {
       return (
         <ThreadTimeline
           timeline={commentRows}
-          taskId={taskId}
           isReady={isReady}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}
@@ -207,6 +214,7 @@ function ActivityConversation({
         currentUserEmail={currentUser?.email}
         isTaskAuthor={isTaskAuthor}
         canForward={canForward}
+        canOpenInPlace={canOpenInPlace}
         onSendToAgent={sendMessageToAgent}
         onDelete={deleteMessage}
       />
@@ -262,6 +270,7 @@ export function ActivityPanel({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary = true,
+  canOpenInPlace,
 }: {
   taskId: string;
   channelId: string;
@@ -271,6 +280,7 @@ export function ActivityPanel({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  canOpenInPlace?: boolean;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -308,6 +318,7 @@ export function ActivityPanel({
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
+      canOpenInPlace={canOpenInPlace}
     />
   );
 }

@@ -64,8 +64,8 @@ import {
   useGroupOverrides,
   useSessionViewActions,
 } from "@posthog/ui/features/sessions/sessionViewStore";
+import { useThreadScrollRequest } from "@posthog/ui/features/sessions/threadNavigationStore";
 import { SessionTaskIdProvider } from "@posthog/ui/features/sessions/useSessionTaskId";
-import { useThreadScrollRequest } from "@posthog/ui/features/sessions/useThreadScrollRequest";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
 import {

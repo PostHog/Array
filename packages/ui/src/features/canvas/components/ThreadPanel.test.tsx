@@ -3,7 +3,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStatusLine,
-  messagePreview,
   ThreadArtifactRow,
   ThreadMessageRow,
 } from "./ThreadPanel";
@@ -73,7 +72,7 @@ describe("ThreadMessageRow", () => {
 
   const multiline = "First line\n\nSecond line with more detail";
 
-  it("shows the whole message by default, so comments stay readable", () => {
+  it("does not clamp by default, so comments stay readable", () => {
     render(
       <ThreadMessageRow
         message={{
@@ -91,6 +90,8 @@ describe("ThreadMessageRow", () => {
       />,
     );
 
+    const body = document.querySelector('[data-slot="thread-item-body"]');
+    expect(body).not.toHaveClass("line-clamp-1");
     expect(
       screen.getByText(/Second line with more detail/),
     ).toBeInTheDocument();
@@ -115,8 +116,9 @@ describe("ThreadMessageRow", () => {
       />,
     );
 
-    expect(screen.getByText("First line")).toBeInTheDocument();
-    expect(screen.queryByText(/Second line/)).not.toBeInTheDocument();
+    // The clamp is CSS: the text stays in the DOM, one written line shows.
+    const body = document.querySelector('[data-slot="thread-item-body"]');
+    expect(body).toHaveClass("line-clamp-1", "whitespace-pre-wrap");
   });
 
   it("puts the timestamp in a column away from the author name", () => {
@@ -145,20 +147,6 @@ describe("ThreadMessageRow", () => {
   });
 });
 
-describe("messagePreview", () => {
-  it.each([
-    [
-      "takes the first non-empty line",
-      "\n\n  Hello there \nignored",
-      "Hello there",
-    ],
-    ["passes a single line through", "just this", "just this"],
-    ["returns empty for blank content", "\n  \n", ""],
-  ])("%s", (_, input, expected) => {
-    expect(messagePreview(input)).toBe(expected);
-  });
-});
-
 describe("ThreadArtifactRow", () => {
   it("renders a canvas artifact and navigates in-app to a shareable canvas", () => {
     render(
@@ -169,7 +157,7 @@ describe("ThreadArtifactRow", () => {
           url: "https://us.posthog.com/code/canvas/channel-1/dash-1",
         }}
         createdAt="2026-07-17T00:00:00Z"
-        taskId="task-1"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -191,7 +179,7 @@ describe("ThreadArtifactRow", () => {
       <ThreadArtifactRow
         artifact={{ kind: "canvas", name: "Signups overview", url: null }}
         createdAt="2026-07-17T00:00:00Z"
-        taskId="task-1"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -208,7 +196,7 @@ describe("ThreadArtifactRow", () => {
       <ThreadArtifactRow
         artifact={{ kind: "canvas", name: "Signups overview", url }}
         createdAt="2026-07-17T00:00:00Z"
-        taskId="task-1"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -225,7 +213,7 @@ describe("ThreadArtifactRow", () => {
       <ThreadArtifactRow
         artifact={{ kind: "pr", url }}
         createdAt="2026-07-17T00:00:00Z"
-        taskId="task-1"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -240,7 +228,7 @@ describe("ThreadArtifactRow", () => {
     expect(openExternalUrl).not.toHaveBeenCalled();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open Pull request #123 on GitHub" }),
+      screen.getByRole("button", { name: "Open Pull request #123 externally" }),
     );
 
     expect(openExternalUrl).toHaveBeenCalledWith(url);
@@ -265,7 +253,7 @@ describe("ThreadArtifactRow", () => {
         <ThreadArtifactRow
           artifact={artifact}
           createdAt="2026-07-17T00:00:00Z"
-          taskId="task-1"
+          openInPlaceTaskId="task-1"
         />,
       );
 
@@ -301,7 +289,7 @@ describe("ThreadArtifactRow", () => {
         <ThreadArtifactRow
           artifact={artifact}
           createdAt="2026-07-17T00:00:00Z"
-          taskId="task-1"
+          openInPlaceTaskId="task-1"
         />,
       );
 

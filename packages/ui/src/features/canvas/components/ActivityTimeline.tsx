@@ -22,11 +22,6 @@ import type {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
-  messagePreview,
-  THREAD_BODY_SPACING_CLASS,
-  THREAD_GUTTER_CLASS,
-  THREAD_TEXT_CLASS,
-  THREAD_TIMESTAMP_CLASS,
   ThreadArtifactRow,
   ThreadMessageRow,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
@@ -59,11 +54,8 @@ function ActivityEventRow({
           {icon}
         </span>
       </div>
-      <span className={cn("min-w-0 truncate", THREAD_TEXT_CLASS)}>{label}</span>
-      <ThreadTimestamp
-        dateTime={timestamp}
-        className={THREAD_TIMESTAMP_CLASS}
-      />
+      <span className="min-w-0 truncate text-[13px]">{label}</span>
+      <ThreadTimestamp dateTime={timestamp} />
     </div>
   );
 }
@@ -102,27 +94,18 @@ function UserMessageRow({
       className={cn("rounded-none", onSelect && "cursor-pointer")}
       {...activation}
     >
-      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+      <ThreadItemGutter className="justify-center">
         <UserAvatar user={author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
-            {name}
-          </ThreadItemAuthor>
-          <ThreadTimestamp
-            dateTime={timestamp}
-            className={THREAD_TIMESTAMP_CLASS}
-          />
+          <ThreadItemAuthor className="text-[13px]">{name}</ThreadItemAuthor>
+          <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        <ThreadItemBody
-          className={cn(
-            THREAD_TEXT_CLASS,
-            THREAD_BODY_SPACING_CLASS,
-            "truncate",
-          )}
-        >
-          {messagePreview(content)}
+        {/* `whitespace-pre-wrap` makes the clamp land on the first *written*
+            line rather than the first wrapped one. */}
+        <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-pre-wrap text-[13px]">
+          {content}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>
@@ -137,6 +120,7 @@ export function ActivityTimeline({
   currentUserEmail,
   isTaskAuthor,
   canForward,
+  canOpenInPlace,
   onSendToAgent,
   onDelete,
 }: {
@@ -147,6 +131,10 @@ export function ActivityTimeline({
   currentUserEmail?: string | null;
   isTaskAuthor: boolean;
   canForward: boolean;
+  /** True when the task's transcript and review pane are mounted beside this
+   *  pane. False in the channel-home sidebar, where there is nothing to drive —
+   *  rows there stay inert and PRs open externally instead of dead-clicking. */
+  canOpenInPlace?: boolean;
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }) {
@@ -181,7 +169,11 @@ export function ActivityTimeline({
             author={task.created_by}
             content={item.content}
             timestamp={new Date(item.timestamp).toISOString()}
-            onSelect={() => requestScrollToMessage(task.id, item.id)}
+            onSelect={
+              canOpenInPlace
+                ? () => requestScrollToMessage(task.id, item.id)
+                : undefined
+            }
           />
         ),
       });
@@ -214,7 +206,7 @@ export function ActivityTimeline({
             <ThreadArtifactRow
               artifact={row.artifact}
               createdAt={row.message.created_at}
-              taskId={task.id}
+              openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
             />
           ),
       });
@@ -230,7 +222,7 @@ export function ActivityTimeline({
           <ThreadArtifactRow
             artifact={{ kind: "pr", url: outputPr }}
             createdAt={task.updated_at}
-            taskId={task.id}
+            openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
           />
         ),
       });
@@ -273,6 +265,7 @@ export function ActivityTimeline({
     currentUserEmail,
     onSendToAgent,
     onDelete,
+    canOpenInPlace,
     requestScrollToMessage,
   ]);
 

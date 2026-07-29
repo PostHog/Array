@@ -131,7 +131,6 @@ function ArtifactListRow({
   external,
   onOpen,
   onOpenExternal,
-  externalLabel,
   onHoverStart,
 }: {
   icon: ReactNode;
@@ -142,7 +141,6 @@ function ArtifactListRow({
   /** Renders a trailing button that leaves the app instead of opening the
    *  artifact in place. Absent when there is nowhere safe to send the user. */
   onOpenExternal?: () => void;
-  externalLabel?: string;
   onHoverStart?: () => void;
 }) {
   return (
@@ -169,7 +167,7 @@ function ArtifactListRow({
         <button
           type="button"
           onClick={onOpenExternal}
-          aria-label={externalLabel}
+          aria-label={`Open ${title} externally`}
           className="flex shrink-0 items-center self-stretch border-border border-l px-2 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
         >
           <ArrowSquareOutIcon size={12} />
@@ -179,7 +177,13 @@ function ArtifactListRow({
   );
 }
 
-function PrRow({ url, taskId }: { url: string; taskId: string }) {
+function PrRow({
+  url,
+  openInPlaceTaskId,
+}: {
+  url: string;
+  openInPlaceTaskId?: string;
+}) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
 
   const [countsWanted, setCountsWanted] = useState(false);
@@ -212,9 +216,15 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
       title={title}
       detail={detailParts.join(" · ") || null}
       onHoverStart={() => setCountsWanted(true)}
-      onOpen={safeUrl ? () => openPrInReview(taskId, safeUrl) : undefined}
+      onOpen={
+        safeUrl
+          ? () =>
+              openInPlaceTaskId
+                ? openPrInReview(openInPlaceTaskId, safeUrl)
+                : openExternalUrl(safeUrl)
+          : undefined
+      }
       onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
-      externalLabel={`Open ${title} on GitHub`}
     />
   );
 }
@@ -283,9 +293,13 @@ function FileRow({
 export function TaskArtifactsList({
   task,
   timeline,
+  canOpenInPlace,
 }: {
   task: Task;
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
+  /** See `ActivityTimeline` — without the task's own view alongside, a PR has to
+   *  open externally rather than into a review pane nobody is showing. */
+  canOpenInPlace?: boolean;
 }) {
   const { runs } = useTaskRuns(task.id);
   const rows = useMemo(
@@ -314,7 +328,11 @@ export function TaskArtifactsList({
     <div className="flex flex-col gap-1.5 p-2">
       {rows.map((row) =>
         row.kind === "pr" ? (
-          <PrRow key={row.key} url={row.url} taskId={task.id} />
+          <PrRow
+            key={row.key}
+            url={row.url}
+            openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
+          />
         ) : row.kind === "canvas" ? (
           <CanvasRow key={row.key} name={row.name} url={row.url} />
         ) : row.kind === "file" ? (
