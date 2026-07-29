@@ -1,3 +1,4 @@
+import { getAuthIdentity } from "@posthog/core/auth/authIdentity";
 import { ToastProvider } from "@posthog/quill";
 import { EXTERNAL_LINKS, isNotAuthenticatedError } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -92,12 +93,7 @@ function App({ devToolbar }: AppProps) {
     !isCheckingAccess &&
     !needsInviteCode &&
     !needsAiApproval;
-  const startupIdentity =
-    authState.status === "authenticated" &&
-    authState.cloudRegion &&
-    authState.currentProjectId != null
-      ? `${authState.cloudRegion}:${authState.currentProjectId}`
-      : null;
+  const startupIdentity = getAuthIdentity(authState);
 
   // Run the initial route's loaders before the router ever mounts, so the boot
   // loading screen holds until the route is ready. The router turns loader
@@ -106,11 +102,11 @@ function App({ devToolbar }: AppProps) {
   // re-entry loads fresh.
   const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
   useEffect(() => {
-    if (!readyForMainApp || !startupIdentity || !authenticatedClient) {
+    if (!readyForMainApp) {
       setInitialRouteLoaded(false);
       return;
     }
-    if (initialRouteLoaded) return;
+    if (initialRouteLoaded || !startupIdentity || !authenticatedClient) return;
     let cancelled = false;
     void resolveStartupLocation(startupIdentity, authenticatedClient)
       .then(async (href) => {

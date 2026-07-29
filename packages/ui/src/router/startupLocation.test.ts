@@ -1,16 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { rendererStateStorage } from "@posthog/ui/shell/rendererStorage";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  canRestoreLocation,
-  isRestorableLocation,
   personalNewTaskLocation,
+  resolveStartupLocation,
 } from "./startupLocation";
 
 describe("startupLocation", () => {
-  it("restores stable screens but not landing or pending screens", () => {
-    expect(isRestorableLocation("/code/tasks/task-1")).toBe(true);
-    expect(isRestorableLocation("/settings/general")).toBe(true);
-    expect(isRestorableLocation("/code")).toBe(false);
-    expect(isRestorableLocation("/code/tasks/pending/create-1")).toBe(false);
+  afterEach(() => vi.restoreAllMocks());
+
+  it("restores the exact last location", async () => {
+    vi.spyOn(rendererStateStorage, "getItem").mockResolvedValue("/code");
+    const client = {
+      getDesktopFileSystemChannels: vi.fn(),
+      createDesktopFileSystemChannel: vi.fn(),
+    };
+
+    await expect(resolveStartupLocation("project", client)).resolves.toBe(
+      "/code",
+    );
+    expect(client.getDesktopFileSystemChannels).not.toHaveBeenCalled();
   });
 
   it("opens a new task in an existing me space", async () => {
@@ -38,19 +46,5 @@ describe("startupLocation", () => {
     await expect(personalNewTaskLocation(client)).resolves.toBe(
       "/website/new-me-id/new",
     );
-  });
-
-  it("rejects a deleted task or space", async () => {
-    const client = {
-      getTask: vi.fn().mockRejectedValue(new Error("Not found")),
-      getDesktopFileSystemChannels: vi.fn().mockResolvedValue([]),
-    };
-
-    await expect(
-      canRestoreLocation(client, "/code/tasks/deleted"),
-    ).resolves.toBe(false);
-    await expect(
-      canRestoreLocation(client, "/website/deleted/context"),
-    ).resolves.toBe(false);
   });
 });
