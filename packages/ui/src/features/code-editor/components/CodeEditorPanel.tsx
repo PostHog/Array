@@ -17,8 +17,6 @@ import type { Task } from "@posthog/shared/domain-types";
 import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useCallback, useMemo, useState } from "react";
 import type { Components } from "react-markdown";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { PanelMessage } from "../../../primitives/PanelMessage";
 import { SafeImagePreview } from "../../../primitives/SafeImagePreview";
 import { Tooltip } from "../../../primitives/Tooltip";
@@ -38,6 +36,7 @@ import {
 import { useFileEnrichment } from "../hooks/useFileEnrichment";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 import { EnrichmentPopover } from "./EnrichmentPopover";
+import { MarkdownDocumentPreview } from "./MarkdownDocumentPreview";
 import {
   SelectionCommentOverlay,
   useSelectionComposer,
@@ -363,14 +362,10 @@ export function CodeEditorPanel({
           <Box className="flex-1 overflow-hidden">{sourceView}</Box>
         ) : renderableKind === "markdown" ? (
           <Box className="flex-1 overflow-auto">
-            <Box className="plan-markdown max-w-[750px]" p="5">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={markdownComponents}
-              >
-                {fileContent}
-              </ReactMarkdown>
-            </Box>
+            <MarkdownDocumentPreview
+              content={fileContent}
+              components={markdownComponents}
+            />
           </Box>
         ) : (
           <HtmlFilePreview content={fileContent} />
