@@ -1,4 +1,4 @@
-import type { CloudRegion } from "@posthog/shared";
+import { type CloudRegion, isValidAgentSlug } from "@posthog/shared";
 
 /**
  * Resolve the agent-ingress base URL for live (streaming) calls, derived per
@@ -41,7 +41,7 @@ export function agentIngressBaseUrl(
   slug: string,
   region: CloudRegion | null,
 ): string | null {
-  if (!slug || !region) return null;
+  if (!isValidAgentSlug(slug) || !region) return null;
   switch (region) {
     case "us":
       return `https://${slug}.agents.us.posthog.com`;
