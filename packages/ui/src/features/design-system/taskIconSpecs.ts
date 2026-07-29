@@ -1,4 +1,4 @@
-import type { TaskIconProps } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
+import type { TaskStatusInput } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 
 /**
  * One dummy task in a known state. The row's label is the *vocabulary* for that
@@ -12,7 +12,7 @@ export interface TaskIconSpec {
   vocab: string;
   /** Dummy relative age, so the shipped row's trailing timestamp is realistic. */
   age: string;
-  props: TaskIconProps;
+  props: TaskStatusInput;
 }
 
 /** A run of states that answer the same question, kept as a nav section. */
@@ -150,6 +150,27 @@ export const TASK_ICON_SPEC_GROUPS: readonly TaskIconSpecGroup[] = [
         vocab: "Stopped — quiet, it just isn't running",
         age: "5h",
         props: { workspaceMode: "cloud", taskRunStatus: "cancelled" },
+      },
+      {
+        id: "cloud-babysitting-ci",
+        vocab:
+          "PR open, run still says in_progress — quiet, the PR is the story",
+        age: "4h",
+        props: {
+          workspaceMode: "cloud",
+          taskRunStatus: "in_progress",
+          prState: "open",
+        },
+      },
+      {
+        id: "cloud-pr-unresolved",
+        vocab: "PR opened, state not resolved yet — badge without a verdict",
+        age: "5h",
+        props: {
+          workspaceMode: "cloud",
+          taskRunStatus: "in_progress",
+          prUrl: "https://github.com/PostHog/code/pull/3960",
+        },
       },
       {
         id: "cloud-failed",

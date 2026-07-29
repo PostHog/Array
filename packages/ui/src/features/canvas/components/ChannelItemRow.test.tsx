@@ -75,6 +75,28 @@ describe("ChannelItemRow", () => {
     ],
     ["a suspended task", { isSuspended: true }, "Suspended — parked"],
     [
+      // The cloud workflow holds a run at in_progress while it babysits CI after
+      // opening the PR; under a merge queue that wait can outlast the agent by
+      // hours, so the PR's existence has to win over the run's claim.
+      "a run still babysitting CI behind an open PR",
+      { taskRunStatus: "in_progress" as const, prState: "open" as const },
+      "Nothing owed to you",
+    ],
+    [
+      "a run whose PR url is known but state isn't",
+      {
+        taskRunStatus: "in_progress" as const,
+        prUrl: "https://github.com/PostHog/code/pull/1",
+      },
+      "Nothing owed to you",
+    ],
+    [
+      // A live local session is the agent typing right now, which no PR overrides.
+      "a streaming agent that already has a PR",
+      { isGenerating: true, prState: "open" as const },
+      "Working",
+    ],
+    [
       "a merged PR",
       { prState: "merged" as const },
       // PR state lives on the badge, so the dot stays quiet.
@@ -87,6 +109,19 @@ describe("ChannelItemRow", () => {
     renderRow(item());
 
     expect(screen.getByRole("img", { name: label })).not.toBeNull();
+  });
+
+  it("badges a PR it can see the url of but not the state of", () => {
+    mocks.status = {
+      workspaceMode: "cloud",
+      prUrl: "https://github.com/PostHog/code/pull/1",
+    };
+
+    renderRow(item());
+
+    // Uncoloured, because colour is a verdict — but present, because a task that
+    // opened a PR must not look like it did nothing.
+    expect(screen.getByRole("img", { name: "Pull request" })).not.toBeNull();
   });
 
   it("shows a task's badges instead of its timestamp", () => {

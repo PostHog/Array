@@ -42,5 +42,8 @@ export function useChannelTaskStatus(
     slackThreadUrl: taskData.slackThreadUrl,
     prState,
     hasDiff,
+    // The url is the early signal: a cloud run writes it the moment it opens the
+    // PR, long before (or without ever) resolving the PR's state.
+    prUrl: taskData.cloudPrUrl,
   };
 }

@@ -12,8 +12,19 @@ import {
   type TaskIconProps,
 } from "@posthog/ui/features/sidebar/components/items/TaskIcon";
 
-/** The task state a status dot / badge stack is drawn from. */
-export type TaskStatusInput = TaskIconProps;
+/**
+ * The task state a status dot / badge stack is drawn from: what the shipped
+ * `TaskIcon` takes, plus the PR's url.
+ *
+ * The url matters separately from `prState` because it arrives much earlier. A
+ * cloud run writes `latest_run.output.pr_url` the moment it opens the PR, while
+ * `prState` needs a GitHub lookup that a cloud-only task may never get. So the
+ * url answers "is there a PR" and the state answers "what happened to it" — and
+ * a row can say the first without waiting on the second.
+ */
+export type TaskStatusInput = TaskIconProps & {
+  prUrl?: string | null;
+};
 
 /**
  * The status vocabulary for a task row. It splits what `TaskIcon` crams into one
@@ -92,8 +103,15 @@ export interface TaskDot {
  * Queued is folded into working for the same reason. "Waiting on a sandbox" and
  * "a sandbox is writing code" are one fact to the reader — it's happening — so
  * they share the spinner rather than teaching a distinction only we care about.
+ *
+ * And a run that has already opened a PR is not working, whatever its status
+ * says. The cloud workflow keeps the run `in_progress` while it babysits CI
+ * after opening the PR, and under a merge queue that wait ends only when someone
+ * enqueues the merge — so the run can claim to be working for hours after the
+ * agent stopped. The PR is the deliverable; once it exists the badge carries the
+ * story and the dot goes quiet.
  */
-export function taskDot(props: TaskIconProps): TaskDot {
+export function taskDot(props: TaskStatusInput): TaskDot {
   if (props.needsPermission) {
     return {
       tone: "blue",
@@ -102,11 +120,11 @@ export function taskDot(props: TaskIconProps): TaskDot {
       label: "Needs permission — blocked on you",
     };
   }
-  if (
-    props.isGenerating ||
-    props.taskRunStatus === "in_progress" ||
-    props.taskRunStatus === "queued"
-  ) {
+  // A live local session streaming output still counts as working — that's the
+  // agent typing right now, not a run status we inferred.
+  const runClaimsWork =
+    props.taskRunStatus === "in_progress" || props.taskRunStatus === "queued";
+  if (props.isGenerating || (runClaimsWork && !hasPullRequest(props))) {
     return {
       tone: "yellow",
       style: "solid",
@@ -143,6 +161,14 @@ export function taskDot(props: TaskIconProps): TaskDot {
   };
 }
 
+/**
+ * Whether a PR exists at all, by either route: the state from a GitHub lookup,
+ * or just the url the run wrote when it opened one.
+ */
+function hasPullRequest(props: TaskStatusInput): boolean {
+  return props.prState != null || !!props.prUrl;
+}
+
 export interface TaskBadge {
   key: string;
   Icon: Icon;
@@ -165,7 +191,7 @@ export interface TaskBadge {
  * outcome people actually scan a task list for, and it's a three-value
  * vocabulary on a glyph that already means "pull request".
  */
-export function taskBadges(props: TaskIconProps): TaskBadge[] {
+export function taskBadges(props: TaskStatusInput): TaskBadge[] {
   const badges: TaskBadge[] = [];
   const origin = getOriginProductMeta(props.originProduct);
   if (origin) {
@@ -208,6 +234,13 @@ export function taskBadges(props: TaskIconProps): TaskBadge[] {
       label: "Draft PR",
       tone: "gray",
     });
+  } else if (props.prUrl) {
+    // A PR we know exists but haven't resolved the state of. Uncoloured on
+    // purpose: colour here is a verdict, and inventing one would be worse than
+    // saying "there's a PR, go look". Showing the badge is not optional — a
+    // task that opened a PR and shows no sign of it reads as having done
+    // nothing.
+    badges.push({ key: "pr", Icon: GitPullRequest, label: "Pull request" });
   } else if (props.hasDiff) {
     badges.push({
       key: "branch",
