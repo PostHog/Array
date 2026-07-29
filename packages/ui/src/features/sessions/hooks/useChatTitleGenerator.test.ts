@@ -232,12 +232,11 @@ describe("useChatTitleGenerator", () => {
     );
   });
 
-  it("persists the PR title even when the model returns a generic title", async () => {
+  it("persists the PR title when the model only returns a summary", async () => {
     const prPrompt =
       '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />';
     const prompt = vi.fn().mockResolvedValue({
-      content:
-        "TITLE: Review pull request #123\nSUMMARY: Reviewing the existing pull request.",
+      content: "SUMMARY: Reviewing the existing pull request.",
     });
     const generator = new TitleGeneratorService(
       { prompt } as unknown as LlmGatewayService,

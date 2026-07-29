@@ -236,22 +236,24 @@ describe("generateTitleAndSummary", () => {
     });
   });
 
-  it("instructs the model to include existing GitHub PR titles", async () => {
+  it("only asks the model for a summary for existing GitHub PRs", async () => {
     prompt.mockResolvedValue({
-      content:
-        "TITLE: Review PR #123: Fix login redirect\nSUMMARY: Reviewing the existing pull request.",
+      content: "SUMMARY: Reviewing the existing pull request.",
     });
 
-    await makeService().generateTitleAndSummary(
+    const result = await makeService().generateTitleAndSummary(
       '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />',
     );
 
+    expect(result?.title).toBe("Review PR #123: Fix login redirect");
     expect(prompt).toHaveBeenCalledWith(
-      expect.anything(),
+      [
+        expect.objectContaining({
+          content: expect.stringContaining("ONLY generate a summary"),
+        }),
+      ],
       expect.objectContaining({
-        system: expect.stringContaining(
-          "the generated TITLE MUST include both the PR number and the PR title verbatim",
-        ),
+        system: expect.not.stringContaining("TITLE:"),
       }),
     );
   });
