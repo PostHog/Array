@@ -56,6 +56,22 @@ describe("conversationDerivedCache", () => {
     ).not.toBe(first);
   });
 
+  it("applies the LRU cap per scope, so multi-hook surfaces don't shrink task capacity", () => {
+    const first = getConversationBuildCache({
+      scope: "cap-a",
+      taskId: "cap-0",
+    });
+    for (let i = 1; i < 8; i++) {
+      getConversationBuildCache({ scope: "cap-a", taskId: `cap-${i}` });
+    }
+    for (let i = 0; i < 8; i++) {
+      getConversationBuildCache({ scope: "cap-b", taskId: `cap-${i}` });
+    }
+    expect(getConversationBuildCache({ scope: "cap-a", taskId: "cap-0" })).toBe(
+      first,
+    );
+  });
+
   it("drops the cache when the session's events are evicted from the store", () => {
     const key = { scope: "test", taskId: "evicted-task" };
     seedSession(key.taskId, "run-evicted");

@@ -44,11 +44,18 @@ interface Entry<T> {
  * per-component caches die with it and every click re-parses the full
  * transcript (seconds of main-thread work for large sessions). These
  * module-level caches keep the incremental builder state alive across mounts.
+ *
+ * Entries are grouped per scope with the LRU cap applied inside each scope,
+ * so surfaces that register several hooks per task (the chat thread and its
+ * footer) don't shrink how many tasks stay cached.
  */
 const MAX_CACHED_TASKS = 8;
 
-const buildCaches = new Map<string, Entry<ConversationBuildCache>>();
-const threadGroupers = new Map<string, Entry<ThreadGrouper>>();
+const buildCaches = new Map<
+  string,
+  Map<string, Entry<ConversationBuildCache>>
+>();
+const threadGroupers = new Map<string, Map<string, Entry<ThreadGrouper>>>();
 
 export function getConversationBuildCache(
   key: ConversationCacheKey,
@@ -69,24 +76,28 @@ export function getPersistentThreadGrouper(
 }
 
 function getEntry<T>(
-  map: Map<string, Entry<T>>,
+  map: Map<string, Map<string, Entry<T>>>,
   key: ConversationCacheKey,
   create: () => T,
 ): T {
   watchStoreForEviction();
-  const mapKey = `${key.scope}:${key.taskId}`;
-  let entry = map.get(mapKey);
+  let scopeMap = map.get(key.scope);
+  if (!scopeMap) {
+    scopeMap = new Map();
+    map.set(key.scope, scopeMap);
+  }
+  let entry = scopeMap.get(key.taskId);
   if (entry) {
     // Re-insert to refresh LRU recency (Map preserves insertion order).
-    map.delete(mapKey);
+    scopeMap.delete(key.taskId);
   } else {
     entry = { taskId: key.taskId, hadSession: false, value: create() };
   }
   entry.hadSession ||= hasSession(useSessionStore.getState(), key.taskId);
-  map.set(mapKey, entry);
-  for (const oldest of map.keys()) {
-    if (map.size <= MAX_CACHED_TASKS) break;
-    map.delete(oldest);
+  scopeMap.set(key.taskId, entry);
+  for (const oldest of scopeMap.keys()) {
+    if (scopeMap.size <= MAX_CACHED_TASKS) break;
+    scopeMap.delete(oldest);
   }
   return entry.value;
 }
@@ -111,16 +122,18 @@ function watchStoreForEviction(): void {
 }
 
 function sweepEvicted<T>(
-  map: Map<string, Entry<T>>,
+  map: Map<string, Map<string, Entry<T>>>,
   state: SessionState,
 ): void {
-  for (const [mapKey, entry] of map) {
-    if (!entry.hadSession) continue;
-    const taskRunId = state.taskIdIndex[entry.taskId];
-    const session =
-      taskRunId === undefined ? undefined : state.sessions[taskRunId];
-    if (!session || session.events.length === 0) {
-      map.delete(mapKey);
+  for (const scopeMap of map.values()) {
+    for (const [taskId, entry] of scopeMap) {
+      if (!entry.hadSession) continue;
+      const taskRunId = state.taskIdIndex[entry.taskId];
+      const session =
+        taskRunId === undefined ? undefined : state.sessions[taskRunId];
+      if (!session || session.events.length === 0) {
+        scopeMap.delete(taskId);
+      }
     }
   }
 }
