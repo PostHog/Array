@@ -1,9 +1,11 @@
-import { HashIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { validateChannelName } from "@posthog/core/canvas/channelName";
 import { Button } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelMutations } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { Dialog, Flex, IconButton, Text, TextField } from "@radix-ui/themes";
@@ -24,6 +26,7 @@ export function RenameChannelModal({
   onOpenChange,
 }: RenameChannelModalProps) {
   const { renameChannel, isRenaming } = useChannelMutations();
+  const spacesLayout = useChannelsLayout();
   const [name, setName] = useState(channel.name);
 
   // Seed the field with the current name each time the modal opens.
@@ -54,7 +57,7 @@ export function RenameChannelModal({
         channel_id: channel.id,
         success: false,
       });
-      toast.error("Couldn't rename channel", {
+      toast.error(`Couldn't rename ${spacesLayout ? "space" : "channel"}`, {
         description: error instanceof Error ? error.message : String(error),
       });
     }
@@ -70,7 +73,9 @@ export function RenameChannelModal({
       <Dialog.Content maxWidth="560px">
         <Flex align="start" justify="between" gap="3">
           <Dialog.Title>
-            <Text className="font-bold text-lg">Rename channel</Text>
+            <Text className="font-bold text-lg">
+              Rename {spacesLayout ? "space" : "channel"}
+            </Text>
           </Dialog.Title>
           <Dialog.Close>
             <IconButton
@@ -110,7 +115,7 @@ export function RenameChannelModal({
             }}
           >
             <TextField.Slot>
-              <HashIcon size={16} className="text-gray-10" />
+              {channelGlyph(channel.name, { size: 16, space: spacesLayout })}
             </TextField.Slot>
             <TextField.Slot side="right">
               <Text className="text-gray-9 text-sm tabular-nums">

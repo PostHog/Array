@@ -3,11 +3,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { captureSurveyResponse } = vi.hoisted(() => ({
+const { captureSurveyResponse, layout } = vi.hoisted(() => ({
   captureSurveyResponse: vi.fn(),
+  layout: { enabled: false },
 }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ captureSurveyResponse }));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => layout.enabled,
+}));
 
 import { FeedbackModal, type FeedbackModalMode } from "./FeedbackModal";
 
@@ -23,6 +27,13 @@ function renderModal(mode: FeedbackModalMode | null, onFinished = vi.fn()) {
 describe("FeedbackModal", () => {
   beforeEach(() => {
     captureSurveyResponse.mockReset();
+    layout.enabled = false;
+  });
+
+  it("uses the Spaces prompt when the layout is enabled", () => {
+    layout.enabled = true;
+    renderModal("feedback");
+    expect(screen.getByText(/How's the Spaces experience/)).toBeInTheDocument();
   });
 
   it.each([

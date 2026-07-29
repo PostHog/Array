@@ -6,6 +6,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useDashboards } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -29,6 +30,7 @@ type HistoryItem = {
 // recent first. Lives behind the channel's "History" tab — the home page is now
 // just the composer, with this view holding the running list of work.
 export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -104,7 +106,8 @@ export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
               Nothing here yet
             </Text>
             <Text className="text-[13px] text-gray-10">
-              Tasks and canvases you create in this channel show up here.
+              Tasks and canvases you create in this{" "}
+              {spacesLayout ? "space" : "channel"} show up here.
             </Text>
           </div>
         ) : (

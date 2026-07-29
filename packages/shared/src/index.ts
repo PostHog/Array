@@ -72,6 +72,32 @@ export {
   serializeCloudPrompt,
 } from "./cloud-prompt";
 export {
+  BLOCKED_GATEWAY_MODEL_IDS,
+  buildCloudTaskConfigOptions,
+  type CloudTaskConfigOption,
+  type CloudTaskConfigSelectOption,
+  type CloudTaskModePreset,
+  compareModelsForPicker,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_GATEWAY_MODEL,
+  formatGatewayModelName,
+  formatModelId,
+  type GatewayModel,
+  getClaudeModelRecency,
+  getCloudTaskGatewayUrl,
+  getProviderName,
+  isAnthropicModel,
+  isBlockedModelId,
+  isCloudflareModel,
+  isCloudflareModelId,
+  isGlmModelId,
+  isModalModel,
+  isModalModelId,
+  isOpenAIModel,
+  normalizeGatewayModelsResponse,
+  pickAllowedModel,
+} from "./cloud-task-models";
+export {
   buildInboxDeeplink,
   buildScoutDeeplink,
   DEEPLINK_PROTOCOL_DEVELOPMENT,
@@ -87,9 +113,28 @@ export {
 export {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  dismissalReasonLabel,
   isDismissalReasonSnooze,
 } from "./dismissal-reasons";
-export type { SignalReportPriority, Task } from "./domain-types";
+export {
+  type ArtifactType,
+  type CloudPermissionOption,
+  type CloudTaskErrorUpdate,
+  type CloudTaskLogsUpdate,
+  type CloudTaskPermissionRequestUpdate,
+  type CloudTaskSnapshotUpdate,
+  type CloudTaskStatusUpdate,
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type SignalReportPriority,
+  type Task,
+  type TaskRun,
+  type TaskRunArtifact,
+  type TaskRunArtifactMetadata,
+  type TaskRunEnvironment,
+  type TaskRunStatus,
+  TERMINAL_STATUSES,
+} from "./domain-types";
 export * from "./enrichment";
 export {
   classifyGatewayLimitError,
@@ -217,6 +262,13 @@ export {
   isPrivateIpv6Literal,
 } from "./private-network";
 export {
+  DEFAULT_REASONING_EFFORT,
+  getReasoningEffortOptions,
+  isSupportedReasoningEffort,
+  type ReasoningEffortOption,
+  type SupportedReasoningEffort,
+} from "./reasoning-effort";
+export {
   type CloudRegion,
   formatRegionBadge,
   REGION_LABELS,
@@ -279,15 +331,19 @@ export {
   serializeSkillMarkdown,
   stripFrontmatter,
 } from "./skills";
-export type {
-  ArtifactType,
-  PostHogAPIConfig,
-  TaskRun,
-  TaskRunArtifact,
-  TaskRunArtifactMetadata,
-  TaskRunEnvironment,
-  TaskRunStatus,
-} from "./task";
+export type { PostHogAPIConfig } from "./task";
+export {
+  type CreateTaskAutomationOptions,
+  createTaskAutomationSchema,
+  type TaskAutomation,
+  type TaskAutomationList,
+  type TaskAutomationValidationErrorDetails,
+  taskAutomationListSchema,
+  taskAutomationSchema,
+  taskAutomationValidationErrorSchema,
+  type UpdateTaskAutomationOptions,
+  updateTaskAutomationSchema,
+} from "./task-automation";
 export type {
   TaskCreationInput,
   TaskCreationOutput,

@@ -20,7 +20,13 @@ interface PrefillStoreState {
   prefill: TaskInputPrefill;
   setPrefill: (prefill: TaskInputPrefill) => void;
   clearReportAssociation: () => void;
-  clear: () => void;
+  /**
+   * Retire a prompt once the composer has applied it. Without this the prompt
+   * outlives its navigation and is re-applied — over the user's own draft — the
+   * next time a new-task screen mounts. Scoped by requestId so a newer prefill
+   * that landed in between is left alone.
+   */
+  consumePrompt: (requestId: string) => void;
 }
 
 // Holds transient state used to prefill the TaskInput screen when navigation
@@ -38,5 +44,16 @@ export const useTaskInputPrefillStore = create<PrefillStoreState>((set) => ({
         initialCloudRepository: undefined,
       },
     })),
-  clear: () => set({ prefill: {} }),
+  consumePrompt: (requestId) =>
+    set((s) =>
+      s.prefill.requestId === requestId
+        ? {
+            prefill: {
+              ...s.prefill,
+              initialPrompt: undefined,
+              requestId: undefined,
+            },
+          }
+        : s,
+    ),
 }));

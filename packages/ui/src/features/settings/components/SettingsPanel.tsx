@@ -30,6 +30,7 @@ import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import { useLogoutMutation } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsPageContent } from "@posthog/ui/features/settings/components/SettingsPageContent";
 import { closeSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
@@ -156,6 +157,8 @@ export function SettingsPanel({
   const client = useOptionalAuthenticatedClient();
   const { data: user } = useCurrentUser({ client });
   const billingEnabled = useFeatureFlag(BILLING_FLAG);
+  // The channels layout's nav is fixed, so the Sidebar page can't do anything.
+  const channelsLayout = useChannelsLayout();
   const { localWorkspaces } = useHostCapabilities();
   const logoutMutation = useLogoutMutation();
 
@@ -164,6 +167,7 @@ export function SettingsPanel({
     billingEnabled,
     spendAnalysisEnabled,
     localWorkspaces,
+    channelsLayout,
   });
   const sidebarGroups = SIDEBAR_GROUPS.map((group) => ({
     ...group,

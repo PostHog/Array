@@ -122,6 +122,8 @@ interface TaskInputProps {
   channelContext?: string;
   /** Display name of the channel the CONTEXT.md came from (for the chip). */
   channelName?: string;
+  /** Backend channel UUID that owns the created task and feed entry. */
+  channelId?: string;
   /**
    * Desktop file-system folder id that owns the channel's CONTEXT.md. When set,
    * the injected context lets the agent publish upkeep corrections addressed to
@@ -166,6 +168,7 @@ export function TaskInput({
   reportAssociation,
   channelContext,
   channelName,
+  channelId,
   channelContextId,
   allowNoRepo,
   suggestions,
@@ -302,12 +305,21 @@ export function TaskInput({
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
 
+  // Applying a prefilled prompt replaces whatever the composer had, so it must
+  // happen exactly once per request — not again on every remount, which would
+  // clobber a draft the user typed in between.
+  const lastAppliedPromptKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!initialPrompt || !prefillRequestKey) return;
+    if (lastAppliedPromptKeyRef.current === prefillRequestKey) return;
+    lastAppliedPromptKeyRef.current = prefillRequestKey;
     useDraftStore.getState().actions.setPendingContent(sessionId, {
       segments: [{ type: "text", text: initialPrompt }],
     });
-  }, [initialPrompt, prefillRequestKey, sessionId]);
+    if (initialPromptKey) {
+      useTaskInputPrefillStore.getState().consumePrompt(initialPromptKey);
+    }
+  }, [initialPrompt, initialPromptKey, prefillRequestKey, sessionId]);
 
   useEffect(() => {
     reportInputHadContentRef.current = false;
@@ -933,6 +945,7 @@ export function TaskInput({
     signalReportId: activeReportAssociation?.reportId,
     channelContext: includeChannelContext ? channelContext : undefined,
     channelName,
+    channelId,
     channelContextId,
     allowNoRepo,
   });

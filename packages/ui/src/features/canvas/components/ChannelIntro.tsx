@@ -9,6 +9,7 @@ import {
 import { getLocalDayDiff } from "@posthog/shared";
 import type { TaskChannel } from "@posthog/shared/domain-types";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Heading, Text } from "@radix-ui/themes";
 import { FileCheckCorner, FilePlusCorner, Info } from "lucide-react";
@@ -44,6 +45,8 @@ export function ChannelIntro({
   onCreateContextMd: () => void;
 }) {
   const creator = channel?.created_by;
+  const spacesLayout = useChannelsLayout();
+  const noun = spacesLayout ? "space" : "channel";
 
   return (
     <div className="flex w-full max-w-[70ch] flex-col gap-3 px-4 pt-8 pb-10">
@@ -55,9 +58,9 @@ export function ChannelIntro({
             <span className={mentionChipClass}>
               @{userDisplayName(creator ?? null)}
             </span>{" "}
-            created this channel {creationDatePhrase(channel.created_at)}. This
+            created this {noun} {creationDatePhrase(channel.created_at)}. This
             is the very beginning of the{" "}
-            <Text weight="bold">{channelName}</Text> channel.
+            <Text weight="bold">{channelName}</Text> {noun}.
           </Text>
         )}
       </div>
@@ -70,7 +73,7 @@ export function ChannelIntro({
             <ItemContent className="self-start">
               <ItemTitle>Created context.md</ItemTitle>
               <ItemDescription className="text-xs">
-                Used in all sessions within this channel
+                Used in all sessions within this {noun}
               </ItemDescription>
             </ItemContent>
           </Item>
@@ -125,10 +128,11 @@ export function ChannelIntro({
             <Info size={18} />
           </ItemMedia>
           <ItemContent className="self-start">
-            <ItemTitle>Learn more about channels</ItemTitle>
+            <ItemTitle>
+              Learn more about {spacesLayout ? "spaces" : "channels"}
+            </ItemTitle>
             <ItemDescription className="text-xs">
-              A channel is a group of tasks that are related to a specific
-              topic.
+              A {noun} is a group of tasks that are related to a specific topic.
             </ItemDescription>
           </ItemContent>
         </Item>

@@ -62,6 +62,52 @@ export function filterReviewItemsByFilePaths(
   return filteredItems;
 }
 
+export function filterReviewItemsByViewedState(
+  items: ReviewListItem[],
+  currentSignatures: ReadonlyMap<string, string>,
+  viewedRecord: Readonly<Record<string, string>>,
+): ReviewListItem[] {
+  const filteredItems: ReviewListItem[] = [];
+  let pendingSectionItems: ReviewListItem[] = [];
+
+  for (const item of items) {
+    if (!item.filePaths) {
+      pendingSectionItems = [item];
+      continue;
+    }
+
+    const signature = item.scrollKey
+      ? currentSignatures.get(item.scrollKey)
+      : undefined;
+    if (
+      signature !== undefined &&
+      item.scrollKey !== undefined &&
+      viewedRecord[item.scrollKey] === signature
+    ) {
+      continue;
+    }
+
+    filteredItems.push(...pendingSectionItems, item);
+    pendingSectionItems = [];
+  }
+
+  return filteredItems;
+}
+
+export function resolveVisibleActiveFilePath(
+  items: ReviewListItem[],
+  activeFilePath: string | null,
+): string | null {
+  if (
+    activeFilePath &&
+    items.some((item) => item.filePaths?.includes(activeFilePath))
+  ) {
+    return activeFilePath;
+  }
+
+  return items.find((item) => item.scrollKey)?.scrollKey ?? null;
+}
+
 export function deriveCommentFileFilterState({
   items,
   requestedFilter,

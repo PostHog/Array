@@ -3,6 +3,7 @@ import type { SignedCommitResult } from "@posthog/git/signed-commit";
 import { PostHogAPIClient } from "./posthog-api";
 
 const SANDBOX_ENV_FILE = "/tmp/agent-env";
+const SANDBOX_OAUTH_ENV_FILE = "/tmp/agent-oauth-env";
 
 /**
  * Best-effort "commit hook": after a successful signed-commit push, record one `commit`
@@ -11,11 +12,10 @@ const SANDBOX_ENV_FILE = "/tmp/agent-env";
  * endpoint reads the `X-PostHog-Task-Id` header, never the model.
  *
  * Credentials come from the sandbox environment (`POSTHOG_API_URL` /
- * `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID`), preferring the live agentsh env file
- * for the key so a mid-session token refresh is picked up — the same pattern as
- * `resolveGithubToken`. Works identically from the Claude in-process server and the Codex
- * stdio child (both inherit the sandbox env). Never throws: a failed artefact post must not
- * fail the commit that already landed.
+ * `POSTHOG_PERSONAL_API_KEY` / `POSTHOG_PROJECT_ID`), preferring the dedicated live agentsh
+ * OAuth file for the key so a mid-session token refresh is picked up — the same pattern as
+ * `resolveGithubToken`. Never throws: a failed artefact post must not fail the commit that
+ * already landed.
  */
 
 interface SandboxPosthogApi {
@@ -24,52 +24,70 @@ interface SandboxPosthogApi {
   projectId: number;
 }
 
+export function parseSandboxEnv(raw: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const entry of raw.split("\0")) {
+    const separator = entry.indexOf("=");
+    if (separator > 0) {
+      env[entry.slice(0, separator)] = entry.slice(separator + 1);
+    }
+  }
+  return env;
+}
+
 function readSandboxEnvFile(envFilePath: string): Record<string, string> {
   try {
-    const raw = readFileSync(envFilePath, "utf8");
-    const env: Record<string, string> = {};
-    for (const entry of raw.split("\0")) {
-      const eq = entry.indexOf("=");
-      if (eq > 0) {
-        env[entry.slice(0, eq)] = entry.slice(eq + 1);
-      }
-    }
-    return env;
+    return parseSandboxEnv(readFileSync(envFilePath, "utf8"));
   } catch {
     // No env file (local/desktop or test) — fall back to the process env only.
     return {};
   }
 }
 
+function readSandboxOauthToken(oauthEnvFilePath: string): string | undefined {
+  try {
+    const raw = readFileSync(oauthEnvFilePath, "utf8");
+    return parseSandboxEnv(raw).POSTHOG_PERSONAL_API_KEY ?? "";
+  } catch {
+    // The dedicated credential channel is mandatory. Missing and unreadable
+    // files both fail closed.
+    return undefined;
+  }
+}
+
 export function resolveSandboxPosthogApi(
   env: Record<string, string | undefined> = process.env,
   envFilePath: string = SANDBOX_ENV_FILE,
+  oauthEnvFilePath: string = SANDBOX_OAUTH_ENV_FILE,
 ): SandboxPosthogApi | undefined {
   const fileEnv = readSandboxEnvFile(envFilePath);
+  const oauthToken = readSandboxOauthToken(oauthEnvFilePath);
   const apiUrl = fileEnv.POSTHOG_API_URL ?? env.POSTHOG_API_URL;
-  const apiKey =
-    fileEnv.POSTHOG_PERSONAL_API_KEY ?? env.POSTHOG_PERSONAL_API_KEY;
   const projectId = Number(
     fileEnv.POSTHOG_PROJECT_ID ?? env.POSTHOG_PROJECT_ID,
   );
-  if (!apiUrl || !apiKey || !Number.isFinite(projectId) || projectId <= 0) {
+  if (!apiUrl || !oauthToken || !Number.isFinite(projectId) || projectId <= 0) {
     return undefined;
   }
-  return { apiUrl, apiKey, projectId };
+  return { apiUrl, apiKey: oauthToken, projectId };
 }
 
 export function createSandboxPosthogClient(
   env?: Record<string, string | undefined>,
   envFilePath?: string,
+  oauthEnvFilePath?: string,
 ): PostHogAPIClient | undefined {
-  const api = resolveSandboxPosthogApi(env, envFilePath);
+  const api = resolveSandboxPosthogApi(env, envFilePath, oauthEnvFilePath);
   if (!api) {
     return undefined;
   }
   return new PostHogAPIClient({
     apiUrl: api.apiUrl,
     projectId: api.projectId,
-    getApiKey: () => api.apiKey,
+    getApiKey: () =>
+      readSandboxOauthToken(oauthEnvFilePath ?? SANDBOX_OAUTH_ENV_FILE) ?? "",
+    refreshApiKey: () =>
+      readSandboxOauthToken(oauthEnvFilePath ?? SANDBOX_OAUTH_ENV_FILE) ?? "",
   });
 }
 
@@ -80,13 +98,18 @@ export async function reportCommitArtefacts(opts: {
   message: string;
   env?: Record<string, string | undefined>;
   envFilePath?: string;
+  oauthEnvFilePath?: string;
 }): Promise<void> {
   const { taskId, result, message } = opts;
   if (!taskId) {
     return; // Local/desktop run — no task to attribute or associate through.
   }
   try {
-    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    const client = createSandboxPosthogClient(
+      opts.env,
+      opts.envFilePath,
+      opts.oauthEnvFilePath,
+    );
     if (!client) {
       return; // No sandbox PostHog credentials — nothing to report to.
     }
@@ -121,12 +144,17 @@ export async function reportTaskRunBranch(opts: {
   branch: string;
   env?: Record<string, string | undefined>;
   envFilePath?: string;
+  oauthEnvFilePath?: string;
 }): Promise<void> {
   if (!opts.taskId || !opts.taskRunId) {
     return;
   }
   try {
-    const client = createSandboxPosthogClient(opts.env, opts.envFilePath);
+    const client = createSandboxPosthogClient(
+      opts.env,
+      opts.envFilePath,
+      opts.oauthEnvFilePath,
+    );
     if (!client) {
       return;
     }

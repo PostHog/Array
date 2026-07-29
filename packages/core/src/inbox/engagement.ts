@@ -123,7 +123,7 @@ export function resolveActionProperties(
 /** Bulk-capable report actions fired from the selection toolbar / dismiss flows. */
 export type InboxBulkActionType = Extract<
   InboxReportActionProperties["action_type"],
-  "dismiss" | "snooze" | "delete" | "reingest"
+  "dismiss" | "snooze" | "delete" | "reingest" | "remove_suggested_reviewer"
 >;
 
 export interface BuildBulkActionEventsInput {
@@ -137,8 +137,9 @@ export interface BuildBulkActionEventsInput {
 
 /**
  * Build `INBOX_REPORT_ACTION` payloads for a bulk (or single-report) dismiss /
- * snooze / delete / reingest. Pure so it can be unit-tested and reused across
- * the toolbar, the per-row dismiss action, and detail-screen dismiss.
+ * snooze / delete / reingest / remove-suggested-reviewer. Pure so it can be
+ * unit-tested and reused across the toolbar, the per-row dismiss action, and
+ * detail-screen dismiss.
  *
  * `is_bulk` / `bulk_size` carry the grouping; `rank` / `list_size` are left at 0
  * because these flows act on a selection, not a positional list slot.

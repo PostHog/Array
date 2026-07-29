@@ -14,10 +14,17 @@ export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 // Gates the entire canvas feature: the app rail's Channels space, the /website
 // routes, channels and dashboards.
 export const PROJECT_BLUEBIRD_FLAG = "project-bluebird";
+/**
+ * Gates the new channels layout (channel-scoped sidebar + task Activity panel).
+ * Off keeps the previous experience and its "Enable channels" toggle. Requires
+ * project-bluebird. The key predates the rename, matching the live flag.
+ */
+export const CHANNELS_LAYOUT_FLAG = "code-spaces-layout";
 // Gates the Loops feature: the sidebar Loops space and the per-channel Loops tab.
 export const LOOPS_FLAG = "loops";
 export const TASKS_PREWARM_SANDBOX_FLAG = "tasks-prewarm-sandbox";
 export const GLM_MODEL_FLAG = "posthog-code-glm-model";
+export const KIMI_MODEL_FLAG = "tasks-kimi-k3";
 /** Spoken narration (agent speaks via the `speak` tool). Gated for a staged rollout. */
 export const SPOKEN_NARRATION_FLAG = "posthog-code-spoken-narration";
 // Gates importing and relaying local MCP servers into cloud task runs.

@@ -1,6 +1,12 @@
 import { Cloud as CloudIcon } from "@phosphor-icons/react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
-import { Flex, Text } from "@radix-ui/themes";
 import type React from "react";
 import { useMemo } from "react";
 import { useHostCapabilities } from "../../../shell/useHostCapabilities";
@@ -56,23 +62,29 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   const activeTabId = tabs.some((t) => t.id === node.content.activeTabId)
     ? node.content.activeTabId
     : (tabs[0]?.id ?? node.content.activeTabId);
+  const hiddenTabIds = useMemo(() => {
+    const visibleTabIds = new Set(tabs.map((tab) => tab.id));
+    const hiddenIds: string[] = [];
+    for (const tab of node.content.tabs) {
+      if (!visibleTabIds.has(tab.id)) hiddenIds.push(tab.id);
+    }
+    return hiddenIds;
+  }, [node.content.tabs, tabs]);
 
   const cloudEmptyState = useMemo(
     () =>
       isCloud ? (
-        <Flex
-          align="center"
-          justify="center"
-          height="100%"
-          className="bg-(--gray-2)"
-        >
-          <Flex direction="column" align="center" gap="2">
-            <CloudIcon size={24} className="text-gray-10" />
-            <Text color="gray" className="text-sm">
-              Cloud runs are read-only
-            </Text>
-          </Flex>
-        </Flex>
+        <Empty className="h-full border-0 bg-(--gray-2)">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <CloudIcon size={24} className="text-gray-10" />
+            </EmptyMedia>
+            <EmptyTitle>Cloud runs are read-only</EmptyTitle>
+            <EmptyDescription>
+              Local workspace tools are unavailable for this run.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : undefined,
     [isCloud],
   );
@@ -95,8 +107,20 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       onPanelFocus={onPanelFocus}
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
+      allowPanelSplit={!isCloud}
       onAddTerminal={hideTerminal ? undefined : () => onAddTerminal(node.id)}
-      onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
+      onSplitPanel={
+        isCloud ? undefined : (direction) => onSplitPanel(node.id, direction)
+      }
+      onClosePanel={
+        tabs.length === 0 && hiddenTabIds.length > 0
+          ? () => {
+              for (const tabId of hiddenTabIds) {
+                closeTab(taskId, node.id, tabId);
+              }
+            }
+          : undefined
+      }
       emptyState={cloudEmptyState}
     />
   );

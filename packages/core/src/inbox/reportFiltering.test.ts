@@ -6,7 +6,17 @@ import {
   buildSignalReportListOrdering,
   buildSuggestedReviewerFilterParam,
   filterReportsBySearch,
+  INBOX_PIPELINE_STATUS_FILTER,
+  INBOX_PIPELINE_STATUSES,
 } from "./reportFiltering";
+
+describe("inbox pipeline statuses", () => {
+  it("derives the API filter from the typed status list", () => {
+    expect(INBOX_PIPELINE_STATUS_FILTER).toBe(
+      INBOX_PIPELINE_STATUSES.join(","),
+    );
+  });
+});
 
 function makeReport(overrides: Partial<SignalReport> = {}): SignalReport {
   return {

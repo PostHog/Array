@@ -16,8 +16,10 @@ import {
 import { VList, type VListHandle } from "virtua";
 import {
   deriveCommentFileFilterState,
+  filterReviewItemsByViewedState,
   getEmptyReviewMessage,
   type ReviewListItem,
+  resolveVisibleActiveFilePath,
 } from "../commentFileFilter";
 import {
   REVIEW_LIST_BUFFER_PX,
@@ -155,6 +157,12 @@ export function ReviewShell({
   const setCommentFileFilter = useReviewNavigationStore(
     (state) => state.setCommentFileFilter,
   );
+  const hideViewedFiles = useReviewNavigationStore(
+    (state) => state.hideViewedFiles[taskId] ?? false,
+  );
+  const setHideViewedFiles = useReviewNavigationStore(
+    (state) => state.setHideViewedFiles,
+  );
   const {
     activeFilter: activeCommentFilter,
     visibleItems,
@@ -170,9 +178,21 @@ export function ReviewShell({
       }),
     [commentFilter, commentedFilePaths, items, unresolvedCommentedFilePaths],
   );
+  const filteredItems = useMemo(() => {
+    if (!hideViewedFiles) return visibleItems;
+    return filterReviewItemsByViewedState(
+      visibleItems,
+      currentSignatures,
+      viewedRecord,
+    );
+  }, [currentSignatures, hideViewedFiles, viewedRecord, visibleItems]);
+  const filteredFileCount = useMemo(
+    () => filteredItems.filter((item) => item.filePaths).length,
+    [filteredItems],
+  );
   const visibleItemIndexByFilePath = useMemo(
-    () => buildItemIndex(visibleItems),
-    [visibleItems],
+    () => buildItemIndex(filteredItems),
+    [filteredItems],
   );
 
   const workerFactory = useCallback(
@@ -253,7 +273,27 @@ export function ReviewShell({
   const setActiveFilePath = useReviewNavigationStore(
     (s) => s.setActiveFilePath,
   );
+  const activeFilePath = useReviewNavigationStore(
+    (s) => s.activeFilePaths[taskId] ?? null,
+  );
   const clearTask = useReviewNavigationStore((s) => s.clearTask);
+
+  useEffect(() => {
+    if (!hideViewedFiles || !activeFilePath) return;
+    const nextActiveFilePath = resolveVisibleActiveFilePath(
+      filteredItems,
+      activeFilePath,
+    );
+    if (nextActiveFilePath === activeFilePath) return;
+    lastActiveRef.current = nextActiveFilePath;
+    setActiveFilePath(taskId, nextActiveFilePath);
+  }, [
+    activeFilePath,
+    filteredItems,
+    hideViewedFiles,
+    setActiveFilePath,
+    taskId,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -348,11 +388,13 @@ export function ReviewShell({
         <Spinner size="2" />
       </Flex>
     );
-  } else if (isEmpty || visibleItems.length === 0) {
+  } else if (isEmpty || filteredItems.length === 0) {
     reviewContent = (
       <Flex align="center" justify="center" className="min-h-0 flex-1">
         <Text color="gray" className="text-sm">
-          {getEmptyReviewMessage(activeCommentFilter)}
+          {hideViewedFiles
+            ? "No unviewed file changes"
+            : getEmptyReviewMessage(activeCommentFilter)}
         </Text>
       </Flex>
     );
@@ -366,7 +408,7 @@ export function ReviewShell({
         shift={false}
         style={{ scrollbarGutter: "stable" }}
         onScroll={handleScroll}
-        data={visibleItems}
+        data={filteredItems}
       >
         {renderItem}
       </VList>
@@ -412,6 +454,11 @@ export function ReviewShell({
               commentedFilePaths && unresolvedCommentedFilePaths
                 ? (filter) => setCommentFileFilter(taskId, filter)
                 : undefined
+            }
+            hideViewedFiles={hideViewedFiles}
+            filteredFileCount={filteredFileCount}
+            onHideViewedFilesChange={(hideViewed) =>
+              setHideViewedFiles(taskId, hideViewed)
             }
             linesAdded={linesAdded}
             linesRemoved={linesRemoved}

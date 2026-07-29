@@ -12,23 +12,27 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   } as unknown as typeof ResizeObserver;
 }
 
-const { track, useFolderInstructions } = vi.hoisted(() => ({
+const { track, useFolderInstructions, taskInputProps } = vi.hoisted(() => ({
   track: vi.fn(),
   useFolderInstructions: vi.fn(),
+  taskInputProps: vi.fn(),
 }));
 
 // TaskInput is a huge hook-heavy component; stub it down to just the surface
 // this test cares about — a button that fires onContextChipClick when wired.
 vi.mock("@posthog/ui/features/task-detail/components/TaskInput", () => ({
-  TaskInput: ({ onContextChipClick }: { onContextChipClick?: () => void }) => (
-    <button
-      type="button"
-      disabled={!onContextChipClick}
-      onClick={onContextChipClick}
-    >
-      context-chip
-    </button>
-  ),
+  TaskInput: (props: { onContextChipClick?: () => void }) => {
+    taskInputProps(props);
+    return (
+      <button
+        type="button"
+        disabled={!props.onContextChipClick}
+        onClick={props.onContextChipClick}
+      >
+        context-chip
+      </button>
+    );
+  },
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
@@ -36,8 +40,17 @@ vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
     channels: [{ id: "chan-1", name: "project-bluebird" }],
   }),
 }));
+
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
+  useChannelsLayout: () => true,
+}));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelTasks", () => ({
   useChannelTaskMutations: () => ({ fileTask: vi.fn() }),
+}));
+vi.mock("@posthog/ui/features/canvas/hooks/useTaskChannels", () => ({
+  useBackendChannel: () => ({
+    channel: { id: "backend-channel-1", name: "project-bluebird" },
+  }),
 }));
 vi.mock("@posthog/ui/features/canvas/hooks/useFolderInstructions", () => ({
   useFolderInstructions,
@@ -46,7 +59,22 @@ vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: vi.fn() }),
 }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => vi.fn(),
+  // The view reads the matched route so it can pass new-task prefill through.
+  useRouterState: ({
+    select,
+  }: {
+    select: (s: {
+      matches: { routeId: string; params: Record<string, string> }[];
+    }) => unknown;
+  }) =>
+    select({
+      matches: [
+        { routeId: "/website/$channelId/new", params: { channelId: "chan-1" } },
+      ],
+    }),
+}));
 
 import { WebsiteNewTask } from "./WebsiteNewTask";
 
@@ -62,12 +90,25 @@ describe("WebsiteNewTask context panel", () => {
   beforeEach(() => {
     track.mockReset();
     useFolderInstructions.mockReset();
+    taskInputProps.mockReset();
+  });
+
+  it("creates the task in the channel's backend feed", () => {
+    useFolderInstructions.mockReturnValue({ data: undefined });
+    renderNewTask();
+
+    expect(taskInputProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        channelId: "backend-channel-1",
+        channelContextId: "chan-1",
+      }),
+    );
   });
 
   it("opens the context panel and tracks view_context when the chip is clicked", async () => {
     const user = userEvent.setup();
     useFolderInstructions.mockReturnValue({
-      data: { content: "# Channel context\n\nBackground." },
+      data: { content: "# Space context\n\nBackground." },
     });
     renderNewTask();
 
