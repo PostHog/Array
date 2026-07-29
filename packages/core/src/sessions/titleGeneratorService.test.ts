@@ -256,6 +256,22 @@ describe("generateTitleAndSummary", () => {
     );
   });
 
+  it("uses the existing GitHub PR title when the model omits it", async () => {
+    prompt.mockResolvedValue({
+      content:
+        "TITLE: Review pull request #123\nSUMMARY: Reviewing the existing pull request.",
+    });
+
+    const result = await makeService().generateTitleAndSummary(
+      '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(result).toEqual({
+      title: "Review PR #123: Fix login redirect",
+      summary: "Reviewing the existing pull request.",
+    });
+  });
+
   it("returns null on error", async () => {
     prompt.mockRejectedValue(new Error("network error"));
     const result = await makeService().generateTitleAndSummary("some content");

@@ -4,6 +4,7 @@ import {
   type LlmGatewayService,
 } from "@posthog/core/llm-gateway/llm-gateway";
 import { xmlToContent } from "@posthog/core/message-editor/content";
+import { parseGithubIssueUrl } from "@posthog/core/message-editor/githubIssueUrl";
 import { getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
@@ -23,6 +24,19 @@ import {
 const ATTACHED_FILES_REGEX =
   /^(?:(?:\d+\.\s*)?\[Attached files:[^\]]*\]|Attached files:.*)$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
+
+function getGithubPrTaskTitle(content: string): string | null {
+  const pr = xmlToContent(content).segments.find(
+    (segment) => segment.type === "chip" && segment.chip.type === "github_pr",
+  );
+  if (!pr || pr.type !== "chip") return null;
+
+  const parsed = parseGithubIssueUrl(pr.chip.id);
+  const title = pr.chip.label.replace(/^#\d+\s+-\s+/, "").trim();
+  if (parsed?.kind !== "pr" || !title) return null;
+
+  return `Review PR #${parsed.number}: ${title}`.slice(0, 255);
+}
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:
 
@@ -177,11 +191,10 @@ export class TitleGeneratorService {
       const titleMatch = text.match(/^TITLE:\s*(.+?)(?:\n|$)/m);
       const summaryMatch = text.match(/^SUMMARY:\s*([\s\S]+)$/m);
 
+      const generatedTitle =
+        titleMatch?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
       const title =
-        titleMatch?.[1]
-          ?.trim()
-          .replace(/^["']|["']$/g, "")
-          .slice(0, 255) ?? "";
+        getGithubPrTaskTitle(content) ?? generatedTitle.slice(0, 255);
       const summary = summaryMatch?.[1]?.trim() ?? "";
 
       if (!title && !summary) return null;
