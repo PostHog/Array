@@ -340,7 +340,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         ? [
             {
               id: "open-review-panel",
-              label: "Open review panel",
+              label: "Open diff view",
               icon: (
                 <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
               ),

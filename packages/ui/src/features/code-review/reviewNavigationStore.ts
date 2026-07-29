@@ -9,6 +9,7 @@ interface ReviewNavigationStoreState {
   reviewModes: Record<string, ReviewMode>;
   selectedPrUrls: Record<string, string | undefined>;
   commentFileFilters: Record<string, CommentFileFilter>;
+  hideViewedFiles: Record<string, boolean>;
 }
 
 interface ReviewNavigationStoreActions {
@@ -19,6 +20,7 @@ interface ReviewNavigationStoreActions {
   setReviewMode: (taskId: string, mode: ReviewMode) => void;
   setSelectedPrUrl: (taskId: string, url: string) => void;
   setCommentFileFilter: (taskId: string, filter: CommentFileFilter) => void;
+  setHideViewedFiles: (taskId: string, hideViewed: boolean) => void;
   getReviewMode: (taskId: string) => ReviewMode;
 }
 
@@ -32,6 +34,7 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
     reviewModes: {},
     selectedPrUrls: {},
     commentFileFilters: {},
+    hideViewedFiles: {},
 
     setActiveFilePath: (taskId, path) =>
       set((state) => ({
@@ -45,6 +48,7 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
           ...state.commentFileFilters,
           [taskId]: "none",
         },
+        hideViewedFiles: { ...state.hideViewedFiles, [taskId]: false },
       })),
 
     clearScrollRequest: (taskId) =>
@@ -61,6 +65,7 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
           [taskId]: "none",
         },
         selectedPrUrls: { ...state.selectedPrUrls, [taskId]: undefined },
+        hideViewedFiles: { ...state.hideViewedFiles, [taskId]: false },
       })),
 
     setReviewMode: (taskId, mode) =>
@@ -84,6 +89,14 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
         commentFileFilters: {
           ...state.commentFileFilters,
           [taskId]: filter,
+        },
+      })),
+
+    setHideViewedFiles: (taskId, hideViewed) =>
+      set((state) => ({
+        hideViewedFiles: {
+          ...state.hideViewedFiles,
+          [taskId]: hideViewed,
         },
       })),
 

@@ -5,7 +5,14 @@ import {
 import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
 import type { InboxReportActionSurface } from "@posthog/shared/analytics-events";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import type { SignalReport } from "@posthog/shared/types";
+import type {
+  SignalReport,
+  SuggestedReviewer,
+  SuggestedReviewersArtefact,
+  SuggestedReviewerWriteEntry,
+} from "@posthog/shared/types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import type { DismissReportDialogResult } from "@posthog/ui/features/inbox/components/DismissReportDialog";
 import { reportKeys } from "@posthog/ui/features/inbox/hooks/useInboxReports";
 import { useInboxReportSelectionStore } from "@posthog/ui/features/inbox/stores/inboxReportSelectionStore";
@@ -15,7 +22,29 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-type BulkActionName = "suppress" | "snooze" | "delete" | "reingest";
+type BulkActionName =
+  | "suppress"
+  | "snooze"
+  | "delete"
+  | "reingest"
+  | "removeReviewer";
+
+/**
+ * Map an enriched reviewer list back to the write shape the artefact PUT expects
+ * (mirrors `SuggestedReviewersSection`). The server takes the full replacement
+ * list, not a diff, so removing a reviewer means sending everyone else.
+ */
+function toReviewerWriteContent(
+  reviewers: SuggestedReviewer[],
+): SuggestedReviewerWriteEntry[] {
+  return reviewers
+    .map((reviewer): SuggestedReviewerWriteEntry | null => {
+      if (reviewer.github_login) return { github_login: reviewer.github_login };
+      if (reviewer.user?.uuid) return { user_uuid: reviewer.user.uuid };
+      return null;
+    })
+    .filter((entry): entry is SuggestedReviewerWriteEntry => entry !== null);
+}
 
 interface BulkActionResult {
   successCount: number;
@@ -54,6 +83,10 @@ const suppressibleStatuses = new Set<SignalReport["status"]>([
 /** Clause after "Disabled because …" (see `@posthog/ui/primitives/Button`). */
 const DISABLED_NO_SELECTION = "you haven't selected a report";
 
+/** Clause when none of the selected reports have the current user as a reviewer. */
+const DISABLED_NOT_A_REVIEWER =
+  "you aren't a suggested reviewer on any selected report";
+
 /** Statuses that block suppression; labels match `inboxStatusLabel`. */
 const SUPPRESS_BLOCKED_STATUS_PHRASE = (
   ["suppressed", "deleted"] as const satisfies readonly SignalReport["status"][]
@@ -69,6 +102,7 @@ type SelectedReportEligibility = {
   suppressDisabledReason: string | null;
   deleteDisabledReason: string | null;
   reingestDisabledReason: string | null;
+  removeReviewerDisabledReason: string | null;
 };
 
 function formatBulkActionSummary(
@@ -84,7 +118,9 @@ function formatBulkActionSummary(
         ? `${pluralized} snoozed`
         : action === "delete"
           ? `${pluralized} deleted`
-          : `${pluralized} reingested`;
+          : action === "reingest"
+            ? `${pluralized} reingested`
+            : `${pluralized} · you're no longer a reviewer`;
   if (failureCount === 0) {
     return `${successCount} ${formulated}`;
   }
@@ -130,6 +166,12 @@ function getSelectedReportEligibility(
     suppressDisabledReason: snoozeOrSuppressDisabledReason,
     deleteDisabledReason: selectedCount === 0 ? DISABLED_NO_SELECTION : null,
     reingestDisabledReason: selectedCount === 0 ? DISABLED_NO_SELECTION : null,
+    removeReviewerDisabledReason:
+      selectedCount === 0
+        ? DISABLED_NO_SELECTION
+        : selectedReports.some((report) => report.is_suggested_reviewer)
+          ? null
+          : DISABLED_NOT_A_REVIEWER,
   };
 }
 
@@ -197,6 +239,9 @@ export function useInboxBulkActions(
   surface: InboxReportActionSurface = "toolbar",
 ) {
   const queryClient = useQueryClient();
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client, enabled: !!client });
+  const meUuid = currentUser?.uuid;
   const clearSelection = useInboxReportSelectionStore(
     (state) => state.clearSelection,
   );
@@ -380,6 +425,60 @@ export function useInboxBulkActions(
     },
   );
 
+  /**
+   * Remove the current user from each selected report's suggested reviewers.
+   * The artefact PUT replaces the whole list, so per report we fetch the latest
+   * `suggested_reviewers` artefact, drop the entry matching the current user's
+   * uuid, and write the rest back. Reports where the user isn't listed are a
+   * no-op (fetched only for reports the list already flags via
+   * `is_suggested_reviewer`).
+   */
+  const removeReviewerMutation = useAuthenticatedMutation(
+    async (client, input: { reportIds: string[]; meUuid: string }) =>
+      runBulkAction(input.reportIds, async (reportId) => {
+        const artefacts = await client.getSignalReportArtefacts(reportId);
+        const artefact = artefacts.results.find(
+          (a): a is SuggestedReviewersArtefact =>
+            a.type === "suggested_reviewers",
+        );
+        if (!artefact) {
+          throw new Error("No suggested reviewers to update");
+        }
+        const next = artefact.content.filter(
+          (reviewer) => reviewer.user?.uuid !== input.meUuid,
+        );
+        // Throw rather than silently resolve when nothing changed: otherwise a
+        // no-op (user not present in the artefact) would be counted as a
+        // success by `runBulkAction`, firing a success toast/analytics and
+        // dropping the report from the selection while the reviewer remains.
+        if (next.length === artefact.content.length) {
+          throw new Error("Not a suggested reviewer on this report");
+        }
+        await client.updateSignalReportArtefact(
+          reportId,
+          artefact.id,
+          toReviewerWriteContent(next),
+        );
+      }),
+    {
+      onSuccess: async (result) => {
+        trackBulkAction("remove_suggested_reviewer", result);
+        await invalidateInboxQueries();
+        applyBulkResultToSelection(result);
+
+        if (result.failureCount > 0) {
+          toast.error(formatBulkActionSummary("removeReviewer", result));
+          return;
+        }
+
+        toast.success(formatBulkActionSummary("removeReviewer", result));
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to remove yourself as reviewer");
+      },
+    },
+  );
+
   const suppressSelected = useCallback(
     async (dismissal?: DismissReportDialogResult) => {
       if (eligibility.suppressDisabledReason !== null) {
@@ -438,6 +537,27 @@ export function useInboxBulkActions(
     reingestMutation,
   ]);
 
+  const removeReviewerSelected = useCallback(async () => {
+    if (eligibility.removeReviewerDisabledReason !== null || !meUuid) {
+      return false;
+    }
+
+    const reportIds = eligibility.selectedReports
+      .filter((report) => report.is_suggested_reviewer)
+      .map((report) => report.id);
+    if (reportIds.length === 0) {
+      return false;
+    }
+
+    await removeReviewerMutation.mutateAsync({ reportIds, meUuid });
+    return true;
+  }, [
+    eligibility.removeReviewerDisabledReason,
+    eligibility.selectedReports,
+    meUuid,
+    removeReviewerMutation,
+  ]);
+
   return {
     selectedReports: eligibility.selectedReports,
     selectedCount: eligibility.selectedCount,
@@ -445,13 +565,18 @@ export function useInboxBulkActions(
     suppressDisabledReason: eligibility.suppressDisabledReason,
     deleteDisabledReason: eligibility.deleteDisabledReason,
     reingestDisabledReason: eligibility.reingestDisabledReason,
+    removeReviewerDisabledReason: meUuid
+      ? eligibility.removeReviewerDisabledReason
+      : DISABLED_NOT_A_REVIEWER,
     isSuppressing: suppressMutation.isPending,
     isSnoozing: snoozeMutation.isPending,
     isDeleting: deleteMutation.isPending,
     isReingesting: reingestMutation.isPending,
+    isRemovingReviewer: removeReviewerMutation.isPending,
     suppressSelected,
     snoozeSelected,
     deleteSelected,
     reingestSelected,
+    removeReviewerSelected,
   };
 }

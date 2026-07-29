@@ -16,6 +16,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { readPrUrls } from "@posthog/shared";
 import type {
   Task,
   TaskRun,
@@ -92,8 +93,7 @@ function buildRows(
   // every copy would bury the current one under its own drafts.
   const newestByName = new Map<string, { file: RunArtifact; runId: string }>();
   for (const run of allRuns) {
-    const outputPr = run.output?.pr_url;
-    if (typeof outputPr === "string" && outputPr) {
+    for (const outputPr of readPrUrls(run.output)) {
       addPr(outputPr, `output-pr:${outputPr}`);
     }
     for (const file of readRunOutputs(run)) {

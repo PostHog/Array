@@ -15,21 +15,24 @@ export interface ChannelItemModel {
   rawStatus: TaskRunStatus | null;
   authorUser: UserBasic | null;
   authorName: string | null;
+  authorUuid: string | null;
   templateId: string | null;
 }
 
 export interface ChannelItemOwner {
   uuid: string | null;
-  name: string | null;
 }
 
+// Ownership is decided solely by the stable creator uuid (canvases via
+// `createdByUuid`, tasks via `created_by.uuid` — both set in buildChannelItems).
+// A display name is NOT an identity — two users can share one — so it must never
+// gate the private `#me` space. Items without a creator uuid fail closed
+// (excluded from #me); `authorName`/`authorUser` are display-only.
 function isOwnedBy(
-  item: Pick<ChannelItemModel, "authorUser" | "authorName">,
+  item: Pick<ChannelItemModel, "authorUuid">,
   owner: ChannelItemOwner,
 ): boolean {
-  if (item.authorUser) return item.authorUser.uuid === owner.uuid;
-  if (item.authorName && owner.name) return item.authorName === owner.name;
-  return true;
+  return item.authorUuid != null && item.authorUuid === owner.uuid;
 }
 
 export function buildChannelItems({
@@ -55,6 +58,7 @@ export function buildChannelItems({
     rawStatus: null,
     authorUser: null,
     authorName: d.createdBy ?? null,
+    authorUuid: d.createdByUuid ?? null,
     templateId: d.templateId,
   }));
 
@@ -72,6 +76,7 @@ export function buildChannelItems({
             rawStatus: task.latest_run?.status ?? null,
             authorUser: task.created_by ?? null,
             authorName: null,
+            authorUuid: task.created_by?.uuid ?? null,
             templateId: null,
           },
         ],
@@ -106,6 +111,10 @@ export function filterChannelItems(
       return false;
     }
     if (createdBy !== "anyone") {
+      // An item with no creator uuid (e.g. the backend returns `created_by:
+      // null` once a creator is deleted) belongs to neither bucket: it isn't
+      // mine, but "others" means a *known* other person, not "unknown".
+      if (item.authorUuid == null) return false;
       const mine = isOwnedBy(item, me);
       if (createdBy === "me" ? !mine : mine) return false;
     }
