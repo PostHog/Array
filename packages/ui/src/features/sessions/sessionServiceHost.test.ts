@@ -356,6 +356,9 @@ const mockConvertStoredEntriesToEvents = vi.hoisted(() =>
     ) => unknown[]
   >(() => []),
 );
+const mockHasSessionPromptEventForTaskRun = vi.hoisted(() =>
+  vi.fn(() => false),
+);
 
 vi.mock("@posthog/core/sessions/sessionEvents", async () => {
   const actual = await vi.importActual<
@@ -387,6 +390,7 @@ vi.mock("@posthog/core/sessions/sessionEvents", async () => {
     getStoredLogEventPosition: actual.getStoredLogEventPosition,
     getUserShellExecutesSinceLastPrompt: vi.fn(() => []),
     hasSessionPromptEvent: actual.hasSessionPromptEvent,
+    hasSessionPromptEventForTaskRun: mockHasSessionPromptEventForTaskRun,
     isAbsoluteFolderPath: actual.isAbsoluteFolderPath,
     isFatalSessionError: actual.isFatalSessionError,
     isRateLimitError: actual.isRateLimitError,
@@ -446,6 +450,7 @@ describe("SessionService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConvertStoredEntriesToEvents.mockImplementation(() => []);
+    mockHasSessionPromptEventForTaskRun.mockReturnValue(false);
     resetSessionService();
     mockSettingsState.customInstructions = "";
     mockSettingsState.spokenNotifications = false;
@@ -4374,6 +4379,7 @@ describe("SessionService", () => {
           resumePrompt,
           resumeCompletion,
         ]);
+        mockHasSessionPromptEventForTaskRun.mockReturnValueOnce(true);
 
         service.watchCloudTask(
           "task-123",

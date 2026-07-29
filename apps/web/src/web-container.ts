@@ -125,7 +125,9 @@ import {
 import { sessionsModule } from "@posthog/core/sessions/sessions.module";
 import {
   type FileReadClient,
+  type GithubPrTitleClient,
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
   TITLE_GENERATOR_SERVICE,
   type TitleGeneratorLogger,
@@ -309,6 +311,7 @@ import { WebOAuthFlowService } from "./web-oauth-flow";
 import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
   webBundleLocalSkill,
+  webGithubPrTitleClient,
   webReadFileAsBase64,
   webResolveSkillBundleDependencies,
   webTitleGeneratorFileReadClient,
@@ -380,6 +383,7 @@ interface WebBindings {
   [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
   [TITLE_GENERATOR_SERVICE]: TitleGeneratorService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
+  [TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT]: GithubPrTitleClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [LLM_GATEWAY_HOST]: LlmGatewayHost;
@@ -724,6 +728,9 @@ container
 container
   .bind(TITLE_GENERATOR_FILE_READ_CLIENT)
   .toConstantValue(webTitleGeneratorFileReadClient);
+container
+  .bind(TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT)
+  .toConstantValue(webGithubPrTitleClient);
 container
   .bind(TITLE_GENERATOR_LOGGER)
   .toConstantValue(webTitleGeneratorLogger(scoped()));

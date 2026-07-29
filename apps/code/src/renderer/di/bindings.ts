@@ -108,10 +108,12 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import type {
   FileReadClient,
+  GithubPrTitleClient,
   TitleGeneratorLogger,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import {
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
@@ -336,6 +338,7 @@ export interface RendererBindings {
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
+  [TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT]: GithubPrTitleClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
 
   // --- desktop-services.ts ---
