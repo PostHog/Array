@@ -74,6 +74,21 @@ export function featureFlagsIndexUrl(overrides?: LinkOverrides): string | null {
   return withProjectId((pid) => `/project/${pid}/feature_flags`, overrides);
 }
 
+/**
+ * The report's page in the PostHog web app. Used to hand off evidence the
+ * desktop app can't draw itself — web renders report charts with the full
+ * insight stack.
+ */
+export function inboxReportUrl(
+  reportId: string,
+  overrides?: LinkOverrides,
+): string | null {
+  return withProjectId(
+    (pid) => `/project/${pid}/inbox/${encodeURIComponent(reportId)}`,
+    overrides,
+  );
+}
+
 export function skillUrl(
   skillName: string,
   overrides?: LinkOverrides,

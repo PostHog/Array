@@ -7,6 +7,7 @@ import type {
   CreateTaskAutomationOptions,
   ExecutionMode,
   PrAuthorshipMode,
+  ReportChart,
   SourceProduct,
   SourceType,
   StoredLogEntry,
@@ -21,7 +22,14 @@ import {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
   getCloudTaskGatewayUrl,
+  hasForbiddenReportChartQueryNode,
+  isReportChartId,
+  isReportChartQueryKind,
+  isReportChartSize,
   isSupportedReasoningEffort,
+  MAX_REPORT_CHART_CAPTION_LENGTH,
+  MAX_REPORT_CHART_TITLE_LENGTH,
+  MAX_REPORT_CHARTS,
   normalizeGatewayModelsResponse,
   resolveCloudInitialPermissionMode,
   taskAutomationListSchema,
@@ -1395,6 +1403,71 @@ function parseSignalReportArtefactsPayload(
     results,
     count,
   };
+}
+
+// ── Report charts ─────────────────────────────────────────────────────────
+// A chart's `query` is POSTed back to `/api/projects/:id/query/` to draw it, so
+// this is a trust boundary rather than a cosmetic parse: a chart missing its id,
+// carrying a query kind we don't render, or nesting an executable node is
+// dropped here and never reaches `runInsightQuery`. Malformed entries drop
+// individually — one bad chart shouldn't cost the report its other evidence.
+
+function normalizeReportChart(value: unknown): ReportChart | null {
+  if (!isObjectRecord(value)) return null;
+
+  const chartId = optionalString(value.chart_id);
+  if (!chartId || !isReportChartId(chartId)) return null;
+
+  const title = optionalString(value.title)?.trim();
+  if (!title || title.length > MAX_REPORT_CHART_TITLE_LENGTH) return null;
+
+  if (!isObjectRecord(value.query) || Array.isArray(value.query)) return null;
+  const query = value.query as Record<string, unknown>;
+  if (!isReportChartQueryKind(query.kind)) return null;
+  if (hasForbiddenReportChartQueryNode(query)) return null;
+
+  const caption = optionalString(value.caption);
+  return {
+    chart_id: chartId,
+    title,
+    query,
+    caption:
+      caption && caption.length <= MAX_REPORT_CHART_CAPTION_LENGTH
+        ? caption
+        : null,
+    size: isReportChartSize(value.size) ? value.size : null,
+  };
+}
+
+/**
+ * The renderable charts on a report payload. Duplicate ids collapse to the first
+ * occurrence, since the summary places charts by id and a repeat would be
+ * unreachable anyway.
+ */
+function normalizeReportCharts(value: unknown): ReportChart[] {
+  if (!Array.isArray(value)) return [];
+  const charts: ReportChart[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (charts.length >= MAX_REPORT_CHARTS) break;
+    const chart = normalizeReportChart(entry);
+    if (!chart || seen.has(chart.chart_id)) continue;
+    seen.add(chart.chart_id);
+    charts.push(chart);
+  }
+  return charts;
+}
+
+/**
+ * Report rows arrive as raw JSON casts; this replaces just the `charts` field
+ * with its validated form, leaving every other field as the backend sent it.
+ */
+function withNormalizedReportCharts<T>(report: T): T {
+  if (!isObjectRecord(report)) return report;
+  return {
+    ...report,
+    charts: normalizeReportCharts((report as Record<string, unknown>).charts),
+  } as T;
 }
 
 function normalizeAvailableSuggestedReviewer(
@@ -3985,7 +4058,9 @@ export class PostHogAPIClient {
         url,
         path,
       });
-      return (await response.json()) as SignalReport;
+      return withNormalizedReportCharts(
+        (await response.json()) as SignalReport,
+      );
     } catch (error) {
       // The shared fetcher throws "Failed request: [<status>] <body>" for any
       // non-2xx. Treat missing / forbidden as "not available in the current
@@ -4049,7 +4124,7 @@ export class PostHogAPIClient {
       count?: number;
     };
     return {
-      results: data.results ?? [],
+      results: (data.results ?? []).map(withNormalizedReportCharts),
       count: data.count ?? data.results?.length ?? 0,
     };
   }
@@ -4135,7 +4210,7 @@ export class PostHogAPIClient {
         signals?: Signal[];
       };
       return {
-        report: data.report ?? null,
+        report: data.report ? withNormalizedReportCharts(data.report) : null,
         signals: data.signals ?? [],
       };
     } catch (error) {
@@ -4269,7 +4344,7 @@ export class PostHogAPIClient {
       throw new Error(errorText || "Failed to update signal report state");
     }
 
-    return (await response.json()) as SignalReport;
+    return withNormalizedReportCharts((await response.json()) as SignalReport);
   }
 
   /**
@@ -6508,6 +6583,33 @@ export class PostHogAPIClient {
       throw new Error(data.error);
     }
     return { results: data.results ?? [], columns: data.columns ?? [] };
+  }
+
+  /**
+   * Executes a query node (an `InsightVizNode`, `DataVisualizationNode`, …)
+   * against the team's project and returns the raw response for the caller to
+   * shape. Backs report-chart rendering, where the node comes from the report
+   * payload rather than being built here — callers must have validated the kind
+   * first (`normalizeReportCharts` is the gate on the inbox path). As with
+   * `runHogQLQuery`, a 200 carrying an `error` field is surfaced as a throw.
+   */
+  async runInsightQuery(
+    query: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/query/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: { body: JSON.stringify({ query }) },
+    });
+    const data = (await response.json()) as Record<string, unknown>;
+    if (typeof data.error === "string" && data.error) {
+      throw new Error(data.error);
+    }
+    return data;
   }
 
   /**

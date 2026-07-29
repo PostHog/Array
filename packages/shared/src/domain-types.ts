@@ -469,7 +469,10 @@ export interface DetectedApplication {
   icon?: string; // Base64 data URL
 }
 
+import type { ReportChart } from "./report-charts";
 import type { SignalReportStatus } from "./signal-types";
+
+export type { ReportChart, ReportChartSize } from "./report-charts";
 export type { SignalReportStatus };
 
 /** Actionability priority from the researched report (actionability judgment artefact). */
@@ -519,6 +522,12 @@ export interface SignalReport {
   source_products?: string[];
   /** PR URL from the latest implementation task run, if available. */
   implementation_pr_url?: string | null;
+  /**
+   * Charts the report shows, in the order they were written. The summary places
+   * one with a `[label](chart:<chart_id>)` link; the rest render below it.
+   * Absent on reports authored before charts shipped.
+   */
+  charts?: ReportChart[];
 }
 
 export interface SignalReportArtefactContent {

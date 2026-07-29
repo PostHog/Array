@@ -1147,6 +1147,136 @@ describe("PostHogAPIClient", () => {
       await expect(client.getSignalReport("abc")).resolves.toEqual({
         id: "abc",
         title: "hi",
+        charts: [],
+      });
+    });
+
+    // A chart's `query` is POSTed back to `/api/projects/:id/query/` to draw it,
+    // so normalization is the gate on what the app is willing to execute.
+    describe("charts", () => {
+      const trendsQuery = {
+        kind: "InsightVizNode",
+        source: { kind: "TrendsQuery" },
+      };
+
+      async function fetchCharts(charts: unknown) {
+        const fetch = vi.fn().mockResolvedValue({
+          json: async () => ({ id: "abc", title: "hi", charts }),
+        });
+        const report = await makeClient(fetch).getSignalReport("abc");
+        return report?.charts;
+      }
+
+      it("keeps a well-formed chart", async () => {
+        await expect(
+          fetchCharts([
+            {
+              chart_id: "signups",
+              title: "Daily signups",
+              query: trendsQuery,
+              caption: "Since Friday",
+              size: "large",
+            },
+          ]),
+        ).resolves.toEqual([
+          {
+            chart_id: "signups",
+            title: "Daily signups",
+            query: trendsQuery,
+            caption: "Since Friday",
+            size: "large",
+          },
+        ]);
+      });
+
+      it("normalizes an absent caption and size to null", async () => {
+        await expect(
+          fetchCharts([{ chart_id: "a", title: "A", query: trendsQuery }]),
+        ).resolves.toEqual([
+          {
+            chart_id: "a",
+            title: "A",
+            query: trendsQuery,
+            caption: null,
+            size: null,
+          },
+        ]);
+      });
+
+      it.each([
+        { name: "a missing id", chart: { title: "A", query: trendsQuery } },
+        {
+          name: "a malformed id",
+          chart: { chart_id: "Not Valid", title: "A", query: trendsQuery },
+        },
+        {
+          name: "a blank title",
+          chart: { chart_id: "a", title: "   ", query: trendsQuery },
+        },
+        {
+          name: "a missing query",
+          chart: { chart_id: "a", title: "A" },
+        },
+        {
+          name: "an unrenderable query kind",
+          chart: { chart_id: "a", title: "A", query: { kind: "TrendsQuery" } },
+        },
+        {
+          name: "an executable query nested in the node",
+          chart: {
+            chart_id: "a",
+            title: "A",
+            query: { kind: "InsightVizNode", source: { kind: "HogQuery" } },
+          },
+        },
+        {
+          name: "bytecode smuggled into the node",
+          chart: {
+            chart_id: "a",
+            title: "A",
+            query: { kind: "InsightVizNode", source: { bytecode: ["_H", 1] } },
+          },
+        },
+      ])("drops a chart with $name", async ({ chart }) => {
+        await expect(fetchCharts([chart])).resolves.toEqual([]);
+      });
+
+      it("keeps the good charts when one entry is malformed", async () => {
+        const charts = await fetchCharts([
+          { chart_id: "bad" },
+          { chart_id: "good", title: "Good", query: trendsQuery },
+        ]);
+
+        expect(charts?.map((chart) => chart.chart_id)).toEqual(["good"]);
+      });
+
+      it("collapses a duplicate id to its first occurrence", async () => {
+        const charts = await fetchCharts([
+          { chart_id: "a", title: "First", query: trendsQuery },
+          { chart_id: "a", title: "Second", query: trendsQuery },
+        ]);
+
+        expect(charts).toHaveLength(1);
+        expect(charts?.[0].title).toBe("First");
+      });
+
+      it("caps the chart list at the backend's limit", async () => {
+        const charts = await fetchCharts(
+          Array.from({ length: 25 }, (_entry, index) => ({
+            chart_id: `c${index}`,
+            title: `Chart ${index}`,
+            query: trendsQuery,
+          })),
+        );
+
+        expect(charts).toHaveLength(20);
+      });
+
+      it.each([
+        { name: "absent", charts: undefined },
+        { name: "not an array", charts: "nope" },
+      ])("yields no charts when the field is $name", async ({ charts }) => {
+        await expect(fetchCharts(charts)).resolves.toEqual([]);
       });
     });
 

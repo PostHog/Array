@@ -22,6 +22,24 @@ export const inboxReportKeys = {
     [...inboxReportKeys.all, reportId, "artefacts"] as const,
   signals: (reportId: string) =>
     [...inboxReportKeys.all, reportId, "signals"] as const,
+  /**
+   * `queryHash` keeps a revised chart query from reading the previous query's
+   * cached result — the `chart_id` stays the same across such an edit.
+   */
+  chart: (
+    projectId: number | null,
+    reportId: string,
+    chartId: string,
+    queryHash: string,
+  ) =>
+    [
+      ...inboxReportKeys.all,
+      reportId,
+      "chart",
+      chartId,
+      queryHash,
+      projectId ?? "no-project",
+    ] as const,
   availableSuggestedReviewers: (authIdentity: string | null) =>
     [
       ...inboxReportKeys.all,

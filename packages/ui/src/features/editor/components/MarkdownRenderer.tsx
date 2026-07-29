@@ -1,4 +1,4 @@
-import { isPostHogCodeDeeplink } from "@posthog/shared";
+import { isPostHogCodeDeeplink, matchReportChartRef } from "@posthog/shared";
 import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
 import { parseGithubIssueUrl } from "@posthog/ui/features/message-editor/githubIssueUrl";
 import { CodeBlock } from "@posthog/ui/primitives/CodeBlock";
@@ -29,6 +29,9 @@ function preprocessMarkdown(content: string): string {
 
 function markdownUrlTransform(value: string): string {
   if (isPostHogCodeDeeplink(value)) return value;
+  // Sanitizing would strip `chart:` as an unknown protocol, leaving the `a`
+  // override no href to recognise the reference by.
+  if (matchReportChartRef(value)) return value;
   return defaultUrlTransform(value);
 }
 
@@ -75,6 +78,12 @@ export const baseComponents: Components = {
     <del className="text-(--gray-9) line-through">{children}</del>
   ),
   a: ({ href, children }) => {
+    // `chart:<id>` targets a chart attached to a Self-driving report, placed by
+    // the detail view (see `layoutReportSummary`). Anywhere else — and for a
+    // reference the detail view couldn't place — the label reads as plain text,
+    // since `chart:` is not a scheme a browser can follow.
+    if (matchReportChartRef(href)) return <>{children}</>;
+
     const githubRef = href ? parseGithubIssueUrl(href) : null;
     if (githubRef) {
       const isAutoLink = typeof children === "string" && children === href;

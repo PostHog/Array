@@ -184,6 +184,8 @@ export function InboxDetailFrame({
                 fallback="No summary yet – the Responder is still investigating."
                 variant="detail"
                 pending={report.status === "in_progress"}
+                charts={report.charts}
+                reportId={report.id}
               />
             </DetailSection>
             {belowSummary}

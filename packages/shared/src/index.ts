@@ -127,6 +127,8 @@ export {
   type CloudTaskStatusUpdate,
   type CloudTaskUpdatePayload,
   isTerminalStatus,
+  type ReportChart,
+  type ReportChartSize,
   type SignalReportPriority,
   type Task,
   type TaskRun,
@@ -276,6 +278,16 @@ export {
   type RegionLabel,
 } from "./regions";
 export { normalizeRepoKey } from "./repo";
+export {
+  hasForbiddenReportChartQueryNode,
+  isReportChartId,
+  isReportChartQueryKind,
+  isReportChartSize,
+  MAX_REPORT_CHART_CAPTION_LENGTH,
+  MAX_REPORT_CHART_TITLE_LENGTH,
+  MAX_REPORT_CHARTS,
+  matchReportChartRef,
+} from "./report-charts";
 export { getTaskRepository, parseRepository } from "./repository";
 export {
   Saga,
