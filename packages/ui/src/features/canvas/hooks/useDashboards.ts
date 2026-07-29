@@ -30,7 +30,10 @@ export function isPlaceholderCanvasName(name: string): boolean {
 }
 
 /** Saved canvases for a channel (file-backed freeform React apps). */
-export function useDashboards(channelId: string | undefined): {
+export function useDashboards(
+  channelId: string | undefined,
+  options?: { poll?: boolean },
+): {
   dashboards: DashboardSummary[];
   isLoading: boolean;
 } {
@@ -41,7 +44,8 @@ export function useDashboards(channelId: string | undefined): {
       {
         enabled: !!channelId,
         gcTime: SPACE_QUERY_GC_TIME_MS,
-        refetchInterval: SPACE_QUERY_REFETCH_INTERVAL_MS,
+        refetchInterval:
+          options?.poll === false ? false : SPACE_QUERY_REFETCH_INTERVAL_MS,
         staleTime: SPACE_QUERY_STALE_TIME_MS,
       },
     ),
