@@ -22,6 +22,7 @@ import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFram
 import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
 import { CANVAS_QUERY_KEY } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboard,
@@ -317,6 +318,7 @@ function CanvasBreadcrumb({
 // single toolbar carries the channel breadcrumb (left) and data controls /
 // actions (right).
 export function WebsiteLayout() {
+  const spacesLayout = useChannelsLayout();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false });
 
@@ -339,8 +341,11 @@ export function WebsiteLayout() {
 
   const { channels } = useChannels();
   const channelName = channelId
-    ? (channels.find((c) => c.id === channelId)?.name ?? "Channel")
-    : "Channel";
+    ? (channels.find((c) => c.id === channelId)?.name ??
+      (spacesLayout ? "Space" : "Channel"))
+    : spacesLayout
+      ? "Space"
+      : "Channel";
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
   // The canvases grid (its own sub-route now that the channel index is the

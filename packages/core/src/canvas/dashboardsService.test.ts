@@ -14,7 +14,10 @@ function dashboardRow(
   name: string,
   channelId: string,
   updatedAt: number,
-): FsEntryBase & { meta: Record<string, unknown> } {
+): FsEntryBase & {
+  meta: Record<string, unknown>;
+  created_by?: { uuid: string } | null;
+} {
   return {
     id,
     path: `Channels/${channelId}/${name}`,
@@ -63,6 +66,32 @@ describe("DashboardsService.list", () => {
 
     expect(result.map((d) => d.id)).toEqual(["b", "c", "a"]);
     expect(result[0]).toMatchObject({ name: "Newer", channelId: "chan-1" });
+  });
+
+  it("maps the backend creator uuid onto summaries", async () => {
+    const row = dashboardRow("a", "Canvas", "chan-1", 100);
+    row.created_by = { uuid: "creator-uuid" };
+    const { fs } = fakeFs([row]);
+
+    const [result] = await new DashboardsService(fs, {} as never).list(
+      "chan-1",
+    );
+
+    expect(result.createdByUuid).toBe("creator-uuid");
+  });
+
+  // The backend sends `created_by: null` once the creator is deleted. Leaving
+  // the uuid undefined is what makes such a row fail closed out of #me.
+  it("leaves the creator uuid undefined when the row has no creator", async () => {
+    const row = dashboardRow("a", "Canvas", "chan-1", 100);
+    row.created_by = null;
+    const { fs } = fakeFs([row]);
+
+    const [result] = await new DashboardsService(fs, {} as never).list(
+      "chan-1",
+    );
+
+    expect(result.createdByUuid).toBeUndefined();
   });
 });
 

@@ -1,11 +1,5 @@
-import { ArrowSquareOutIcon, PlusIcon } from "@phosphor-icons/react";
 import { loopHog } from "@posthog/ui/assets/hedgehogs";
-import { Button } from "@posthog/ui/primitives/Button";
-import { openUrlInBrowser } from "@posthog/ui/utils/browser";
 import { Flex, Text } from "@radix-ui/themes";
-
-// Placeholder until the loops docs page lands; swap for the final URL.
-const LOOPS_DOCS_URL = "https://posthog.com/docs/loops";
 
 const GETTING_STARTED_STEPS = [
   "Describe what you want, or start from a template",
@@ -15,19 +9,11 @@ const GETTING_STARTED_STEPS = [
 
 /** The illustrated getting-started card shown when there are no loops yet. `contextName`
  * tweaks the copy for a context's Loops tab. */
-export function LoopsEmptyState({
-  contextName,
-  onCreate,
-  disabledReason,
-}: {
-  contextName?: string;
-  onCreate: () => void;
-  disabledReason?: string | null;
-}) {
+export function LoopsEmptyState({ contextName }: { contextName?: string }) {
   return (
     <div className="@container">
-      <div className="flex @min-[720px]:flex-row flex-col items-center @min-[720px]:gap-0 gap-6 rounded-(--radius-3) border border-gray-6 border-dashed @min-[720px]:px-8 px-5 py-8">
-        <Flex justify="center" className="@min-[720px]:w-2/5 w-full shrink-0">
+      <div className="flex @min-[560px]:flex-row flex-col items-center @min-[560px]:gap-0 gap-6 rounded-(--radius-3) border border-gray-6 border-dashed @min-[560px]:px-8 px-5 py-8">
+        <Flex justify="center" className="@min-[560px]:w-2/5 w-full shrink-0">
           <img src={loopHog} alt="" className="h-auto w-52 object-contain" />
         </Flex>
         <Flex
@@ -61,27 +47,6 @@ export function LoopsEmptyState({
               </div>
             ))}
           </div>
-          <Flex gap="2" wrap="wrap">
-            <Button
-              variant="solid"
-              size="2"
-              onClick={onCreate}
-              disabled={disabledReason != null}
-              disabledReason={disabledReason}
-            >
-              <PlusIcon size={14} />
-              Create a loop
-            </Button>
-            <Button
-              variant="outline"
-              color="gray"
-              size="2"
-              onClick={() => void openUrlInBrowser(LOOPS_DOCS_URL)}
-            >
-              Learn more
-              <ArrowSquareOutIcon size={14} />
-            </Button>
-          </Flex>
         </Flex>
       </div>
     </div>

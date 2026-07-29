@@ -6,6 +6,10 @@ import {
   RobotIcon,
 } from "@phosphor-icons/react";
 import { taskFeedRunStatus } from "@posthog/core/canvas/channelFeed";
+import {
+  RUN_STATUS_LABELS,
+  runStatusVariant,
+} from "@posthog/core/canvas/runStatus";
 import { xmlToPlainText } from "@posthog/core/message-editor/content";
 import {
   Avatar,
@@ -76,17 +80,6 @@ import {
 // shared query key means an open panel naturally speeds the row up too.
 const FEED_REPLIES_POLL_INTERVAL_MS = 15_000;
 
-const STATUS_LABELS: Record<TaskRunStatus, string> = {
-  not_started: "Not started",
-  queued: "Queued",
-  in_progress: "In progress",
-  // "Ready", not "Completed": the agent has finished its work and the task is
-  // ready to look at, but the change itself isn't necessarily shipped/done.
-  completed: "Ready",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
-
 // Once a PR exists its GitHub state is the truest top-line status — more
 // accurate than the run status, which routinely lingers on "in_progress"
 // (or a stale cloud status) after the agent opens the PR. Mirrors the PR
@@ -102,18 +95,10 @@ const PR_STATE_LABELS: Record<
 };
 
 function statusBadge(status: TaskRunStatus) {
-  const variant =
-    status === "completed"
-      ? "success"
-      : status === "failed"
-        ? "destructive"
-        : status === "in_progress"
-          ? "info"
-          : "default";
   return (
-    <Badge variant={variant}>
+    <Badge variant={runStatusVariant(status)}>
       {status === "in_progress" && <Spinner className="size-2.5" />}
-      {STATUS_LABELS[status]}
+      {RUN_STATUS_LABELS[status]}
     </Badge>
   );
 }

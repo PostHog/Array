@@ -72,30 +72,6 @@ snapshots:
         hash: v1.k4693efd2.1d199b2c4bba8034cb18fb5b49866b64a6eb3311591add5f58ec288710dce2e9.FCc9egSaO1Onih417yciSYKNROe8zqDZyyS6xuXCZGw
     billing-usagemeter--zero-spend-limit--light:
         hash: v1.k4693efd2.b50c18736bbde45fc89f4c0ac7fd616286e5c1ecc2a56910fffca13eaa13d8a2.31z4F0JmvMeR4yqk5pjs_OQ3MypnM2miZI9al4wuc8c
-    channels-taskfeedrow--agent-origin--dark:
-        hash: v1.k4693efd2.82f8c70a399c9ea768201933e202fcc2fde74332c5153aeabf6835ace79beee6.-SVboDRIZ_-nh4PtMliCv7e7iCtdUm-1m2xQ9Xzcdfw
-    channels-taskfeedrow--agent-origin--light:
-        hash: v1.k4693efd2.4c1db3470d5ec9b4db9872d0e048314d0078979e8fbdb602b8c648ba70d7209f._KPUvj46p33u7A4Xndz-git-4rp7VKca1MpeTztlB6w
-    channels-taskfeedrow--human-email-only--dark:
-        hash: v1.k4693efd2.0f4dece4643b7375b77746347658f4fe65b37817cdfa9ad1ba697067e619f428.f0jKZ4OYqsmeJjXffjt-amK9cwE81JF0lgSMqtn37PA
-    channels-taskfeedrow--human-email-only--light:
-        hash: v1.k4693efd2.14db0510f7ea5c57985cf0cb60ab08f5e146c7243eeb1b0b963f74e85c7d60f4.ijHQLK0lZjjUlOQuzYzisImU9DWsNmZM7i5GYfWU4E0
-    channels-taskfeedrow--human-started--dark:
-        hash: v1.k4693efd2.e0abdae2e8ac2ef29793ea7afc2a2580c6610e07a3c640ad782af7fd3c12592a.YUgF_BTPzZoqnWXvyLBRs3w9C_P3Yfh4-cP4mUqs2NQ
-    channels-taskfeedrow--human-started--light:
-        hash: v1.k4693efd2.84c26deb1a587fe061238b3982b555167575893bacc9cd2667d4d3f74646261f.abqc0Voe6FIQFflzDJTv1KewcZ4XxcDz1a0mFlJu7oM
-    channels-taskfeedrow--long-prompt--dark:
-        hash: v1.k4693efd2.876d34660bc267af79d39a971a681ba279a870061dba10b905412112c2a5e4dd.rSw1X068udMs8Arglu_WgX5RL8WZlpAc8_kVONPQhF4
-    channels-taskfeedrow--long-prompt--light:
-        hash: v1.k4693efd2.d0d6e4b6bfa257c3f46d991777f72c345437b0be2ee16a182fa925d3ece7dc9e.6PGeOlMxVauJSQia0FAIirzaYio79-I7H4x-9LvEUbw
-    channels-taskfeedrow--no-prompt--dark:
-        hash: v1.k4693efd2.9fa967f1a9acdeba0c50a9e45ae649f118ee26938037dbefd1bb0577067b03d4.va1lGsscqLW86-5yCKc3H6pQ8Az7_HBItkgGTnTQiYU
-    channels-taskfeedrow--no-prompt--light:
-        hash: v1.k4693efd2.a02339aecdb6fc327fdf6586e28ceeebf8490442fe217eb8bb46f1ce66bff78a.2l7XdvdW3D0GlLmPwDdTFgjZWdav68bZX_LYResVKwo
-    channels-taskfeedrow--no-starter--dark:
-        hash: v1.k4693efd2.66fff212f14afa9dd3bc532698a042383014a0cabd4331d30eff878148e1773d.RiectZxFTqk1husLYI-UV5ko1uZ4lpbjWstE7Hy3MJE
-    channels-taskfeedrow--no-starter--light:
-        hash: v1.k4693efd2.9ee4ad64ed7d2c5c62d0cd682d903b09da643d462d49aae0858afa500e92256b.OhGj64l-o7iWtxzJo1qt0A_CU9ME0ZRr_5e455RGUJQ
     components-permissions-permissionselector--create-new-file--dark:
         hash: v1.k4693efd2.c54203a4e636b83b3d24d7ed9c4ace8659db87cd8f231d9dc2ecc03320e31646.epDm7LebiLzlp0uuZBrE-Obt_anAn0xsE8bHFnm5vos
     components-permissions-permissionselector--create-new-file--light:
@@ -708,6 +684,30 @@ snapshots:
         hash: v1.k4693efd2.cfff4c6bbb0acef1c9941b21d2f69c24b234c2c206282acf6fcada0cb2bd2386.xILjVPp8ecQmGbPjGDdhbRyi9KFPpA_1nfYF3bfjwuc
     skill-buttons-skillbuttonsmenu--default--light:
         hash: v1.k4693efd2.eb9bd49b9700641f6f3c90653447c9767c52e997afec9843e8649b90752faad3.VdxEtBwtkU3ioy2evcNbrEKxPjQ1GDUpZAQzFe-Uho4
+    spaces-taskfeedrow--agent-origin--dark:
+        hash: v1.k4693efd2.82f8c70a399c9ea768201933e202fcc2fde74332c5153aeabf6835ace79beee6.yEZq_qnKxItv5u0Ydcqa1B4VCwv8lwXUvcaFScE2XO0
+    spaces-taskfeedrow--agent-origin--light:
+        hash: v1.k4693efd2.4c1db3470d5ec9b4db9872d0e048314d0078979e8fbdb602b8c648ba70d7209f.wt_Ufkw30jHFnxEMFXE0wQG8ignuCURuUUYIvNMnJ6U
+    spaces-taskfeedrow--human-email-only--dark:
+        hash: v1.k4693efd2.611794921d5c6270a211f4a6bc3d91fd63a74a58f0c905a79271cbc7d9c73eb8.balV69yNKs9biJzweJYwpk5e1UjZ11fFersE9UMhvEU
+    spaces-taskfeedrow--human-email-only--light:
+        hash: v1.k4693efd2.961288ce410b6376bab92428ad148b881c768e9edea4821db4818d13682f50c4.79pzkpuXwARCmUS4HtZRvb2n7dM8HUZZs-ErIXX4wwg
+    spaces-taskfeedrow--human-started--dark:
+        hash: v1.k4693efd2.6e1cf0720234b1c64ba04f6f3af965d32438551771bc3680c4391bb8463b8eee.4O-iWXxbDv-L9MsuPt6KoDvK7C95R0Jj6LTYjDwwEhk
+    spaces-taskfeedrow--human-started--light:
+        hash: v1.k4693efd2.7156c1e5b2359b5f792529aa9041ad9277842d51c3423bda4f0c029c58dcef28.PF-JYrCTfHxEzFG9dnabJxDYS47wQXnxurx8Ev_LfkY
+    spaces-taskfeedrow--long-prompt--dark:
+        hash: v1.k4693efd2.00acb2487749ee5a1db2c95da8ae0e2fb2de0815d653973e60c7ceb3ff808135.pdV864kTAUM1IgcuME846VwInafp3f-WFFxxxE4H_oY
+    spaces-taskfeedrow--long-prompt--light:
+        hash: v1.k4693efd2.8a6b372abdf9c60a558c59a703f8e7c8f65fcb55fd99e6c97c6eca23e6a76781.HbZ7kfuE60F5SWucdbYLhy98POhk8MPPX2TLA_r2hz8
+    spaces-taskfeedrow--no-prompt--dark:
+        hash: v1.k4693efd2.ff77770c9b5c656b213c139270322defa38306d714abeee6b5fe4e17e2056f88.KnYgUDb_jYEfH5aSoJbt1cwyJXAfDo_eKmIfn0fxjjc
+    spaces-taskfeedrow--no-prompt--light:
+        hash: v1.k4693efd2.d3d755ee7ea6eccbed93ea18e6dcbccbd9f77f019f5c153cb0278131b08c324f.l_KwHWHFTzODefftPGtlWsXLFi6tbH78ZRQeeY7X4Z0
+    spaces-taskfeedrow--no-starter--dark:
+        hash: v1.k4693efd2.66fff212f14afa9dd3bc532698a042383014a0cabd4331d30eff878148e1773d.-FvbS5RpndI7QXNTpQhbQShDktPrOV_jdcWDY4MUYF4
+    spaces-taskfeedrow--no-starter--light:
+        hash: v1.k4693efd2.9ee4ad64ed7d2c5c62d0cd682d903b09da643d462d49aae0858afa500e92256b.lCc1Q5KBHSLnYp7N9k6HEBxDPjf0SblH9zDLHQ7dYo8
     task-detail-continueclisessions--importing--dark:
         hash: v1.k4693efd2.3196e21b9daa2f183c79eaf2c70a5775365dbee3f1d920c64927e20a0fadcbf9.FjHhjEX3urGbycQiDehA9JQ7H2zfyl1id9rDSVjrtoI
     task-detail-continueclisessions--importing--light:

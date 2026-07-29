@@ -1,21 +1,33 @@
 import "./generated.augment";
-import { isSupportedReasoningEffort } from "@posthog/agent/adapters/reasoning-effort";
 import type {
   Adapter,
   CloudMcpServerImport,
   CloudMcpServerRelayDesignation,
   CloudRunSource,
+  CreateTaskAutomationOptions,
   ExecutionMode,
   PrAuthorshipMode,
   SourceProduct,
   SourceType,
   StoredLogEntry,
+  TaskAutomation,
   TaskRunArtifactMetadata,
+  UpdateTaskAutomationOptions,
 } from "@posthog/shared";
 import {
+  buildCloudTaskConfigOptions,
+  type CloudTaskConfigOption,
+  createTaskAutomationSchema,
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  getCloudTaskGatewayUrl,
+  isSupportedReasoningEffort,
+  normalizeGatewayModelsResponse,
   resolveCloudInitialPermissionMode,
+  taskAutomationListSchema,
+  taskAutomationSchema,
+  taskAutomationValidationErrorSchema,
+  updateTaskAutomationSchema,
 } from "@posthog/shared";
 import type {
   AgentAnalyticsData,
@@ -101,9 +113,18 @@ import {
   type HogQLGrid,
   shapeAgentAnalytics,
 } from "./agent-analytics";
-import { buildApiFetcher, requestErrorStatus } from "./fetcher";
+import {
+  ApiRequestError,
+  buildApiFetcher,
+  type FetchImplementation,
+  requestErrorStatus,
+} from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
+import {
+  normalizeTaskResponse,
+  normalizeTaskRunResponse,
+} from "./task-normalization";
 export interface ApiClientLogger {
   warn(...args: unknown[]): void;
 }
@@ -120,6 +141,13 @@ let clientAppVersion = "unknown";
 
 export function setPosthogApiClientAppVersion(version: string): void {
   clientAppVersion = version;
+}
+
+export interface PostHogAPIClientOptions {
+  fetch?: FetchImplementation;
+  appVersion?: string;
+  userAgent?: string | null;
+  githubConnectFrom?: string;
 }
 
 export function getPosthogApiClientAppVersion(): string {
@@ -161,6 +189,36 @@ export class CloudUsageLimitError extends Error {
     this.resetAt = params.resetAt;
     this.isPro = params.isPro;
   }
+}
+
+export class TaskAutomationValidationError extends Error {
+  readonly status = 400;
+  readonly code: string;
+  readonly attr: string | null;
+
+  constructor(details: {
+    detail: string;
+    code: string;
+    attr: string | null;
+  }) {
+    super(details.detail);
+    this.name = "TaskAutomationValidationError";
+    this.code = details.code;
+    this.attr = details.attr;
+  }
+}
+
+function rethrowTaskAutomationError(error: unknown): never {
+  if (error instanceof ApiRequestError && error.status === 400) {
+    const validationError = taskAutomationValidationErrorSchema.safeParse(
+      error.body,
+    );
+    if (validationError.success) {
+      throw new TaskAutomationValidationError(validationError.data);
+    }
+  }
+
+  throw error;
 }
 
 export const MCP_CATEGORIES = [
@@ -581,7 +639,7 @@ export interface FinalizedTaskArtifactUpload {
   uploaded_at?: string;
 }
 
-interface CloudRunOptions {
+export interface CloudRunOptions {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
@@ -600,6 +658,56 @@ interface CloudRunOptions {
    */
   importedMcpServers?: CloudMcpServerImport[];
   relayedMcpServers?: CloudMcpServerRelayDesignation[];
+}
+
+export type CloudRunCommandMethod =
+  | "user_message"
+  | "permission_response"
+  | "set_config_option"
+  | "cancel"
+  | "close";
+
+export class CloudCommandError extends Error {
+  readonly status: number;
+  readonly backendError: string | null;
+  readonly method: CloudRunCommandMethod;
+
+  constructor(
+    method: CloudRunCommandMethod,
+    status: number,
+    backendError: string | null,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CloudCommandError";
+    this.method = method;
+    this.status = status;
+    this.backendError = backendError;
+  }
+
+  isSandboxInactive(): boolean {
+    const backendError = this.backendError?.toLowerCase();
+    return (
+      this.status === 404 ||
+      backendError?.includes("no active sandbox") === true ||
+      backendError?.includes("returned 404") === true
+    );
+  }
+}
+
+function cloudCommandBackendError(payload: unknown): string | null {
+  if (typeof payload === "string") return payload || null;
+  if (!payload || typeof payload !== "object") return null;
+
+  const error = "error" in payload ? payload.error : null;
+  if (typeof error === "string") return error || null;
+  if (error && typeof error === "object" && "message" in error) {
+    return typeof error.message === "string" ? error.message : null;
+  }
+  if ("message" in payload && typeof payload.message === "string") {
+    return payload.message;
+  }
+  return null;
 }
 
 interface CreateTaskRunOptions extends CloudRunOptions {
@@ -1342,19 +1450,28 @@ function previewTokenHeader(
 export class PostHogAPIClient {
   private api: ReturnType<typeof createApiClient>;
   private _teamId: number | null = null;
+  private githubConnectFrom: string;
+  private readonly fetch: FetchImplementation;
+  private readonly apiHost: string;
 
   constructor(
     apiHost: string,
     getAccessToken: () => Promise<string>,
     refreshAccessToken: () => Promise<string>,
     teamId?: number,
+    options: PostHogAPIClientOptions = {},
   ) {
     const baseUrl = apiHost.endsWith("/") ? apiHost.slice(0, -1) : apiHost;
+    this.apiHost = baseUrl;
+    this.githubConnectFrom = options.githubConnectFrom ?? "posthog_code";
+    this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.api = createApiClient(
       buildApiFetcher({
         getAccessToken,
         refreshAccessToken,
-        appVersion: clientAppVersion,
+        appVersion: options.appVersion ?? clientAppVersion,
+        fetch: options.fetch,
+        userAgent: options.userAgent,
       }),
       baseUrl,
     );
@@ -1389,6 +1506,21 @@ export class PostHogAPIClient {
       path: { uuid: "@me" },
     });
     return data;
+  }
+
+  async getCloudTaskConfigOptions(
+    adapter: Adapter = "claude",
+  ): Promise<CloudTaskConfigOption[]> {
+    const url = new URL(`${getCloudTaskGatewayUrl(this.apiHost)}/v1/models`);
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: url.pathname,
+    });
+    return buildCloudTaskConfigOptions(
+      normalizeGatewayModelsResponse(await response.json()),
+      adapter,
+    );
   }
 
   // Desktop file system — the backend surface that backs canvas channels
@@ -1755,7 +1887,10 @@ export class PostHogAPIClient {
       url,
       path: urlPath,
       overrides: {
-        body: JSON.stringify({ team_id: id, connect_from: "posthog_code" }),
+        body: JSON.stringify({
+          team_id: id,
+          connect_from: this.githubConnectFrom,
+        }),
       },
     });
     if (!response.ok) {
@@ -2257,7 +2392,7 @@ export class PostHogAPIClient {
     originProduct?: string;
     internal?: boolean;
     channel?: string;
-  }) {
+  }): Promise<Task[]> {
     const teamId = await this.getTeamId();
     const params: Record<string, string | number | boolean> = {
       limit: 500,
@@ -2288,7 +2423,9 @@ export class PostHogAPIClient {
       query: params,
     });
 
-    return data.results ?? [];
+    return (data.results ?? []).map((task) =>
+      normalizeTaskResponse(task, { teamId }),
+    );
   }
 
   async getTaskSummaries(ids: string[]) {
@@ -2330,7 +2467,102 @@ export class PostHogAPIClient {
     const data = await this.api.get(`/api/projects/{project_id}/tasks/{id}/`, {
       path: { project_id: teamId.toString(), id: taskId },
     });
-    return data as unknown as Task;
+    return normalizeTaskResponse(data, { teamId });
+  }
+
+  async listTaskAutomations(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<TaskAutomation[]> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.get(
+      `/api/projects/{project_id}/task_automations/`,
+      {
+        path: { project_id: teamId.toString() },
+        query: {
+          limit: options?.limit ?? 500,
+          ...(options?.offset === undefined ? {} : { offset: options.offset }),
+        },
+      },
+    );
+
+    return taskAutomationListSchema.parse(data).results;
+  }
+
+  async getTaskAutomation(automationId: string): Promise<TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const data = await this.api.get(
+      `/api/projects/{project_id}/task_automations/{id}/`,
+      {
+        path: { project_id: teamId.toString(), id: automationId },
+      },
+    );
+
+    return taskAutomationSchema.parse(data);
+  }
+
+  async createTaskAutomation(
+    options: CreateTaskAutomationOptions,
+  ): Promise<TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const body = createTaskAutomationSchema.parse(options);
+
+    try {
+      const data = await this.api.post(
+        `/api/projects/{project_id}/task_automations/`,
+        {
+          path: { project_id: teamId.toString() },
+          body: body as Schemas.TaskAutomation,
+        },
+      );
+      return taskAutomationSchema.parse(data);
+    } catch (error) {
+      rethrowTaskAutomationError(error);
+    }
+  }
+
+  async updateTaskAutomation(
+    automationId: string,
+    updates: UpdateTaskAutomationOptions,
+  ): Promise<TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const body = updateTaskAutomationSchema.parse(updates);
+
+    try {
+      const data = await this.api.patch(
+        `/api/projects/{project_id}/task_automations/{id}/`,
+        {
+          path: { project_id: teamId.toString(), id: automationId },
+          body,
+        },
+      );
+      return taskAutomationSchema.parse(data);
+    } catch (error) {
+      rethrowTaskAutomationError(error);
+    }
+  }
+
+  async deleteTaskAutomation(automationId: string): Promise<void> {
+    const teamId = await this.getTeamId();
+    await this.api.delete(`/api/projects/{project_id}/task_automations/{id}/`, {
+      path: { project_id: teamId.toString(), id: automationId },
+    });
+  }
+
+  async runTaskAutomation(automationId: string): Promise<TaskAutomation> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/task_automations/${automationId}/run/`;
+
+    try {
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        path,
+        url: new URL(`${this.api.baseUrl}${path}`),
+      });
+      return taskAutomationSchema.parse(await response.json());
+    } catch (error) {
+      rethrowTaskAutomationError(error);
+    }
   }
 
   async createTask(
@@ -2357,7 +2589,7 @@ export class PostHogAPIClient {
         pending_user_artifact_ids?: string[];
         auto_publish?: boolean;
       },
-  ) {
+  ): Promise<Task> {
     const teamId = await this.getTeamId();
     const { origin_product: originProduct, ...taskOptions } = options;
 
@@ -2369,10 +2601,13 @@ export class PostHogAPIClient {
       } as unknown as Schemas.Task,
     });
 
-    return data;
+    return normalizeTaskResponse(data, { teamId });
   }
 
-  async updateTask(taskId: string, updates: Partial<Schemas.Task>) {
+  async updateTask(
+    taskId: string,
+    updates: Partial<Schemas.Task>,
+  ): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.patch(
       `/api/projects/{project_id}/tasks/{id}/`,
@@ -2382,7 +2617,7 @@ export class PostHogAPIClient {
       },
     );
 
-    return data;
+    return normalizeTaskResponse(data, { teamId });
   }
 
   async deleteTask(taskId: string) {
@@ -2681,9 +2916,28 @@ export class PostHogAPIClient {
   async sendRunCommand(
     taskId: string,
     runId: string,
-    method: "user_message" | "cancel" | "close",
+    method: CloudRunCommandMethod,
     params?: Record<string, unknown>,
   ): Promise<{ success: boolean; result?: unknown; error?: string }> {
+    try {
+      return {
+        success: true,
+        result: await this.sendCloudRunCommand(taskId, runId, method, params),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  async sendCloudRunCommand(
+    taskId: string,
+    runId: string,
+    method: CloudRunCommandMethod,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
     const teamId = await this.getTeamId();
     const url = new URL(
       `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/command/`,
@@ -2691,7 +2945,7 @@ export class PostHogAPIClient {
     const body = {
       jsonrpc: "2.0",
       method,
-      params: params ?? {},
+      params,
       id: `posthog-code-${Date.now()}`,
     };
 
@@ -2705,37 +2959,52 @@ export class PostHogAPIClient {
         },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        let errorMessage = `Command failed: ${response.statusText}`;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage =
-            errorJson.error?.message ?? errorJson.error ?? errorMessage;
-        } catch {
-          if (errorText) errorMessage = errorText;
-        }
-        return { success: false, error: errorMessage };
-      }
-
       const data = (await response.json()) as {
-        error?: { message?: string };
+        error?: unknown;
         result?: unknown;
       };
       if (data.error) {
-        return {
-          success: false,
-          error: data.error.message ?? JSON.stringify(data.error),
-        };
+        const backendError = cloudCommandBackendError(data);
+        throw new CloudCommandError(
+          method,
+          response.status,
+          backendError,
+          `Cloud command '${method}' error: ${backendError ?? JSON.stringify(data.error)}`,
+        );
       }
 
-      return { success: true, result: data.result };
+      return data.result;
     } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      if (error instanceof CloudCommandError) throw error;
+      if (error instanceof ApiRequestError) {
+        const backendError = cloudCommandBackendError(error.body);
+        throw new CloudCommandError(
+          method,
+          error.status,
+          backendError,
+          `Cloud command '${method}' failed: ${error.status}${backendError ? ` ${backendError}` : ""}`,
+        );
+      }
+      throw error;
     }
+  }
+
+  async cancelTaskRun(
+    taskId: string,
+    runId: string,
+    reason?: string,
+  ): Promise<{ status?: string }> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/cancel/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${path}`),
+      path,
+      overrides: {
+        body: JSON.stringify(reason ? { reason } : {}),
+      },
+    });
+    return (await response.json().catch(() => ({}))) as { status?: string };
   }
 
   async runTaskInCloud(
@@ -2761,7 +3030,7 @@ export class PostHogAPIClient {
       }),
     );
 
-    return data as unknown as Task;
+    return normalizeTaskResponse(data, { teamId });
   }
 
   async warmTask(options: {
@@ -3001,7 +3270,8 @@ export class PostHogAPIClient {
       throw new Error(`Failed to resume run in cloud: ${response.statusText}`);
     }
 
-    return (await response.json()) as TaskRun;
+    const data = (await response.json()) as Schemas.TaskRunDetail;
+    return normalizeTaskRunResponse(data, { teamId, taskId });
   }
 
   async listTaskRuns(taskId: string): Promise<TaskRun[]> {
@@ -3019,8 +3289,11 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch task runs: ${response.statusText}`);
     }
 
-    const data = (await response.json()) as { results?: TaskRun[] };
-    return data.results ?? [];
+    const data =
+      (await response.json()) as Partial<Schemas.PaginatedTaskRunDetailList>;
+    return (data.results ?? []).map((run) =>
+      normalizeTaskRunResponse(run, { teamId, taskId }),
+    );
   }
 
   async getTaskRun(taskId: string, runId: string): Promise<TaskRun> {
@@ -3038,7 +3311,8 @@ export class PostHogAPIClient {
       throw new Error(`Failed to fetch task run: ${response.statusText}`);
     }
 
-    return (await response.json()) as TaskRun;
+    const data = (await response.json()) as Schemas.TaskRunDetail;
+    return normalizeTaskRunResponse(data, { teamId, taskId });
   }
 
   async createTaskRun(
@@ -3070,7 +3344,8 @@ export class PostHogAPIClient {
       throw new Error(`Failed to create task run: ${response.statusText}`);
     }
 
-    return (await response.json()) as TaskRun;
+    const data = (await response.json()) as Schemas.TaskRunDetail;
+    return normalizeTaskRunResponse(data, { teamId, taskId });
   }
 
   async startTaskRun(
@@ -3100,7 +3375,8 @@ export class PostHogAPIClient {
       throw new Error(`Failed to start task run: ${response.statusText}`);
     }
 
-    return (await response.json()) as Task;
+    const data = (await response.json()) as Schemas.Task;
+    return normalizeTaskResponse(data, { teamId });
   }
 
   async updateTaskRun(
@@ -3125,7 +3401,7 @@ export class PostHogAPIClient {
         body: updates as Record<string, unknown>,
       },
     );
-    return data as unknown as TaskRun;
+    return normalizeTaskRunResponse(data, { teamId, taskId });
   }
 
   /**
@@ -3215,14 +3491,14 @@ export class PostHogAPIClient {
 
   async getTaskLogs(taskId: string): Promise<StoredLogEntry[]> {
     try {
-      const task = (await this.getTask(taskId)) as unknown as Task;
+      const task = await this.getTask(taskId);
       const logUrl = task?.latest_run?.log_url;
 
       if (!logUrl) {
         return [];
       }
 
-      const response = await fetch(logUrl);
+      const response = await this.fetch(logUrl);
 
       if (!response.ok) {
         log.warn(

@@ -1,37 +1,22 @@
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { LoopsEmptyState } from "./LoopsEmptyState";
 
 describe("LoopsEmptyState", () => {
-  it("starts loop creation from the primary CTA", async () => {
-    const onCreate = vi.fn();
-    render(
-      <Theme>
-        <LoopsEmptyState onCreate={onCreate} />
-      </Theme>,
-    );
+  it.each([
+    { contextName: undefined, heading: "Create your first loop" },
+    { contextName: "general", heading: "Create a loop for #general" },
+  ])(
+    'shows "$heading" when contextName is $contextName',
+    ({ contextName, heading }) => {
+      render(
+        <Theme>
+          <LoopsEmptyState contextName={contextName} />
+        </Theme>,
+      );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Create a loop" }),
-    );
-
-    expect(onCreate).toHaveBeenCalledOnce();
-  });
-
-  it("disables creation when the project reached its loop limit", () => {
-    render(
-      <Theme>
-        <LoopsEmptyState
-          onCreate={vi.fn()}
-          disabledReason="This project reached its loop limit."
-        />
-      </Theme>,
-    );
-
-    expect(
-      screen.getByRole("button", { name: "Create a loop" }),
-    ).toBeDisabled();
-  });
+      expect(screen.getByText(heading)).toBeInTheDocument();
+    },
+  );
 });

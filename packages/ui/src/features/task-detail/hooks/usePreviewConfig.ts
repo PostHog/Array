@@ -11,8 +11,12 @@ import {
   defaultEligibleModel,
   GLM_MODEL_FLAG,
   getCloudUrlFromRegion,
+  KIMI_MODEL_FLAG,
 } from "@posthog/shared";
-import { stripGlmModelOption } from "@posthog/ui/features/sessions/modelOptionFilters";
+import {
+  stripGlmModelOption,
+  stripKimiModelOption,
+} from "@posthog/ui/features/sessions/modelOptionFilters";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logger } from "../../../shell/logger";
 import { useAuthStateValue } from "../../auth/store";
@@ -48,6 +52,7 @@ function getOptionByCategory(
 export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
   const hostClient = useHostTRPCClient();
   const glmEnabled = useFeatureFlag(GLM_MODEL_FLAG);
+  const kimiEnabled = useFeatureFlag(KIMI_MODEL_FLAG);
   const cloudRegion = useAuthStateValue((state) => state.cloudRegion);
   const apiHost = useMemo(
     () => (cloudRegion ? getCloudUrlFromRegion(cloudRegion) : null),
@@ -83,9 +88,10 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
       .then((serverOptions) => {
         if (abort.signal.aborted) return;
 
-        const options = glmEnabled
-          ? serverOptions
-          : serverOptions.map(stripGlmModelOption);
+        const options = serverOptions.map((option) => {
+          const withoutGlm = glmEnabled ? option : stripGlmModelOption(option);
+          return kimiEnabled ? withoutGlm : stripKimiModelOption(withoutGlm);
+        });
 
         const {
           defaultInitialTaskMode,
@@ -145,7 +151,7 @@ export function usePreviewConfig(adapter: Adapter): PreviewConfigResult {
     return () => {
       abort.abort();
     };
-  }, [adapter, apiHost, hostClient, hasHydrated, glmEnabled]);
+  }, [adapter, apiHost, hostClient, hasHydrated, glmEnabled, kimiEnabled]);
 
   const setConfigOption = useCallback(
     (configId: string, value: string) => {

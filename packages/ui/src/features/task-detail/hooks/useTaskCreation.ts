@@ -31,7 +31,10 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { logger } from "../../../shell/logger";
-import { pendingTaskPromptStoreApi } from "../../../shell/pendingTaskPromptStore";
+import {
+  generatePendingTaskKey,
+  pendingTaskPromptStoreApi,
+} from "../../../shell/pendingTaskPromptStore";
 import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
@@ -319,7 +322,7 @@ export function useTaskCreation({
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
-        ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
+        ? generatePendingTaskKey()
         : null;
 
       if (pendingTaskKey) {

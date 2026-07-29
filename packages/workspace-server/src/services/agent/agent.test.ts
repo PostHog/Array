@@ -125,9 +125,15 @@ vi.mock("@posthog/agent/gateway-models", () => ({
   DEFAULT_GATEWAY_MODEL: "claude-opus-4-8",
   DEFAULT_CODEX_MODEL: "gpt-5.5",
   fetchGatewayModels: vi.fn().mockResolvedValue([]),
-  formatGatewayModelName: vi.fn(),
+  formatGatewayModelName: vi.fn((model) => model.id),
+  getClaudeModelRecency: vi.fn(() => 0),
   getProviderName: vi.fn(),
+  isAnthropicModel: vi.fn((model) => model.owned_by === "anthropic"),
   isBlockedModelId: vi.fn().mockReturnValue(false),
+  isCloudflareModel: vi.fn((model) => model.owned_by === "cloudflare"),
+  isModalModel: vi.fn((model) => model.owned_by === "modal"),
+  isOpenAIModel: vi.fn((model) => model.owned_by === "openai"),
+  pickAllowedModel: vi.fn((_models, preferredModelId) => preferredModelId),
 }));
 
 vi.mock("@posthog/agent/adapters/claude/session/jsonl-hydration", () => ({
@@ -151,6 +157,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 // --- Import after mocks ---
+import { fetchGatewayModels } from "@posthog/agent/gateway-models";
 import type { RegisteredFolder } from "../folders/schemas";
 import {
   AgentService,
@@ -183,6 +190,7 @@ function createMockDependencies() {
     },
     agentAuthAdapter: {
       getCurrentCredentials: vi.fn().mockResolvedValue(null),
+      gatewayAuthToken: vi.fn().mockResolvedValue("gateway-token"),
       ensureGatewayProxy: vi.fn().mockResolvedValue("http://127.0.0.1:9999"),
       configureProcessEnv: vi.fn().mockResolvedValue(undefined),
       createPosthogConfig: vi.fn((credentials) => ({
@@ -294,6 +302,40 @@ describe("AgentService", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("includes Modal models in Claude preview options", async () => {
+    vi.mocked(fetchGatewayModels).mockResolvedValueOnce([
+      {
+        id: "claude-opus-4-8",
+        owned_by: "anthropic",
+        context_window: 1_000_000,
+        supports_streaming: true,
+        supports_vision: true,
+        allowed: true,
+      },
+      {
+        id: "moonshotai/kimi-k3",
+        owned_by: "modal",
+        context_window: 262_144,
+        supports_streaming: true,
+        supports_vision: false,
+        allowed: true,
+      },
+    ]);
+
+    const options = await service.getPreviewConfigOptions(
+      "https://us.posthog.com",
+      "claude",
+    );
+
+    const modelOption = options.find((option) => option.id === "model");
+    expect(modelOption).toMatchObject({
+      type: "select",
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: "moonshotai/kimi-k3" }),
+      ]),
+    });
   });
 
   describe("mcp-apps config resolver", () => {

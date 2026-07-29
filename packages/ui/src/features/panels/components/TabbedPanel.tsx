@@ -1,5 +1,5 @@
 import { useDroppable } from "@dnd-kit/react";
-import { Plus, SquareSplitHorizontalIcon } from "@phosphor-icons/react";
+import { Plus, SquareSplitHorizontalIcon, X } from "@phosphor-icons/react";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { PanelDropZones } from "@posthog/ui/features/panels/components/PanelDropZones";
 import type { SplitDirection } from "@posthog/ui/features/panels/panelLayoutStore";
@@ -65,8 +65,10 @@ interface TabbedPanelProps {
   onPanelFocus?: (panelId: string) => void;
   draggingTabId?: string | null;
   draggingTabPanelId?: string | null;
+  allowPanelSplit?: boolean;
   onAddTerminal?: () => void;
   onSplitPanel?: (direction: SplitDirection) => void;
+  onClosePanel?: () => void;
   rightContent?: React.ReactNode;
   emptyState?: React.ReactNode;
 }
@@ -82,8 +84,10 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   onPanelFocus,
   draggingTabId = null,
   draggingTabPanelId = null,
+  allowPanelSplit = true,
   onAddTerminal,
   onSplitPanel,
+  onClosePanel,
   rightContent,
   emptyState,
 }) => {
@@ -230,12 +234,21 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
             )}
           </Flex>
-          {(rightContent || (content.droppable && onSplitPanel)) && (
+          {(rightContent ||
+            onClosePanel ||
+            (content.droppable && onSplitPanel)) && (
             <Flex
               align="center"
               className="absolute top-0 right-0 h-[32px] border-b border-b-(--gray-6) border-l border-l-(--gray-6) bg-(--color-background)"
             >
               {rightContent}
+              {onClosePanel && (
+                <Tooltip content="Close panel" side="bottom">
+                  <TabBarButton ariaLabel="Close panel" onClick={onClosePanel}>
+                    <X size={14} />
+                  </TabBarButton>
+                </Tooltip>
+              )}
               {content.droppable && onSplitPanel && (
                 <Tooltip content="Split panel" side="bottom">
                   <TabBarButton
@@ -296,11 +309,12 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
             panelId={panelId}
             isDragging={!!draggingTabId}
             allowSplit={
-              // Allow split if:
+              allowPanelSplit &&
+              // Within a splittable layout, allow the edge drop zones if:
               // 1. Current panel has > 1 tab (same-panel split), OR
               // 2. Dragging from a different panel (cross-panel split)
-              content.tabs.length > 1 ||
-              (draggingTabPanelId !== null && draggingTabPanelId !== panelId)
+              (content.tabs.length > 1 ||
+                (draggingTabPanelId !== null && draggingTabPanelId !== panelId))
             }
           />
         )}

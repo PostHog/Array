@@ -90,6 +90,7 @@ import {
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
 import { useSessionViewActions } from "@posthog/ui/features/sessions/sessionViewStore";
+import { useThreadScrollRequest } from "@posthog/ui/features/sessions/threadNavigationStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
 import {
   SessionTaskIdProvider,
@@ -860,6 +861,21 @@ export interface ChatThreadProps extends SharedChatThreadProps {
   events: AgentConversationEvent[];
 }
 
+/** Serves scroll-to-message requests from panes outside this tree (the Activity
+ *  timeline). Sits inside `ChatMessageScrollerProvider` so it can fall back to the
+ *  engine's `scrollToMessage`, which the windowed body's own jump replaces. */
+function ThreadScrollRequestBridge({
+  taskId,
+  jumpToMessage,
+}: {
+  taskId?: string;
+  jumpToMessage?: (id: string) => void;
+}) {
+  const { scrollToMessage } = useChatMessageScroller();
+  useThreadScrollRequest(taskId, jumpToMessage ?? scrollToMessage);
+  return null;
+}
+
 export interface AcpChatThreadProps extends SharedChatThreadProps {
   events: AcpMessage[];
 }
@@ -1071,15 +1087,21 @@ function ChatThreadRenderer({
   // The nav layer sits beside the scroll body so it can be handed the windowed body's jump
   // implementation — the engine's `scrollToMessage` only reaches mounted rows.
   const renderNav = (jumpToMessage?: (id: string) => void) => (
-    <ThreadKeyboardNav
-      items={items}
-      jumpPickerOpen={jumpPickerOpen}
-      setJumpPickerOpen={setJumpPickerOpen}
-      keyboardFocusedMessageId={keyboardFocusedMessageId}
-      setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
-      promptRecallRef={promptRecallRef}
-      jumpToMessage={jumpToMessage}
-    />
+    <>
+      <ThreadKeyboardNav
+        items={items}
+        jumpPickerOpen={jumpPickerOpen}
+        setJumpPickerOpen={setJumpPickerOpen}
+        keyboardFocusedMessageId={keyboardFocusedMessageId}
+        setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+        promptRecallRef={promptRecallRef}
+        jumpToMessage={jumpToMessage}
+      />
+      <ThreadScrollRequestBridge
+        taskId={taskId}
+        jumpToMessage={jumpToMessage}
+      />
+    </>
   );
 
   return (

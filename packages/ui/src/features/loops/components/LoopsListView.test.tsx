@@ -1,4 +1,5 @@
 import type { LoopSchemas } from "@posthog/api-client/loops";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import { Theme } from "@radix-ui/themes";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,17 +13,30 @@ vi.mock("./LoopTemplatesSection", () => ({
   LoopTemplatesSection: () => null,
 }));
 vi.mock("./LoopRow", () => ({
-  LoopRow: ({ loop }: { loop: LoopSchemas.Loop }) => <div>{loop.name}</div>,
+  LoopRow: ({
+    loop,
+    creator,
+  }: {
+    loop: LoopSchemas.Loop;
+    creator?: UserBasic;
+  }) => (
+    <div>
+      {loop.name}
+      {loop.visibility === "team" && creator ? ` by ${creator.email}` : null}
+    </div>
+  ),
 }));
 
 function loop(
   id: string,
   visibility: LoopSchemas.LoopVisibilityEnum,
+  createdById = 1,
 ): LoopSchemas.Loop {
   return {
     id,
     name: `${visibility} loop`,
     visibility,
+    created_by_id: createdById,
   } as LoopSchemas.Loop;
 }
 
@@ -34,22 +48,53 @@ function controlledPanel(tab: HTMLElement): HTMLElement {
 }
 
 describe("LoopsListViewPresentation", () => {
-  it("shows only the selected ownership tab", async () => {
+  it("does not render ownership groups while identity is loading", () => {
     render(
       <Theme>
         <LoopsListViewPresentation
-          loops={[loop("personal", "personal"), loop("team", "team")]}
+          loops={[loop("mine-team", "team")]}
+          currentUserId={null}
+          isLoading
           onStartBlank={vi.fn()}
           onStartFromTemplate={vi.fn()}
         />
       </Theme>,
     );
 
-    const personalTab = screen.getByRole("tab", { name: "My loops (1)" });
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
+
+  it("groups loops by ownership rather than visibility", async () => {
+    const currentUser: UserBasic = {
+      id: 1,
+      uuid: "current-user",
+      email: "current@example.com",
+    };
+    render(
+      <Theme>
+        <LoopsListViewPresentation
+          loops={[
+            loop("personal", "personal"),
+            loop("mine-team", "team"),
+            loop("teammate-team", "team", 2),
+          ]}
+          currentUserId={1}
+          members={[currentUser]}
+          onStartBlank={vi.fn()}
+          onStartFromTemplate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    const personalTab = screen.getByRole("tab", { name: "My loops (2)" });
     expect(
       within(controlledPanel(personalTab)).getByText("personal loop"),
     ).toBeVisible();
-    expect(screen.queryByText("team loop")).not.toBeInTheDocument();
+    expect(
+      within(controlledPanel(personalTab)).getByText(
+        "team loop by current@example.com",
+      ),
+    ).toBeVisible();
 
     const teamTab = screen.getByRole("tab", { name: "Team loops (1)" });
     await userEvent.click(teamTab);

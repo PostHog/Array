@@ -7,8 +7,40 @@ describe("reviewNavigationStore", () => {
       activeFilePaths: {},
       scrollRequests: {},
       reviewModes: {},
+      selectedPrUrls: {},
       commentFileFilters: {},
+      hideViewedFiles: {},
     });
+  });
+
+  it("keeps a selected PR until the review closes", () => {
+    const store = useReviewNavigationStore.getState();
+    store.setSelectedPrUrl("task-1", "https://github.com/acme/repo/pull/2");
+    store.setReviewMode("task-1", "split");
+
+    expect(useReviewNavigationStore.getState().selectedPrUrls["task-1"]).toBe(
+      "https://github.com/acme/repo/pull/2",
+    );
+
+    store.setReviewMode("task-1", "closed");
+
+    expect(
+      useReviewNavigationStore.getState().selectedPrUrls["task-1"],
+    ).toBeUndefined();
+  });
+
+  it("stores and clears the viewed-file filter per task", () => {
+    const store = useReviewNavigationStore.getState();
+    store.setHideViewedFiles("task-1", true);
+
+    expect(useReviewNavigationStore.getState().hideViewedFiles["task-1"]).toBe(
+      true,
+    );
+
+    store.clearTask("task-1");
+    expect(useReviewNavigationStore.getState().hideViewedFiles["task-1"]).toBe(
+      false,
+    );
   });
 
   it("clears the comment filter when navigating to a file", () => {

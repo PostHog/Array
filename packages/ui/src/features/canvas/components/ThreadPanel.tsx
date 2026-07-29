@@ -7,24 +7,17 @@ import {
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import {
-  buildThreadTimeline,
-  deriveThreadAgentStatus,
-  hasAgentMention,
-  shouldSuspendThreadSession,
-  type ThreadAgentStatus,
-  type ThreadArtifact,
-  type ThreadTimelineRow,
+import type {
+  ThreadAgentStatus,
+  ThreadArtifact,
+  ThreadTimelineRow,
 } from "@posthog/core/canvas/threadTimeline";
-import {
-  getPrVisualConfig,
-  parsePrNumber,
-} from "@posthog/core/git-interaction/prStatus";
 import {
   Avatar,
   AvatarFallback,
   Badge,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -47,44 +40,28 @@ import {
   ThreadItemGutter,
   ThreadItemHeader,
 } from "@posthog/quill";
-import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type {
   Task,
   TaskThreadMessage,
   UserBasic,
 } from "@posthog/shared/domain-types";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
-import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { TaskCard } from "@posthog/ui/features/canvas/components/ChannelFeedView";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
-import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
-import {
-  useDeleteTaskThreadMessage,
-  usePostTaskThreadMessage,
-  usePostTaskThreadMessageToAgent,
-  useSendTaskThreadMessageToAgent,
-  useTaskThread,
-} from "@posthog/ui/features/canvas/hooks/useTaskThread";
+import { useThreadConversation } from "@posthog/ui/features/canvas/hooks/useThreadConversation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { getPrVisualIcon } from "@posthog/ui/features/git-interaction/prIcon";
-import { usePrDetails } from "@posthog/ui/features/git-interaction/usePrDetails";
-import { useSessionConnection } from "@posthog/ui/features/sessions/hooks/useSessionConnection";
-import { useSessionViewState } from "@posthog/ui/features/sessions/hooks/useSessionViewState";
-import { usePendingPermissionsForTask } from "@posthog/ui/features/sessions/sessionStore";
+import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
+import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
-import { toast } from "@posthog/ui/primitives/toast";
-import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { parseShareLink } from "@posthog/ui/utils/posthogLinks";
+import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 export function ThreadMessageRow({
   message,
@@ -92,6 +69,7 @@ export function ThreadMessageRow({
   isOwnMessage,
   currentUserEmail,
   canForward,
+  preview,
   onSendToAgent,
   onDelete,
 }: {
@@ -100,6 +78,8 @@ export function ThreadMessageRow({
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
   canForward: boolean;
+  /** Timeline rows show one truncated line; the Comments tab shows it all. */
+  preview?: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
 }) {
@@ -108,15 +88,24 @@ export function ThreadMessageRow({
 
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <UserAvatar user={message.author} size="lg" className="sticky top-2" />
+      <ThreadItemGutter className="justify-center">
+        <UserAvatar user={message.author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadItemAuthor className="text-[13px]">
+            {userDisplayName(message.author)}
+          </ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody
+          className={cn(
+            "mt-1.5 text-[13px]",
+            // `whitespace-pre-wrap` makes the clamp land on the first *written*
+            // line rather than the first wrapped one.
+            preview && "line-clamp-1 whitespace-pre-wrap",
+          )}
+        >
           <MentionText
             content={message.content}
             currentUserEmail={currentUserEmail}
@@ -184,11 +173,15 @@ function ArtifactCardButton({
   title,
   detail,
   onOpen,
+  onOpenExternal,
 }: {
   icon: React.ReactNode;
   title: string;
   detail?: string | null;
   onOpen?: () => void;
+  /** Renders a trailing button that leaves the app instead of opening the
+   *  artifact in place. Absent when there is nowhere safe to send the user. */
+  onOpenExternal?: () => void;
 }) {
   const body = (
     <>
@@ -199,29 +192,36 @@ function ArtifactCardButton({
       )}
     </>
   );
-  const cardClass =
-    "flex w-fit max-w-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px]";
-  if (!onOpen) {
-    return <span className={cardClass}>{body}</span>;
-  }
+  const innerClass = "flex min-w-0 items-center gap-2 px-2 py-1.5";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`${cardClass} text-left transition-colors hover:bg-gray-3`}
-    >
-      {body}
-    </button>
+    // overflow-hidden so each half's hover fill is clipped to the card's radius.
+    <div className="flex w-fit max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-[13px]">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            innerClass,
+            "text-left transition-colors hover:bg-gray-3",
+          )}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className={innerClass}>{body}</span>
+      )}
+      {onOpenExternal && (
+        <button
+          type="button"
+          onClick={onOpenExternal}
+          aria-label={`Open ${title} externally`}
+          className="flex shrink-0 items-center self-stretch border-border border-l px-1.5 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
+        >
+          <ArrowSquareOutIcon size={12} />
+        </button>
+      )}
+    </div>
   );
-}
-
-function parseHttpsUrl(url: string): URL | null {
-  try {
-    const parsedUrl = new URL(url);
-    return parsedUrl.protocol === "https:" ? parsedUrl : null;
-  } catch {
-    return null;
-  }
 }
 
 function CanvasArtifactCard({
@@ -256,30 +256,35 @@ function CanvasArtifactCard({
   );
 }
 
-function PrArtifactCard({ url }: { url: string }) {
-  const parsedUrl = parseHttpsUrl(url);
-  const safeUrl =
-    parsedUrl?.origin === "https://github.com" ? parsedUrl.href : null;
-  const {
-    meta: { state, merged, draft },
-  } = usePrDetails(safeUrl);
-  const config = getPrVisualConfig(state ?? "open", merged, draft);
-  const PrIcon = getPrVisualIcon(config.icon);
-  const prNumber = safeUrl ? parsePrNumber(safeUrl) : null;
+function PrArtifactCard({
+  url,
+  openInPlaceTaskId,
+}: {
+  url: string;
+  openInPlaceTaskId?: string;
+}) {
+  const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   return (
     <ArtifactCardButton
       icon={
-        <PrIcon
+        <Icon
           size={14}
           weight="bold"
           className="shrink-0"
-          style={{ color: `var(--${config.color}-9)` }}
+          style={{ color: iconColor }}
         />
       }
-      title={prNumber ? `Pull request #${prNumber}` : "Pull request"}
-      // Only show the resolved state once we have it, to avoid a flash of "Open".
-      detail={state ? config.label : null}
-      onOpen={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
+      title={title}
+      detail={stateLabel}
+      onOpen={
+        safeUrl
+          ? () =>
+              openInPlaceTaskId
+                ? openPrInReview(openInPlaceTaskId, safeUrl)
+                : openExternalUrl(safeUrl)
+          : undefined
+      }
+      onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
     />
   );
 }
@@ -287,31 +292,37 @@ function PrArtifactCard({ url }: { url: string }) {
 export function ThreadArtifactRow({
   artifact,
   createdAt,
+  openInPlaceTaskId,
 }: {
   artifact: ThreadArtifact;
   createdAt: string;
+  /** Task whose review pane is mounted alongside; absent means open externally. */
+  openInPlaceTaskId?: string;
 }) {
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
+      <ThreadItemGutter className="justify-center">
+        <Avatar size="sm" className="sticky top-2">
           <AvatarFallback>
-            <RobotIcon size={14} />
+            <RobotIcon size={12} />
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>
+          <ThreadItemAuthor className="text-[13px]">
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
           <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody className="mt-1.5 text-[13px]">
           {artifact.kind === "canvas" ? (
             <CanvasArtifactCard name={artifact.name} url={artifact.url} />
           ) : (
-            <PrArtifactCard url={artifact.url} />
+            <PrArtifactCard
+              url={artifact.url}
+              openInPlaceTaskId={openInPlaceTaskId}
+            />
           )}
         </ThreadItemBody>
       </ThreadItemContent>
@@ -319,7 +330,7 @@ export function ThreadArtifactRow({
   );
 }
 
-function ThreadLoadingState() {
+export function ThreadLoadingState() {
   return (
     <Empty className="h-full border-0">
       <EmptyHeader>
@@ -332,11 +343,15 @@ function ThreadLoadingState() {
   );
 }
 
-function ThreadHeader({
+/** The panel's title row and window controls. ActivityPanel has its own header
+ *  (the tabs are its title row), so this is the legacy panel's alone. */
+function ThreadPanelHeader({
+  title,
   onClose,
   onToggleCollapsed,
   onOpenFull,
 }: {
+  title: string;
   onClose?: () => void;
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
@@ -344,7 +359,7 @@ function ThreadHeader({
   return (
     <div className="flex items-center gap-1 border-border border-b px-3 py-2">
       <div className="min-w-0 flex-1">
-        <span className="block font-medium text-sm">Thread</span>
+        <span className="block font-medium text-sm">{title}</span>
       </div>
       {onOpenFull && (
         <Button
@@ -360,7 +375,7 @@ function ThreadHeader({
         <Button
           variant="default"
           size="icon-sm"
-          aria-label="Collapse thread"
+          aria-label={`Collapse ${title.toLowerCase()}`}
           onClick={onToggleCollapsed}
         >
           <CaretRightIcon size={14} />
@@ -370,7 +385,7 @@ function ThreadHeader({
         <Button
           variant="default"
           size="icon-sm"
-          aria-label="Close thread"
+          aria-label={`Close ${title.toLowerCase()}`}
           onClick={onClose}
         >
           <XIcon size={14} />
@@ -380,7 +395,7 @@ function ThreadHeader({
   );
 }
 
-function ThreadTimeline({
+export function ThreadTimeline({
   timeline,
   isReady,
   currentUserUuid,
@@ -446,7 +461,7 @@ function ThreadTimeline({
   );
 }
 
-function ThreadReplyComposer({
+export function ThreadReplyComposer({
   draft,
   onDraftChange,
   onSubmit,
@@ -509,151 +524,36 @@ function ThreadConversation({
   onOpenFull?: () => void;
   showTaskSummary: boolean;
 }) {
-  const taskId = task.id;
-  const client = useOptionalAuthenticatedClient();
-  const { data: currentUser } = useCurrentUser({ client });
-
-  const { messages, isLoading } = useTaskThread(taskId);
-  const { postMessage, isPosting } = usePostTaskThreadMessage(taskId);
-  const { postMessageToAgent, isPostingToAgent } =
-    usePostTaskThreadMessageToAgent(taskId);
-  const { deleteMessage } = useDeleteTaskThreadMessage(taskId);
-  const { sendToAgent, isSending } = useSendTaskThreadMessageToAgent(taskId);
-  const isSendingToAgent = isPostingToAgent || isSending;
-  const { members } = useOrgMembers();
-
-  const {
-    session,
-    repoPath,
-    isCloud,
-    events,
-    cloudStatus,
-    isPromptPending,
-    isInitializing,
-    hasError,
-    errorTitle,
-  } = useSessionViewState(taskId, task);
-  useSessionConnection({
-    taskId,
-    task,
-    session,
-    repoPath,
-    isCloud,
-    isSuspended: shouldSuspendThreadSession({
-      isCloud,
-      hasRun: Boolean(task.latest_run?.id),
-      hasSession: Boolean(session),
-    }),
+  const conversation = useThreadConversation(task, {
+    surface: "thread_panel",
   });
-  const pendingPermissions = usePendingPermissionsForTask(taskId);
+  const {
+    timeline,
+    agentStatus,
+    isReady,
+    members,
+    currentUser,
+    isTaskAuthor,
+    canForward,
+    draft,
+    setDraft,
+    isSubmitDisabled,
+    submit,
+    sendMessageToAgent,
+    deleteMessage,
+    onMentionInsert,
+  } = conversation;
 
-  const agentStatus = useMemo(
-    () =>
-      deriveThreadAgentStatus({
-        hasActivity: events.length > 0 || !!task.latest_run,
-        hasError,
-        cloudStatus,
-        errorTitle,
-        pendingPermissionCount: pendingPermissions.size,
-        isPromptPending,
-        isInitializing,
-      }),
-    [
-      events.length,
-      task.latest_run,
-      hasError,
-      cloudStatus,
-      errorTitle,
-      pendingPermissions.size,
-      isPromptPending,
-      isInitializing,
-    ],
-  );
-
-  const timeline = useMemo(() => buildThreadTimeline(messages), [messages]);
-
-  const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const handleMentionInsert = useCallback(
-    (member: UserBasic) => {
-      track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
-        action_type: "mention_member",
-        surface: "thread_panel",
-        task_id: taskId,
-        mentioned_user_id: member.uuid,
-      });
-    },
-    [taskId],
-  );
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline, agentStatus?.phase]);
 
-  const isTaskAuthor =
-    !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid;
-  const canForward =
-    !!task.latest_run &&
-    !isTerminalStatus(task.latest_run.status) &&
-    !isSendingToAgent;
-
-  const submit = async () => {
-    const content = draft.trim();
-    if (!content || isPosting || isSendingToAgent) return;
-    const sendToAgentRequested = hasAgentMention(content);
-    if (sendToAgentRequested && (!isTaskAuthor || !canForward)) {
-      toast.error("Couldn't send to agent", {
-        description:
-          "Only the task author can @agent while the task has an active run.",
-      });
-      return;
-    }
-    setDraft("");
-    try {
-      if (sendToAgentRequested) {
-        const { sendError } = await postMessageToAgent(content);
-        if (sendError) {
-          toast.error("Message posted, but couldn't send it to the agent", {
-            description:
-              sendError instanceof Error
-                ? sendError.message
-                : String(sendError),
-          });
-        }
-      } else {
-        await postMessage(content);
-      }
-    } catch (error) {
-      setDraft(content);
-      toast.error("Couldn't post message", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-
-  const handleSendToAgent = (messageId: string) => {
-    sendToAgent(messageId).catch((error: unknown) => {
-      toast.error("Couldn't send message to agent", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    });
-  };
-
-  const handleDelete = (messageId: string) => {
-    deleteMessage(messageId).catch((error: unknown) => {
-      toast.error("Couldn't delete message", {
-        description: error instanceof Error ? error.message : String(error),
-      });
-    });
-  };
-
-  const isReady = !isInitializing && !isLoading;
-
   return (
     <div className="flex h-full min-w-0 flex-col bg-gray-1">
-      <ThreadHeader
+      <ThreadPanelHeader
+        title="Thread"
         onOpenFull={onOpenFull}
         onToggleCollapsed={onToggleCollapsed}
         onClose={onClose}
@@ -672,8 +572,8 @@ function ThreadConversation({
           currentUserEmail={currentUser?.email}
           isTaskAuthor={isTaskAuthor}
           canForward={canForward}
-          onSendToAgent={handleSendToAgent}
-          onDelete={handleDelete}
+          onSendToAgent={sendMessageToAgent}
+          onDelete={deleteMessage}
         />
       </div>
 
@@ -685,8 +585,8 @@ function ThreadConversation({
         onSubmit={submit}
         members={members}
         allowAgentMention={isTaskAuthor && canForward}
-        onMentionInsert={handleMentionInsert}
-        disabled={!draft.trim() || isPosting || isSendingToAgent}
+        onMentionInsert={onMentionInsert}
+        disabled={isSubmitDisabled}
       />
     </div>
   );

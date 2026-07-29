@@ -16,6 +16,8 @@ interface DiffSettingsMenuProps {
   unresolvedCommentedFileCount: number;
   commentFilter: CommentFileFilter;
   onCommentFilterChange?: (filter: CommentFileFilter) => void;
+  hideViewedFiles: boolean;
+  onHideViewedFilesChange: (hideViewed: boolean) => void;
 }
 
 export function DiffSettingsMenu({
@@ -23,6 +25,8 @@ export function DiffSettingsMenu({
   unresolvedCommentedFileCount,
   commentFilter,
   onCommentFilterChange,
+  hideViewedFiles,
+  onHideViewedFilesChange,
 }: DiffSettingsMenuProps) {
   const wordWrap = useDiffViewerStore((s) => s.wordWrap);
   const toggleWordWrap = useDiffViewerStore((s) => s.toggleWordWrap);
@@ -79,6 +83,11 @@ export function DiffSettingsMenu({
           {hideWhitespaceChanges ? "Show whitespace" : "Hide whitespace"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => onHideViewedFilesChange(!hideViewedFiles)}
+        >
+          {hideViewedFiles ? "Show viewed files" : "Hide viewed files"}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={handleToggleReviewComments}>
           {showReviewComments ? "Hide review comments" : "Show review comments"}
         </DropdownMenuItem>
