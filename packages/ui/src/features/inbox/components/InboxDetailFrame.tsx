@@ -7,6 +7,7 @@ import {
   InboxMetaText,
 } from "@posthog/ui/features/inbox/components/InboxMetaRow";
 import { InboxMetaSourceStack } from "@posthog/ui/features/inbox/components/InboxMetaSourceStack";
+import { ReportFeedbackFooter } from "@posthog/ui/features/inbox/components/ReportFeedbackFooter";
 import { RightColumnSection } from "@posthog/ui/features/inbox/components/RightColumnSection";
 import {
   SignalsList,
@@ -35,6 +36,12 @@ interface InboxDetailFrameProps {
    * reports (the Dismissed tab), where dismissing again makes no sense.
    */
   showDismiss?: boolean;
+  /**
+   * Whether to render the usefulness thumbs at the end of the report. Off for
+   * the Archive detail, which is deliberately read-only and untracked — a
+   * rating there would be measured against a report nobody can act on.
+   */
+  showFeedback?: boolean;
   /** Title fallback when `report.title` is blank. */
   fallbackTitle: string;
   /** Optional breadcrumb fragment (e.g. PR repo slug + number). */
@@ -82,6 +89,7 @@ export function InboxDetailFrame({
   belowSummary,
   evidenceSection,
   showDismiss = true,
+  showFeedback = true,
   children,
 }: InboxDetailFrameProps) {
   const { data: signalsResp } = useInboxReportSignals(report.id);
@@ -176,8 +184,15 @@ export function InboxDetailFrame({
              of total width. Wider viewports just get larger side gutters.
         */}
       <div className="@container mx-auto w-full max-w-[calc(160ch+5rem)] px-6 py-5 text-[13px]">
-        <div className="grid @4xl:grid-cols-[minmax(0,80ch)_minmax(0,1fr)] grid-cols-1 gap-5">
-          <div className="flex min-w-0 flex-col gap-5">
+        {/*
+           The rating row is a third grid child rather than the last item in the
+           main column: stacked (one column) that puts it last on the page, and
+           on the two-column layout it's placed back under the main column so it
+           still reads as the end of the report rather than the end of the
+           sidebar.
+        */}
+        <div className="grid @4xl:grid-cols-[minmax(0,80ch)_minmax(0,1fr)] grid-cols-1 @4xl:grid-rows-[auto_1fr] gap-5">
+          <div className="@4xl:col-start-1 @4xl:row-start-1 flex min-w-0 flex-col gap-5">
             <DetailSection Icon={SummaryIcon} title={summarySection.title}>
               <SignalReportSummaryMarkdown
                 content={report.summary}
@@ -189,7 +204,7 @@ export function InboxDetailFrame({
             {belowSummary}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-5">
+          <div className="@4xl:col-start-2 @4xl:row-span-2 @4xl:row-start-1 flex min-w-0 flex-col gap-5">
             {hasEvidence && (
               <RightColumnSection
                 Icon={EvidenceIcon}
@@ -210,6 +225,14 @@ export function InboxDetailFrame({
             )}
             {children}
           </div>
+
+          {showFeedback && (
+            // `self-start` keeps this pinned under the summary when a tall
+            // sidebar stretches the row.
+            <div className="@4xl:col-start-1 @4xl:row-start-2 min-w-0 self-start">
+              <ReportFeedbackFooter report={report} />
+            </div>
+          )}
         </div>
         {showDismiss && dismissDialog}
       </div>

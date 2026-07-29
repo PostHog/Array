@@ -5,6 +5,7 @@ import type {
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
 import type { SignalReport } from "@posthog/shared/types";
+import { reportAgeHours } from "@posthog/ui/features/inbox/utils/reportAgeHours";
 import { track } from "@posthog/ui/shell/analytics";
 import { useCallback } from "react";
 
@@ -24,12 +25,6 @@ type Extras = Partial<
     | "list_size"
   >
 >;
-
-function reportAgeHours(report: SignalReport): number {
-  const created = report.created_at ? new Date(report.created_at).getTime() : 0;
-  if (!created) return 0;
-  return Math.max(0, (Date.now() - created) / 36e5);
-}
 
 /**
  * Emits `INBOX_REPORT_ACTION` with the report identity pre-filled. Use on

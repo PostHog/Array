@@ -146,6 +146,17 @@ export {
 } from "./image";
 export { buildDiscussReportPrompt } from "./inbox-prompts";
 export type {
+  InboxReportFeedbackEmission,
+  InboxReportFeedbackEvent,
+  InboxReportFeedbackState,
+  InboxReportFeedbackTransition,
+} from "./inbox-report-feedback";
+export {
+  INBOX_FEEDBACK_NOTE_MAX_LENGTH,
+  INITIAL_INBOX_REPORT_FEEDBACK_STATE,
+  reduceInboxReportFeedback,
+} from "./inbox-report-feedback";
+export type {
   AvailableSuggestedReviewer,
   ExternalInboxSource,
   ExternalInboxSourceProduct,

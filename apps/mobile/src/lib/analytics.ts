@@ -1,4 +1,5 @@
 import type { PostHogEventProperties } from "@posthog/core";
+import type { InboxReportFeedbackSentiment } from "@posthog/shared";
 import { usePostHog } from "posthog-react-native";
 import { useEffect, useMemo } from "react";
 
@@ -12,6 +13,8 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
   INBOX_REPORT_ACTION: "Inbox report action",
+  INBOX_REPORT_FEEDBACK: "Inbox report feedback",
+  INBOX_REPORT_FEEDBACK_NOTE: "Inbox report feedback note",
   SIGN_IN_STARTED: "Sign in started",
   SIGN_IN_COMPLETED: "Sign in completed",
   SIGN_IN_FAILED: "Sign in failed",
@@ -76,6 +79,7 @@ export type InboxReportActionType =
 
 export type InboxReportActionSurface =
   | "detail_pane"
+  | "detail_footer"
   | "toolbar"
   | "keyboard"
   | "list_row";
@@ -164,6 +168,28 @@ export interface InboxReportActionProperties {
   suggested_reviewer_uuid?: string;
 }
 
+/**
+ * Report usefulness rating from the thumbs at the end of the report body.
+ * Feedback-only: the report stays in the inbox. Exactly one of these per
+ * selected thumb — the optional note is its own event.
+ */
+export interface InboxReportFeedbackProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+}
+
+/** Optional note, sent separately so sentiment stays one event per rating. */
+export interface InboxReportFeedbackNoteProperties
+  extends InboxReportFeedbackProperties {
+  note: string;
+}
+
 export interface PromptSentProperties {
   task_id: string;
   is_initial: boolean;
@@ -185,6 +211,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK]: InboxReportFeedbackProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE]: InboxReportFeedbackNoteProperties;
   [ANALYTICS_EVENTS.SIGN_IN_STARTED]: SignInStartedProperties;
   [ANALYTICS_EVENTS.SIGN_IN_COMPLETED]: SignInCompletedProperties;
   [ANALYTICS_EVENTS.SIGN_IN_FAILED]: SignInFailedProperties;
@@ -210,6 +238,8 @@ export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
   ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
   ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
   ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE,
 ]);
 
 export function useAnalytics(): Analytics {

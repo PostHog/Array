@@ -79,6 +79,7 @@ function DismissedReportDetailContent({
       backLabel={back.label}
       fallbackTitle="Untitled report"
       showDismiss={false}
+      showFeedback={false}
       primaryAction={
         <>
           {canRestore && <RestoreReportButton report={report} />}

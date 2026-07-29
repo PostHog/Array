@@ -1,7 +1,10 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { InboxReportFeedbackSentiment } from "./inbox-report-feedback";
 import type { SourceProduct } from "./inbox-types";
+
+export type { InboxReportFeedbackSentiment };
 
 export interface PromptHistoryOpenedProperties {
   entry_count: number;
@@ -615,6 +618,7 @@ export type InboxReportActionType =
 
 export type InboxReportActionSurface =
   | "detail_pane"
+  | "detail_footer"
   | "toolbar"
   | "keyboard"
   | "list_row";
@@ -739,6 +743,35 @@ export interface InboxReportActionProperties {
   // The feedback text the user typed before hitting Create PR. Truncated to
   // 500 chars to keep event payloads bounded.
   feedback_text?: string;
+}
+
+/**
+ * Report usefulness rating, fired from the thumbs at the end of the report body.
+ * Unlike a dismiss this is feedback-only: the report stays in the inbox. The
+ * sentiment is the label the ranking work trains against, so it carries the same
+ * report classification as the opened/closed events. Exactly one of these per
+ * selected thumb — the optional note is its own event.
+ */
+export interface InboxReportFeedbackProperties {
+  report_id: string;
+  report_title: string | null;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+}
+
+/**
+ * Optional free-text note, offered only once a rating is already recorded. It
+ * rides on its own event rather than re-firing the rating so sentiment stays
+ * exactly one event per rating; join back to the rating on `report_id`. Carries
+ * `sentiment` too so a note can be read without that join.
+ */
+export interface InboxReportFeedbackNoteProperties
+  extends InboxReportFeedbackProperties {
+  note: string;
 }
 
 // Scout events
@@ -1342,6 +1375,8 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  INBOX_REPORT_FEEDBACK: "Inbox report feedback",
+  INBOX_REPORT_FEEDBACK_NOTE: "Inbox report feedback note",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
   // Agents page events
@@ -1519,6 +1554,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK]: InboxReportFeedbackProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE]: InboxReportFeedbackNoteProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
 
   // Agents page events
@@ -1588,6 +1625,8 @@ export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
   ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
   ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
   ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE,
   ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
 ]);
 

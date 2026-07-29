@@ -34,6 +34,7 @@ import {
   DismissReportSheet,
 } from "@/features/inbox/components/DismissReportSheet";
 import { ReportActivity } from "@/features/inbox/components/ReportActivity";
+import { ReportFeedbackFooter } from "@/features/inbox/components/ReportFeedbackFooter";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import {
   type ReviewerActionExtra,
@@ -573,6 +574,9 @@ export default function ReportDetailScreen() {
 
         {/* Activity log */}
         <ReportActivity reportId={report.id} artefacts={artefacts} />
+
+        {/* Usefulness rating — last on the page, where the reader has finished. */}
+        <ReportFeedbackFooter report={report} />
       </ScrollView>
 
       <View
