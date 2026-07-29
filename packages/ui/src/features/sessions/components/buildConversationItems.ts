@@ -87,7 +87,7 @@ export interface BuildResult {
 interface ProgressCardState {
   /** Step key → full step entry. Key order reflects arrival order. */
   steps: Map<string, Step>;
-  /** Reference to the pushed render item; mutated in place as events arrive. */
+  /** Replaced when steps change so memoized rows observe live progress. */
   renderItem: {
     sessionUpdate: "progress_group";
     steps: Step[];
@@ -803,8 +803,20 @@ function syncProgressCard(card: ProgressCardState, b: ItemBuilder) {
       ? { ...step, status: "in_progress" as StepStatus }
       : step,
   );
-  card.renderItem.steps = ordered;
-  card.renderItem.isActive = ordered.some((s) => s.status === "in_progress");
+  const renderItem = {
+    sessionUpdate: "progress_group" as const,
+    steps: ordered,
+    isActive: ordered.some((step) => step.status === "in_progress"),
+  };
+  card.renderItem = renderItem;
+
+  const item = b.items[card.itemIndex];
+  if (
+    item?.type === "session_update" &&
+    item.update.sessionUpdate === "progress_group"
+  ) {
+    b.items[card.itemIndex] = { ...item, update: renderItem };
+  }
 }
 
 function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {

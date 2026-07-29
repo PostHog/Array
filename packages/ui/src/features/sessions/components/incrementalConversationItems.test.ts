@@ -364,6 +364,52 @@ describe("createIncrementalConversationBuilder", () => {
     );
   });
 
+  it("replaces a pre-prompt progress row when it completes after the prompt starts", () => {
+    const inc = createIncrementalConversationBuilder();
+    const events = [
+      progressMsg(
+        1,
+        "sandbox",
+        "in_progress",
+        "Restoring sandbox",
+        "setup:run-1",
+      ),
+      userPromptMsg(2, 1, "continue"),
+      progressMsg(3, "sandbox", "completed", "Restored sandbox", "setup:run-1"),
+    ];
+
+    const before = inc.update(events.slice(0, 2), true);
+    const beforeProgress = before.items.find(
+      (item) =>
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "progress_group",
+    );
+
+    const after = inc.update(events, true);
+    const afterProgress = after.items.find(
+      (item) =>
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "progress_group",
+    );
+
+    expect(afterProgress).not.toBe(beforeProgress);
+    expect(
+      afterProgress?.type === "session_update" &&
+        afterProgress.update.sessionUpdate === "progress_group"
+        ? afterProgress.update
+        : null,
+    ).toMatchObject({
+      isActive: false,
+      steps: [
+        {
+          key: "sandbox",
+          label: "Restored sandbox",
+          status: "completed",
+        },
+      ],
+    });
+  });
+
   it("keeps completed-turn item references stable while the active turn streams", () => {
     const inc = createIncrementalConversationBuilder();
     const base = [
