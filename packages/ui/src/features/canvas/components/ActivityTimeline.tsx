@@ -76,11 +76,15 @@ function UserMessageRow({
   // The row itself is the hit target. `ThreadItem` renders an <article>, which a
   // <button> may not wrap and which can't become one (quill's primitive takes no
   // `render`), so it carries the button role and its own key handling.
+  //
+  // Deliberately no `aria-label`: the button takes its name from its contents, so
+  // it announces the author, time and preview a sighted user sees. A label would
+  // replace all three — and since every row here is authored by the task creator,
+  // one built from the name alone would be identical on every row.
   const activation = onSelect
     ? ({
         role: "button",
         tabIndex: 0,
-        "aria-label": `Jump to message from ${name}`,
         onClick: onSelect,
         onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
           if (event.key !== "Enter" && event.key !== " ") return;
@@ -94,7 +98,9 @@ function UserMessageRow({
       className={cn("rounded-none", onSelect && "cursor-pointer")}
       {...activation}
     >
-      <ThreadItemGutter className="justify-center">
+      {/* Decorative: the author's name is written beside it, so keep the avatar's
+          initials out of the row's accessible name. */}
+      <ThreadItemGutter className="justify-center" aria-hidden>
         <UserAvatar user={author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
