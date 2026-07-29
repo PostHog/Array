@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { isContentlessTask } from "./domain-types";
+import {
+  isContentlessTask,
+  isTerminalStatus,
+  TERMINAL_STATUSES,
+} from "./domain-types";
+
+describe("task run statuses", () => {
+  it.each(TERMINAL_STATUSES)("identifies %s as terminal", (status) => {
+    expect(isTerminalStatus(status)).toBe(true);
+  });
+
+  it.each(["not_started", "queued", "in_progress", "unknown", null, undefined])(
+    "identifies %s as non-terminal",
+    (status) => {
+      expect(isTerminalStatus(status)).toBe(false);
+    },
+  );
+});
 
 describe("isContentlessTask", () => {
   it.each([
