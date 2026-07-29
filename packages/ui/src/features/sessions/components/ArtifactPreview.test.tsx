@@ -296,6 +296,8 @@ describe("ArtifactPreview", () => {
     expect(document).toContain("__POSTHOG_ARTIFACT_COMMENT_BRIDGE__");
     expect(document).toContain("💬 Comment");
     expect(document).toContain('var CHANNEL="test-channel"');
+    expect(document).toContain('d.type==="locate"');
+    expect(document).toContain("scrollIntoView");
   });
 
   it("keeps sensitive capabilities blocked in HTML artifacts", () => {

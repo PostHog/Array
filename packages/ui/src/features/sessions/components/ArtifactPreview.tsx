@@ -29,6 +29,7 @@ import { AnnotatedArtifactHtml } from "./AnnotatedArtifactHtml";
 import { AnnotatedArtifactImage } from "./AnnotatedArtifactImage";
 import { ArtifactCommentsSidebar } from "./ArtifactCommentsSidebar";
 import {
+  type ArtifactLocateRequest,
   ArtifactTextAnnotations,
   type HighlightResolution,
   parseArtifactCommentContext,
@@ -132,6 +133,9 @@ export function ArtifactPreview({
   const [showRendered, setShowRendered] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [locateRequest, setLocateRequest] =
+    useState<ArtifactLocateRequest | null>(null);
+  const locateNonceRef = useRef(0);
   const [resolutions, setResolutions] = useState(
     new Map<string, HighlightResolution>(),
   );
@@ -189,11 +193,8 @@ export function ArtifactPreview({
   const activateThread = useCallback((id: string) => {
     setSelectedThreadId(id);
     setCommentsOpen(true);
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-comment-thread-id="${CSS.escape(id)}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
+    locateNonceRef.current += 1;
+    setLocateRequest({ id, nonce: locateNonceRef.current });
   }, []);
 
   const contextFor = useCallback(
@@ -287,6 +288,7 @@ export function ArtifactPreview({
                 containerRef={markdownContainerRef}
                 comments={comments}
                 activeThreadId={selectedThreadId}
+                locateRequest={locateRequest}
                 onActivateThread={activateThread}
                 onCreate={createAnchoredComment}
                 onResolutionsChange={setResolutions}
@@ -312,6 +314,7 @@ export function ArtifactPreview({
             name={name}
             comments={comments}
             activeThreadId={selectedThreadId}
+            locateRequest={locateRequest}
             onActivateThread={activateThread}
             onCreate={createAnchoredComment}
             onResolutionsChange={setResolutions}
@@ -333,6 +336,7 @@ export function ArtifactPreview({
             name={name}
             comments={comments}
             activeThreadId={selectedThreadId}
+            locateRequest={locateRequest}
             onActivateThread={activateThread}
             onCreate={createAnchoredComment}
             onError={() => setImageError(true)}

@@ -9,7 +9,16 @@ import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import {
   Avatar,
   AvatarFallback,
+  Badge,
   Button,
+  Card,
+  CardContent,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Separator,
   Spinner,
   Textarea,
 } from "@posthog/quill";
@@ -87,81 +96,84 @@ function Thread({
     context?.artifactVersion && context.artifactVersion !== currentVersion;
 
   return (
-    <article
-      className={`rounded-lg border p-3 transition-colors ${
-        selected ? "border-accent bg-accent/5" : "border-border bg-background"
+    <Card
+      className={`gap-0 p-0 transition-colors ${
+        selected ? "border-accent bg-accent/5" : ""
       } ${resolved ? "opacity-70" : ""}`}
       data-comment-thread-id={root.id}
     >
-      <button type="button" className="w-full text-left" onClick={onSelect}>
-        {(resolution === "orphaned" || anotherVersion) && (
-          <div className="mb-1.5 flex items-center gap-1 text-amber-700 text-xs dark:text-amber-300">
-            <WarningCircle />
-            {resolution === "orphaned"
-              ? "The highlighted text changed"
-              : "Re-anchored from another artifact version"}
+      <CardContent className="p-3">
+        <button type="button" className="w-full text-left" onClick={onSelect}>
+          {(resolution === "orphaned" || anotherVersion) && (
+            <div className="mb-1.5 flex items-center gap-1 text-amber-700 text-xs dark:text-amber-300">
+              <WarningCircle />
+              {resolution === "orphaned"
+                ? "The highlighted text changed"
+                : "Re-anchored from another artifact version"}
+            </div>
+          )}
+          <CommentBody comment={root} />
+        </button>
+        {replies.length > 0 && (
+          <div className="ml-3 border-border border-l pl-3">
+            {replies.map((comment) => (
+              <CommentBody key={comment.id} comment={comment} />
+            ))}
           </div>
         )}
-        <CommentBody comment={root} />
-      </button>
-      {replies.length > 0 && (
-        <div className="ml-3 border-border border-l pl-3">
-          {replies.map((comment) => (
-            <CommentBody key={comment.id} comment={comment} />
-          ))}
-        </div>
-      )}
-      {replying ? (
-        <div className="mt-2 space-y-2">
-          <Textarea
-            autoFocus
-            value={reply}
-            placeholder="Write a reply..."
-            onChange={(event) => setReply(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                event.preventDefault();
-                if (reply.trim()) onReply(reply.trim());
-                setReply("");
-                setReplying(false);
-              }
-            }}
-          />
-          <div className="flex gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!reply.trim() || busy}
-              onClick={() => {
-                onReply(reply.trim());
-                setReply("");
-                setReplying(false);
+        <Separator className="my-2" />
+        {replying ? (
+          <div className="space-y-2">
+            <Textarea
+              autoFocus
+              value={reply}
+              placeholder="Write a reply..."
+              onChange={(event) => setReply(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  if (reply.trim()) onReply(reply.trim());
+                  setReply("");
+                  setReplying(false);
+                }
               }}
-            >
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!reply.trim() || busy}
+                onClick={() => {
+                  onReply(reply.trim());
+                  setReply("");
+                  setReplying(false);
+                }}
+              >
+                Reply
+              </Button>
+              <Button size="sm" onClick={() => setReplying(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-1">
+            <Button size="sm" onClick={() => setReplying(true)}>
+              <ChatCircle />
               Reply
             </Button>
-            <Button size="sm" onClick={() => setReplying(false)}>
-              Cancel
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => onResolve(!resolved)}
+            >
+              {resolved ? <ArrowCounterClockwise /> : <CheckCircle />}
+              {resolved ? "Reopen" : "Resolve"}
             </Button>
           </div>
-        </div>
-      ) : (
-        <div className="mt-2 flex gap-1 border-border border-t pt-2">
-          <Button size="sm" onClick={() => setReplying(true)}>
-            <ChatCircle />
-            Reply
-          </Button>
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => onResolve(!resolved)}
-          >
-            {resolved ? <ArrowCounterClockwise /> : <CheckCircle />}
-            {resolved ? "Reopen" : "Resolve"}
-          </Button>
-        </div>
-      )}
-    </article>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -210,11 +222,7 @@ export function ArtifactCommentsSidebar({
       <header className="flex h-11 shrink-0 items-center justify-between border-border border-b px-3">
         <div className="flex items-center gap-2 font-medium text-sm">
           Comments
-          {comments.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-muted-foreground text-xs">
-              {roots.length}
-            </span>
-          )}
+          {comments.length > 0 && <Badge>{roots.length}</Badge>}
         </div>
         <Button
           size="icon-sm"
@@ -225,7 +233,42 @@ export function ArtifactCommentsSidebar({
           <X />
         </Button>
       </header>
-      <div className="border-border border-b p-3">
+      <div className="flex-1 space-y-2 overflow-auto p-3">
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Spinner />
+          </div>
+        ) : roots.length === 0 ? (
+          <Empty className="py-8">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ChatCircle />
+              </EmptyMedia>
+              <EmptyTitle>No comments yet</EmptyTitle>
+              <EmptyDescription>
+                Select text to comment inline, or comment on the whole artifact
+                below.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          roots.map((root) => (
+            <Thread
+              key={root.id}
+              root={root}
+              replies={repliesByRoot.get(root.id) ?? []}
+              selected={root.id === selectedThreadId}
+              currentVersion={currentVersion}
+              resolution={resolutions.get(root.id)}
+              busy={busy}
+              onSelect={() => onSelectThread(root.id)}
+              onReply={(content) => onReply(root, content)}
+              onResolve={(resolved) => onResolve(root, resolved)}
+            />
+          ))
+        )}
+      </div>
+      <footer className="shrink-0 border-border border-t bg-background p-3">
         <Textarea
           value={draft}
           placeholder="Comment on this artifact..."
@@ -251,34 +294,7 @@ export function ArtifactCommentsSidebar({
             Comment
           </Button>
         </div>
-      </div>
-      <div className="flex-1 space-y-2 overflow-auto p-3">
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <Spinner />
-          </div>
-        ) : roots.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground text-sm">
-            Select text to comment inline, or comment on the whole artifact
-            above.
-          </div>
-        ) : (
-          roots.map((root) => (
-            <Thread
-              key={root.id}
-              root={root}
-              replies={repliesByRoot.get(root.id) ?? []}
-              selected={root.id === selectedThreadId}
-              currentVersion={currentVersion}
-              resolution={resolutions.get(root.id)}
-              busy={busy}
-              onSelect={() => onSelectThread(root.id)}
-              onReply={(content) => onReply(root, content)}
-              onResolve={(resolved) => onResolve(root, resolved)}
-            />
-          ))
-        )}
-      </div>
+      </footer>
     </aside>
   );
 }

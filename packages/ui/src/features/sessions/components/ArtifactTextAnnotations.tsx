@@ -17,6 +17,7 @@ import {
 } from "react";
 
 export type HighlightResolution = "exact" | "reanchored" | "orphaned";
+export type ArtifactLocateRequest = { id: string; nonce: number };
 
 type HighlightRect = {
   id: string;
@@ -82,6 +83,7 @@ interface ArtifactTextAnnotationsProps {
   containerRef: RefObject<HTMLElement | null>;
   comments: ArtifactComment[];
   activeThreadId: string | null;
+  locateRequest: ArtifactLocateRequest | null;
   onActivateThread: (id: string) => void;
   onCreate: (anchor: TextArtifactAnchor, content: string) => void;
   onResolutionsChange: (resolutions: Map<string, HighlightResolution>) => void;
@@ -93,6 +95,7 @@ export function ArtifactTextAnnotations({
   containerRef,
   comments,
   activeThreadId,
+  locateRequest,
   onActivateThread,
   onCreate,
   onResolutionsChange,
@@ -164,6 +167,22 @@ export function ArtifactTextAnnotations({
       container.removeEventListener("scroll", recalculate);
     };
   }, [containerRef, recalculate, rootRef]);
+
+  useEffect(() => {
+    if (!locateRequest) return;
+    const root = rootRef.current;
+    const comment = rootComments.find(({ id }) => id === locateRequest.id);
+    const context = comment ? parseArtifactCommentContext(comment) : null;
+    if (!root || context?.anchor.kind !== "text") return;
+    const resolved = resolveTextArtifactAnchor(
+      root.textContent ?? "",
+      context.anchor,
+    );
+    if (!resolved) return;
+    const range = rangeFromOffsets(root, resolved.start, resolved.end);
+    const target = range?.startContainer.parentElement;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [locateRequest, rootComments, rootRef]);
 
   useEffect(() => {
     const container = containerRef.current;

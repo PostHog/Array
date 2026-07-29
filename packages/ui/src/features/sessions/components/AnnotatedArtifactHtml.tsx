@@ -7,6 +7,7 @@ import type { EditorSelection } from "@posthog/ui/features/code-editor/component
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type ArtifactLocateRequest,
   type HighlightResolution,
   parseArtifactCommentContext,
 } from "./ArtifactTextAnnotations";
@@ -36,6 +37,7 @@ export function AnnotatedArtifactHtml({
   name,
   comments,
   activeThreadId,
+  locateRequest,
   onActivateThread,
   onCreate,
   onResolutionsChange,
@@ -44,6 +46,7 @@ export function AnnotatedArtifactHtml({
   name: string;
   comments: ArtifactComment[];
   activeThreadId: string | null;
+  locateRequest: ArtifactLocateRequest | null;
   onActivateThread: (id: string) => void;
   onCreate: (anchor: TextArtifactAnchor, content: string) => void;
   onResolutionsChange: (resolutions: Map<string, HighlightResolution>) => void;
@@ -95,6 +98,23 @@ export function AnnotatedArtifactHtml({
     sendComments();
   }, [sendComments]);
 
+  const sendLocate = useCallback(() => {
+    if (!locateRequest) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        marker: BRIDGE_MARKER,
+        channel: channelRef.current,
+        type: "locate",
+        id: locateRequest.id,
+      },
+      "*",
+    );
+  }, [locateRequest]);
+
+  useEffect(() => {
+    sendLocate();
+  }, [sendLocate]);
+
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
@@ -108,6 +128,7 @@ export function AnnotatedArtifactHtml({
       }
       if (data.type === "ready") {
         sendComments();
+        sendLocate();
         return;
       }
       if (data.type === "activate" && typeof data.id === "string") {
@@ -152,7 +173,7 @@ export function AnnotatedArtifactHtml({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [onActivateThread, onResolutionsChange, sendComments]);
+  }, [onActivateThread, onResolutionsChange, sendComments, sendLocate]);
 
   const dismiss = () => {
     setPendingAnchor(null);

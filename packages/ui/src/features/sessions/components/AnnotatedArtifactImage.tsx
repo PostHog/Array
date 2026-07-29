@@ -6,7 +6,10 @@ import type { EditorSelection } from "@posthog/ui/features/code-editor/component
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { ZoomableImage } from "@posthog/ui/primitives/SafeImagePreview";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { parseArtifactCommentContext } from "./ArtifactTextAnnotations";
+import {
+  type ArtifactLocateRequest,
+  parseArtifactCommentContext,
+} from "./ArtifactTextAnnotations";
 
 type Box = { left: number; top: number; width: number; height: number };
 
@@ -15,6 +18,7 @@ export function AnnotatedArtifactImage({
   name,
   comments,
   activeThreadId,
+  locateRequest,
   onActivateThread,
   onCreate,
   onError,
@@ -23,6 +27,7 @@ export function AnnotatedArtifactImage({
   name: string;
   comments: ArtifactComment[];
   activeThreadId: string | null;
+  locateRequest: ArtifactLocateRequest | null;
   onActivateThread: (id: string) => void;
   onCreate: (anchor: RegionArtifactAnchor, content: string) => void;
   onError: () => void;
@@ -74,6 +79,15 @@ export function AnnotatedArtifactImage({
       window.removeEventListener("resize", update);
     };
   }, []);
+
+  useEffect(() => {
+    if (!locateRequest) return;
+    rootRef.current
+      ?.querySelector<HTMLElement>(
+        `[data-image-comment-id="${CSS.escape(locateRequest.id)}"]`,
+      )
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [locateRequest]);
 
   const regionComments = useMemo(
     () =>
@@ -173,6 +187,7 @@ export function AnnotatedArtifactImage({
               key={comment.id}
               type="button"
               aria-label="Open image comment thread"
+              data-image-comment-id={comment.id}
               className={`pointer-events-auto absolute rounded-sm border-2 ${
                 comment.id === activeThreadId
                   ? "border-yellow-600 bg-yellow-300/45"
