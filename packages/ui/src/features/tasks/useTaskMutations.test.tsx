@@ -1,5 +1,6 @@
 import type { Schemas } from "@posthog/api-client";
 import type { Task } from "@posthog/shared/domain-types";
+import { channelFeedQueryKey } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import { act, type ReactNode } from "react";
@@ -70,6 +71,7 @@ describe("useRenameTask", () => {
     const listKey = taskKeys.list();
     const summaryKey = taskKeys.summaries([TASK_ID]);
     const detailKey = taskKeys.detail(TASK_ID);
+    const channelFeedKey = channelFeedQueryKey("channel-1");
     queryClient.setQueryData<Task[]>(listKey, [
       createTask(),
       createTask({ id: OTHER_TASK_ID, title: "Other" }),
@@ -79,6 +81,7 @@ describe("useRenameTask", () => {
       createSummary({ id: OTHER_TASK_ID, title: "Other" }),
     ]);
     queryClient.setQueryData<Task>(detailKey, createTask());
+    queryClient.setQueryData<Task[]>(channelFeedKey, [createTask()]);
 
     await act(async () => {
       await result.current.renameTask({
@@ -107,6 +110,12 @@ describe("useRenameTask", () => {
       title: "Renamed",
       title_manually_set: true,
     });
+    expect(queryClient.getQueryData<Task[]>(channelFeedKey)?.[0]).toMatchObject(
+      {
+        title: "Renamed",
+        title_manually_set: true,
+      },
+    );
 
     expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
       title: "Renamed",
@@ -123,11 +132,13 @@ describe("useRenameTask", () => {
     const listKey = taskKeys.list();
     const summaryKey = taskKeys.summaries([TASK_ID]);
     const detailKey = taskKeys.detail(TASK_ID);
+    const channelFeedKey = channelFeedQueryKey("channel-1");
     queryClient.setQueryData<Task[]>(listKey, [createTask()]);
     queryClient.setQueryData<Schemas.TaskSummary[]>(summaryKey, [
       createSummary(),
     ]);
     queryClient.setQueryData<Task>(detailKey, createTask());
+    queryClient.setQueryData<Task[]>(channelFeedKey, [createTask()]);
 
     let caught: unknown;
     await act(async () => {
@@ -153,6 +164,9 @@ describe("useRenameTask", () => {
       queryClient.getQueryData<Schemas.TaskSummary[]>(summaryKey)?.[0].title,
     ).toBe("Original title");
     expect(queryClient.getQueryData<Task>(detailKey)?.title).toBe(
+      "Original title",
+    );
+    expect(queryClient.getQueryData<Task[]>(channelFeedKey)?.[0].title).toBe(
       "Original title",
     );
 

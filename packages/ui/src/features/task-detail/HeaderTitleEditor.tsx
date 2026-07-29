@@ -1,15 +1,23 @@
+import { cn } from "@posthog/quill";
 import { useEffect, useRef, useState } from "react";
 
 interface HeaderTitleEditorProps {
   initialTitle: string;
   onSubmit: (newTitle: string) => void;
   onCancel: () => void;
+  /**
+   * Extends the base styling — callers match the input to whatever it replaces
+   * (e.g. a breadcrumb segment's type scale and height) so opening the editor
+   * doesn't resize the row.
+   */
+  className?: string;
 }
 
 export function HeaderTitleEditor({
   initialTitle,
   onSubmit,
   onCancel,
+  className,
 }: HeaderTitleEditorProps) {
   const [editValue, setEditValue] = useState(initialTitle);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,7 +61,10 @@ export function HeaderTitleEditor({
       onChange={(e) => setEditValue(e.target.value)}
       onKeyDown={handleKeyDown}
       onBlur={handleSubmit}
-      className="no-drag h-5 min-w-0 flex-1 rounded-sm border border-accent-8 bg-gray-2 px-1 font-medium text-[12px] text-gray-12 outline-none"
+      className={cn(
+        "no-drag h-5 min-w-0 flex-1 rounded-sm border border-accent-8 bg-gray-2 px-1 font-medium text-[12px] text-gray-12 outline-none",
+        className,
+      )}
     />
   );
 }
