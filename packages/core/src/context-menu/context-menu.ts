@@ -117,6 +117,7 @@ export class ContextMenuService {
       canStop,
       isInCommandCenter,
       hasEmptyCommandCenterCell,
+      showArchivePrior = true,
       channels,
     } = input;
     const { apps, lastUsedAppId } = await this.getExternalAppsData();
@@ -162,7 +163,7 @@ export class ContextMenuService {
       ...(!isInCommandCenter
         ? [
             this.separator(),
-            this.item(
+            this.item<TaskAction>(
               "Add to Command Center",
               { type: "add-to-command-center" as const },
               { enabled: hasEmptyCommandCenterCell ?? true },
@@ -172,19 +173,23 @@ export class ContextMenuService {
       ...fileToItems,
       this.separator(),
       this.item("Archive", { type: "archive" }),
-      this.item(
-        "Archive prior tasks",
-        { type: "archive-prior" },
-        {
-          confirm: {
-            title: "Archive Prior Tasks",
-            message: "Archive all tasks older than this one?",
-            detail:
-              "This will archive every task created before this one. You can unarchive them later.",
-            confirmLabel: "Archive",
-          },
-        },
-      ),
+      ...(showArchivePrior
+        ? [
+            this.item<TaskAction>(
+              "Archive prior tasks",
+              { type: "archive-prior" },
+              {
+                confirm: {
+                  title: "Archive Prior Tasks",
+                  message: "Archive all tasks older than this one?",
+                  detail:
+                    "This will archive every task created before this one. You can unarchive them later.",
+                  confirmLabel: "Archive",
+                },
+              },
+            ),
+          ]
+        : []),
     ]);
   }
 

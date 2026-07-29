@@ -142,6 +142,17 @@ describe("ContextMenuService.showTaskContextMenu", () => {
     );
   });
 
+  it("can hide Archive prior tasks for task lists without that action", async () => {
+    const menu = new FakeContextMenu();
+    makeService(menu).showTaskContextMenu({
+      ...baseTask,
+      showArchivePrior: false,
+    });
+    await menu.shown;
+    expect(labels(menu.lastItems)).not.toContain("Archive prior tasks");
+    expect(labels(menu.lastItems)).toContain("Archive");
+  });
+
   it("resolves to null when the menu is dismissed", async () => {
     const menu = new FakeContextMenu();
     const result = makeService(menu).showTaskContextMenu(baseTask);

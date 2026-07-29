@@ -7,6 +7,8 @@ describe("isSupportedReasoningEffort", () => {
     ["codex", "gpt-5.6-sol", "max", true],
     ["codex", "gpt-5.4", "max", false],
     ["claude", "claude-opus-4-8", "xhigh", true],
+    ["claude", "claude-opus-5", "high", true],
+    ["claude", "claude-opus-5", "max", true],
     ["claude", "claude-sonnet-4-6", "xhigh", false],
     ["claude", "@cf/zai-org/glm-5.2", "high", true],
     ["claude", "@cf/zai-org/glm-5.2", "max", true],

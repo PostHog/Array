@@ -16,6 +16,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { readPrUrls } from "@posthog/shared";
 import type {
   Task,
   TaskRun,
@@ -23,7 +24,7 @@ import type {
 } from "@posthog/shared/domain-types";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
-import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
+import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
@@ -92,8 +93,7 @@ function buildRows(
   // every copy would bury the current one under its own drafts.
   const newestByName = new Map<string, { file: RunArtifact; runId: string }>();
   for (const run of allRuns) {
-    const outputPr = run.output?.pr_url;
-    if (typeof outputPr === "string" && outputPr) {
+    for (const outputPr of readPrUrls(run.output)) {
       addPr(outputPr, `output-pr:${outputPr}`);
     }
     for (const file of readRunOutputs(run)) {
@@ -130,6 +130,7 @@ function ArtifactListRow({
   detail,
   external,
   onOpen,
+  onOpenExternal,
   onHoverStart,
 }: {
   icon: ReactNode;
@@ -137,33 +138,53 @@ function ArtifactListRow({
   detail?: string | null;
   external?: boolean;
   onOpen?: () => void;
+  /** Renders a trailing button that leaves the app instead of opening the
+   *  artifact in place. Absent when there is nowhere safe to send the user. */
+  onOpenExternal?: () => void;
   onHoverStart?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      disabled={!onOpen}
-      onPointerEnter={onHoverStart}
-      onFocus={onHoverStart}
-      className="flex w-full items-center gap-2 rounded-md border border-border bg-muted px-2.5 py-2 text-left text-[13px] transition-colors enabled:hover:bg-gray-3"
-    >
-      {icon}
-      <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-      {detail && (
-        <span className="shrink-0 text-muted-foreground text-xs">{detail}</span>
+    // overflow-hidden so each half's hover fill is clipped to the row's radius.
+    <div className="flex w-full items-center overflow-hidden rounded-md border border-border bg-muted text-[13px]">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        onPointerEnter={onHoverStart}
+        onFocus={onHoverStart}
+        className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left transition-colors enabled:hover:bg-gray-3"
+      >
+        {icon}
+        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+        {detail && (
+          <span className="shrink-0 text-muted-foreground">{detail}</span>
+        )}
+        {external && (
+          <ArrowSquareOutIcon size={12} className="shrink-0 text-gray-9" />
+        )}
+      </button>
+      {onOpenExternal && (
+        <button
+          type="button"
+          onClick={onOpenExternal}
+          aria-label={`Open ${title} externally`}
+          className="flex shrink-0 items-center self-stretch border-border border-l px-2 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
+        >
+          <ArrowSquareOutIcon size={12} />
+        </button>
       )}
-      {external && (
-        <ArrowSquareOutIcon size={12} className="shrink-0 text-gray-9" />
-      )}
-    </button>
+    </div>
   );
 }
 
-function PrRow({ url, taskId }: { url: string; taskId: string }) {
+function PrRow({
+  url,
+  openInPlaceTaskId,
+}: {
+  url: string;
+  openInPlaceTaskId?: string;
+}) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
-  const setReviewMode = useReviewNavigationStore((s) => s.setReviewMode);
-  const setSelectedPrUrl = useReviewNavigationStore((s) => s.setSelectedPrUrl);
 
   const [countsWanted, setCountsWanted] = useState(false);
   const comments = usePrComments(countsWanted ? safeUrl : null);
@@ -197,12 +218,13 @@ function PrRow({ url, taskId }: { url: string; taskId: string }) {
       onHoverStart={() => setCountsWanted(true)}
       onOpen={
         safeUrl
-          ? () => {
-              setSelectedPrUrl(taskId, safeUrl);
-              setReviewMode(taskId, "split");
-            }
+          ? () =>
+              openInPlaceTaskId
+                ? openPrInReview(openInPlaceTaskId, safeUrl)
+                : openExternalUrl(safeUrl)
           : undefined
       }
+      onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
     />
   );
 }
@@ -271,9 +293,13 @@ function FileRow({
 export function TaskArtifactsList({
   task,
   timeline,
+  canOpenInPlace,
 }: {
   task: Task;
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
+  /** See `ActivityTimeline` — without the task's own view alongside, a PR has to
+   *  open externally rather than into a review pane nobody is showing. */
+  canOpenInPlace?: boolean;
 }) {
   const { runs } = useTaskRuns(task.id);
   const rows = useMemo(
@@ -302,7 +328,11 @@ export function TaskArtifactsList({
     <div className="flex flex-col gap-1.5 p-2">
       {rows.map((row) =>
         row.kind === "pr" ? (
-          <PrRow key={row.key} url={row.url} taskId={task.id} />
+          <PrRow
+            key={row.key}
+            url={row.url}
+            openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
+          />
         ) : row.kind === "canvas" ? (
           <CanvasRow key={row.key} name={row.name} url={row.url} />
         ) : row.kind === "file" ? (
