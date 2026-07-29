@@ -45,18 +45,22 @@ describe("createHarnessRuntime", () => {
         expect(runtime.session.model?.provider).toBe("posthog");
         expect(runtime.session.getAvailableThinkingLevels()).toContain("off");
         expect(runtime.services.settingsManager.isProjectTrusted()).toBe(false);
-        expect(
-          runtime.services.resourceLoader
-            .getExtensions()
-            .extensions.map((extension) => extension.path),
-        ).toEqual(
+        const extensionPaths = runtime.services.resourceLoader
+          .getExtensions()
+          .extensions.map((extension) => extension.path);
+        expect(extensionPaths).toEqual(
           expect.arrayContaining([
             "<inline:hog-branding>",
             "<inline:posthog-provider>",
             "<inline:web-access>",
+            "<inline:mcp>",
+          ]),
+        );
+        expect(extensionPaths).not.toEqual(
+          expect.arrayContaining([
+            "<inline:background-jobs>",
             "<inline:subagent>",
             "<inline:workflow>",
-            "<inline:mcp>",
           ]),
         );
       } finally {
