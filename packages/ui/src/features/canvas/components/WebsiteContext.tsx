@@ -13,6 +13,7 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
+import { channelPageIcon } from "@posthog/ui/features/canvas/components/channelPages";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
@@ -22,6 +23,14 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import {
+  PageHeader,
+  PageHeaderChip,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderTitle,
+  PageHeaderTitleRow,
+} from "@posthog/ui/primitives/PageHeader";
 import { track } from "@posthog/ui/shell/analytics";
 import {
   Box,
@@ -90,7 +99,7 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
   }, [latest?.content, hasDraft]);
 
   const headerContent = useMemo(
-    () => <ChannelHeader channelId={channelId} />,
+    () => <ChannelHeader channelId={channelId} page="context" />,
     [channelId],
   );
   useSetHeaderContent(headerContent);
@@ -163,6 +172,27 @@ export function WebsiteContext({ channelId }: WebsiteContextProps) {
 
   return (
     <Flex direction="column" height="100%" className="overflow-hidden">
+      {/* The shared page header ships with the spaces layout; without it the
+          page opens straight onto its mode toolbar as it always has. */}
+      {spacesLayout && (
+        <PageHeader>
+          <PageHeaderHeading>
+            <PageHeaderTitleRow>
+              <PageHeaderTitle>Context</PageHeaderTitle>
+              {latest?.version != null && (
+                <PageHeaderChip icon={channelPageIcon("context", { size: 12 })}>
+                  v{latest.version}
+                </PageHeaderChip>
+              )}
+            </PageHeaderTitleRow>
+            <PageHeaderDescription>
+              Background every agent working in this{" "}
+              {spacesLayout ? "space" : "channel"} reads before it starts — what
+              lives here, who cares about it, and how to work on it.
+            </PageHeaderDescription>
+          </PageHeaderHeading>
+        </PageHeader>
+      )}
       <Flex
         align="center"
         justify="between"
