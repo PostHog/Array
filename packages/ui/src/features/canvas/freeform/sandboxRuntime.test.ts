@@ -1,3 +1,4 @@
+import { FREEFORM_BABEL_URL as BABEL_URL } from "@posthog/core/canvas/freeformWhitelist";
 import { describe, expect, it } from "vitest";
 import {
   buildSandboxDocument,
@@ -64,6 +65,29 @@ describe("buildSandboxDocument", () => {
     );
     expect(html).toContain('"open-external"');
     expect(html).toContain("event.defaultPrevented");
+  });
+
+  // A failed CDN fetch used to take the whole bootstrap module down with it
+  // (a static top-level `import` of Babel), so the error handlers and the
+  // "ready" handshake never ran and the host was left with a permanently blank
+  // frame it had no way to distinguish from a canvas that hadn't rendered.
+  it("loads the transpiler lazily so a CDN failure is reported, not fatal", () => {
+    const html = buildSandboxDocument("edit");
+    expect(html).not.toContain(`import * as Babel from "${BABEL_URL}"`);
+    expect(html).toContain(`loadModule("${BABEL_URL}")`);
+    expect(html).toContain("const Babel = await loadBabel();");
+  });
+
+  it("registers its error reporting before anything that can fail", () => {
+    const html = buildSandboxDocument("edit");
+    const reporter = html.indexOf('window.addEventListener("error"');
+    const rejections = html.indexOf(
+      'window.addEventListener("unhandledrejection"',
+    );
+    const firstCdnLoad = html.indexOf("loadModule(");
+    expect(reporter).toBeGreaterThan(-1);
+    expect(reporter).toBeLessThan(firstCdnLoad);
+    expect(rejections).toBeLessThan(firstCdnLoad);
   });
 
   // The document paints before its stylesheets load and before the host's

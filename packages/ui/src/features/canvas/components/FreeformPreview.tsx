@@ -6,7 +6,7 @@ import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 
 // Render each canvas's live app at 1/SCALE of the card width, then shrink so it
 // fits inside the preview frame as a thumbnail.
@@ -34,6 +34,17 @@ export function FreeformPreview({
   className?: string;
 }) {
   const [ref, inView] = useInView<HTMLDivElement>(PREVIEW_VIEWPORT);
+  // A preview whose sandbox never painted (a CDN module that wouldn't load, a
+  // compile error) leaves an empty frame that reads as "this canvas is blank".
+  // Tracking the first render tells that apart from a canvas that rendered and
+  // only later reported an error, which should keep showing what it painted.
+  const [rendered, setRendered] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const onRendered = useCallback(() => {
+    setRendered(true);
+    setFailed(false);
+  }, []);
+  const onError = useCallback(() => setFailed(true), []);
 
   // Preview data handler: swallow captures so a thumbnail never emits analytics
   // events, but let reads through (cached, shared with the full view) so the
@@ -69,17 +80,14 @@ export function FreeformPreview({
             <ErrorBoundary
               name="freeform-preview"
               resetKey={code}
-              fallback={
-                <PreviewPlaceholder
-                  icon={<WarningIcon size={18} />}
-                  label="Preview unavailable"
-                />
-              }
+              fallback={<PreviewUnavailable />}
             >
               <FreeformCanvas
                 code={code}
                 mode="edit"
                 onDataRequest={onDataRequest}
+                onRendered={onRendered}
+                onError={onError}
               />
             </ErrorBoundary>
           </Box>
@@ -94,7 +102,20 @@ export function FreeformPreview({
           label="Nothing built yet"
         />
       )}
+      {/* Overlays the SCALED frame from outside it, so the message reads at
+          full size rather than shrunk to thumbnail scale. */}
+      {failed && !rendered && <PreviewUnavailable />}
     </Box>
+  );
+}
+
+// The sandbox failed before painting anything, so the frame is blank.
+function PreviewUnavailable() {
+  return (
+    <PreviewPlaceholder
+      icon={<WarningIcon size={18} />}
+      label="Preview unavailable"
+    />
   );
 }
 

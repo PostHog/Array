@@ -1,21 +1,37 @@
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FreeformCanvas } from "./FreeformCanvas";
+import { CANVAS_BOOT_TIMEOUT_ERROR, FreeformCanvas } from "./FreeformCanvas";
 
 vi.mock("@posthog/ui/shell/openExternal", () => ({
   openExternalUrl: vi.fn(),
 }));
 
-const renderCanvas = () => {
+const renderCanvas = (
+  props?: Partial<ComponentProps<typeof FreeformCanvas>>,
+) => {
   render(
     <FreeformCanvas
       code="export default function Canvas() { return null }"
       mode="edit"
       onDataRequest={vi.fn()}
+      {...props}
     />,
   );
   return screen.getByTitle("Canvas") as HTMLIFrameElement;
+};
+
+const postFrameFromCanvas = (
+  iframe: HTMLIFrameElement,
+  frame: Record<string, unknown>,
+) => {
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      data: { channel: "posthog-canvas", ...frame },
+      source: iframe.contentWindow,
+    }),
+  );
 };
 
 const postFromCanvas = (iframe: HTMLIFrameElement, url: string) => {
@@ -35,6 +51,51 @@ describe("FreeformCanvas", () => {
       "sandbox",
       "allow-scripts",
     );
+  });
+
+  // A sandbox that never boots (blocked/hung CDN fetch, blocked srcDoc) posts
+  // nothing at all, so without a watchdog the host shows an indefinitely blank
+  // frame with nothing to act on.
+  describe("boot watchdog", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("reports an error when the sandbox never renders", () => {
+      const onError = vi.fn();
+      renderCanvas({ onError });
+
+      vi.advanceTimersByTime(30_001);
+
+      expect(onError).toHaveBeenCalledWith(CANVAS_BOOT_TIMEOUT_ERROR);
+    });
+
+    it.each([
+      { name: "rendered", frame: { type: "rendered" } },
+      { name: "error", frame: { type: "error", message: "boom" } },
+    ])("stops waiting once the sandbox posts $name", ({ frame }) => {
+      const onError = vi.fn();
+      const iframe = renderCanvas({ onError });
+
+      postFrameFromCanvas(iframe, frame);
+      onError.mockClear();
+      vi.advanceTimersByTime(30_001);
+
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it("does not wait on a canvas with no code to render", () => {
+      const onError = vi.fn();
+      renderCanvas({ code: "", onError });
+
+      vi.advanceTimersByTime(30_001);
+
+      expect(onError).not.toHaveBeenCalled();
+    });
   });
 
   describe("open-external", () => {

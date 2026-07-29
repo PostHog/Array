@@ -39,6 +39,14 @@ export interface FreeformThreadState {
   isSaving: boolean;
   /** Latest runtime/compile error reported by the sandbox (self-repair signal). */
   runtimeError: string | null;
+  /**
+   * Whether the sandbox has committed a render of the CURRENT code. Together with
+   * `runtimeError` this separates "errored with nothing on screen" (a blank
+   * surface, so show a recoverable error) from "errored after rendering" (the
+   * canvas is visible, so the toolbar notice is enough). Reset whenever the live
+   * code changes, since the new code hasn't rendered yet.
+   */
+  hasRendered: boolean;
 }
 
 export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
@@ -49,6 +57,7 @@ export const EMPTY_FREEFORM_THREAD: FreeformThreadState = {
   context: "",
   isSaving: false,
   runtimeError: null,
+  hasRendered: false,
 };
 
 interface FreeformChatStore {
@@ -71,6 +80,9 @@ interface FreeformChatStore {
   undo: (threadId: string) => void;
   redo: (threadId: string) => void;
   setRuntimeError: (threadId: string, message: string | null) => void;
+  /** The sandbox committed a render: clears any error and records that the
+   * current code has something on screen. */
+  markRendered: (threadId: string) => void;
   /**
    * Revert: when viewing a non-latest version, make it the head (drop the newer
    * versions) and autosave. The canvas then continues from this version.
@@ -94,6 +106,15 @@ interface SavedFreeform {
 function newId(): string {
   return crypto.randomUUID();
 }
+
+// Applied by every patch that swaps the live `code`: the incoming source hasn't
+// rendered yet, and the outgoing source's error no longer describes what's on
+// screen. Keeping these in step with `code` is what lets the view tell a blank
+// surface (errored, nothing rendered) from a rendered canvas that later errored.
+const RESET_RENDER_HEALTH = {
+  runtimeError: null,
+  hasRendered: false,
+} satisfies Pick<FreeformThreadState, "runtimeError" | "hasRendered">;
 
 // The dashboardId a thread persists to ("dashboard:<id>" → "<id>").
 function dashboardIdOf(threadId: string): string {
@@ -173,6 +194,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
         record.currentVersionId ?? record.versions?.at(-1)?.id ?? null,
       templateId: record.templateId ?? prev.templateId,
       context: record.context ?? "",
+      ...RESET_RENDER_HEALTH,
     }));
 
   return {
@@ -281,6 +303,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           code: target.code,
           context: target.context ?? prev.context,
           currentVersionId: target.id,
+          ...RESET_RENDER_HEALTH,
         };
       });
     },
@@ -297,12 +320,21 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           code: target.code,
           context: target.context ?? prev.context,
           currentVersionId: target.id,
+          ...RESET_RENDER_HEALTH,
         };
       });
     },
 
     setRuntimeError: (threadId, message) => {
       patch(threadId, (prev) => ({ ...prev, runtimeError: message }));
+    },
+
+    markRendered: (threadId) => {
+      patch(threadId, (prev) => ({
+        ...prev,
+        runtimeError: null,
+        hasRendered: true,
+      }));
     },
 
     revert: (threadId) => {
@@ -332,6 +364,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set, get) => {
           code: head.code,
           context: head.context ?? prev.context,
           currentVersionId: head.id,
+          ...RESET_RENDER_HEALTH,
         };
       });
     },

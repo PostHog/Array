@@ -21,6 +21,12 @@ import {
 //     and forbids third-party egress entirely.
 export type SandboxMode = "edit" | "view";
 
+// Prefix for the error the sandbox reports when a CDN module (Babel, React, or a
+// whitelisted package) can't be fetched. Interpolated into the bootstrap below —
+// keep it free of quotes and backslashes.
+const CANVAS_RUNTIME_LOAD_ERROR =
+  "Couldn't load the canvas runtime. Check your connection and try again.";
+
 // Which in-browser Tailwind engine the EDIT-mode sandbox runs. "v4" matches the
 // Quill version we ship (Quill is authored for Tailwind v4) and lets us drop the
 // v3 Play CDN's preflight-off hack, the `not-disabled` variant shim, the manual
@@ -198,9 +204,55 @@ export function buildSandboxDocument(
   // a Blob module (which resolves bare imports via the import map above), and
   // reports lifecycle + errors back to the host.
   const bootstrap = /* js */ `
-    import * as Babel from "${FREEFORM_BABEL_URL}";
     const CHANNEL = "posthog-canvas";
     const post = (msg) => parent.postMessage({ channel: CHANNEL, ...msg }, "*");
+
+    // --- error reporting (feeds the host's error surface + self-repair loop) ---
+    // Declared FIRST, before anything that can fail, so no failure below is silent.
+    const reportError = (message, stack) =>
+      post({ type: "error", message: String(message ?? "Unknown error"), stack });
+    window.addEventListener("error", (e) =>
+      reportError(e.message, e.error && e.error.stack),
+    );
+    window.addEventListener("unhandledrejection", (e) =>
+      reportError(
+        (e.reason && e.reason.message) || e.reason,
+        e.reason && e.reason.stack,
+      ),
+    );
+
+    // The transpiler and the canvas's packages are fetched from the CDN at render
+    // time, so a CDN/network hiccup MUST be reported rather than being fatal. A
+    // static top-level \`import\` of Babel would abort this whole module when the
+    // fetch fails — taking the error handlers and the "ready" handshake with it,
+    // so the host got no message at all and showed a permanently blank canvas it
+    // couldn't tell apart from one that simply hadn't rendered. Loading lazily
+    // instead keeps this module alive to report the failure.
+    //
+    // A failed fetch is NOT recoverable inside this document: the browser records
+    // the specifier as errored in its module map, so re-importing rethrows without
+    // a network attempt. Recovering means a fresh document — which is what the
+    // host's "Try again" does (it recreates the iframe element).
+    let babelPromise = null;
+    const loadModule = async (spec) => {
+      try {
+        return await import(spec);
+      } catch (err) {
+        throw new Error(
+          "${CANVAS_RUNTIME_LOAD_ERROR}" +
+            ' ("' + spec + '": ' + ((err && err.message) || err) + ")",
+        );
+      }
+    };
+    const loadBabel = () => {
+      if (!babelPromise) {
+        babelPromise = loadModule("${FREEFORM_BABEL_URL}").catch((err) => {
+          babelPromise = null;
+          throw err;
+        });
+      }
+      return babelPromise;
+    };
 
     // --- data shim: the ONLY way canvas code reaches PostHog. No token here. ---
     const pending = new Map();
@@ -311,19 +363,6 @@ export function buildSandboxDocument(
     const applyTheme = (theme) =>
       document.documentElement.classList.toggle("dark", theme === "dark");
 
-    // --- error reporting (feeds the host's self-repair loop) ---
-    const reportError = (message, stack) =>
-      post({ type: "error", message: String(message ?? "Unknown error"), stack });
-    window.addEventListener("error", (e) =>
-      reportError(e.message, e.error && e.error.stack),
-    );
-    window.addEventListener("unhandledrejection", (e) =>
-      reportError(
-        (e.reason && e.reason.message) || e.reason,
-        e.reason && e.reason.stack,
-      ),
-    );
-
     // JSX text and attribute strings never process \\uXXXX escapes (they render
     // verbatim, e.g. "\\u00b7" instead of "·"), but generated canvases still
     // contain them despite the prompt rules — decode at transpile time so both
@@ -362,6 +401,8 @@ export function buildSandboxDocument(
     const mount = async (code) => {
       const seq = ++mountSeq;
       try {
+        const Babel = await loadBabel();
+        if (seq !== mountSeq) return; // a newer snapshot superseded this one
         const out = Babel.transform(code, {
           filename: "canvas.tsx",
           plugins: [jsxUnicodeEscapesPlugin],
@@ -384,8 +425,8 @@ export function buildSandboxDocument(
         if (typeof Comp !== "function") {
           throw new Error("Canvas must \`export default\` a React component.");
         }
-        const React = await import("react");
-        const { createRoot } = await import("react-dom/client");
+        const React = await loadModule("react");
+        const { createRoot } = await loadModule("react-dom/client");
         if (seq !== mountSeq) return;
         const el = document.getElementById("root");
         if (!root) root = createRoot(el);

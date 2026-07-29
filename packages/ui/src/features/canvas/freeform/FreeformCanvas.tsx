@@ -23,6 +23,16 @@ const log = logger.scope("freeform-canvas");
 // Canvas code can post open-external without a gesture, so opens are limited.
 const EXTERNAL_OPEN_MIN_INTERVAL_MS = 1_000;
 
+// How long to wait for the sandbox to report `rendered` (or an error) before
+// treating the boot as failed. The sandbox reports as soon as it commits its
+// first render — it does NOT wait for the canvas's data — so this only has to
+// cover fetching the CDN modules, hence generous but finite. Without it a boot
+// that stalls without erroring (a hung CDN request, a blocked srcDoc) leaves the
+// host showing an indefinitely blank frame with nothing to act on.
+const BOOT_TIMEOUT_MS = 30_000;
+export const CANVAS_BOOT_TIMEOUT_ERROR =
+  "The canvas didn't finish loading. Check your connection and try again.";
+
 export interface FreeformCanvasProps {
   /** The single-file React source to render. */
   code: string;
@@ -105,6 +115,30 @@ export function FreeformCanvas({
     theme,
   };
 
+  // Boot watchdog: armed whenever the sandbox is (re)booted or handed new code,
+  // cleared by the first `rendered` or `error` frame. On expiry it synthesises an
+  // error so the host can offer a recoverable state instead of a blank frame.
+  const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearBootTimer = useCallback(() => {
+    if (bootTimerRef.current === null) return;
+    clearTimeout(bootTimerRef.current);
+    bootTimerRef.current = null;
+  }, []);
+  const armBootTimer = useCallback(() => {
+    clearBootTimer();
+    bootTimerRef.current = setTimeout(() => {
+      bootTimerRef.current = null;
+      latest.current.onError?.(CANVAS_BOOT_TIMEOUT_ERROR);
+    }, BOOT_TIMEOUT_MS);
+  }, [clearBootTimer]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: srcDoc identity tracks a reload, which reboots the sandbox.
+  useEffect(() => {
+    if (!code) return;
+    armBootTimer();
+    return clearBootTimer;
+  }, [code, srcDoc, armBootTimer, clearBootTimer]);
+
   const postInit = useCallback(() => {
     const p = latest.current;
     iframeRef.current?.contentWindow?.postMessage(
@@ -169,10 +203,12 @@ export function FreeformCanvas({
           break;
         }
         case "error":
+          clearBootTimer();
           log.warn("Freeform canvas error", { message: msg.message });
           latest.current.onError?.(msg.message, msg.stack);
           break;
         case "rendered":
+          clearBootTimer();
           latest.current.onRendered?.();
           break;
         case "navigate":
@@ -215,7 +251,7 @@ export function FreeformCanvas({
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [postInit]);
+  }, [postInit, clearBootTimer]);
 
   // Re-send init when the code / mode / analytics change, if the iframe is ready.
   // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which

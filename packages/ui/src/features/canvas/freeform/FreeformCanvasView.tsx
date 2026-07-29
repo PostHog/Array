@@ -18,6 +18,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
+import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
 import {
   isCanvasGenerating,
   isCanvasGenerationRunning,
@@ -44,11 +45,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { CanvasErrorState } from "./CanvasErrorState";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
 import { CanvasSidePanel } from "./CanvasSidePanel";
-import { handleFreeformDataRequest } from "./freeformDataBridge";
+import {
+  CANVAS_QUERY_KEY,
+  handleFreeformDataRequest,
+} from "./freeformDataBridge";
 import { useCanvasNavigation, useHomeCanvasReset } from "./useHomeCanvasView";
 
 // The dashboardId a thread is keyed on ("dashboard:<id>" → "<id>").
@@ -69,11 +74,13 @@ export function FreeformCanvasView({
   interactive: boolean;
 }) {
   const dashboardId = dashboardIdOf(threadId);
-  const { code, versions, currentVersionId, runtimeError } =
+  const { code, versions, currentVersionId, runtimeError, hasRendered } =
     useFreeformThread(threadId);
   const undo = useFreeformChatStore((s) => s.undo);
   const redo = useFreeformChatStore((s) => s.redo);
   const setRuntimeError = useFreeformChatStore((s) => s.setRuntimeError);
+  const markRendered = useFreeformChatStore((s) => s.markRendered);
+  const remountFrame = useCanvasFrameStore((s) => s.remount);
 
   // Right-hand panel state (persisted minimize + width). `startedTaskId` is a
   // local bridge so the composer floats to the side immediately on submit,
@@ -209,8 +216,8 @@ export function FreeformCanvasView({
     [threadId, setRuntimeError],
   );
   const onRendered = useCallback(
-    () => setRuntimeError(threadId, null),
-    [threadId, setRuntimeError],
+    () => markRendered(threadId),
+    [threadId, markRendered],
   );
 
   // Routes the canvas's allowlisted nav intents within this channel.
@@ -236,7 +243,13 @@ export function FreeformCanvasView({
   // Deriving from the record rather than waiting on the seed also means a seed
   // that never runs can't strand the canvas on a spinner.
   const renderCode = code || dashboard?.code || "";
-  const showCanvas = !!renderCode;
+  // The canvas errored with nothing on screen — a CDN/runtime load failure, a
+  // compile error, or a render throw the sandbox boundary swallowed. The frame is
+  // blank, so surface a recoverable error instead of an empty viewport (which in
+  // view mode carries no affordance at all). A canvas that DID render keeps
+  // showing, with only the toolbar's error notice.
+  const showErrorState = !!renderCode && !!runtimeError && !hasRendered;
+  const showCanvas = !!renderCode && !showErrorState;
   // `isGenerating` keys off the effective task (the optimistic bridge right after
   // submit, then the polled record) and short-circuits on a terminal run — so a
   // failed/cancelled run can't strand the canvas body on the spinner.
@@ -250,8 +263,20 @@ export function FreeformCanvasView({
   // and only when no run is in flight. After submit it floats into the panel.
   const showHero =
     interactive && !renderCode && !effectiveTaskId && !dashboardLoading;
-  // The side panel only exists once there's a canvas or an active run.
-  const showPanel = interactive && (showCanvas || !!effectiveTaskId);
+  // The side panel only exists once there's a canvas or an active run. It stays
+  // mounted in the error state too, so "Ask agent to fix" has a composer to
+  // prefill.
+  const showPanel =
+    interactive && (showCanvas || showErrorState || !!effectiveTaskId);
+
+  // Recover from a blank/wedged frame: drop the host-side read cache so data
+  // queries re-run, recreate the iframe element (a fresh document = a fresh
+  // attempt at the CDN modules), and clear the error so the frame is shown again.
+  const onRetry = () => {
+    void queryClient.invalidateQueries({ queryKey: [CANVAS_QUERY_KEY] });
+    remountFrame(dashboardId);
+    setRuntimeError(threadId, null);
+  };
 
   return (
     <Flex height="100%" overflow="hidden" position="relative">
@@ -387,7 +412,13 @@ export function FreeformCanvasView({
             </Box>
           ) : (
             <ScrollArea className="h-full">
-              {showGeneratingState ? (
+              {showErrorState ? (
+                <CanvasErrorState
+                  message={runtimeError ?? ""}
+                  onRetry={onRetry}
+                  onAskAgent={interactive ? askAgentToFix : undefined}
+                />
+              ) : showGeneratingState ? (
                 <GeneratingState
                   channelId={channelId}
                   taskId={effectiveTaskId ?? ""}
