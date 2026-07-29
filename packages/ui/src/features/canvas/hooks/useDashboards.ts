@@ -4,12 +4,18 @@ import type {
 } from "@posthog/core/canvas/dashboardSchemas";
 import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
+import {
+  SPACE_QUERY_GC_TIME_MS,
+  SPACE_QUERY_REFETCH_INTERVAL_MS,
+  SPACE_QUERY_STALE_TIME_MS,
+} from "./spaceQueryPolicy";
 
 const log = logger.scope("dashboards");
 
@@ -25,7 +31,10 @@ export function isPlaceholderCanvasName(name: string): boolean {
 }
 
 /** Saved canvases for a channel (file-backed freeform React apps). */
-export function useDashboards(channelId: string | undefined): {
+export function useDashboards(
+  channelId: string | undefined,
+  options?: { poll?: boolean },
+): {
   dashboards: DashboardSummary[];
   isLoading: boolean;
 } {
@@ -33,7 +42,14 @@ export function useDashboards(channelId: string | undefined): {
   const { data, isLoading } = useQuery(
     trpc.dashboards.list.queryOptions(
       { channelId: channelId ?? "" },
-      { enabled: !!channelId, staleTime: 5_000 },
+      {
+        enabled: !!channelId,
+        gcTime: SPACE_QUERY_GC_TIME_MS,
+        meta: AUTH_SCOPED_QUERY_META,
+        refetchInterval:
+          options?.poll === false ? false : SPACE_QUERY_REFETCH_INTERVAL_MS,
+        staleTime: SPACE_QUERY_STALE_TIME_MS,
+      },
     ),
   );
   return { dashboards: data ?? [], isLoading };
@@ -50,7 +66,14 @@ export function usePrefetchDashboards(): (channelId: string) => void {
   return useCallback(
     (channelId: string) => {
       void queryClient.prefetchQuery(
-        trpc.dashboards.list.queryOptions({ channelId }, { staleTime: 5_000 }),
+        trpc.dashboards.list.queryOptions(
+          { channelId },
+          {
+            gcTime: SPACE_QUERY_GC_TIME_MS,
+            meta: AUTH_SCOPED_QUERY_META,
+            staleTime: SPACE_QUERY_STALE_TIME_MS,
+          },
+        ),
       );
     },
     [trpc, queryClient],

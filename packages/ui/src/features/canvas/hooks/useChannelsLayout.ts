@@ -10,6 +10,9 @@ export function useChannelsLayout(): boolean {
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const layoutEnabled = useFeatureFlag(CHANNELS_LAYOUT_FLAG, false);
+  const layoutEnabled = useFeatureFlag(
+    CHANNELS_LAYOUT_FLAG,
+    import.meta.env.DEV,
+  );
   return layoutEnabled && bluebirdEnabled;
 }

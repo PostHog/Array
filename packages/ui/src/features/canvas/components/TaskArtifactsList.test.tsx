@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   runs: [] as TaskRun[],
   openArtifactTab: vi.fn(),
+  openExternalUrl: vi.fn(),
+}));
+
+vi.mock("@posthog/ui/shell/openExternal", () => ({
+  openExternalUrl: (url: string) => mocks.openExternalUrl(url),
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskRuns", () => ({
@@ -65,6 +70,7 @@ describe("TaskArtifactsList", () => {
   beforeEach(() => {
     mocks.runs = [run("run-1", { prNumber: 1 }), run("run-2", { prNumber: 2 })];
     mocks.openArtifactTab.mockReset();
+    mocks.openExternalUrl.mockReset();
     useReviewNavigationStore.setState({
       reviewModes: {},
       selectedPrUrls: {},
@@ -72,7 +78,7 @@ describe("TaskArtifactsList", () => {
   });
 
   it("opens the PR represented by the selected historical row", () => {
-    render(<TaskArtifactsList task={task} timeline={[]} />);
+    render(<TaskArtifactsList task={task} timeline={[]} canOpenInPlace />);
 
     fireEvent.click(screen.getByText("Pull request #2"));
 
@@ -81,6 +87,40 @@ describe("TaskArtifactsList", () => {
       "https://github.com/acme/repo/pull/2",
     );
     expect(state.reviewModes[task.id]).toBe("split");
+    expect(mocks.openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens a PR externally with no review pane alongside to open into", () => {
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    fireEvent.click(screen.getByText("Pull request #2"));
+
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
+      "https://github.com/acme/repo/pull/2",
+    );
+    expect(useReviewNavigationStore.getState().reviewModes[task.id]).toBe(
+      undefined,
+    );
+  });
+
+  it("lists every PR produced by the same run", () => {
+    mocks.runs = [
+      {
+        ...run("run-1"),
+        output: {
+          pr_url: "https://github.com/acme/repo/pull/1",
+          pr_urls: [
+            "https://github.com/acme/repo/pull/1",
+            "https://github.com/acme/other-repo/pull/2",
+          ],
+        },
+      } as TaskRun,
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("Pull request #1")).toBeTruthy();
+    expect(screen.getByText("Pull request #2")).toBeTruthy();
   });
 
   it("lists the files the agent uploaded, with their size", () => {
