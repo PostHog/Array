@@ -4,6 +4,7 @@ import {
   addMissingCloudRuntimeConfigOptions,
   buildCloudDefaultConfigOptions,
   extractLatestConfigOptionsFromEntries,
+  getCloudReasoningConfigOptionId,
 } from "./cloudSessionConfig";
 
 function configUpdateEntry(
@@ -18,6 +19,13 @@ function configUpdateEntry(
     },
   } as unknown as StoredLogEntry;
 }
+
+it.each([
+  ["claude", "effort"],
+  ["codex", "reasoning_effort"],
+] as const)("uses the %s reasoning config id", (adapter, expected) => {
+  expect(getCloudReasoningConfigOptionId(adapter)).toBe(expected);
+});
 
 describe("extractLatestConfigOptionsFromEntries", () => {
   it("returns undefined when no config_option_update entries exist", () => {

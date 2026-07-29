@@ -1,3 +1,4 @@
+import { resolveCloudResumeOptions } from "@posthog/core/sessions/cloudRunOptions";
 import { convertStoredEntriesToPortableSessionEvents } from "@posthog/core/sessions/portableSessionEvents";
 import {
   type CloudTaskUpdatePayload,
@@ -1187,22 +1188,19 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
 
     const composerConfig =
       useTaskStore.getState().composerConfigByTaskId[taskId];
-    const previousPermissionMode = previousRun?.state?.initial_permission_mode;
-    const reasoningEffort =
-      composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
-    const initialPermissionMode =
-      composerConfig?.mode ??
-      (typeof previousPermissionMode === "string"
-        ? previousPermissionMode
-        : undefined);
+    const runtimeOptions = resolveCloudResumeOptions(
+      composerConfig,
+      previousRun,
+    );
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
-      runtimeAdapter: "claude",
+      runtimeAdapter: runtimeOptions.adapter,
+      model: runtimeOptions.model,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
-      reasoningEffort,
-      initialPermissionMode,
+      reasoningEffort: runtimeOptions.reasoningLevel,
+      initialPermissionMode: runtimeOptions.initialPermissionMode,
       rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
     });
 

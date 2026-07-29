@@ -6,7 +6,31 @@ import {
   type SupportedReasoningEffort,
 } from "@posthog/shared";
 import { expect, it } from "vitest";
-import { resolveCloudComposerModelChange } from "./composerModelPolicy";
+import {
+  resolveCloudComposerAdapterChange,
+  resolveCloudComposerModelChange,
+} from "./composerModelPolicy";
+
+it.each([
+  [
+    "claude",
+    { adapter: "codex", mode: "auto", model: "gpt-5.5", reasoning: "high" },
+  ],
+  [
+    "codex",
+    {
+      adapter: "claude",
+      mode: "plan",
+      model: DEFAULT_GATEWAY_MODEL,
+      reasoning: "high",
+    },
+  ],
+] as const)(
+  "resets composer defaults when switching from %s",
+  (adapter, expected) => {
+    expect(resolveCloudComposerAdapterChange(adapter)).toEqual(expected);
+  },
+);
 
 const modelOption: CloudTaskConfigOption = {
   id: "model",
