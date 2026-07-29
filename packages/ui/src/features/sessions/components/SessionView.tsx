@@ -18,10 +18,7 @@ import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
-import {
-  CloudInitializingStatusRow,
-  CloudInitializingView,
-} from "@posthog/ui/features/sessions/components/CloudInitializingView";
+import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import {
   copyFromContextMenu,
@@ -93,13 +90,6 @@ interface SessionViewProps {
   onRetry?: () => void;
   onNewSession?: () => void;
   isInitializing?: boolean;
-  /**
-   * True when `isInitializing` reflects a resume-from-terminal cloud run in
-   * flight on a task that already has conversation content. The thread stays
-   * visible (with an inline restore status row) instead of being replaced by
-   * the full-screen initializing overlay.
-   */
-  isCloudResume?: boolean;
   isCloud?: boolean;
   cloudStatus?: TaskRunStatus | null;
   slackThreadUrl?: string;
@@ -208,49 +198,6 @@ function CloudStreamDisconnectedBanner({
   );
 }
 
-interface ResumeInProgressThreadViewProps {
-  events: AcpMessage[];
-  cloudStatus: TaskRunStatus | null;
-  taskId?: string;
-  task?: Task;
-}
-
-/**
- * Shown while a resume-from-terminal cloud run is being restored from its
- * snapshot and the task already has conversation content. Renders the carried
- * transcript plus the just-sent message (ThreadView merges tail optimistic
- * items itself, so there is never a duplicate or missing bubble) with the
- * restore lifecycle surfaced as a status row pinned at the bottom of the
- * message area — instead of hiding everything behind the full-screen
- * initializing overlay.
- */
-function ResumeInProgressThreadView({
-  events,
-  cloudStatus,
-  taskId,
-  task,
-}: ResumeInProgressThreadViewProps) {
-  return (
-    <Box className="absolute inset-0">
-      <ThreadView
-        events={events}
-        isPromptPending={true}
-        taskId={taskId}
-        task={task}
-        scrollX={false}
-      />
-      <Box
-        className="pointer-events-none absolute inset-x-0 bottom-0 mx-auto px-2 pb-3"
-        style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
-      >
-        <Flex className="pointer-events-auto rounded-2 bg-gray-2 px-3 py-2 shadow-sm">
-          <CloudInitializingStatusRow cloudStatus={cloudStatus} />
-        </Flex>
-      </Box>
-    </Box>
-  );
-}
-
 export function SessionView({
   events,
   taskId,
@@ -274,7 +221,6 @@ export function SessionView({
   onRetry,
   onNewSession,
   isInitializing = false,
-  isCloudResume = false,
   isCloud = false,
   cloudStatus = null,
   slackThreadUrl,
@@ -698,20 +644,7 @@ export function SessionView({
               </>
             ) : isInitializing ? (
               isCloud ? (
-                isCloudResume ? (
-                  // Resume-from-terminal in flight with existing content: keep
-                  // the thread (and the just-sent message) visible instead of
-                  // hiding it behind the full-screen restore overlay, and show
-                  // the restore lifecycle as a status row at the tail.
-                  <ResumeInProgressThreadView
-                    events={events}
-                    cloudStatus={cloudStatus}
-                    taskId={taskId}
-                    task={task}
-                  />
-                ) : (
-                  <CloudInitializingView cloudStatus={cloudStatus} />
-                )
+                <CloudInitializingView cloudStatus={cloudStatus} />
               ) : pendingTaskPrompt?.promptText ? (
                 <PendingChatView
                   promptText={pendingTaskPrompt.promptText}
