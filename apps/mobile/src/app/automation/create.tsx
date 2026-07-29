@@ -1,3 +1,4 @@
+import { TaskAutomationValidationError } from "@posthog/api-client/posthog-client";
 import { getCalendars } from "expo-localization";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef, useState } from "react";
@@ -10,7 +11,6 @@ import {
   View,
 } from "react-native";
 import { Text } from "@/components/text";
-import { TaskAutomationValidationError } from "@/features/tasks/api";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
 import { useCreateTaskAutomation } from "@/features/tasks/hooks/useAutomations";
 import { useSkillStoreSkill } from "@/features/tasks/skills/hooks";

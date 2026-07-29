@@ -1,4 +1,9 @@
 import { Text } from "@components/text";
+import {
+  orderSuggestedReviewers,
+  reviewerMatchesAvailable,
+  toSuggestedReviewerWriteContent,
+} from "@posthog/core/inbox/artefacts";
 import { Eye, Plus, X } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -20,11 +25,6 @@ import type {
   SuggestedReviewer,
   SuggestedReviewersArtefact,
 } from "../types";
-import {
-  orderSuggestedReviewers,
-  reviewerMatchesAvailable,
-  toSuggestedReviewerWriteContent,
-} from "../utils";
 import { EditReviewersSheet } from "./EditReviewersSheet";
 
 export type ReviewerActionExtra = Pick<

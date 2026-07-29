@@ -1,32 +1,39 @@
-export type ExecutionMode = "default" | "acceptEdits" | "plan" | "auto";
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+import {
+  DEFAULT_CLAUDE_EXECUTION_MODE,
+  getAvailableModes,
+} from "@posthog/core/sessions/executionModes";
+import {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  defaultEligibleModel,
+  getReasoningEffortOptions,
+  type ExecutionMode as SharedExecutionMode,
+  type SupportedReasoningEffort,
+} from "@posthog/shared";
+
+export type ExecutionMode = Extract<
+  SharedExecutionMode,
+  "default" | "acceptEdits" | "plan" | "auto"
+>;
+export type ReasoningEffort = SupportedReasoningEffort;
 
 export const EXECUTION_MODES: {
   value: ExecutionMode;
   label: string;
   description: string;
-}[] = [
-  {
-    value: "plan",
-    label: "Plan Mode",
-    description: "Plan first, no tool execution",
-  },
-  {
-    value: "default",
-    label: "Default",
-    description: "Standard behaviour, prompts for dangerous operations",
-  },
-  {
-    value: "acceptEdits",
-    label: "Accept Edits",
-    description: "Auto-accept file edit operations",
-  },
-  {
-    value: "auto",
-    label: "Auto",
-    description: "Model decides which prompts to approve or deny",
-  },
-];
+}[] = getAvailableModes()
+  .filter(
+    (mode): mode is typeof mode & { id: ExecutionMode } =>
+      mode.id === "default" ||
+      mode.id === "acceptEdits" ||
+      mode.id === "plan" ||
+      mode.id === "auto",
+  )
+  .map((mode) => ({
+    value: mode.id,
+    label: mode.name,
+    description: mode.description,
+  }));
 
 export interface ModelOption {
   value: string;
@@ -68,20 +75,20 @@ export const MODELS: ModelOption[] = [
   },
 ];
 
+export const DEFAULT_EXECUTION_MODE: ExecutionMode =
+  DEFAULT_CLAUDE_EXECUTION_MODE;
+export const DEFAULT_MODEL =
+  defaultEligibleModel(DEFAULT_GATEWAY_MODEL) ??
+  MODELS.find((model) => defaultEligibleModel(model.value))?.value ??
+  DEFAULT_GATEWAY_MODEL;
+export const DEFAULT_REASONING: ReasoningEffort = DEFAULT_REASONING_EFFORT;
+
 export const REASONING_LEVELS: {
   value: ReasoningEffort;
   label: string;
-}[] = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "Extra High" },
-  { value: "max", label: "Max" },
-];
-
-export const DEFAULT_EXECUTION_MODE: ExecutionMode = "plan";
-export const DEFAULT_MODEL = "claude-opus-4-8";
-export const DEFAULT_REASONING: ReasoningEffort = "high";
+}[] = (getReasoningEffortOptions("claude", DEFAULT_MODEL) ?? []).map(
+  (option) => ({ value: option.value, label: option.name }),
+);
 
 export function modelLabel(value: string): string {
   return MODELS.find((m) => m.value === value)?.label ?? value;
@@ -96,5 +103,5 @@ export function reasoningLabel(value: ReasoningEffort): string {
 }
 
 export function modelSupportsReasoning(value: string): boolean {
-  return MODELS.find((m) => m.value === value)?.supportsReasoning ?? false;
+  return getReasoningEffortOptions("claude", value) !== null;
 }

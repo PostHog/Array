@@ -1,4 +1,10 @@
 import { Text } from "@components/text";
+import {
+  countUserMessages,
+  getSessionActivityPhase,
+} from "@posthog/core/sessions/sessionActivity";
+import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
+import type { Task } from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -14,7 +20,7 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { getTask, runTaskInCloud } from "@/features/tasks/api";
+import { runTaskInCloud } from "@/features/tasks/api";
 import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -51,15 +57,7 @@ import {
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { Task } from "@/features/tasks/types";
-import {
-  confirmStopRun,
-  isTaskRunning,
-} from "@/features/tasks/utils/archiveGuard";
-import {
-  countUserMessages,
-  getSessionActivityPhase,
-} from "@/features/tasks/utils/sessionActivity";
+import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -67,6 +65,7 @@ import {
   useAnalytics,
 } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
@@ -221,7 +220,8 @@ export default function TaskDetailScreen() {
     setLoading(true);
     setError(null);
 
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((fetchedTask) => {
         if (cancelled) return;
         setTask(fetchedTask);
@@ -252,7 +252,8 @@ export default function TaskDetailScreen() {
     if (retrying) return;
 
     let cancelled = false;
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((freshTask) => {
         if (cancelled) return;
         setTask(freshTask);

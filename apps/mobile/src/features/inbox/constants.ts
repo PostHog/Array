@@ -1,17 +1,3 @@
-/** Comma-separated statuses for the inbox pipeline (excludes terminal/deleted). */
-export const INBOX_PIPELINE_STATUS_FILTER =
-  "potential,candidate,in_progress,ready,pending_input";
-
-/**
- * Status filter for the Archive view — the two terminal, not-in-inbox states:
- * `suppressed` (user archived it; restorable) and `resolved` (its
- * implementation PR merged; terminal, reference only).
- */
-export const INBOX_DISMISSED_STATUS_FILTER = "suppressed,resolved";
-
-/** Polling interval for inbox queries (ms). */
-export const INBOX_REFETCH_INTERVAL_MS = 5_000;
-
 /**
  * Reasons offered when the user dismisses a signal report.
  * Mirrors apps/code/src/shared/dismissalReasons.ts.

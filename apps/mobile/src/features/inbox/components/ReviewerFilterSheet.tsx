@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { buildReviewerOptions } from "@posthog/core/inbox/artefacts";
 import { useMemo } from "react";
 import {
   ActivityIndicator,
@@ -12,7 +13,6 @@ import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import { useAvailableSuggestedReviewers } from "../hooks/useInboxReports";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
-import { buildReviewerOptions } from "../utils";
 import { ReviewerOptionRow } from "./ReviewerOptionRow";
 
 interface ReviewerFilterSheetProps {

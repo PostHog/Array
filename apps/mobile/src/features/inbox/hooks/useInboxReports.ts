@@ -1,4 +1,13 @@
 import {
+  buildArchiveListOrdering,
+  buildPriorityFilterParam,
+  buildSignalReportListOrdering,
+  buildStatusFilterParam,
+  buildSuggestedReviewerFilterParam,
+  INBOX_DISMISSED_STATUS_FILTER,
+  INBOX_REFETCH_INTERVAL_MS,
+} from "@posthog/core/inbox/reportFiltering";
+import {
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -19,10 +28,6 @@ import {
   restoreSignalReport,
   updateSignalReportArtefact,
 } from "../api";
-import {
-  INBOX_DISMISSED_STATUS_FILTER,
-  INBOX_REFETCH_INTERVAL_MS,
-} from "../constants";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
 import type {
   AvailableSuggestedReviewersResponse,
@@ -36,14 +41,7 @@ import type {
   SuggestedReviewer,
   SuggestedReviewerWriteEntry,
 } from "../types";
-import {
-  buildArchiveListOrdering,
-  buildPriorityFilterParam,
-  buildSignalReportListOrdering,
-  buildStatusFilterParam,
-  buildSuggestedReviewerFilterParam,
-  isRestorableReport,
-} from "../utils";
+import { isRestorableReport } from "../utils";
 
 export const inboxKeys = {
   all: ["inbox", "signal-reports"] as const,

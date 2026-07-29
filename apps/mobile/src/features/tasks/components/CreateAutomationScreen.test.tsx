@@ -60,7 +60,7 @@ vi.mock("@/features/tasks/components/AutomationForm", () => ({
     createElement("AutomationForm", props),
 }));
 
-vi.mock("@/features/tasks/api", () => ({
+vi.mock("@posthog/api-client/posthog-client", () => ({
   TaskAutomationValidationError: class TaskAutomationValidationError extends Error {
     code: string;
     attr: string | null;

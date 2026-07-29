@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
-import { getSandboxCustomImages, getSandboxEnvironments } from "../api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 export const sandboxKeys = {
   customImages: () => ["sandbox-custom-images"] as const,
@@ -26,7 +26,7 @@ export function useCustomImageName({
 
   const imagesQuery = useQuery({
     queryKey: sandboxKeys.customImages(),
-    queryFn: getSandboxCustomImages,
+    queryFn: () => getPostHogApiClient().listSandboxCustomImages(),
     enabled: canQuery && hasImageRef,
     staleTime: 60_000,
     retry: 0,
@@ -34,7 +34,7 @@ export function useCustomImageName({
 
   const environmentsQuery = useQuery({
     queryKey: sandboxKeys.environments(),
-    queryFn: getSandboxEnvironments,
+    queryFn: () => getPostHogApiClient().listSandboxEnvironments(),
     enabled: canQuery && !!sandboxEnvironmentId,
     staleTime: 60_000,
     retry: 0,

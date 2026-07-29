@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { TaskAutomationValidationError } from "@posthog/api-client/posthog-client";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -10,7 +11,6 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { TaskAutomationValidationError } from "@/features/tasks/api";
 import { AutomationDetail } from "@/features/tasks/components/AutomationDetail";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
 import {

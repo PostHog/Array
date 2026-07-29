@@ -1,4 +1,4 @@
-import type { Task } from "../types";
+import type { Task } from "@posthog/shared";
 
 export type TaskStatusIconKind =
   | "pr"
@@ -13,7 +13,6 @@ export function getTaskStatusIconKind(task: Task): TaskStatusIconKind {
   const status = task.latest_run?.status;
   const environment = task.latest_run?.environment;
 
-  // Match desktop semantics, but let PR win when a cloud task also has one.
   if (prUrl) {
     return "pr";
   }
@@ -34,7 +33,7 @@ export function getTaskStatusIconKind(task: Task): TaskStatusIconKind {
     return "running";
   }
 
-  if (status === "queued" || status === "started") {
+  if (status === "queued") {
     return "started";
   }
 

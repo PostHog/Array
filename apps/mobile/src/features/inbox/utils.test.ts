@@ -1,25 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AvailableSuggestedReviewer,
-  Signal,
-  SignalReport,
-  SignalReportOrderingField,
-  SignalReportStatus,
-  SuggestedReviewer,
-} from "./types";
+import type { Signal, SignalReport, SignalReportStatus } from "./types";
 import {
-  buildArchiveListOrdering,
   buildInboxViewedProperties,
-  buildPriorityFilterParam,
-  buildReviewerOptions,
-  buildSignalReportListOrdering,
   dismissalReasonLabel,
   formatSignalReportSummaryMarkdown,
   isRestorableReport,
-  orderSuggestedReviewers,
-  reviewerMatchesAvailable,
   sourceLine,
-  toSuggestedReviewerWriteContent,
 } from "./utils";
 
 function signal(source_product: string, source_type: string): Signal {
@@ -32,84 +18,6 @@ function signal(source_product: string, source_type: string): Signal {
     weight: 1,
     timestamp: "",
     extra: {},
-  };
-}
-
-function reviewer(login: string, uuid?: string): SuggestedReviewer {
-  return {
-    github_login: login,
-    github_name: login,
-    relevant_commits: [],
-    user: uuid
-      ? {
-          id: 1,
-          uuid,
-          email: `${login}@posthog.com`,
-          first_name: login,
-          last_name: "",
-        }
-      : null,
-  };
-}
-
-describe("orderSuggestedReviewers", () => {
-  it("moves the current user to the front", () => {
-    const reviewers = [
-      reviewer("a", "uuid-a"),
-      reviewer("me", "uuid-me"),
-      reviewer("c", "uuid-c"),
-    ];
-    const ordered = orderSuggestedReviewers(reviewers, "uuid-me");
-    expect(ordered.map((r) => r.github_login)).toEqual(["me", "a", "c"]);
-  });
-
-  it.each([
-    {
-      label: "already first",
-      reviewers: [reviewer("me", "uuid-me"), reviewer("a", "uuid-a")],
-      meUuid: "uuid-me" as string | null | undefined,
-    },
-    {
-      label: "absent",
-      reviewers: [reviewer("a", "uuid-a"), reviewer("b", "uuid-b")],
-      meUuid: "uuid-me" as string | null | undefined,
-    },
-    {
-      label: "null meUuid",
-      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
-      meUuid: null as string | null | undefined,
-    },
-    {
-      label: "undefined meUuid",
-      reviewers: [reviewer("a", "uuid-a"), reviewer("me", "uuid-me")],
-      meUuid: undefined as string | null | undefined,
-    },
-  ])("is a no-op when $label", ({ reviewers, meUuid }) => {
-    expect(orderSuggestedReviewers(reviewers, meUuid)).toBe(reviewers);
-  });
-});
-
-function makeReviewer(
-  partial: Partial<SuggestedReviewer> = {},
-): SuggestedReviewer {
-  return {
-    github_login: "octocat",
-    github_name: "The Octocat",
-    relevant_commits: [],
-    user: null,
-    ...partial,
-  };
-}
-
-function makeAvailable(
-  partial: Partial<AvailableSuggestedReviewer> = {},
-): AvailableSuggestedReviewer {
-  return {
-    uuid: "uuid-1",
-    name: "Ada Lovelace",
-    email: "ada@example.com",
-    github_login: "ada",
-    ...partial,
   };
 }
 
@@ -299,139 +207,6 @@ describe("buildInboxViewedProperties", () => {
   });
 });
 
-describe("toSuggestedReviewerWriteContent", () => {
-  it.each([
-    {
-      name: "prefers github_login so the server preserves commits/name",
-      reviewer: makeReviewer({
-        github_login: "ada",
-        user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
-      }),
-      expected: [{ github_login: "ada" }],
-    },
-    {
-      name: "falls back to user_uuid when there is no github_login",
-      reviewer: makeReviewer({
-        github_login: "",
-        user: { id: 1, uuid: "u1", email: "", first_name: "", last_name: "" },
-      }),
-      expected: [{ user_uuid: "u1" }],
-    },
-    {
-      name: "drops entries with neither a login nor a resolved user",
-      reviewer: makeReviewer({ github_login: "", user: null }),
-      expected: [],
-    },
-  ])("$name", ({ reviewer, expected }) => {
-    expect(toSuggestedReviewerWriteContent([reviewer])).toEqual(expected);
-  });
-});
-
-describe("reviewerMatchesAvailable", () => {
-  it.each([
-    {
-      name: "matches on user uuid",
-      reviewer: makeReviewer({
-        github_login: "",
-        user: {
-          id: 1,
-          uuid: "uuid-1",
-          email: "",
-          first_name: "",
-          last_name: "",
-        },
-      }),
-      expected: true,
-    },
-    {
-      name: "matches on case-insensitive github login",
-      reviewer: makeReviewer({ github_login: "ADA", user: null }),
-      expected: true,
-    },
-    {
-      name: "does not match different people",
-      reviewer: makeReviewer({ github_login: "octocat", user: null }),
-      expected: false,
-    },
-  ])("$name", ({ reviewer, expected }) => {
-    expect(reviewerMatchesAvailable(reviewer, makeAvailable())).toBe(expected);
-  });
-});
-
-describe("buildSignalReportListOrdering", () => {
-  it.each([
-    {
-      field: "priority" as SignalReportOrderingField,
-      direction: "desc" as const,
-      expected: "status,-is_suggested_reviewer,-priority,-created_at",
-    },
-    {
-      field: "priority" as SignalReportOrderingField,
-      direction: "asc" as const,
-      expected: "status,-is_suggested_reviewer,priority,-created_at",
-    },
-    {
-      field: "signal_count" as SignalReportOrderingField,
-      direction: "desc" as const,
-      expected: "status,-is_suggested_reviewer,-signal_count",
-    },
-    {
-      field: "total_weight" as SignalReportOrderingField,
-      direction: "asc" as const,
-      expected: "status,-is_suggested_reviewer,total_weight",
-    },
-    {
-      field: "created_at" as SignalReportOrderingField,
-      direction: "desc" as const,
-      expected: "status,-is_suggested_reviewer,-created_at",
-    },
-    {
-      field: "updated_at" as SignalReportOrderingField,
-      direction: "asc" as const,
-      expected: "status,-is_suggested_reviewer,updated_at",
-    },
-  ])(
-    "orders $field $direction as $expected",
-    ({ field, direction, expected }) => {
-      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
-    },
-  );
-});
-
-describe("buildPriorityFilterParam", () => {
-  it.each([
-    {
-      name: "returns undefined for an empty selection",
-      input: [],
-      expected: undefined,
-    },
-    {
-      name: "joins selected priorities with commas",
-      input: ["P0", "P2"] as const,
-      expected: "P0,P2",
-    },
-    {
-      name: "dedupes repeated priorities",
-      input: ["P1", "P1", "P3"] as const,
-      expected: "P1,P3",
-    },
-  ])("$name", ({ input, expected }) => {
-    expect(buildPriorityFilterParam([...input])).toBe(expected);
-  });
-});
-
-describe("buildArchiveListOrdering", () => {
-  it.each([
-    { direction: "desc" as const, expected: "-updated_at" },
-    { direction: "asc" as const, expected: "updated_at" },
-  ])(
-    "sorts by field without a status prefix ($direction)",
-    ({ direction, expected }) => {
-      expect(buildArchiveListOrdering("updated_at", direction)).toBe(expected);
-    },
-  );
-});
-
 describe("isRestorableReport", () => {
   it.each([
     { status: "suppressed" as SignalReportStatus, expected: true },
@@ -468,20 +243,5 @@ describe("sourceLine", () => {
     },
   ])("labels $product", ({ product, type, expected }) => {
     expect(sourceLine(signal(product, type))).toBe(expected);
-  });
-});
-
-describe("buildReviewerOptions", () => {
-  it("dedupes by uuid and pins the current user first", () => {
-    const options = buildReviewerOptions(
-      [
-        makeAvailable({ uuid: "b", name: "Bob" }),
-        makeAvailable({ uuid: "a", name: "Ada" }),
-        makeAvailable({ uuid: "a", name: "Ada (dupe)" }),
-      ],
-      "b",
-    );
-    expect(options.map((o) => o.uuid)).toEqual(["b", "a"]);
-    expect(options[0].isMe).toBe(true);
   });
 });

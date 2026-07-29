@@ -30,7 +30,7 @@ import {
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useVoiceRecording } from "@/features/chat";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { createTask, runTaskInCloud } from "@/features/tasks/api";
+import { runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
 import { AttachmentSheet } from "@/features/tasks/composer/attachments/AttachmentSheet";
@@ -80,6 +80,7 @@ import {
 } from "@/features/tasks/utils/repositorySelection";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
@@ -308,7 +309,7 @@ export default function NewTaskScreen() {
           ? `Attached: ${attachments[0].fileName}`
           : `Attached ${attachments.length} files`);
 
-      const task = await createTask({
+      const task = await getPostHogApiClient().createTask({
         description: descriptionText,
         title: descriptionText.slice(0, 100),
         repository: selection.repository ?? undefined,

@@ -8,9 +8,7 @@ describe("automationStatus", () => {
         lastRunStatus: "running",
         lastTaskRunStatus: "queued",
       }),
-    ).toMatchObject({
-      label: "Queued",
-    });
+    ).toMatchObject({ label: "Queued" });
   });
 
   it("hides the running badge while the linked task run is actively in progress", () => {
@@ -24,19 +22,13 @@ describe("automationStatus", () => {
 
   it("hides the running badge when only the automation-level status is available", () => {
     expect(
-      getAutomationStatusPresentation({
-        lastRunStatus: "running",
-      }),
+      getAutomationStatusPresentation({ lastRunStatus: "running" }),
     ).toBeNull();
   });
 
   it("falls back to automation status when task-run detail is unavailable", () => {
     expect(
-      getAutomationStatusPresentation({
-        lastRunStatus: "success",
-      }),
-    ).toMatchObject({
-      label: "Success",
-    });
+      getAutomationStatusPresentation({ lastRunStatus: "success" }),
+    ).toMatchObject({ label: "Success" });
   });
 });

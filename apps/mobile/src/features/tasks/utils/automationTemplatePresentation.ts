@@ -1,5 +1,5 @@
+import type { TaskAutomation } from "@posthog/api-client/posthog-client";
 import { parseSkillTemplateId } from "../skills/skillTemplateIds";
-import type { TaskAutomation } from "../types";
 
 export interface AutomationTemplatePresentation {
   templateName: string | null;

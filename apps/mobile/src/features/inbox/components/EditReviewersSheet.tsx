@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import {
+  buildReviewerOptions,
+  reviewerMatchesAvailable,
+} from "@posthog/core/inbox/artefacts";
 import { MagnifyingGlass } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -14,7 +18,6 @@ import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import { useAvailableSuggestedReviewers } from "../hooks/useInboxReports";
 import type { AvailableSuggestedReviewer, SuggestedReviewer } from "../types";
-import { buildReviewerOptions, reviewerMatchesAvailable } from "../utils";
 import { ReviewerOptionRow } from "./ReviewerOptionRow";
 
 interface EditReviewersSheetProps {

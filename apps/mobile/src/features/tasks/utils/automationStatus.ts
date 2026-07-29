@@ -1,4 +1,4 @@
-import type { TaskRun } from "../types";
+import type { TaskRun } from "@posthog/shared";
 
 export interface AutomationStatusInput {
   lastRunStatus: string | null;
@@ -21,7 +21,6 @@ export function getAutomationStatusPresentation({
         label: "Queued",
         className: "bg-status-warning/20 text-status-warning",
       };
-    case "started":
     case "in_progress":
       return null;
     case "completed":

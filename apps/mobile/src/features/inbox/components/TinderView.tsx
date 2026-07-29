@@ -17,7 +17,7 @@ import {
 } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { createTask, runTaskInCloud } from "@/features/tasks/api";
+import { runTaskInCloud } from "@/features/tasks/api";
 import { DEFAULT_MODEL } from "@/features/tasks/composer/options";
 import type {
   CreateTaskOptions,
@@ -29,6 +29,7 @@ import {
   useAnalytics,
 } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 import { getReportRepository } from "../api";
 import { useDismissedReportsStore } from "../stores/dismissedReportsStore";
@@ -239,7 +240,7 @@ export function TinderView({
 
         // 3. Create the task
         const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
-        const task = await createTask({
+        const task = await getPostHogApiClient().createTask({
           description: prompt,
           title: prompt.slice(0, 255),
           repository: match?.repository ?? repo ?? undefined,

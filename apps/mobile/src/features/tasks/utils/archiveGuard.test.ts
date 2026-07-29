@@ -1,58 +1,6 @@
 import { Alert } from "react-native";
 import { describe, expect, it, vi } from "vitest";
-import type { Task, TaskRunStatus } from "../types";
-import { confirmArchiveRunningTask, isTaskRunning } from "./archiveGuard";
-
-function makeTask(status?: TaskRunStatus): Task {
-  return {
-    id: "task-1",
-    task_number: 1,
-    slug: "task-1",
-    title: "Test task",
-    description: "",
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-    origin_product: "code",
-    latest_run: status
-      ? {
-          id: "run-1",
-          task: "task-1",
-          team: 1,
-          branch: null,
-          stage: null,
-          environment: "cloud",
-          status,
-          log_url: "",
-          error_message: null,
-          output: null,
-          state: {},
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-          completed_at: null,
-        }
-      : undefined,
-  };
-}
-
-describe("isTaskRunning", () => {
-  it("treats a task with no run as not running", () => {
-    expect(isTaskRunning(makeTask())).toBe(false);
-  });
-
-  it.each(["not_started", "queued", "started", "in_progress"] as const)(
-    "treats %s as running",
-    (status) => {
-      expect(isTaskRunning(makeTask(status))).toBe(true);
-    },
-  );
-
-  it.each(["completed", "failed", "cancelled"] as const)(
-    "treats %s as not running",
-    (status) => {
-      expect(isTaskRunning(makeTask(status))).toBe(false);
-    },
-  );
-});
+import { confirmArchiveRunningTask } from "./archiveGuard";
 
 describe("confirmArchiveRunningTask", () => {
   it("archives only when the user confirms", () => {
