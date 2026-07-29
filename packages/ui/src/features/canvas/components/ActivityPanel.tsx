@@ -3,7 +3,7 @@ import {
   CaretRightIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Button, cn, Tabs, TabsList, TabsTrigger } from "@posthog/quill";
+import { Button, Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { ActivityTimeline } from "@posthog/ui/features/canvas/components/ActivityTimeline";
@@ -34,9 +34,6 @@ const TABS_WITH_COMPOSER: ReadonlySet<ActivityTab> = new Set([
   "timeline",
   "comments",
 ]);
-
-const TIMESTAMP_END_CLASS =
-  "[&_[data-slot=thread-item-timestamp]]:ml-auto [&_[data-slot=thread-item-timestamp]]:shrink-0 [&_[data-slot=thread-item-timestamp]]:pl-2";
 
 /** The 32px row this panel leads with: the tabs are the header, so the strip
  *  lines up with the tab bar of the pane on its left (TabbedPanel) and the
@@ -119,6 +116,7 @@ function ActivityConversation({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary,
+  canOpenInPlace,
 }: {
   task: Task;
   channelId: string;
@@ -126,6 +124,7 @@ function ActivityConversation({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary: boolean;
+  canOpenInPlace?: boolean;
 }) {
   const taskId = task.id;
   const {
@@ -183,7 +182,13 @@ function ActivityConversation({
 
   const body = () => {
     if (tab === "artifacts") {
-      return <TaskArtifactsList task={task} timeline={timeline} />;
+      return (
+        <TaskArtifactsList
+          task={task}
+          timeline={timeline}
+          canOpenInPlace={canOpenInPlace}
+        />
+      );
     }
     if (tab === "comments") {
       return (
@@ -209,6 +214,7 @@ function ActivityConversation({
         currentUserEmail={currentUser?.email}
         isTaskAuthor={isTaskAuthor}
         canForward={canForward}
+        canOpenInPlace={canOpenInPlace}
         onSendToAgent={sendMessageToAgent}
         onDelete={deleteMessage}
       />
@@ -216,12 +222,7 @@ function ActivityConversation({
   };
 
   return (
-    <div
-      className={cn(
-        "flex h-full min-w-0 flex-col bg-gray-1",
-        TIMESTAMP_END_CLASS,
-      )}
-    >
+    <div className="flex h-full min-w-0 flex-col bg-gray-1">
       <ActivityHeader
         tab={tab}
         onTabChange={handleTabChange}
@@ -269,6 +270,7 @@ export function ActivityPanel({
   onToggleCollapsed,
   onOpenFull,
   showTaskSummary = true,
+  canOpenInPlace,
 }: {
   taskId: string;
   channelId: string;
@@ -278,6 +280,7 @@ export function ActivityPanel({
   onToggleCollapsed?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  canOpenInPlace?: boolean;
 }) {
   const { data: fetchedTask } = useQuery({
     ...taskDetailQuery(taskId),
@@ -315,6 +318,7 @@ export function ActivityPanel({
       onToggleCollapsed={onToggleCollapsed}
       onOpenFull={onOpenFull}
       showTaskSummary={showTaskSummary}
+      canOpenInPlace={canOpenInPlace}
     />
   );
 }
