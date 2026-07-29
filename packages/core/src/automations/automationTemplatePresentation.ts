@@ -1,4 +1,4 @@
-import type { TaskAutomation } from "@posthog/api-client/posthog-client";
+import type { TaskAutomation } from "@posthog/shared";
 
 export const SKILL_TEMPLATE_ID_PREFIX = "llm-skill:";
 

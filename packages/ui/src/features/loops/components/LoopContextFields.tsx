@@ -23,7 +23,7 @@ export function LoopContextFields({
   disabled,
 }: LoopContextFieldsProps) {
   const { channels } = useChannels();
-  const { dashboards } = useDashboards(value?.folderId);
+  const { dashboards } = useDashboards(value?.folderId, { poll: false });
   const hasCanvases = dashboards.length > 0;
 
   const selectContext = (folderId: string) => {

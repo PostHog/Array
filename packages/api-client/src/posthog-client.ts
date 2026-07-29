@@ -4,22 +4,30 @@ import type {
   CloudMcpServerImport,
   CloudMcpServerRelayDesignation,
   CloudRunSource,
+  CreateTaskAutomationOptions,
   ExecutionMode,
   PrAuthorshipMode,
   SourceProduct,
   SourceType,
   StoredLogEntry,
+  TaskAutomation,
   TaskRunArtifactMetadata,
+  UpdateTaskAutomationOptions,
 } from "@posthog/shared";
 import {
   buildCloudTaskConfigOptions,
   type CloudTaskConfigOption,
+  createTaskAutomationSchema,
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
   getCloudTaskGatewayUrl,
   isSupportedReasoningEffort,
   normalizeGatewayModelsResponse,
   resolveCloudInitialPermissionMode,
+  taskAutomationListSchema,
+  taskAutomationSchema,
+  taskAutomationValidationErrorSchema,
+  updateTaskAutomationSchema,
 } from "@posthog/shared";
 import type {
   AgentAnalyticsData,
@@ -202,22 +210,11 @@ export class TaskAutomationValidationError extends Error {
 
 function rethrowTaskAutomationError(error: unknown): never {
   if (error instanceof ApiRequestError && error.status === 400) {
-    const body = error.body;
-    if (
-      typeof body === "object" &&
-      body !== null &&
-      "detail" in body &&
-      typeof body.detail === "string"
-    ) {
-      throw new TaskAutomationValidationError({
-        detail: body.detail,
-        code:
-          "code" in body && typeof body.code === "string"
-            ? body.code
-            : "invalid_input",
-        attr:
-          "attr" in body && typeof body.attr === "string" ? body.attr : null,
-      });
+    const validationError = taskAutomationValidationErrorSchema.safeParse(
+      error.body,
+    );
+    if (validationError.success) {
+      throw new TaskAutomationValidationError(validationError.data);
     }
   }
 
@@ -252,41 +249,6 @@ export type {
 };
 
 export type Evaluation = Schemas.Evaluation;
-
-export type TaskAutomation = Omit<
-  Schemas.TaskAutomation,
-  "github_integration" | "timezone" | "template_id" | "enabled"
-> & {
-  github_integration: number | null;
-  timezone: string | null;
-  template_id: string | null;
-  enabled: boolean;
-};
-
-export type CreateTaskAutomationOptions = Pick<
-  Schemas.TaskAutomation,
-  "name" | "prompt" | "repository" | "cron_expression"
-> &
-  Partial<
-    Pick<
-      Schemas.TaskAutomation,
-      "github_integration" | "template_id" | "enabled"
-    >
-  > & { timezone: string };
-
-export type UpdateTaskAutomationOptions = Partial<CreateTaskAutomationOptions>;
-
-function normalizeTaskAutomation(
-  automation: Schemas.TaskAutomation,
-): TaskAutomation {
-  return {
-    ...automation,
-    github_integration: automation.github_integration ?? null,
-    timezone: automation.timezone ?? null,
-    template_id: automation.template_id ?? null,
-    enabled: automation.enabled ?? true,
-  };
-}
 
 export interface UserGitHubIntegration {
   id: string;
@@ -2524,7 +2486,7 @@ export class PostHogAPIClient {
       },
     );
 
-    return data.results.map(normalizeTaskAutomation);
+    return taskAutomationListSchema.parse(data).results;
   }
 
   async getTaskAutomation(automationId: string): Promise<TaskAutomation> {
@@ -2536,22 +2498,24 @@ export class PostHogAPIClient {
       },
     );
 
-    return normalizeTaskAutomation(data);
+    return taskAutomationSchema.parse(data);
   }
 
   async createTaskAutomation(
     options: CreateTaskAutomationOptions,
   ): Promise<TaskAutomation> {
     const teamId = await this.getTeamId();
+    const body = createTaskAutomationSchema.parse(options);
+
     try {
       const data = await this.api.post(
         `/api/projects/{project_id}/task_automations/`,
         {
           path: { project_id: teamId.toString() },
-          body: options as Schemas.TaskAutomation,
+          body: body as Schemas.TaskAutomation,
         },
       );
-      return normalizeTaskAutomation(data);
+      return taskAutomationSchema.parse(data);
     } catch (error) {
       rethrowTaskAutomationError(error);
     }
@@ -2562,15 +2526,17 @@ export class PostHogAPIClient {
     updates: UpdateTaskAutomationOptions,
   ): Promise<TaskAutomation> {
     const teamId = await this.getTeamId();
+    const body = updateTaskAutomationSchema.parse(updates);
+
     try {
       const data = await this.api.patch(
         `/api/projects/{project_id}/task_automations/{id}/`,
         {
           path: { project_id: teamId.toString(), id: automationId },
-          body: updates,
+          body,
         },
       );
-      return normalizeTaskAutomation(data);
+      return taskAutomationSchema.parse(data);
     } catch (error) {
       rethrowTaskAutomationError(error);
     }
@@ -2593,9 +2559,7 @@ export class PostHogAPIClient {
         path,
         url: new URL(`${this.api.baseUrl}${path}`),
       });
-      return normalizeTaskAutomation(
-        (await response.json()) as Schemas.TaskAutomation,
-      );
+      return taskAutomationSchema.parse(await response.json());
     } catch (error) {
       rethrowTaskAutomationError(error);
     }
@@ -2640,13 +2604,16 @@ export class PostHogAPIClient {
     return normalizeTaskResponse(data, { teamId });
   }
 
-  async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
+  async updateTask(
+    taskId: string,
+    updates: Partial<Schemas.Task>,
+  ): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.patch(
       `/api/projects/{project_id}/tasks/{id}/`,
       {
         path: { project_id: teamId.toString(), id: taskId },
-        body: updates as unknown as Partial<Schemas.Task>,
+        body: updates,
       },
     );
 

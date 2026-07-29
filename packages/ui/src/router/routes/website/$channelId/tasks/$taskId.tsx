@@ -119,6 +119,7 @@ function ChannelTaskDetailRoute() {
         channelId={channelId}
         task={task}
         showTaskSummary={false}
+        canOpenInPlace
       />
     </div>
   );
