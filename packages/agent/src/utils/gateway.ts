@@ -14,23 +14,18 @@ export function resolveGatewayProduct({
   isInternal?: boolean;
   originProduct?: string | null;
 } = {}): GatewayProduct {
-  if (originProduct === "slack") {
-    return "slack_app";
-  }
-  if (originProduct === "posthog_ai") {
-    return "posthog_ai";
-  }
-  if (originProduct === "signal_report" || originProduct === "signals_scout") {
-    return "signals";
-  }
-  if (originProduct === "support_reply") {
-    return "conversations";
-  }
-  if (originProduct === "loop") {
-    return "posthog_code";
-  }
-  if (originProduct === "onboarding" && isInternal) {
-    return "onboarding";
+  const originProductToGatewayProductMap: Record<string, GatewayProduct> = {
+    loop: "posthog_code",
+    onboarding: "onboarding",
+    posthog_ai: "posthog_ai",
+    signal_report: "signals",
+    signals_scout: "signals",
+    slack: "slack_app",
+    support_reply: "conversations",
+  };
+
+  if (originProduct && originProduct in originProductToGatewayProductMap) {
+    return originProductToGatewayProductMap[originProduct];
   }
   if (isInternal) {
     return "background_agents";
