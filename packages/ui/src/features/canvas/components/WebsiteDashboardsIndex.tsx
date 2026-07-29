@@ -25,6 +25,7 @@ import { FreeformPreview } from "@posthog/ui/features/canvas/components/Freeform
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { deleteCanvasWithUndo } from "@posthog/ui/features/canvas/deleteCanvasWithUndo";
 import { useCanvasTemplates } from "@posthog/ui/features/canvas/hooks/useCanvasTemplates";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   useDashboardMutations,
   useDashboards,
@@ -185,8 +186,9 @@ function DashboardCardMenu({
   channelId: string;
 }) {
   const [open, setOpen] = useState(false);
+  const containerNoun = useChannelsLayout() ? "space" : "channel";
   // "Delete…" opens a confirmation rather than deleting inline — the canvas and
-  // its version history go away for everyone in the channel.
+  // its version history go away for everyone in the space.
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const { invalidateDashboards } = useDashboardMutations();
 
@@ -246,9 +248,9 @@ function DashboardCardMenu({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete canvas</AlertDialogTitle>
             <AlertDialogDescription>
-              Permanently delete <span className="font-medium">{name}</span>?
-              This deletes its code and version history for everyone in the
-              channel and cannot be undone.
+              Delete <span className="font-medium">{name}</span>? Its code and
+              version history go for everyone in the {containerNoun}. You get a
+              few seconds to undo, then it's permanent.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

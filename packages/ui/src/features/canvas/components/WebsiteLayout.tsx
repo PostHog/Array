@@ -92,7 +92,7 @@ function FreeformEditControls({
     useDashboardMutations();
   const isPinned = dashboard?.pinnedAt != null;
   // "Delete…" opens a confirmation rather than deleting inline — the canvas and
-  // its version history go away for everyone in the channel.
+  // its version history go away for everyone in the space.
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   // Once confirmed the canvas vanishes from every list and we leave for the
@@ -312,10 +312,11 @@ function FreeformEditControls({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete canvas</AlertDialogTitle>
             <AlertDialogDescription>
-              Permanently delete{" "}
+              Delete{" "}
               <span className="font-medium">{dashboard?.name ?? "Canvas"}</span>
-              ? This deletes its code and version history for everyone in the
-              channel and cannot be undone.
+              ? Its code and version history go for everyone in the{" "}
+              {containerNoun}. You get a few seconds to undo, then it's
+              permanent.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
