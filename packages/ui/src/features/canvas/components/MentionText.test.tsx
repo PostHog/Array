@@ -82,4 +82,38 @@ describe("MentionText", () => {
 
     expect(screen.getByText("A thread reply")).not.toHaveClass("text-xs");
   });
+
+  it("renders structured references as inline native chips", () => {
+    const { container } = render(
+      <MentionText
+        content={
+          'Review <github_pr number="73874" title="Loading…" url="https://github.com/PostHog/posthog/pull/73874" /> with <file path="src/loading.tsx" /> using <skill name="review" source="user" path="/skills/review/SKILL.md" />'
+        }
+      />,
+    );
+
+    expect(screen.getByText("#73874 - Loading…")).toBeInTheDocument();
+    expect(screen.getByText("@src/loading.tsx")).toBeInTheDocument();
+    expect(screen.getByText("/review")).toBeInTheDocument();
+    expect(container.querySelector("p")).toBeNull();
+    expect(screen.getByText("@src/loading.tsx").parentElement).toHaveClass(
+      "inline-flex",
+      "whitespace-nowrap",
+    );
+  });
+
+  it("leaves malformed and unsafe structured references as readable text", () => {
+    render(
+      <MentionText
+        content={
+          '<github_pr number="12" title="Unsafe" url="javascript:alert(1)" /> and <github_pr title="Incomplete" />'
+        }
+      />,
+    );
+
+    expect(screen.getByText(/#12 - Unsafe/).parentElement).toHaveTextContent(
+      '@#12 - Unsafe and <github_pr title="Incomplete" />',
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+  });
 });
