@@ -1,12 +1,21 @@
 import { Text } from "@components/text";
-import { FileText, X } from "phosphor-react-native";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { FileText, WarningCircle, X } from "phosphor-react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import type { PendingAttachment } from "./types";
+
+export type AttachmentStatus = "preparing" | "error";
 
 interface AttachmentsBarProps {
   attachments: PendingAttachment[];
   onRemove: (id: string) => void;
+  statuses?: Record<string, AttachmentStatus>;
 }
 
 function truncate(name: string, max = 18): string {
@@ -18,7 +27,36 @@ function truncate(name: string, max = 18): string {
   return `${name.slice(0, max - 1)}…`;
 }
 
-export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
+function StatusOverlay({ status }: { status?: AttachmentStatus }) {
+  const themeColors = useThemeColors();
+  if (!status) return null;
+  return (
+    <View
+      className="absolute inset-0 items-center justify-center rounded-lg bg-gray-1/70"
+      accessibilityLabel={
+        status === "preparing"
+          ? "Preparing attachment"
+          : "Attachment failed to prepare"
+      }
+    >
+      {status === "preparing" ? (
+        <ActivityIndicator size="small" color={themeColors.gray[12]} />
+      ) : (
+        <WarningCircle
+          size={20}
+          color={themeColors.status.error}
+          weight="fill"
+        />
+      )}
+    </View>
+  );
+}
+
+export function AttachmentsBar({
+  attachments,
+  onRemove,
+  statuses,
+}: AttachmentsBarProps) {
   const themeColors = useThemeColors();
   if (attachments.length === 0) return null;
 
@@ -60,6 +98,7 @@ export function AttachmentsBar({ attachments, onRemove }: AttachmentsBarProps) {
               </Text>
             </View>
           )}
+          <StatusOverlay status={statuses?.[att.id]} />
           <Pressable
             onPress={() => onRemove(att.id)}
             hitSlop={8}
