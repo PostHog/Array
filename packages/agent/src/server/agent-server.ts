@@ -3900,9 +3900,12 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       openaiCustomHeaders = buildGatewayPropertiesHeaderRecord(properties);
     } else {
       customHeaders = buildGatewayPropertyHeaders(gatewayProperties);
+      // No $ai_session_id on the Go-gateway path above: it strips $-prefixed
+      // blob keys, so the session id would be silently dropped there.
       openaiCustomHeaders = buildGatewayPropertyHeaderRecord({
         ...gatewayProperties,
         team_id: projectId,
+        $ai_session_id: taskId,
       });
     }
 
