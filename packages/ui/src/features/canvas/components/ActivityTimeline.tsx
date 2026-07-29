@@ -21,6 +21,7 @@ import type {
 } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import {
   ThreadArtifactRow,
   ThreadMessageRow,
@@ -111,7 +112,7 @@ function UserMessageRow({
         {/* `whitespace-pre-wrap` makes the clamp land on the first *written*
             line rather than the first wrapped one. */}
         <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-pre-wrap text-[13px]">
-          {content}
+          <MentionText content={content} />
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>

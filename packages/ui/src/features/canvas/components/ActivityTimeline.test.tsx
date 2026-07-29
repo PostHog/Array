@@ -36,13 +36,13 @@ const conversationItems = [
   },
 ];
 
-function renderTimeline(canOpenInPlace?: boolean) {
+function renderTimeline(canOpenInPlace?: boolean, items = conversationItems) {
   return render(
     <ActivityTimeline
       task={task}
       timeline={[]}
       // biome-ignore lint/suspicious/noExplicitAny: narrow fixture for the rows under test
-      conversationItems={conversationItems as any}
+      conversationItems={items as any}
       isTaskAuthor
       canForward={false}
       canOpenInPlace={canOpenInPlace}
@@ -89,5 +89,20 @@ describe("ActivityTimeline", () => {
 
     expect(screen.queryAllByRole("button")).toHaveLength(0);
     expect(screen.getByText(/first thing/)).toBeInTheDocument();
+  });
+
+  it("renders structured references natively in conversation previews", () => {
+    renderTimeline(false, [
+      {
+        type: "user_message",
+        id: "pr-message",
+        content:
+          '<github_pr number="73874" title="Loading…" url="https://github.com/PostHog/posthog/pull/73874" />',
+        timestamp: Date.parse("2026-07-17T09:05:00Z"),
+      },
+    ]);
+
+    expect(screen.getByText("#73874 - Loading…")).toBeInTheDocument();
+    expect(screen.queryByText(/<github_pr/)).toBeNull();
   });
 });
