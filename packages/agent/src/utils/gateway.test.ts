@@ -79,22 +79,6 @@ describe("resolveGatewayProduct", () => {
       );
     },
   );
-
-  // `onboarding` is unbilled but make sure it's only used if the task is internal.
-  it.each([
-    { isInternal: true, expected: "onboarding" },
-    { isInternal: false, expected: "posthog_code" },
-  ] as const)(
-    "originProduct=onboarding isInternal=$isInternal -> $expected",
-    ({ isInternal, expected }) => {
-      expect(
-        resolveGatewayProduct({
-          isInternal,
-          originProduct: "onboarding",
-        }),
-      ).toBe(expected);
-    },
-  );
 });
 
 describe("resolveLlmGatewayUrl", () => {

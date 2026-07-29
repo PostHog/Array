@@ -3856,10 +3856,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     taskTitle?: string | null;
   } = {}): GatewayEnv {
     const { apiKey, apiUrl, projectId } = this.config;
-    const product = resolveGatewayProduct({
-      isInternal,
-      originProduct,
-    });
+    const product = resolveGatewayProduct({ isInternal, originProduct });
     const {
       baseUrl: gatewayUrl,
       isAiGateway,
