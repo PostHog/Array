@@ -9,6 +9,10 @@ import type {
   SessionConfigSelectOption,
   SessionUpdate,
 } from "@agentclientprotocol/sdk";
+import type {
+  ArtifactComment,
+  CreateArtifactCommentRequest,
+} from "@posthog/api-client/posthog-client";
 import {
   type AcpMessage,
   type Adapter,
@@ -7404,6 +7408,36 @@ export class SessionService {
       });
       return null;
     }
+  }
+
+  async getArtifactComments(artifactId: string): Promise<ArtifactComment[]> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") return [];
+    return authStatus.auth.client.getArtifactComments(artifactId);
+  }
+
+  async createArtifactComment(
+    request: CreateArtifactCommentRequest,
+  ): Promise<ArtifactComment> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      throw new Error("Sign in to comment on artifacts");
+    }
+    return authStatus.auth.client.createArtifactComment(request);
+  }
+
+  async setArtifactCommentResolved(
+    commentId: string,
+    resolved: boolean,
+  ): Promise<ArtifactComment> {
+    const authStatus = await this.getAuthCredentialsStatus();
+    if (authStatus.kind !== "ready") {
+      throw new Error("Sign in to resolve artifact comments");
+    }
+    return authStatus.auth.client.setArtifactCommentResolved(
+      commentId,
+      resolved,
+    );
   }
 
   async getCloudRunArtifacts(

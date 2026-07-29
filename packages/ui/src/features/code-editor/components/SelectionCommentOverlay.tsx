@@ -24,6 +24,8 @@ interface SelectionCommentOverlayProps {
   filePath: string;
   onSubmit: (startLine: number, endLine: number, text: string) => void;
   onDismiss: () => void;
+  actionLabel?: string;
+  placeholder?: string;
 }
 
 /**
@@ -37,6 +39,8 @@ export function SelectionCommentOverlay({
   filePath,
   onSubmit,
   onDismiss,
+  actionLabel = "Add to chat",
+  placeholder,
 }: SelectionCommentOverlayProps) {
   if (!open || !selection?.anchor) return null;
   // Key by the range so a fresh selection remounts the card back to the "+".
@@ -49,6 +53,8 @@ export function SelectionCommentOverlay({
       filePath={filePath}
       onSubmit={onSubmit}
       onDismiss={onDismiss}
+      actionLabel={actionLabel}
+      placeholder={placeholder}
     />
   );
 }
@@ -60,6 +66,8 @@ function SelectionComposerCard({
   filePath,
   onSubmit,
   onDismiss,
+  actionLabel,
+  placeholder,
 }: {
   anchor: { top: number; left: number };
   fromLine: number;
@@ -67,18 +75,20 @@ function SelectionComposerCard({
   filePath: string;
   onSubmit: (startLine: number, endLine: number, text: string) => void;
   onDismiss: () => void;
+  actionLabel: string;
+  placeholder?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const style = { top: anchor.top + 4, left: anchor.left };
 
   if (!expanded) {
     return createPortal(
-      <Tooltip content="Add to chat">
+      <Tooltip content={actionLabel}>
         <Button
           type="button"
           variant="primary"
           size="icon-sm"
-          aria-label="Add selection to chat"
+          aria-label={actionLabel}
           className="fixed z-50 shadow-sm"
           style={style}
           onClick={() => setExpanded(true)}
@@ -101,6 +111,8 @@ function SelectionComposerCard({
         endLine={toLine}
         onDismiss={onDismiss}
         onSubmitText={(text) => onSubmit(fromLine, toLine, text)}
+        placeholder={placeholder}
+        submitLabel="Add comment"
       />
     </div>,
     document.body,

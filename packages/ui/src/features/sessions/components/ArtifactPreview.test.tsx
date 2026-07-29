@@ -10,6 +10,7 @@ const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
   type: "text/html",
 });
 const auth = vi.hoisted(() => ({ identity: "auth-1" as string | null }));
+const artifactComments = vi.hoisted(() => ({ data: [] }));
 const useQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@posthog/core/sessions/sessionService", () => ({
@@ -31,6 +32,15 @@ vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery,
+}));
+
+vi.mock("./useArtifactComments", () => ({
+  useArtifactCommentsQuery: () => ({
+    data: artifactComments.data,
+    isLoading: false,
+  }),
+  useCreateArtifactComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetArtifactCommentResolved: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
@@ -93,8 +103,16 @@ describe("ArtifactPreview", () => {
     );
   });
 
-  it("shows artifact content in a fully sandboxed iframe", () => {
-    render(
+  it("renders static HTML in a sanitized shadow root", () => {
+    useQuery.mockReturnValue({
+      data: {
+        kind: "html",
+        html: '<h1>Artifact content</h1><script>throw new Error("unsafe")</script>',
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const { container } = render(
       <ArtifactPreview
         taskId="task-1"
         runId="run-1"
@@ -103,7 +121,25 @@ describe("ArtifactPreview", () => {
       />,
     );
 
-    const frame = screen.getByTitle("Preview of report.html");
+    const host = container.querySelector("div[data-testid='artifact-html']");
+    expect(host?.shadowRoot?.textContent).toContain("Artifact content");
+    expect(host?.shadowRoot?.querySelector("script")).toBeNull();
+    expect(
+      screen.queryByTitle("Preview of report.html"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps opaque formats in a fully sandboxed iframe", () => {
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="report.pdf"
+      />,
+    );
+
+    const frame = screen.getByTitle("Preview of report.pdf");
     expect(frame).toHaveAttribute("src", "blob:preview");
     expect(frame).toHaveAttribute("sandbox", "");
   });

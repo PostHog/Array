@@ -179,6 +179,35 @@ export interface TaskSessionStorageAccess {
   content_sha256: string | null;
 }
 
+export interface ArtifactCommentUser {
+  id: number;
+  uuid: string;
+  first_name?: string;
+  last_name?: string;
+  email: string;
+}
+
+export interface ArtifactComment {
+  id: string;
+  created_by: ArtifactCommentUser | null;
+  content: string | null;
+  created_at: string;
+  deleted?: boolean | null;
+  item_id: string | null;
+  item_context: unknown;
+  scope: string;
+  source_comment: string | null;
+  is_task?: boolean;
+  completed_at?: string | null;
+}
+
+export interface CreateArtifactCommentRequest {
+  artifactId: string;
+  content: string;
+  context: unknown;
+  sourceCommentId?: string;
+}
+
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
@@ -3291,6 +3320,92 @@ export class PostHogAPIClient {
 
     const data = (await response.json()) as { url: string };
     return data.url;
+  }
+
+  async getArtifactComments(artifactId: string): Promise<ArtifactComment[]> {
+    const teamId = await this.getTeamId();
+    const comments: ArtifactComment[] = [];
+    let urlPath = `/api/projects/${teamId}/comments/?scope=task_artifact&item_id=${encodeURIComponent(artifactId)}`;
+
+    // Comments use cursor pagination. Follow it so a long-running review never
+    // silently loses older threads, while retaining a defensive page ceiling.
+    for (let page = 0; page < 20; page++) {
+      const url = new URL(`${this.api.baseUrl}${urlPath}`);
+      const response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path: url.pathname,
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch artifact comments: ${response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as {
+        results?: ArtifactComment[];
+        next?: string | null;
+      };
+      comments.push(...(data.results ?? []));
+      if (!data.next) return comments;
+      const next = new URL(data.next);
+      urlPath = `${next.pathname}${next.search}`;
+    }
+
+    log.warn("getArtifactComments hit the pagination limit", { artifactId });
+    return comments;
+  }
+
+  async createArtifactComment(
+    request: CreateArtifactCommentRequest,
+  ): Promise<ArtifactComment> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/comments/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: {
+        body: JSON.stringify({
+          content: request.content,
+          scope: "task_artifact",
+          item_id: request.artifactId,
+          item_context: request.context,
+          source_comment: request.sourceCommentId ?? null,
+          // Root comments are actionable so the existing complete/reopen
+          // actions provide Google-Docs-style resolve semantics.
+          is_task: !request.sourceCommentId,
+        }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create artifact comment: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ArtifactComment;
+  }
+
+  async setArtifactCommentResolved(
+    commentId: string,
+    resolved: boolean,
+  ): Promise<ArtifactComment> {
+    const teamId = await this.getTeamId();
+    const action = resolved ? "complete" : "reopen";
+    const path = `/api/projects/${teamId}/comments/${commentId}/${action}/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path,
+      overrides: { body: "{}" },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to ${action} artifact comment: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as ArtifactComment;
   }
 
   async getTaskSessionStorageAccess(
