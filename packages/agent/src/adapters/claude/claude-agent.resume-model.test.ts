@@ -84,6 +84,12 @@ function getModelConfigOption(response: {
   return response.configOptions?.find((opt) => opt.id === "model");
 }
 
+function getEffortConfigOption(response: {
+  configOptions?: Array<{ id: string; currentValue?: unknown }> | null;
+}) {
+  return response.configOptions?.find((opt) => opt.id === "effort");
+}
+
 // Real temp dirs: createSession validates cwd and SettingsManager reads
 // settings from disk; CLAUDE_CONFIG_DIR keeps both away from the real home.
 const cwd = mkdtempSync(path.join(os.tmpdir(), "claude-agent-test-cwd-"));
@@ -356,6 +362,21 @@ describe("ClaudeAcpAgent session creation", () => {
     } else {
       expect(warnSpy).not.toHaveBeenCalled();
     }
+  });
+
+  it("does not expose effort controls when a new session starts with Kimi K3", async () => {
+    const agent = makeAgent();
+
+    const response = await agent.newSession({
+      cwd,
+      mcpServers: [],
+      _meta: { taskRunId: "run-kimi", model: "moonshotai/kimi-k3" },
+    });
+
+    expect(getModelConfigOption(response)?.currentValue).toBe(
+      "moonshotai/kimi-k3",
+    );
+    expect(getEffortConfigOption(response)).toBeUndefined();
   });
 
   // The timeout *message* (RequestError "... timed out after ...") is covered
