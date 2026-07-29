@@ -84,7 +84,8 @@ function FreeformEditControls({
   const navigate = useNavigate();
   // Pinning is scoped to whatever holds the canvas; the new layout calls that a
   // space, the old one a channel.
-  const containerNoun = useChannelsLayout() ? "space" : "channel";
+  const spacesLayout = useChannelsLayout();
+  const containerNoun = spacesLayout ? "space" : "channel";
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);

@@ -186,7 +186,8 @@ function DashboardCardMenu({
   channelId: string;
 }) {
   const [open, setOpen] = useState(false);
-  const containerNoun = useChannelsLayout() ? "space" : "channel";
+  const spacesLayout = useChannelsLayout();
+  const containerNoun = spacesLayout ? "space" : "channel";
   // "Delete…" opens a confirmation rather than deleting inline — the canvas and
   // its version history go away for everyone in the space.
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);

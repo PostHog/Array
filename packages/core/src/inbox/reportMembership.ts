@@ -124,6 +124,22 @@ export function isInboxDetailPath(pathname: string): boolean {
   return INBOX_DETAIL_PATH_RE.test(pathname);
 }
 
+/** Which tab a list pathname belongs to; anything unrecognised reads as Pulls. */
+export function inboxTabFromPath(pathname: string): InboxTabKey {
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
+  return "pulls";
+}
+
+/**
+ * Whether the reviewer-scope control means anything on this tab: Runs is
+ * unscoped and the Archive is a terminal list, so neither filters by reviewer.
+ */
+export function inboxScopeApplies(tab: InboxTabKey): boolean {
+  return tab !== "runs" && tab !== "dismissed";
+}
+
 /**
  * PR tab membership: Responder shipped a draft PR and it is `ready` for review.
  * PRs that have already been merged/closed (`resolved`) or are still running

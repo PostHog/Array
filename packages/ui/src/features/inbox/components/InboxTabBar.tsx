@@ -4,6 +4,8 @@ import {
   INBOX_TAB_LIST_ROUTE,
   type InboxTabCounts,
   type InboxTabKey,
+  inboxScopeApplies,
+  inboxTabFromPath,
 } from "@posthog/core/inbox/reportMembership";
 import { Tabs, TabsList, TabsTrigger } from "@posthog/quill";
 import { InboxScopeSelect } from "@posthog/ui/features/inbox/components/InboxScopeSelect";
@@ -14,17 +16,10 @@ interface InboxTabBarProps {
   counts: InboxTabCounts;
 }
 
-export function activeTabFromPath(pathname: string): InboxTabKey {
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
-  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
-  return "pulls";
-}
-
 /** The legacy header's row: tabs with the reviewer-scope select alongside. */
 export function InboxTabBar({ counts }: InboxTabBarProps) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const activeKey = activeTabFromPath(pathname);
+  const activeKey = inboxTabFromPath(pathname);
 
   return (
     <Flex align="center" justify="between" className="min-w-0">
@@ -34,16 +29,11 @@ export function InboxTabBar({ counts }: InboxTabBarProps) {
   );
 }
 
-/** Whether the reviewer-scope control means anything on this tab. */
-export function inboxScopeApplies(tab: InboxTabKey): boolean {
-  return tab !== "runs" && tab !== "dismissed";
-}
-
 /** Just the tab strip — the header slots its own filters beside it. */
 export function InboxTabs({ counts }: InboxTabBarProps) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const activeKey = activeTabFromPath(pathname);
+  const activeKey = inboxTabFromPath(pathname);
 
   return (
     <Tabs

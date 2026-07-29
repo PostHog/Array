@@ -1,11 +1,13 @@
-import type { InboxTabCounts } from "@posthog/core/inbox/reportMembership";
+import {
+  type InboxTabCounts,
+  inboxScopeApplies,
+  inboxTabFromPath,
+} from "@posthog/core/inbox/reportMembership";
 import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { InboxScopeSelect } from "@posthog/ui/features/inbox/components/InboxScopeSelect";
 import {
-  activeTabFromPath,
   InboxTabBar,
   InboxTabs,
-  inboxScopeApplies,
 } from "@posthog/ui/features/inbox/components/InboxTabBar";
 import {
   PageHeader,
@@ -44,7 +46,7 @@ export function InboxPageHeader({ counts }: InboxPageHeaderProps) {
       </PageHeaderHeading>
       <PageHeaderNav>
         <InboxTabs counts={counts} />
-        {inboxScopeApplies(activeTabFromPath(pathname)) && (
+        {inboxScopeApplies(inboxTabFromPath(pathname)) && (
           <PageHeaderFilters>
             <InboxScopeSelect />
           </PageHeaderFilters>

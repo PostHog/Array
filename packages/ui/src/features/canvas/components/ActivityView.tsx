@@ -47,7 +47,7 @@ import {
 import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo } from "react";
 import {
   activityReadPayload,
   channelIdForName,
@@ -316,64 +316,18 @@ export function ActivityView() {
     [unreadCount, unreadItems.length, isMarkingRead, markAllRead],
   );
 
-  const feed = useMemo(
-    () => (
-      <>
-        {isLoading && items.length === 0 ? (
-          <div className="flex justify-center py-16">
-            <Spinner />
-          </div>
-        ) : items.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <BellIcon size={20} />
-              </EmptyMedia>
-              <EmptyTitle>No activity yet</EmptyTitle>
-              <EmptyDescription>
-                Tasks you create, get tagged in, or reply to across{" "}
-                {spacesLayout ? "spaces" : "channels"} land here.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            {items.map((item) => (
-              <ActivityRow
-                key={item.taskId}
-                item={item}
-                folderChannelId={folderChannelIdFor(item.channelName)}
-                onOpen={markRead}
-                onMarkRead={markRead}
-                currentUser={currentUser}
-              />
-            ))}
-            {hasNextPage && (
-              <Button
-                variant="outline"
-                className="mt-3 self-center"
-                loading={isFetchingNextPage}
-                disabled={isFetchingNextPage}
-                onClick={() => void fetchNextPage()}
-              >
-                Load more
-              </Button>
-            )}
-          </div>
-        )}
-      </>
-    ),
-    [
-      isLoading,
-      items,
-      spacesLayout,
-      folderChannelIdFor,
-      markRead,
-      currentUser,
-      hasNextPage,
-      isFetchingNextPage,
-      fetchNextPage,
-    ],
+  const feed = (
+    <ActivityFeed
+      items={items}
+      isLoading={isLoading}
+      spacesLayout={spacesLayout}
+      folderChannelIdFor={folderChannelIdFor}
+      markRead={markRead}
+      currentUser={currentUser}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      fetchNextPage={fetchNextPage}
+    />
   );
 
   // The shared page header ships with the spaces layout; without it the page
@@ -428,3 +382,81 @@ export function ActivityView() {
     </div>
   );
 }
+
+/**
+ * The feed body. A memo'd child rather than JSX built in the parent: the parent
+ * picks between two page shells and returns early, and this way the branch it
+ * doesn't take costs nothing.
+ */
+const ActivityFeed = memo(function ActivityFeed({
+  items,
+  isLoading,
+  spacesLayout,
+  folderChannelIdFor,
+  markRead,
+  currentUser,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: {
+  items: TaskActivityItem[];
+  isLoading: boolean;
+  spacesLayout: boolean;
+  folderChannelIdFor: (channelName: string | null) => string | null;
+  markRead: (item: TaskActivityItem) => void;
+  currentUser?: UserBasic | null;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+}) {
+  if (isLoading && items.length === 0) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <BellIcon size={20} />
+          </EmptyMedia>
+          <EmptyTitle>No activity yet</EmptyTitle>
+          <EmptyDescription>
+            Tasks you create, get tagged in, or reply to across{" "}
+            {spacesLayout ? "spaces" : "channels"} land here.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {items.map((item) => (
+        <ActivityRow
+          key={item.taskId}
+          item={item}
+          folderChannelId={folderChannelIdFor(item.channelName)}
+          onOpen={markRead}
+          onMarkRead={markRead}
+          currentUser={currentUser}
+        />
+      ))}
+      {hasNextPage && (
+        <Button
+          variant="outline"
+          className="mt-3 self-center"
+          loading={isFetchingNextPage}
+          disabled={isFetchingNextPage}
+          onClick={() => void fetchNextPage()}
+        >
+          Load more
+        </Button>
+      )}
+    </div>
+  );
+});
