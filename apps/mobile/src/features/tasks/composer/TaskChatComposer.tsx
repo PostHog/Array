@@ -21,7 +21,7 @@ import {
   Stop,
 } from "phosphor-react-native";
 import { useFeatureFlag } from "posthog-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
