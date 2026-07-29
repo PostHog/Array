@@ -111,7 +111,10 @@ class SecurePiRpcClient extends RpcClient {
       [this.secureOptions.cliPath ?? "dist/cli.js", ...args],
       {
         cwd: this.secureOptions.cwd,
-        env: safePiEnvironment(process.env),
+        env: {
+          ...safePiEnvironment(process.env),
+          ELECTRON_RUN_AS_NODE: "1",
+        },
         stdio: ["pipe", "pipe", "pipe", "pipe", "ipc"],
       },
     );
