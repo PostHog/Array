@@ -1,7 +1,6 @@
 import { Brain, CaretDown, Lightning, Stack } from "@phosphor-icons/react";
 import type {
-  PiModelOption,
-  PiQueueMode,
+  PiModelSelection,
   PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
 import {
@@ -18,13 +17,13 @@ import type { MessagingMode } from "@posthog/ui/features/sessions/messagingModeS
 import { Fragment } from "react";
 
 interface PiModelSelectorProps {
-  models: PiModelOption[];
-  currentModel?: Pick<PiModelOption, "provider" | "id">;
+  models: PiModelSelection[];
+  currentModel?: PiModelSelection;
   disabled?: boolean;
-  onChange: (model: PiModelOption) => void;
+  onChange: (model: PiModelSelection) => void;
 }
 
-function modelKey(model: Pick<PiModelOption, "provider" | "id">): string {
+function modelKey(model: PiModelSelection): string {
   return JSON.stringify([model.provider, model.id]);
 }
 
@@ -38,7 +37,7 @@ export function PiModelSelector({
     return null;
   }
 
-  const modelsByProvider = new Map<string, PiModelOption[]>();
+  const modelsByProvider = new Map<string, PiModelSelection[]>();
   for (const model of models) {
     const providerModels = modelsByProvider.get(model.provider) ?? [];
     providerModels.push(model);
@@ -177,20 +176,16 @@ export function PiThinkingLevelSelector({
 
 interface PiMessagingModeSelectorProps {
   mode: MessagingMode;
-  queueMode: PiQueueMode;
   queuedCount: number;
   disabled?: boolean;
   onModeChange: (mode: MessagingMode) => void;
-  onQueueModeChange: (mode: PiQueueMode) => void;
 }
 
 export function PiMessagingModeSelector({
   mode,
-  queueMode,
   queuedCount,
   disabled,
   onModeChange,
-  onQueueModeChange,
 }: PiMessagingModeSelectorProps) {
   let label = "Queue";
   if (mode === "steer") {
@@ -241,17 +236,6 @@ export function PiMessagingModeSelector({
           <DropdownMenuRadioItem value="queue">
             Queue for the next turn
           </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <MenuLabel>Process queued messages</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={queueMode}
-          onValueChange={(value) => onQueueModeChange(value as PiQueueMode)}
-        >
-          <DropdownMenuRadioItem value="one-at-a-time">
-            One per turn
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="all">All at once</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>

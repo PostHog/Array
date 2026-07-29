@@ -9,8 +9,8 @@ import {
   cancelPermissionInput,
   cancelPromptInput,
   cancelSessionInput,
-  getGatewayModelsInput,
-  getGatewayModelsOutput,
+  getPiModelCatalogInput,
+  getPiModelCatalogOutput,
   getPreviewConfigOptionsInput,
   getPreviewConfigOptionsOutput,
   listSessionsInput,
@@ -217,13 +217,13 @@ export const agentRouter = router({
     }
   }),
 
-  getGatewayModels: publicProcedure
-    .input(getGatewayModelsInput)
-    .output(getGatewayModelsOutput)
+  getPiModelCatalog: publicProcedure
+    .input(getPiModelCatalogInput)
+    .output(getPiModelCatalogOutput)
     .query(({ ctx, input }) =>
       ctx.container
         .get<AgentService>(AGENT_SERVICE)
-        .getGatewayModels(input.apiHost),
+        .getPiModelCatalog(input.apiHost, input.region),
     ),
 
   getPreviewConfigOptions: publicProcedure

@@ -5,12 +5,14 @@ import type {
   TaskCreationOutput,
   Workspace,
 } from "@posthog/shared";
+import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
 import { useDraftStore } from "../message-editor/draftStore";
 import { useSettingsStore } from "../settings/settingsStore";
+import { taskKeys } from "../tasks/taskKeys";
 import { WORKSPACE_QUERY_KEY } from "../workspace/identifiers";
 
 function queryClient(): ImperativeQueryClient {
@@ -27,6 +29,19 @@ export const taskCreationEffects: TaskCreationEffects = {
       (old) => ({ ...old, [output.task.id]: workspace }),
     );
     void client.invalidateQueries({ queryKey: WORKSPACE_QUERY_KEY });
+  },
+
+  onRunResumed(taskId: string, run: TaskRun): void {
+    const client = queryClient();
+    client.setQueryData<Task>(taskKeys.detail(taskId), (task) =>
+      task ? { ...task, latest_run: run } : task,
+    );
+    client.setQueriesData<Task[]>({ queryKey: taskKeys.lists() }, (tasks) =>
+      tasks?.map((task) =>
+        task.id === taskId ? { ...task, latest_run: run } : task,
+      ),
+    );
+    void client.invalidateQueries({ queryKey: taskKeys.allSummaries() });
   },
 
   onCreateSuccess(output: TaskCreationOutput, input?: TaskCreationInput): void {

@@ -1,5 +1,10 @@
 import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/repositories";
-import type { Adapter, ExecutionMode, WorkspaceMode } from "@posthog/shared";
+import type {
+  Adapter,
+  AgentRuntime,
+  ExecutionMode,
+  WorkspaceMode,
+} from "@posthog/shared";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -103,8 +108,10 @@ interface SettingsStore {
   lastUsedRunMode: "local" | "cloud";
   lastUsedLocalWorkspaceMode: LocalWorkspaceMode;
   lastUsedWorkspaceMode: WorkspaceMode;
+  lastUsedAgentRuntime: AgentRuntime;
   lastUsedAdapter: AgentAdapter;
   lastUsedModel: string | null;
+  lastUsedPiModel: string | null;
   lastUsedReasoningEffort: string | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
@@ -124,8 +131,10 @@ interface SettingsStore {
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
   setLastUsedWorkspaceMode: (mode: WorkspaceMode) => void;
+  setLastUsedAgentRuntime: (runtime: AgentRuntime) => void;
   setLastUsedAdapter: (adapter: AgentAdapter) => void;
   setLastUsedModel: (model: string) => void;
+  setLastUsedPiModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
   setCachedCloudRepositoryMap: (
@@ -296,8 +305,10 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedRunMode: "local",
       lastUsedLocalWorkspaceMode: "local",
       lastUsedWorkspaceMode: DEFAULT_WORKSPACE_MODE,
+      lastUsedAgentRuntime: "acp",
       lastUsedAdapter: "claude",
       lastUsedModel: null,
+      lastUsedPiModel: null,
       lastUsedReasoningEffort: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
@@ -313,8 +324,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastUsedLocalWorkspaceMode: (mode) =>
         set({ lastUsedLocalWorkspaceMode: mode }),
       setLastUsedWorkspaceMode: (mode) => set({ lastUsedWorkspaceMode: mode }),
+      setLastUsedAgentRuntime: (runtime) =>
+        set({ lastUsedAgentRuntime: runtime }),
       setLastUsedAdapter: (adapter) => set({ lastUsedAdapter: adapter }),
       setLastUsedModel: (model) => set({ lastUsedModel: model }),
+      setLastUsedPiModel: (model) => set({ lastUsedPiModel: model }),
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
       setLastUsedCloudRepository: (repo) =>
@@ -521,8 +535,10 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedRunMode: state.lastUsedRunMode,
         lastUsedLocalWorkspaceMode: state.lastUsedLocalWorkspaceMode,
         lastUsedWorkspaceMode: state.lastUsedWorkspaceMode,
+        lastUsedAgentRuntime: state.lastUsedAgentRuntime,
         lastUsedAdapter: state.lastUsedAdapter,
         lastUsedModel: state.lastUsedModel,
+        lastUsedPiModel: state.lastUsedPiModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
