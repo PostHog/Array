@@ -1,9 +1,11 @@
-import type { Channel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { beforeEach, expect, it, vi } from "vitest";
-import { ensurePersonalChannel } from "./ensurePersonalChannel";
+import {
+  ensurePersonalChannel,
+  type PersonalChannel,
+} from "./ensurePersonalChannel";
 
-function channel(id: string, name = "me"): Channel {
-  return { id, name, path: `/${name}`, type: "folder" } as Channel;
+function channel(id: string, name = "me"): PersonalChannel {
+  return { id, name };
 }
 
 // The module memoises the created folder, so each test needs a fresh copy.
@@ -25,7 +27,8 @@ it("shares one create between callers racing before it settles", async () => {
     "./ensurePersonalChannel"
   );
   const create = vi.fn(
-    () => new Promise<Channel>((r) => setTimeout(() => r(channel("1")), 5)),
+    () =>
+      new Promise<PersonalChannel>((r) => setTimeout(() => r(channel("1")), 5)),
   );
 
   const [a, b] = await Promise.all([ensure([], create), ensure([], create)]);
@@ -69,7 +72,7 @@ it("lets a later caller retry after a failed create", async () => {
     "./ensurePersonalChannel"
   );
   const create = vi
-    .fn<() => Promise<Channel>>()
+    .fn<() => Promise<PersonalChannel>>()
     .mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValueOnce(channel("1"));
 

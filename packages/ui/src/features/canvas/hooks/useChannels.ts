@@ -26,7 +26,7 @@ export interface Channel {
   homeCanvasId?: string;
 }
 
-export function toChannel(fs: Schemas.FileSystem): Channel {
+function toChannel(fs: Schemas.FileSystem): Channel {
   // The generated OpenAPI type declares `meta` as null, but the API returns our
   // free-form blob at runtime; read homeCanvasId past the type.
   const meta = fs.meta as { homeCanvasId?: string } | null | undefined;

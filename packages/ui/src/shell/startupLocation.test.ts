@@ -1,9 +1,6 @@
 import { rendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  personalNewTaskLocation,
-  resolveStartupLocation,
-} from "./startupLocation";
+import { resolveStartupLocation } from "./startupLocation";
 
 describe("startup location", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -21,7 +18,8 @@ describe("startup location", () => {
     expect(client.getDesktopFileSystemChannels).not.toHaveBeenCalled();
   });
 
-  it("opens a new task in an existing me space", async () => {
+  it("opens a new task in me when there is no saved location", async () => {
+    vi.spyOn(rendererStateStorage, "getItem").mockResolvedValue(null);
     const client = {
       getDesktopFileSystemChannels: vi
         .fn()
@@ -29,22 +27,9 @@ describe("startup location", () => {
       createDesktopFileSystemChannel: vi.fn(),
     };
 
-    await expect(personalNewTaskLocation(client)).resolves.toBe(
+    await expect(resolveStartupLocation("project", client)).resolves.toBe(
       "/website/me-id/new",
     );
     expect(client.createDesktopFileSystemChannel).not.toHaveBeenCalled();
-  });
-
-  it("creates the me space on first use", async () => {
-    const client = {
-      getDesktopFileSystemChannels: vi.fn().mockResolvedValue([]),
-      createDesktopFileSystemChannel: vi
-        .fn()
-        .mockResolvedValue({ id: "new-me-id", path: "me", type: "folder" }),
-    };
-
-    await expect(personalNewTaskLocation(client)).resolves.toBe(
-      "/website/new-me-id/new",
-    );
   });
 });
