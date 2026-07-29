@@ -9,7 +9,16 @@ export type ThreadItem = ConversationItem | ToolGroupItem;
  * A contiguous run of non-user rows (assistant prose, tools, git actions, ...) shown as one
  * block with tight internal spacing. Broken only by a user message.
  */
-export type AgentTurn = { type: "agent_turn"; id: string; items: ThreadItem[] };
+export type AgentTurn = {
+  type: "agent_turn";
+  id: string;
+  items: ThreadItem[];
+  /**
+   * The user-initiated row that opened this turn — grouping emits it as a standalone row, so
+   * without it "Copy turn" would carry the agent's prose but not the prompt it answers.
+   */
+  prompt?: ThreadItem;
+};
 
 /** Top-level row: a standalone user message, or a grouped agent turn. */
 export type TurnRow = ThreadItem | AgentTurn;
@@ -104,7 +113,9 @@ export function flattenTurnRows(rows: TurnRow[]): FlatThreadRow[] {
       const copyText =
         timestamp == null
           ? undefined
-          : (buildTurnCopyText(row.items) ?? undefined);
+          : (buildTurnCopyText(
+              row.prompt ? [row.prompt, ...row.items] : row.items,
+            ) ?? undefined);
       for (let i = 0; i < row.items.length; i++) {
         const item = row.items[i];
         const isTrailing = i === row.items.length - 1;

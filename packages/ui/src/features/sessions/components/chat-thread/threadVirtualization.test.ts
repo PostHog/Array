@@ -45,8 +45,12 @@ function toolGroup(id: string, tools: SessionUpdateItem[]): ToolGroupItem {
   return { type: "tool_group", id, tools };
 }
 
-function agentTurn(id: string, items: TurnRow[]): AgentTurn {
-  return { type: "agent_turn", id, items: items as AgentTurn["items"] };
+function agentTurn(
+  id: string,
+  items: TurnRow[],
+  prompt?: ConversationItem,
+): AgentTurn {
+  return { type: "agent_turn", id, items: items as AgentTurn["items"], prompt };
 }
 
 describe("flattenTurnRows", () => {
@@ -106,6 +110,23 @@ describe("flattenTurnRows", () => {
       undefined,
       "first\n\nlast",
     ]);
+  });
+
+  it("leads the copy text with the prompt that opened the turn", () => {
+    const done = agentTurn(
+      "d",
+      [
+        sessionUpdate("d1", {
+          turnComplete: true,
+          timestamp: 1,
+          text: "reply",
+        }),
+      ],
+      userMessage("u1"),
+    );
+    expect(flattenTurnRows([done]).at(-1)?.turnCopyText).toBe(
+      "msg u1\n\nreply",
+    );
   });
 
   it("leaves copy text off a turn that is still streaming", () => {

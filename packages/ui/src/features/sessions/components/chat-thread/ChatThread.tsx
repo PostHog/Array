@@ -74,6 +74,7 @@ import {
 import { buildTurnCopyText } from "@posthog/ui/features/sessions/components/chat-thread/turnCopyText";
 import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { VirtualThreadScrollBody } from "@posthog/ui/features/sessions/components/chat-thread/VirtualThreadScrollBody";
+import { copyFromContextMenu } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
@@ -112,6 +113,7 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useCopy } from "@posthog/ui/primitives/useCopy";
 import {
   DIFF_WORKER_FACTORY,
@@ -213,14 +215,16 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
  * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a
  * user-initiated row (which stays standalone so it remains the scroll anchor for the sticky header
  * and auto-follow). The turn block renders as a single muted card, tightening the spacing between
- * the agent's successive replies and tool calls.
+ * the agent's successive replies and tool calls. Each turn records the user-initiated row that
+ * opened it, so "Copy turn" can lead with the prompt the turn answered.
  */
 function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
   const out: TurnRow[] = [];
   let buffer: ThreadItem[] = [];
+  let prompt: ThreadItem | undefined;
   const flush = () => {
     if (buffer.length > 0) {
-      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer });
+      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer, prompt });
       buffer = [];
     }
   };
@@ -232,6 +236,7 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     if (isUserInitiatedConversationItem(row)) {
       flush();
       out.push(row);
+      prompt = row;
     } else {
       buffer.push(row);
     }
@@ -495,6 +500,10 @@ function UserBubble({
  * This menu sits inside `SessionView`'s own context menu and wins the event over it, so it also
  * carries that menu's raw-logs toggle; without it, right-clicking a message would be the one spot
  * in the session where the toggle went missing.
+ *
+ * The write goes through {@link copyFromContextMenu}: a synchronous write from a closing menu
+ * rejects while focus is still being restored, and both outcomes surface as toasts — a silent
+ * failure would leave the clipboard's previous contents where the user believes the message is.
  */
 function MessageContextMenu({
   value,
@@ -503,14 +512,20 @@ function MessageContextMenu({
   value: string;
   children: ReactElement;
 }) {
-  const { copy } = useCopy();
   const showRawLogs = useShowRawLogs();
   const { setShowRawLogs } = useSessionViewActions();
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => copy(value)}>
+        <ContextMenuItem
+          onClick={() =>
+            copyFromContextMenu(value, {
+              onSuccess: () => toast.success("Copied"),
+              onError: () => toast.error("Couldn't copy"),
+            })
+          }
+        >
           <Copy size={14} />
           Copy message
         </ContextMenuItem>
@@ -644,7 +659,11 @@ const ThreadRow = memo(function ThreadRow({
         </div>
         <TurnFooter
           timestamp={completedTurnTimestamp(item)}
-          copyText={buildTurnCopyText(item.items) ?? undefined}
+          copyText={
+            buildTurnCopyText(
+              item.prompt ? [item.prompt, ...item.items] : item.items,
+            ) ?? undefined
+          }
         />
       </ChatMessageScrollerItem>
     );
