@@ -82,6 +82,9 @@ function FreeformEditControls({
   dashboardId: string;
 }) {
   const navigate = useNavigate();
+  // Pinning is scoped to whatever holds the canvas; the new layout calls that a
+  // space, the old one a channel.
+  const containerNoun = useChannelsLayout() ? "space" : "channel";
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
@@ -268,7 +271,14 @@ function FreeformEditControls({
             </Button>
           }
         />
-        <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+        {/* Sized to its longest item — the default width clipped "Unpin from
+            space". Same treatment as the channel-list menus. */}
+        <DropdownMenuContent
+          align="end"
+          side="bottom"
+          sideOffset={4}
+          className="w-auto min-w-fit"
+        >
           <DropdownMenuItem onClick={onRefresh}>
             <ArrowClockwiseIcon size={14} />
             Refresh
@@ -283,7 +293,9 @@ function FreeformEditControls({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onTogglePin}>
             <PushPinIcon size={14} weight={isPinned ? "fill" : "regular"} />
-            {isPinned ? "Unpin from channel" : "Pin to channel"}
+            {isPinned
+              ? `Unpin from ${containerNoun}`
+              : `Pin to ${containerNoun}`}
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
