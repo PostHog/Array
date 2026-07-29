@@ -83,6 +83,26 @@ describe("TaskArtifactsList", () => {
     expect(state.reviewModes[task.id]).toBe("split");
   });
 
+  it("lists every PR produced by the same run", () => {
+    mocks.runs = [
+      {
+        ...run("run-1"),
+        output: {
+          pr_url: "https://github.com/acme/repo/pull/1",
+          pr_urls: [
+            "https://github.com/acme/repo/pull/1",
+            "https://github.com/acme/other-repo/pull/2",
+          ],
+        },
+      } as TaskRun,
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("Pull request #1")).toBeTruthy();
+    expect(screen.getByText("Pull request #2")).toBeTruthy();
+  });
+
   it("lists the files the agent uploaded, with their size", () => {
     mocks.runs = [
       run("run-1", { artifacts: [outputFile({ id: "a", size: 16861 })] }),
