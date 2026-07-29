@@ -1,4 +1,4 @@
-import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
+import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task-engine";
 import { CLOUD_TASK_SERVICE } from "@posthog/core/cloud-task/identifiers";
 import {
   CloudTaskEvent,

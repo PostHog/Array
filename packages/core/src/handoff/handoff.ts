@@ -5,7 +5,7 @@ import {
   TypedEventEmitter,
 } from "@posthog/shared";
 import { inject, injectable } from "inversify";
-import type { CloudTaskService } from "../cloud-task/cloud-task";
+import type { CloudTaskService } from "../cloud-task/cloud-task-engine";
 import { CLOUD_TASK_SERVICE } from "../cloud-task/identifiers";
 import { HandoffSaga, type HandoffSagaDeps } from "./handoff-saga";
 import {

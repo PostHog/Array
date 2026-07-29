@@ -22,7 +22,7 @@ const fetchRouter = vi.hoisted(() =>
   }),
 );
 
-import { CloudTaskService } from "./cloud-task";
+import { CloudTaskService } from "./cloud-task-engine";
 
 const mockAuthService = {
   authenticatedFetch: vi.fn(),
