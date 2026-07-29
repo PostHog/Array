@@ -232,7 +232,8 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
               <Box flexShrink="0" className="h-[32px] min-w-[90px]" />
             )}
           </Flex>
-          {(rightContent || onClosePanel ||
+          {(rightContent ||
+            onClosePanel ||
             (content.droppable && onSplitPanel)) && (
             <Flex
               align="center"
@@ -241,10 +242,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
               {rightContent}
               {onClosePanel && (
                 <Tooltip content="Close panel" side="bottom">
-                  <TabBarButton
-                    ariaLabel="Close panel"
-                    onClick={onClosePanel}
-                  >
+                  <TabBarButton ariaLabel="Close panel" onClick={onClosePanel}>
                     <X size={14} />
                   </TabBarButton>
                 </Tooltip>
