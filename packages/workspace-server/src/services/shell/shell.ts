@@ -197,14 +197,7 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
     disposables.push(
       ptyProcess.onExit(({ exitCode }) => {
         this.processTracking.unregister(ptyProcess.pid, "exited");
-        const session = this.sessions.get(sessionId);
-        if (session) {
-          for (const d of session.disposables) {
-            d.dispose();
-          }
-          session.pty.destroy();
-          this.sessions.delete(sessionId);
-        }
+        this.teardownSession(sessionId);
         this.emit(ShellEvent.Exit, { sessionId, exitCode });
         resolveExit({ exitCode });
       }),
@@ -277,14 +270,7 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
     disposables.push(
       ptyProcess.onExit(({ exitCode }) => {
         this.processTracking.unregister(ptyProcess.pid, "exited");
-        const session = this.sessions.get(sessionId);
-        if (session) {
-          for (const d of session.disposables) {
-            d.dispose();
-          }
-          session.pty.destroy();
-          this.sessions.delete(sessionId);
-        }
+        this.teardownSession(sessionId);
         this.emit(ShellEvent.Exit, { sessionId, exitCode });
         resolveExit({ exitCode });
       }),
@@ -341,17 +327,38 @@ export class ShellService extends TypedEventEmitter<ShellEvents> {
   destroy(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
-      const pid = session.pty.pid;
-      this.processTracking.kill(pid);
-      for (const disposable of session.disposables) {
-        disposable.dispose();
-      }
-      session.pty.destroy();
-      this.sessions.delete(sessionId);
+      this.processTracking.kill(session.pty.pid);
+      this.teardownSession(sessionId);
       this.emit(ShellEvent.Exit, {
         sessionId,
         exitCode: DESTROYED_EXIT_CODE,
       });
+    }
+  }
+
+  /**
+   * Drop a session and release its pty. Teardown is best-effort: `pty.destroy()`
+   * reaches into platform-specific cleanup that can fail for environmental
+   * reasons, so the session is removed from the map first and the destroy is
+   * guarded. Otherwise one failing shell would leak its map entry and abort the
+   * `destroyAll()` sweep, leaving the remaining shells running after quit.
+   */
+  private teardownSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    this.sessions.delete(sessionId);
+    for (const disposable of session.disposables) {
+      disposable.dispose();
+    }
+    try {
+      session.pty.destroy();
+    } catch (error) {
+      this.log.warn(
+        `Failed to destroy pty for shell session ${sessionId}`,
+        error,
+      );
     }
   }
 

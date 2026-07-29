@@ -96,7 +96,7 @@ overrides:
 
 patchedDependencies:
   node-pty:
-    hash: 4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5
+    hash: 922d673882c7633b332a34d853be935f0cfe9841b2ba1ef0f005b8e408ac02d0
     path: patches/node-pty.patch
   react-hotkeys-hook:
     hash: a8cd00b963d4ae6787cc267a2345cc1b32bcba5fa1131328b8017ee0d316ab0e
@@ -291,7 +291,7 @@ importers:
         version: 1.1.12
       node-pty:
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5)
+        version: 1.1.0(patch_hash=922d673882c7633b332a34d853be935f0cfe9841b2ba1ef0f005b8e408ac02d0)
       posthog-node:
         specifier: ^5.35.6
         version: 5.37.0(rxjs@7.8.2)
@@ -1626,7 +1626,7 @@ importers:
         version: 7.11.0(reflect-metadata@0.2.2)
       node-pty:
         specifier: 1.1.0
-        version: 1.1.0(patch_hash=4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5)
+        version: 1.1.0(patch_hash=922d673882c7633b332a34d853be935f0cfe9841b2ba1ef0f005b8e408ac02d0)
       reflect-metadata:
         specifier: 'catalog:'
         version: 0.2.2
@@ -28202,7 +28202,7 @@ snapshots:
     dependencies:
       process-on-spawn: 1.1.0
 
-  node-pty@1.1.0(patch_hash=4dfdf785f5ac51a03f5d6032371cebe89036381acd403621f250a896245647c5):
+  node-pty@1.1.0(patch_hash=922d673882c7633b332a34d853be935f0cfe9841b2ba1ef0f005b8e408ac02d0):
     dependencies:
       node-addon-api: 7.1.1
 

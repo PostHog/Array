@@ -51,3 +51,87 @@ index 1ac5758bedd8cf54f32280dea4e4aeb5afdee30d..d2a5e7911fb823bef3c9d57d2bf35830
              },
              'msvs_settings': {
                  # Specify this setting here to override a setting from somewhere
+diff --git a/lib/windowsPtyAgent.js b/lib/windowsPtyAgent.js
+index a358ffb..c3ff5b3 100644
+--- a/lib/windowsPtyAgent.js
++++ b/lib/windowsPtyAgent.js
+@@ -146,6 +146,10 @@ var WindowsPtyAgent = /** @class */ (function () {
+                             // Ignore if process cannot be found (kill ESRCH error)
+                         }
+                     });
++                }).catch(function () {
++                    // Reaping the console process list is best-effort. Nothing awaits
++                    // this promise, so a rejection would surface as an unhandled
++                    // rejection and crash-report from a routine terminal close.
+                 });
+                 this._ptyNative.kill(this._pty, this._useConptyDll);
+                 this._conoutSocketWorker.dispose();
+@@ -181,7 +185,21 @@ var WindowsPtyAgent = /** @class */ (function () {
+     WindowsPtyAgent.prototype._getConsoleProcessList = function () {
+         var _this = this;
+         return new Promise(function (resolve) {
+-            var agent = child_process_1.fork(path.join(__dirname, 'conpty_console_list_agent'), [_this._innerPid.toString()]);
++            var agent;
++            try {
++                agent = child_process_1.fork(path.join(__dirname, 'conpty_console_list_agent'), [_this._innerPid.toString()]);
++            }
++            catch (e) {
++                // fork() throws synchronously when CreateProcess fails outright --
++                // `spawn UNKNOWN` when antivirus/EDR blocks process creation. Fall back
++                // to the shell PID, matching the timeout path below.
++                resolve([_this._innerPid]);
++                return;
++            }
++            agent.on('error', function () {
++                clearTimeout(timeout);
++                resolve([_this._innerPid]);
++            });
+             agent.on('message', function (message) {
+                 clearTimeout(timeout);
+                 resolve(message.consoleProcessList);
+diff --git a/src/windowsPtyAgent.ts b/src/windowsPtyAgent.ts
+index d705444..38681a1 100644
+--- a/src/windowsPtyAgent.ts
++++ b/src/windowsPtyAgent.ts
+@@ -7,7 +7,7 @@
+ import * as fs from 'fs';
+ import * as os from 'os';
+ import * as path from 'path';
+-import { fork } from 'child_process';
++import { ChildProcess, fork } from 'child_process';
+ import { Socket } from 'net';
+ import { ArgvOrCommandLine } from './types';
+ import { ConoutConnection } from './windowsConoutConnection';
+@@ -152,6 +152,10 @@ export class WindowsPtyAgent {
+               // Ignore if process cannot be found (kill ESRCH error)
+             }
+           });
++        }).catch(() => {
++          // Reaping the console process list is best-effort. Nothing awaits this
++          // promise, so a rejection would surface as an unhandled rejection and
++          // crash-report from a routine terminal close.
+         });
+         (this._ptyNative as IConptyNative).kill(this._pty, this._useConptyDll);
+         this._conoutSocketWorker.dispose();
+@@ -184,7 +188,20 @@ export class WindowsPtyAgent {
+ 
+   private _getConsoleProcessList(): Promise<number[]> {
+     return new Promise<number[]>(resolve => {
+-      const agent = fork(path.join(__dirname, 'conpty_console_list_agent'), [ this._innerPid.toString() ]);
++      let agent: ChildProcess;
++      try {
++        agent = fork(path.join(__dirname, 'conpty_console_list_agent'), [ this._innerPid.toString() ]);
++      } catch (e) {
++        // fork() throws synchronously when CreateProcess fails outright --
++        // `spawn UNKNOWN` when antivirus/EDR blocks process creation. Fall back
++        // to the shell PID, matching the timeout path below.
++        resolve([ this._innerPid ]);
++        return;
++      }
++      agent.on('error', () => {
++        clearTimeout(timeout);
++        resolve([ this._innerPid ]);
++      });
+       agent.on('message', message => {
+         clearTimeout(timeout);
+         resolve(message.consoleProcessList);

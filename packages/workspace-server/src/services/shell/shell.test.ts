@@ -99,6 +99,51 @@ describe("ShellService.destroy", () => {
     const { service } = createService();
     expect(() => service.destroy("nonexistent")).not.toThrow();
   });
+
+  it("drops the session and still emits exit when pty.destroy() throws", async () => {
+    const ptyProcess = createMockPtyProcess();
+    ptyProcess.destroy.mockImplementation(() => {
+      throw new Error("spawn UNKNOWN");
+    });
+    mockPty.spawn.mockReturnValue(ptyProcess);
+    const { service } = createService();
+    const exitHandler = vi.fn();
+    service.on(ShellEvent.Exit, exitHandler);
+
+    await service.create("session-1");
+
+    expect(() => service.destroy("session-1")).not.toThrow();
+    expect(service.hasSession("session-1")).toBe(false);
+    expect(service.getSessionCount()).toBe(0);
+    expect(exitHandler).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      exitCode: 130,
+    });
+  });
+
+  it("destroyAll tears down every session when one pty.destroy() throws", async () => {
+    const failing = createMockPtyProcess();
+    failing.destroy.mockImplementation(() => {
+      throw new Error("spawn UNKNOWN");
+    });
+    const healthy = createMockPtyProcess();
+    mockPty.spawn
+      .mockReturnValueOnce(failing)
+      .mockReturnValueOnce(healthy)
+      .mockReturnValue(createMockPtyProcess());
+    const { service } = createService();
+
+    await service.create("session-1");
+    await service.create("session-2");
+    await service.create("session-3");
+
+    expect(() => service.destroyAll()).not.toThrow();
+
+    // A throw on the first shell must not abort the shutdown sweep, or the
+    // remaining shells survive after the app quits.
+    expect(healthy.destroy).toHaveBeenCalled();
+    expect(service.getSessionCount()).toBe(0);
+  });
 });
 
 describe("ShellService.createSession workspace env", () => {
