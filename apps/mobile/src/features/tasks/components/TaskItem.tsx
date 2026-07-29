@@ -1,11 +1,11 @@
 import { Text } from "@components/text";
+import type { Task } from "@posthog/shared";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { Check, GitPullRequest } from "phosphor-react-native";
 import { memo } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { parseGithubIssueUrl } from "@/lib/githubIssueUrl";
 import { useThemeColors } from "@/lib/theme";
-import type { Task } from "../types";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 
 function PrBadge({ prUrl, number }: { prUrl: string; number: number }) {

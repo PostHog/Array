@@ -1,3 +1,4 @@
+import { buildPendingPromptKey } from "@posthog/core/tasks/pendingPrompts";
 import { create } from "zustand";
 import type { SessionNotificationAttachment } from "../types";
 
@@ -79,8 +80,9 @@ export function generatePendingTaskKey(): string {
     typeof globalThis !== "undefined"
       ? (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
       : undefined;
-  if (cryptoObj?.randomUUID) {
-    return cryptoObj.randomUUID();
-  }
-  return `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return buildPendingPromptKey(
+    cryptoObj?.randomUUID?.() ?? null,
+    Date.now(),
+    Math.random().toString(36).slice(2, 10),
+  );
 }

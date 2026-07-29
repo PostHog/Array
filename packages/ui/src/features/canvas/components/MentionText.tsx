@@ -1,5 +1,19 @@
+import {
+  ChartLineIcon,
+  FileTextIcon,
+  FlagIcon,
+  FlaskIcon,
+  FolderIcon,
+  TerminalIcon,
+  WarningIcon,
+} from "@phosphor-icons/react";
+import type { MentionChip } from "@posthog/core/message-editor/content";
+import { xmlToContent } from "@posthog/core/message-editor/content";
+import { Chip } from "@posthog/quill";
 import { splitMentionSegments } from "@posthog/shared";
 import { splitLinkSegments } from "@posthog/ui/features/canvas/utils/linkify";
+import { GithubRefChip } from "@posthog/ui/features/editor/components/GithubRefChip";
+import { parseGithubIssueUrl } from "@posthog/ui/features/message-editor/githubIssueUrl";
 import { handleShareLinkClick } from "@posthog/ui/utils/shareLinks";
 import { Fragment, useMemo } from "react";
 import "./mention-chip.css";
@@ -8,7 +22,46 @@ type RenderSegment =
   | { type: "text"; text: string }
   | { type: "link"; text: string; href: string }
   | { type: "agent"; text: string }
-  | { type: "mention"; name: string; email: string };
+  | { type: "mention"; name: string; email: string }
+  | { type: "chip"; chip: MentionChip };
+
+const chipIcons = {
+  file: FileTextIcon,
+  folder: FolderIcon,
+  command: TerminalIcon,
+  error: WarningIcon,
+  experiment: FlaskIcon,
+  insight: ChartLineIcon,
+  feature_flag: FlagIcon,
+} as const;
+
+function StructuredChip({ chip }: { chip: MentionChip }) {
+  if (chip.type === "github_issue" || chip.type === "github_pr") {
+    const githubRef = parseGithubIssueUrl(chip.id);
+    if (githubRef) {
+      return (
+        <GithubRefChip href={githubRef.normalizedUrl} kind={githubRef.kind}>
+          {chip.label}
+        </GithubRefChip>
+      );
+    }
+  }
+
+  const Icon = chipIcons[chip.type as keyof typeof chipIcons];
+  if (!Icon) return <>@{chip.label}</>;
+  return (
+    <Chip
+      size="xs"
+      className="mx-0.5 inline-flex max-w-full whitespace-nowrap align-middle"
+    >
+      <Icon size={10} />
+      <span className="min-w-0 truncate">
+        {chip.type === "command" ? "/" : "@"}
+        {chip.label}
+      </span>
+    </Chip>
+  );
+}
 
 // The plain (not-the-viewer) mention chip look, also used by surfaces that
 // render a mention-styled name without real mention semantics (e.g. the
@@ -66,11 +119,17 @@ export function MentionText({
         }
       }
     };
-    for (const segment of splitLinkSegments(content)) {
-      if (segment.type === "link") {
-        push(segment, segment.text.length);
-      } else {
-        pushMentions(segment.text);
+    for (const contentSegment of xmlToContent(content).segments) {
+      if (contentSegment.type === "chip") {
+        push({ type: "chip", chip: contentSegment.chip }, 1);
+        continue;
+      }
+      for (const segment of splitLinkSegments(contentSegment.text)) {
+        if (segment.type === "link") {
+          push(segment, segment.text.length);
+        } else {
+          pushMentions(segment.text);
+        }
       }
     }
     return entries;
@@ -79,6 +138,9 @@ export function MentionText({
   return (
     <span className={className}>
       {segments.map(({ segment, key }) => {
+        if (segment.type === "chip") {
+          return <StructuredChip key={key} chip={segment.chip} />;
+        }
         if (segment.type === "agent") {
           return (
             <span key={key} className={mentionChipClass}>

@@ -1,12 +1,16 @@
-import { isContentlessTask } from "@posthog/shared/domain-types";
+import type { TaskActivitySortMode } from "@posthog/core/tasks/taskActivity";
+import type {
+  Adapter,
+  ExecutionMode,
+  SupportedReasoningEffort,
+} from "@posthog/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { ExecutionMode, ReasoningEffort } from "../composer/options";
-import type { RepositorySelection, Task } from "../types";
+import type { RepositorySelection } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
-export type SortMode = "created" | "updated";
+export type SortMode = TaskActivitySortMode;
 
 const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
   integrationId: null,
@@ -16,9 +20,10 @@ const EMPTY_REPOSITORY_SELECTION: RepositorySelection = {
 /** Per-task chat composer pill values. Persisted so reopening a task keeps
  *  the mode/model/reasoning the user last selected for it. */
 export interface TaskComposerConfig {
+  adapter?: Adapter;
   mode?: ExecutionMode;
   model?: string;
-  reasoning?: ReasoningEffort;
+  reasoning?: SupportedReasoningEffort;
 }
 
 interface TaskUIState {
@@ -106,48 +111,3 @@ export const useTaskStore = create<TaskUIState>()(
     },
   ),
 );
-
-export function taskActivityTimestamp(task: Task, sortMode: SortMode): number {
-  if (sortMode === "created") {
-    return new Date(task.created_at).getTime();
-  }
-  // "updated" — take the most recent of task.updated_at and latest_run.updated_at.
-  const runUpdated = task.latest_run?.updated_at;
-  const taskUpdated = task.updated_at ?? task.created_at;
-  return Math.max(
-    runUpdated ? new Date(runUpdated).getTime() : 0,
-    new Date(taskUpdated).getTime(),
-  );
-}
-
-export function filterAndSortTasks(
-  tasks: Task[],
-  sortMode: SortMode,
-  showInternal: boolean,
-  filter: string,
-): Task[] {
-  let filtered = tasks;
-
-  // Warm-sandbox prewarming creates empty placeholder tasks; never surface them.
-  filtered = filtered.filter((task) => !isContentlessTask(task));
-
-  // Visibility filter — mirrors desktop radio: External hides internal, Internal shows only internal.
-  filtered = filtered.filter((task) =>
-    showInternal ? task.internal === true : task.internal !== true,
-  );
-
-  if (filter) {
-    const lowerFilter = filter.toLowerCase();
-    filtered = filtered.filter(
-      (task) =>
-        task.title.toLowerCase().includes(lowerFilter) ||
-        task.slug.toLowerCase().includes(lowerFilter) ||
-        task.description?.toLowerCase().includes(lowerFilter),
-    );
-  }
-
-  return [...filtered].sort(
-    (a, b) =>
-      taskActivityTimestamp(b, sortMode) - taskActivityTimestamp(a, sortMode),
-  );
-}

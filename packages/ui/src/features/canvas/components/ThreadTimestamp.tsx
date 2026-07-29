@@ -5,6 +5,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
+import { formatRelativeTimeShort } from "@posthog/shared";
 
 function ordinal(value: number): string {
   const remainder = value % 100;
@@ -41,7 +42,7 @@ export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
               dateTime={dateTime}
               className="shrink-0 text-[11px]"
             >
-              {formatClock(date)}
+              {formatRelativeTimeShort(dateTime)}
             </ThreadItemTimestamp>
           }
         />

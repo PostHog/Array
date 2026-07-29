@@ -1,7 +1,8 @@
-import type {
-  PermissionOption,
-  SessionConfigOption,
-} from "@agentclientprotocol/sdk";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import {
+  resolveInitialPlanApprovalOption,
+  selectPlanPermissionOptions,
+} from "@posthog/core/sessions/permissionResponse";
 import type { ExecutionMode } from "@posthog/shared";
 import { ModeSelector } from "@posthog/ui/features/message-editor/components/ModeSelector";
 import { MODE_LABELS } from "@posthog/ui/features/sessions/modeStyles";
@@ -16,21 +17,6 @@ import { type BasePermissionProps, toSelectorOptions } from "./types";
 
 const TITLE = "Implementation Plan";
 const QUESTION = "Approve this plan to proceed?";
-
-function isApprove(option: PermissionOption): boolean {
-  return option.kind === "allow_once" || option.kind === "allow_always";
-}
-
-function isReject(option: PermissionOption): boolean {
-  return option.kind === "reject_once" || option.kind === "reject_always";
-}
-
-function hasCustomInput(option: PermissionOption): boolean {
-  return (
-    (option._meta as { customInput?: boolean } | null | undefined)
-      ?.customInput === true
-  );
-}
 
 // Don't steal focus from an interactive element in a different grid cell
 // (multi-task view). Mirrors the guard in useActionSelectorState.
@@ -66,11 +52,8 @@ export function PlanApprovalSelector({
   onSelect,
   onCancel,
 }: BasePermissionProps) {
-  const approveOptions = useMemo(() => options.filter(isApprove), [options]);
-  const rejectOption = useMemo(
-    () =>
-      options.find((o) => isReject(o) && hasCustomInput(o)) ??
-      options.find(isReject),
+  const { approvals: approveOptions, rejection: rejectOption } = useMemo(
+    () => selectPlanPermissionOptions(options),
     [options],
   );
 
@@ -87,16 +70,7 @@ export function PlanApprovalSelector({
   // via `useMemo` (rather than seeding a `useState` once) means it stays
   // correct once the store finishes hydrating.
   const initialMode = useMemo(() => {
-    const has = (id: string) => approveOptions.some((o) => o.optionId === id);
-    return (
-      (lastApprovalMode && has(lastApprovalMode)
-        ? lastApprovalMode
-        : undefined) ??
-      (has("auto") ? "auto" : undefined) ??
-      approveOptions.find((o) => o.optionId === "default")?.optionId ??
-      approveOptions.find((o) => o.kind === "allow_once")?.optionId ??
-      approveOptions[0]?.optionId
-    );
+    return resolveInitialPlanApprovalOption(approveOptions, lastApprovalMode);
   }, [approveOptions, lastApprovalMode]);
 
   // Only the user's own pick lives in state; everything else derives from

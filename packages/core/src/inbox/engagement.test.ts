@@ -28,6 +28,7 @@ function fakeReport(overrides: Partial<SignalReport> = {}): SignalReport {
 }
 
 const NO_FILTERS = {
+  surface: "desktop" as const,
   sourceProductFilter: [],
   priorityFilter: [],
   searchQuery: "",

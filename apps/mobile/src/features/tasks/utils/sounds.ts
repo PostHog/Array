@@ -1,4 +1,4 @@
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import {
   type CompletionSound,
   usePreferencesStore,
@@ -36,7 +36,7 @@ let audioModeConfigured = false;
 
 async function ensureAudioMode(): Promise<void> {
   if (audioModeConfigured) return;
-  await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+  await setAudioModeAsync({ playsInSilentMode: true });
   audioModeConfigured = true;
 }
 
@@ -49,15 +49,15 @@ export async function playCompletionSound(
   const which = sound ?? prefs.completionSound;
   const vol = (volume ?? prefs.completionVolume) / 100;
   await ensureAudioMode();
-  const { sound: player } = await Audio.Sound.createAsync(SOUND_ASSETS[which], {
-    shouldPlay: true,
-    volume: Math.max(0, Math.min(1, vol)),
-    rate: playbackRate,
-    shouldCorrectPitch: false,
-  });
-  player.setOnPlaybackStatusUpdate((status) => {
-    if (status.isLoaded && status.didJustFinish) {
-      player.unloadAsync();
+  const player = createAudioPlayer(SOUND_ASSETS[which]);
+  player.volume = Math.max(0, Math.min(1, vol));
+  player.shouldCorrectPitch = false;
+  player.playbackRate = playbackRate;
+  const subscription = player.addListener("playbackStatusUpdate", (status) => {
+    if (status.didJustFinish) {
+      subscription.remove();
+      player.remove();
     }
   });
+  player.play();
 }

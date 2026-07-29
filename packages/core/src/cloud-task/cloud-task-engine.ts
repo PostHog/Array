@@ -34,6 +34,7 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+const ARCHIVED_LOG_FETCH_TIMEOUT_MS = 15_000;
 const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
 const MCP_RELAY_METHODS_WITHOUT_APPROVAL = new Set([
   "initialize",
@@ -81,6 +82,7 @@ class BackendStreamError extends Error {
 
 interface TaskRunResponse {
   id: string;
+  log_url?: string | null;
   status: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
@@ -715,6 +717,10 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
+  getCloudContext(): Promise<{ apiHost: string; teamId: number } | null> {
+    return this.auth.getCloudContext();
+  }
+
   watch(input: WatchInput): void {
     const key = watcherKey(input.taskId, input.runId);
 
@@ -850,7 +856,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
       jsonrpc: "2.0",
       method: input.method,
       params: input.params ?? {},
-      id: `posthog-code-${Date.now()}`,
+      id: input.id ?? globalThis.crypto.randomUUID(),
     };
 
     try {
@@ -860,6 +866,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5 * 60_000),
       });
 
       if (!response.ok) {
@@ -886,7 +893,13 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
           status: response.status,
           error: errorMessage,
         });
-        return { success: false, error: errorMessage };
+        const retryable = [400, 502, 503, 504].includes(response.status);
+        return {
+          success: false,
+          error: errorMessage,
+          status: response.status,
+          retryable,
+        };
       }
 
       const data = (await response.json()) as {
@@ -921,7 +934,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
         method: input.method,
         error: errorMessage,
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorMessage, retryable: true };
     }
   }
 
@@ -1106,7 +1119,10 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     if (isTerminalStatus(run.status)) {
-      const historicalEntries = await this.fetchAllSessionLogs(watcher);
+      let historicalEntries = await this.fetchAllSessionLogs(watcher);
+      if (historicalEntries?.length === 0 && run.log_url) {
+        historicalEntries = await this.fetchArchivedLogs(run.log_url);
+      }
       const terminalWatcher = this.watchers.get(key);
       if (!terminalWatcher || terminalWatcher !== watcher) return;
       if (watcher.failed) return;
@@ -2151,6 +2167,32 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       offset += page.entries.length;
+    }
+  }
+
+  private async fetchArchivedLogs(
+    logUrl: string,
+  ): Promise<StoredLogEntry[] | null> {
+    try {
+      const response = await this.streamFetch(logUrl, {
+        signal: AbortSignal.timeout(ARCHIVED_LOG_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      const content = await response.text();
+      if (!content.trim()) return [];
+      return content
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line) as StoredLogEntry];
+          } catch {
+            return [];
+          }
+        });
+    } catch (error) {
+      this.log.warn("Cloud task archived logs fetch error", { error });
+      return null;
     }
   }
 

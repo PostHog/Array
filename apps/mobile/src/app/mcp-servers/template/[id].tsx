@@ -17,7 +17,7 @@ import {
   useMcpMarketplace,
 } from "@/features/mcp/hooks";
 import { installTemplateWithOAuth } from "@/features/mcp/oauth";
-import { isStdioServer } from "@/features/mcp/types";
+import { isStdioMcpServer } from "@/features/mcp/presentation";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { openExternalUrl } from "@/lib/openExternalUrl";
@@ -71,7 +71,7 @@ export default function McpTemplateDetailScreen() {
     );
   }
 
-  const stdio = isStdioServer(template);
+  const stdio = isStdioMcpServer(template);
 
   const handleInstall = async () => {
     if (!template) return;

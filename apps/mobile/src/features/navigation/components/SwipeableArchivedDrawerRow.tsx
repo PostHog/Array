@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { Task } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { ArrowCounterClockwise } from "phosphor-react-native";
 import { useEffect, useRef } from "react";
@@ -11,7 +12,6 @@ import {
   View,
 } from "react-native";
 import { TaskStatusIcon } from "@/features/tasks/components/TaskStatusIcon";
-import type { Task } from "@/features/tasks/types";
 import { useThemeColors } from "@/lib/theme";
 
 const SWIPE_THRESHOLD = 60;

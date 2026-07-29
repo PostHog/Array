@@ -138,6 +138,7 @@ export {
 export * from "./enrichment";
 export {
   classifyGatewayLimitError,
+  classifyPromptFailure,
   type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
@@ -146,6 +147,8 @@ export {
   isRateLimitError,
   isTransientUpstreamError,
   NotAuthenticatedError,
+  type PromptFailure,
+  type PromptFailureKind,
   type SerializedError,
   serializeError,
 } from "./errors";

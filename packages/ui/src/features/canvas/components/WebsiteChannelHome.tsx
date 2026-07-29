@@ -96,7 +96,10 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   }, [backendChannel, feedMessages]);
 
   useSetHeaderContent(
-    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+    useMemo(
+      () => <ChannelHeader channelId={channelId} page="home" />,
+      [channelId],
+    ),
   );
 
   const composerRef = useRef<ChannelHomeComposerHandle>(null);

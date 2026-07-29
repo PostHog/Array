@@ -1,5 +1,4 @@
 import { Text } from "@components/text";
-import { Pressable, TextInput, View } from "react-native";
 import {
   type AutomationScheduleDraft,
   type AutomationScheduleMode,
@@ -7,7 +6,8 @@ import {
   sanitizeHour,
   sanitizeMinute,
   WEEKDAY_OPTIONS,
-} from "../utils/automationSchedule";
+} from "@posthog/core/automations/automationSchedule";
+import { Pressable, TextInput, View } from "react-native";
 
 interface ScheduleEditorProps {
   value: AutomationScheduleDraft;

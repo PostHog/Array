@@ -4,9 +4,10 @@ import {
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServerInstallation } from "@posthog/api-client/types";
 import { useQuery } from "@tanstack/react-query";
+import type { McpUiResource } from "../mcpUiResource";
 import { getMcpConnectionManager } from "../service";
-import type { McpServerInstallation, McpUiResource } from "../types";
 
 interface UseMcpUiResourceArgs {
   installation: McpServerInstallation | null;

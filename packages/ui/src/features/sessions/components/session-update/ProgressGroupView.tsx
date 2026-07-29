@@ -48,10 +48,12 @@ export function ProgressGroupView({
   // trigger is disabled and forced open, so the user sees progress stream in without a flicker between
   // consecutive step transitions. Once the turn completes, the header auto-collapses (default: open)
   // and becomes interactive. Single-step groups have no header — the one step row IS the whole view.
+  const isSettled = turnComplete && !isActive;
+
   if (!chatChrome) {
     const isOpen = !hasHeader
       ? true
-      : !turnComplete
+      : !isSettled
         ? true
         : (userToggledOpen ?? true);
     const summaryLabel = resolveHeaderLabel(steps) ?? "";
@@ -61,11 +63,11 @@ export function ProgressGroupView({
         <Collapsible.Root
           open={isOpen}
           onOpenChange={(next) => {
-            if (hasHeader && turnComplete) setUserToggledOpen(next);
+            if (hasHeader && isSettled) setUserToggledOpen(next);
           }}
         >
           {hasHeader && (
-            <Collapsible.Trigger asChild disabled={!turnComplete}>
+            <Collapsible.Trigger asChild disabled={!isSettled}>
               <button
                 type="button"
                 className="flex w-full items-center gap-2 rounded-sm px-1 py-0.5 text-left enabled:hover:bg-gray-3 disabled:cursor-default"
@@ -103,7 +105,7 @@ export function ProgressGroupView({
 
   // Multi-step groups stay open while the turn is running, then honour the user
   // toggle once the turn completes (default: collapsed).
-  const isOpen = !turnComplete ? true : (userToggledOpen ?? false);
+  const isOpen = !isSettled ? true : (userToggledOpen ?? false);
   const summaryLabel = resolveHeaderLabel(steps) ?? "";
 
   return (
@@ -114,7 +116,7 @@ export function ProgressGroupView({
       onOpenChange={(next) => {
         // Only the user's choice (after the turn finishes) sticks; while running
         // the row is controlled open, so a stray toggle is ignored.
-        if (turnComplete) setUserToggledOpen(next);
+        if (isSettled) setUserToggledOpen(next);
       }}
       content={<StepList steps={steps} />}
     >

@@ -1,5 +1,4 @@
-import type { PostHogEventProperties } from "@posthog/core";
-import { usePostHog } from "posthog-react-native";
+import { type PostHog, usePostHog } from "posthog-react-native";
 import { useEffect, useMemo } from "react";
 
 /**
@@ -199,6 +198,8 @@ export interface Analytics {
   ): void;
 }
 
+type PostHogCaptureProperties = Parameters<PostHog["capture"]>[1];
+
 // Client discriminator stamped on inbox events so the shared PostHog project
 // can be sliced by surface (desktop sends "code", the web frontend sends
 // "cloud"). Mirrors packages/ui/src/shell/posthogAnalyticsImpl.ts.
@@ -221,12 +222,9 @@ export function useAnalytics(): Analytics {
         const enriched = INBOX_ANALYTICS_EVENT_NAMES.has(eventName)
           ? { inbox_client: INBOX_CLIENT, ...properties }
           : properties;
-        // Our typed property interfaces don't carry an index signature; cast
-        // to the wider PostHog event-properties shape without losing the
-        // narrower call-site type-check.
         posthog?.capture(
           eventName,
-          enriched as unknown as PostHogEventProperties,
+          enriched as unknown as PostHogCaptureProperties,
         );
       },
     }),

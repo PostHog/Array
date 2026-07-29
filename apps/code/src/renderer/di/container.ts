@@ -3,6 +3,10 @@ import { useDevFlagsStore } from "@features/dev-toolbar/devFlagsStore";
 import { TypedContainer } from "@inversifyjs/strongly-typed";
 import type { TrpcRouter } from "@main/trpc/router";
 import {
+  CLOUD_TASK_CLIENT,
+  type CloudTaskClient,
+} from "@posthog/core/cloud-task/cloudTaskClient";
+import {
   CODE_REVIEW_WORKSPACE_CLIENT,
   REVERT_HUNK_SERVICE,
 } from "@posthog/core/code-review/identifiers";
@@ -35,7 +39,7 @@ import type { LocalMcpWorkspaceClient } from "@posthog/core/local-mcp/localMcpIm
 import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
 import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
 import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
-import { PI_SESSION_CLIENT } from "@posthog/core/pi-runtime/piSessionController";
+import { LOCAL_PI_SESSION_FACTORY } from "@posthog/core/pi-runtime/piSessionController";
 import {
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
   CLOUD_ARTIFACT_READ_FILE_AS_BASE64,
@@ -89,7 +93,9 @@ import {
 import { WorkspaceSetupService } from "@posthog/core/workspace/WorkspaceSetupService";
 import { setRootContainer } from "@posthog/di/container";
 import { HOST_TRPC_CLIENT } from "@posthog/host-router/client";
-import { TrpcPiSessionClient } from "@posthog/host-router/pi-session-client";
+import { TrpcCloudTaskClient } from "@posthog/host-router/cloud-task-client";
+import { TrpcPiRunner } from "@posthog/host-router/pi-runner";
+import { TrpcPiSessionFactory } from "@posthog/host-router/pi-session-factory";
 import {
   BROWSER_TABS_CLIENT,
   type BrowserTabsClient,
@@ -156,7 +162,6 @@ import { trpcClient } from "@renderer/trpc";
 import { hostTrpcClient } from "@renderer/trpc/client";
 import type { TRPCClient } from "@trpc/client";
 import { hostLog, logger } from "@utils/logger";
-import { TrpcPiRunner } from "../platform-adapters/trpc-pi-runner";
 import type { RendererBindings } from "./bindings";
 import { TASK_SERVICE as RENDERER_TASK_SERVICE, TRPC_CLIENT } from "./tokens";
 
@@ -297,7 +302,8 @@ container
 // Bind services
 container.bind<ITaskCreationHost>(TASK_CREATION_HOST).to(TrpcTaskCreationHost);
 container.bind<PiRunner>(PI_RUNNER).to(TrpcPiRunner);
-container.bind(PI_SESSION_CLIENT).to(TrpcPiSessionClient);
+container.bind(LOCAL_PI_SESSION_FACTORY).to(TrpcPiSessionFactory);
+container.bind<CloudTaskClient>(CLOUD_TASK_CLIENT).to(TrpcCloudTaskClient);
 container.load(piRuntimeModule);
 container.bind(TASK_CREATION_EFFECTS).toConstantValue(taskCreationEffects);
 container.bind<TaskService>(RENDERER_TASK_SERVICE).to(TaskService);

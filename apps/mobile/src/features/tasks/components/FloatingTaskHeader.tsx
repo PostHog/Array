@@ -1,11 +1,10 @@
 import { Text } from "@components/text";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { CaretLeft } from "phosphor-react-native";
 import type { ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { toRgba, useThemeColors } from "@/lib/theme";
+import { useThemeColors } from "@/lib/theme";
 
 interface FloatingTaskHeaderProps {
   title: string;
@@ -14,12 +13,7 @@ interface FloatingTaskHeaderProps {
   rightSlot?: ReactNode;
 }
 
-/**
- * Floating header for the task detail screen — back arrow on the left,
- * centered title + repo subtitle, optional right slot for actions. Sits over
- * the content with a top-to-bottom fade so the scroll list disappears
- * gracefully behind it rather than getting clipped by a hard edge.
- */
+/** Task detail toolbar with navigation, task identity, and run actions. */
 export function FloatingTaskHeader({
   title,
   subtitle,
@@ -38,30 +32,14 @@ export function FloatingTaskHeader({
   // on iOS and fall back to the real inset on Android.
   const topInset = Platform.OS === "ios" ? 6 : insets.top;
 
-  // Fade height extends well past the title row so content scrolling up
-  // behind the header gets a long, gentle transition instead of crashing
-  // into the subtitle. Header row content sits in roughly the first
-  // (topInset + 44)pt; the rest is pure fade.
-  const fadeHeight = topInset + 96;
+  const headerHeight = topInset + 52;
 
   return (
     <View
       pointerEvents="box-none"
-      className="absolute inset-x-0 top-0 z-10"
-      style={{ height: fadeHeight }}
+      className="absolute inset-x-0 top-0 z-10 border-gray-4 border-b bg-background"
+      style={{ height: headerHeight }}
     >
-      <LinearGradient
-        pointerEvents="none"
-        colors={[
-          toRgba(themeColors.background, 1),
-          toRgba(themeColors.background, 1),
-          toRgba(themeColors.background, 0.85),
-          toRgba(themeColors.background, 0),
-        ]}
-        locations={[0, 0.5, 0.75, 1]}
-        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
-      />
-
       <View
         className="flex-row items-center px-3"
         style={{ paddingTop: topInset, paddingBottom: 4 }}
@@ -74,7 +52,7 @@ export function FloatingTaskHeader({
           <CaretLeft size={22} color={themeColors.gray[12]} weight="bold" />
         </Pressable>
 
-        <View className="min-w-0 flex-1 items-center px-2">
+        <View className="min-w-0 flex-1 items-start px-2">
           <Text
             className="font-semibold text-[15px] text-gray-12"
             numberOfLines={1}

@@ -1,6 +1,8 @@
-import { isTerminalStatus, type Task } from "@posthog/shared/domain-types";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 
-export function isTaskRunning(task: Pick<Task, "latest_run">): boolean {
+export function isTaskRunning(task: {
+  latest_run?: { status: string | null };
+}): boolean {
   const status = task.latest_run?.status;
   return status !== undefined && !isTerminalStatus(status);
 }

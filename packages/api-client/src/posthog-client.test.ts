@@ -475,6 +475,33 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it.each([true, false])("forwards auto publish %s", async (autoPublish) => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", null, { autoPublish });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.objectContaining({ auto_publish: autoPublish }),
+      }),
+    );
+  });
+
   it("rejects unsupported reasoning effort for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -609,6 +636,42 @@ describe("PostHogAPIClient", () => {
             environment: "cloud",
           }),
         },
+      }),
+    );
+  });
+
+  it("loads native task session storage access", async () => {
+    const storage = {
+      id: "session-1",
+      download_url: "https://storage.example/session.jsonl",
+      content_sha256: "hash",
+    };
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => storage,
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.getTaskSessionStorageAccess("task-123", "run-123"),
+    ).resolves.toEqual(storage);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/projects/123/tasks/task-123/runs/run-123/task_session/",
       }),
     );
   });
@@ -1220,6 +1283,59 @@ describe("PostHogAPIClient", () => {
       const result = await buildClient(fetch).getTaskSummaries(["a"]);
       expect(fetch).toHaveBeenCalledTimes(50);
       expect(result.length).toBe(50);
+    });
+  });
+
+  describe("task pins", () => {
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("loads pinned task ids", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_ids: ["task-1", "task-2"] }),
+      });
+
+      await expect(buildClient(fetch).getPinnedTaskIds()).resolves.toEqual([
+        "task-1",
+        "task-2",
+      ]);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "get",
+          path: "/api/projects/123/tasks/pinned/",
+        }),
+      );
+    });
+
+    it("sets pin state idempotently", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_id: "task-1", pinned: true }),
+      });
+
+      await expect(
+        buildClient(fetch).setTaskPinned("task-1", true),
+      ).resolves.toBe(true);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "post",
+          path: "/api/projects/123/tasks/task-1/pin/",
+          overrides: { body: JSON.stringify({ pinned: true }) },
+        }),
+      );
     });
   });
 
