@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
-import { artifactHtmlDocument, artifactPreviewBlob } from "./artifactPreviewDocument";
+import {
+  artifactHtmlDocument,
+  artifactPreviewBlob,
+} from "./artifactPreviewDocument";
 
 const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
   type: "text/html",
@@ -235,13 +238,17 @@ describe("ArtifactPreview", () => {
 
     expect(screen.getByRole("heading", { name: "Report" })).toBeInTheDocument();
     expect(screen.getByRole("table")).toBeInTheDocument();
-    expect(container.querySelector(".plan-markdown.mx-auto")).toBeInTheDocument();
+    expect(
+      container.querySelector(".plan-markdown.mx-auto"),
+    ).toBeInTheDocument();
     expect(screen.getByText("report.md")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "View source" }));
 
     expect(screen.getByTestId("source-view")).toHaveTextContent("# Report");
-    expect(screen.getByRole("button", { name: "View preview" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "View preview" }),
+    ).toBeInTheDocument();
   });
 
   it("blocks network subresources in HTML artifacts", () => {
