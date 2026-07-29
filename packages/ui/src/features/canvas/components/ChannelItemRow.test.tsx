@@ -22,6 +22,7 @@ function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
     rawStatus: null,
     authorUser: null,
     authorName: null,
+    authorUuid: "user-uuid",
     templateId: null,
     ...overrides,
   };
