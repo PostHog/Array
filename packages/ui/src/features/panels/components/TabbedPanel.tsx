@@ -65,6 +65,7 @@ interface TabbedPanelProps {
   onPanelFocus?: (panelId: string) => void;
   draggingTabId?: string | null;
   draggingTabPanelId?: string | null;
+  allowPanelSplit?: boolean;
   onAddTerminal?: () => void;
   onSplitPanel?: (direction: SplitDirection) => void;
   onClosePanel?: () => void;
@@ -83,6 +84,7 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
   onPanelFocus,
   draggingTabId = null,
   draggingTabPanelId = null,
+  allowPanelSplit = true,
   onAddTerminal,
   onSplitPanel,
   onClosePanel,
@@ -307,11 +309,12 @@ export const TabbedPanel: React.FC<TabbedPanelProps> = ({
             panelId={panelId}
             isDragging={!!draggingTabId}
             allowSplit={
-              // Allow split if:
+              allowPanelSplit &&
+              // Within a splittable layout, allow the edge drop zones if:
               // 1. Current panel has > 1 tab (same-panel split), OR
               // 2. Dragging from a different panel (cross-panel split)
-              content.tabs.length > 1 ||
-              (draggingTabPanelId !== null && draggingTabPanelId !== panelId)
+              (content.tabs.length > 1 ||
+                (draggingTabPanelId !== null && draggingTabPanelId !== panelId))
             }
           />
         )}

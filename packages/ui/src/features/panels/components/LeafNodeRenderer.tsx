@@ -62,13 +62,14 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
   const activeTabId = tabs.some((t) => t.id === node.content.activeTabId)
     ? node.content.activeTabId
     : (tabs[0]?.id ?? node.content.activeTabId);
-  const hiddenTabIds = useMemo(
-    () =>
-      node.content.tabs
-        .filter((tab) => !tabs.some((visibleTab) => visibleTab.id === tab.id))
-        .map((tab) => tab.id),
-    [node.content.tabs, tabs],
-  );
+  const hiddenTabIds = useMemo(() => {
+    const visibleTabIds = new Set(tabs.map((tab) => tab.id));
+    const hiddenIds: string[] = [];
+    for (const tab of node.content.tabs) {
+      if (!visibleTabIds.has(tab.id)) hiddenIds.push(tab.id);
+    }
+    return hiddenIds;
+  }, [node.content.tabs, tabs]);
 
   const cloudEmptyState = useMemo(
     () =>
@@ -106,6 +107,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       onPanelFocus={onPanelFocus}
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
+      allowPanelSplit={!isCloud}
       onAddTerminal={hideTerminal ? undefined : () => onAddTerminal(node.id)}
       onSplitPanel={
         isCloud ? undefined : (direction) => onSplitPanel(node.id, direction)
