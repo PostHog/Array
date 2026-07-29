@@ -119,7 +119,7 @@ export function ArtifactPreview({
               className="flex-1"
               contentContainerStyle={{ padding: 16 }}
             >
-              <MarkdownText content={text ?? ""} />
+              <MarkdownText content={text ?? ""} disableRemoteImages />
             </ScrollView>
           ) : (
             <WebView
