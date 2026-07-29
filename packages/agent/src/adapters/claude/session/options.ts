@@ -191,8 +191,25 @@ function buildEnvironment(
   // sessions that genuinely need MCP tools available on turn 1.
   const mcpNonblocking = process.env.MCP_CONNECTION_NONBLOCKING;
 
-  return {
+  // Every var is load-bearing (ablation-tested): the header is only stamped
+  // once the OTel tracer initializes, and the dead endpoint keeps spans from
+  // leaking to a local collector on the default port. Export never matters.
+  const gatewayTracing: Record<string, string> = gateway?.anthropicBaseUrl
+    ? {
+        CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+        CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
+        CLAUDE_CODE_PROPAGATE_TRACEPARENT: "1",
+        OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER ?? "otlp",
+        OTEL_EXPORTER_OTLP_PROTOCOL:
+          process.env.OTEL_EXPORTER_OTLP_PROTOCOL ?? "http/json",
+        OTEL_EXPORTER_OTLP_ENDPOINT:
+          process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://127.0.0.1:9",
+      }
+    : {};
+
+  const env: Record<string, string> = {
     ...process.env,
+    ...gatewayTracing,
     // Explicit gateway values win over whatever happens to be in process.env.
     // This prevents concurrent Agent instances from clobbering each other's
     // gateway config when process.env was mutated globally.
@@ -218,6 +235,13 @@ function buildEnvironment(
     }),
     ANTHROPIC_CUSTOM_HEADERS: customHeaders,
   };
+  if (gateway?.anthropicBaseUrl) {
+    // The CLI parents every turn under an inherited ambient TRACEPARENT,
+    // collapsing the per-turn trace ids this block exists to produce.
+    delete env.TRACEPARENT;
+    delete env.TRACESTATE;
+  }
+  return env;
 }
 
 function buildHooks(

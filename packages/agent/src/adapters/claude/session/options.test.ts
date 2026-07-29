@@ -411,6 +411,92 @@ describe("buildSessionOptions", () => {
       expect(headers).toBe(expected);
     });
   });
+
+  describe("gateway turn tracing env", () => {
+    const KEYS = [
+      "CLAUDE_CODE_ENABLE_TELEMETRY",
+      "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA",
+      "CLAUDE_CODE_PROPAGATE_TRACEPARENT",
+      "OTEL_TRACES_EXPORTER",
+      "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "TRACEPARENT",
+      "TRACESTATE",
+    ] as const;
+    const original: Partial<Record<string, string | undefined>> = {};
+
+    beforeEach(() => {
+      for (const key of KEYS) {
+        original[key] = process.env[key];
+        delete process.env[key];
+      }
+    });
+
+    afterEach(() => {
+      for (const key of KEYS) {
+        const value = original[key];
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+
+    const gatewayEnv = {
+      anthropicBaseUrl: "https://gateway.example",
+      anthropicAuthToken: "tok",
+      openaiBaseUrl: "https://gateway.example/v1",
+      openaiApiKey: "tok",
+    };
+
+    it("enables per-turn traceparent when routed through the gateway", () => {
+      const env = buildSessionOptions({ ...makeParams(), gatewayEnv }).env;
+
+      expect(env?.CLAUDE_CODE_ENABLE_TELEMETRY).toBe("1");
+      expect(env?.CLAUDE_CODE_ENHANCED_TELEMETRY_BETA).toBe("1");
+      expect(env?.CLAUDE_CODE_PROPAGATE_TRACEPARENT).toBe("1");
+      expect(env?.OTEL_TRACES_EXPORTER).toBe("otlp");
+      expect(env?.OTEL_EXPORTER_OTLP_PROTOCOL).toBe("http/json");
+      expect(env?.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://127.0.0.1:9");
+    });
+
+    it("honors caller-supplied OTEL exporter settings", () => {
+      process.env.OTEL_TRACES_EXPORTER = "otlp";
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
+        "http://collector.internal:4318";
+
+      const env = buildSessionOptions({ ...makeParams(), gatewayEnv }).env;
+
+      expect(env?.OTEL_EXPORTER_OTLP_ENDPOINT).toBe(
+        "http://collector.internal:4318",
+      );
+    });
+
+    it("strips inherited TRACEPARENT so turns keep distinct trace ids", () => {
+      process.env.TRACEPARENT =
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+      process.env.TRACESTATE = "vendor=x";
+
+      const env = buildSessionOptions({ ...makeParams(), gatewayEnv }).env;
+
+      expect(env?.TRACEPARENT).toBeUndefined();
+      expect(env?.TRACESTATE).toBeUndefined();
+    });
+
+    it("leaves BYOK sessions untouched", () => {
+      process.env.TRACEPARENT =
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+      const env = buildSessionOptions(makeParams()).env;
+
+      expect(env?.CLAUDE_CODE_ENABLE_TELEMETRY).toBeUndefined();
+      expect(env?.CLAUDE_CODE_PROPAGATE_TRACEPARENT).toBeUndefined();
+      expect(env?.TRACEPARENT).toBe(
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+      );
+    });
+  });
 });
 
 describe("buildSystemPrompt", () => {
