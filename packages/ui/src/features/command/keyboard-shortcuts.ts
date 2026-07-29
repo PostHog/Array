@@ -19,6 +19,11 @@ export const SHORTCUTS = {
   CLOSE_TAB: "mod+w",
   SWITCH_TAB: "ctrl+1,ctrl+2,ctrl+3,ctrl+4,ctrl+5,ctrl+6,ctrl+7,ctrl+8,ctrl+9",
   SWITCH_TASK: "mod+1,mod+2,mod+3,mod+4,mod+5,mod+6,mod+7,mod+8,mod+9",
+  // No mod+0: the Electron View menu owns CmdOrCtrl+0 for "Actual Size", and a
+  // renderer preventDefault can't reliably beat a main-process accelerator. #me
+  // takes slot 1 instead.
+  SWITCH_STARRED_CHANNEL:
+    "mod+1,mod+2,mod+3,mod+4,mod+5,mod+6,mod+7,mod+8,mod+9",
   OPEN_IN_EDITOR: "mod+o",
   COPY_PATH: "mod+shift+c",
   TOGGLE_FOCUS: "mod+r",
@@ -32,7 +37,7 @@ export const SHORTCUTS = {
   MESSAGE_JUMP: "mod+j",
   BLUR: "escape",
   SUBMIT_BLUR: "mod+enter",
-  SWITCH_MESSAGING_MODE: "mod+s",
+  SWITCH_MESSAGING_MODE: "ctrl+s",
   RELOAD_WINDOW: "mod+shift+r",
   ZOOM_IN: "mod+=",
   ZOOM_OUT: "mod+-",
@@ -41,6 +46,13 @@ export const SHORTCUTS = {
 
 export type ShortcutCategory = "general" | "navigation" | "panels" | "editor";
 
+/**
+ * Layouts a shortcut exists in. Several keys have different owners either side
+ * of the channels layout flag, and a sheet that lists a key nothing handles is
+ * worse than one that omits it.
+ */
+export type ShortcutAvailability = "channels-layout" | "no-channels-layout";
+
 export interface KeyboardShortcut {
   id: string;
   keys: string;
@@ -48,6 +60,8 @@ export interface KeyboardShortcut {
   category: ShortcutCategory;
   context?: string;
   alternateKeys?: string;
+  /** Absent means the shortcut works in every layout. */
+  availability?: ShortcutAvailability;
 }
 
 export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
@@ -63,6 +77,8 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     description: "New tab",
     category: "navigation",
     context: "Channels",
+    // The tab strip that owns this doesn't exist in the channels layout.
+    availability: "no-channels-layout",
   },
   {
     id: "command-menu",
@@ -118,6 +134,16 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     keys: "mod+1-9",
     description: "Switch to task 1-9",
     category: "navigation",
+    // Yielded to switch-starred-channel under the channels layout.
+    availability: "no-channels-layout",
+  },
+  {
+    id: "switch-starred-channel",
+    keys: "mod+1-9",
+    description: "Switch to space (⌘1 = #me, ⌘2-9 = starred)",
+    category: "navigation",
+    context: "Spaces",
+    availability: "channels-layout",
   },
   {
     id: "prev-task",
@@ -168,7 +194,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   {
     id: "toggle-review-panel",
     keys: SHORTCUTS.TOGGLE_REVIEW_PANEL,
-    description: "Toggle review panel",
+    description: "Toggle diff view",
     category: "navigation",
   },
   {
@@ -285,17 +311,22 @@ export const CATEGORY_LABELS: Record<ShortcutCategory, string> = {
   editor: "Editor",
 };
 
-export function getShortcutsByCategory(): Record<
-  ShortcutCategory,
-  KeyboardShortcut[]
-> {
+export function getShortcutsByCategory({
+  channelsLayout = false,
+}: {
+  channelsLayout?: boolean;
+} = {}): Record<ShortcutCategory, KeyboardShortcut[]> {
   const grouped: Record<ShortcutCategory, KeyboardShortcut[]> = {
     general: [],
     navigation: [],
     panels: [],
     editor: [],
   };
+  const wanted: ShortcutAvailability = channelsLayout
+    ? "channels-layout"
+    : "no-channels-layout";
   for (const shortcut of KEYBOARD_SHORTCUTS) {
+    if (shortcut.availability && shortcut.availability !== wanted) continue;
     grouped[shortcut.category].push(shortcut);
   }
   return grouped;

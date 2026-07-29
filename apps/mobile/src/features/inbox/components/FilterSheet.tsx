@@ -1,14 +1,13 @@
 import { Text } from "@components/text";
+import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
+import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
+import { EXTERNAL_INBOX_SOURCES, type SourceProduct } from "@posthog/shared";
+import type { SignalReportPriority } from "@posthog/shared/domain-types";
 import { Check } from "phosphor-react-native";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
-import {
-  type SourceProduct,
-  useInboxFilterStore,
-} from "../stores/inboxFilterStore";
-import type { SignalReportPriority, SignalReportStatus } from "../types";
-import { inboxStatusLabel } from "../utils";
+import { useInboxFilterStore } from "../stores/inboxFilterStore";
 
 interface FilterSheetProps {
   visible: boolean;
@@ -26,15 +25,6 @@ const SORT_OPTIONS: SortOption[] = [
   { label: "Strongest signal", field: "total_weight", direction: "desc" },
   { label: "Newest first", field: "created_at", direction: "desc" },
   { label: "Oldest first", field: "created_at", direction: "asc" },
-];
-
-const FILTERABLE_STATUSES: SignalReportStatus[] = [
-  "ready",
-  "pending_input",
-  "in_progress",
-  "failed",
-  "candidate",
-  "potential",
 ];
 
 function useStatusDotColors(): Record<string, string> {
@@ -68,16 +58,21 @@ function usePriorityDotColors(): Record<SignalReportPriority, string> {
   };
 }
 
-const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] = [
-  { value: "session_replay", label: "Session replay" },
-  { value: "error_tracking", label: "Error tracking" },
-  { value: "llm_analytics", label: "AI observability" },
-  { value: "github", label: "GitHub" },
-  { value: "linear", label: "Linear" },
-  { value: "zendesk", label: "Zendesk" },
-  { value: "conversations", label: "Conversations" },
-  { value: "signals_scout", label: "Scout" },
-];
+export const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] =
+  [
+    { value: "session_replay", label: "Session replay" },
+    { value: "error_tracking", label: "Error tracking" },
+    { value: "llm_analytics", label: "AI observability" },
+    { value: "github", label: "GitHub" },
+    { value: "linear", label: "Linear" },
+    { value: "zendesk", label: "Zendesk" },
+    { value: "conversations", label: "Conversations" },
+    { value: "signals_scout", label: "Scout" },
+    ...EXTERNAL_INBOX_SOURCES.map((source) => ({
+      value: source.product,
+      label: source.label,
+    })),
+  ];
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -126,14 +121,18 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
   const toggleStatus = useInboxFilterStore((s) => s.toggleStatus);
   const sourceProductFilter = useInboxFilterStore((s) => s.sourceProductFilter);
   const toggleSourceProduct = useInboxFilterStore((s) => s.toggleSourceProduct);
+  const clearSourceProductFilter = useInboxFilterStore(
+    (s) => s.clearSourceProductFilter,
+  );
   const priorityFilter = useInboxFilterStore((s) => s.priorityFilter);
   const togglePriority = useInboxFilterStore((s) => s.togglePriority);
+  const setPriorityFilter = useInboxFilterStore((s) => s.setPriorityFilter);
   const resetFilters = useInboxFilterStore((s) => s.resetFilters);
 
   const hasActiveFilters =
     sourceProductFilter.length > 0 ||
     priorityFilter.length > 0 ||
-    statusFilter.length < FILTERABLE_STATUSES.length;
+    statusFilter.length < INBOX_PIPELINE_STATUSES.length;
 
   return (
     <Modal
@@ -191,7 +190,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Status */}
           <SectionHeader title="Status" />
           <View className="mb-5">
-            {FILTERABLE_STATUSES.map((status) => (
+            {INBOX_PIPELINE_STATUSES.map((status) => (
               <OptionRow
                 key={status}
                 label={inboxStatusLabel(status)}
@@ -213,6 +212,11 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Priority */}
           <SectionHeader title="Priority" />
           <View className="mb-5">
+            <OptionRow
+              label="Any"
+              selected={priorityFilter.length === 0}
+              onPress={() => setPriorityFilter([])}
+            />
             {FILTERABLE_PRIORITIES.map((priority) => (
               <OptionRow
                 key={priority}
@@ -232,6 +236,11 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Source */}
           <SectionHeader title="Source" />
           <View className="mb-5">
+            <OptionRow
+              label="Any"
+              selected={sourceProductFilter.length === 0}
+              onPress={clearSourceProductFilter}
+            />
             {SOURCE_PRODUCT_OPTIONS.map((option) => (
               <OptionRow
                 key={option.value}

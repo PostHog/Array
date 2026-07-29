@@ -1,9 +1,9 @@
-import { mcpToolKey, readMcpToolDescriptor } from "@posthog/shared";
 import {
   formatPosthogExecBody,
   getPostHogExecDisplay,
   isPostHogExecTool,
-} from "@posthog/ui/features/posthog-mcp/utils/posthog-exec-display";
+} from "@posthog/core/sessions/posthogExecDisplay";
+import { mcpToolKey, readMcpToolDescriptor } from "@posthog/shared";
 import { formatInput } from "@posthog/ui/features/sessions/components/session-update/toolCallUtils";
 import { ActionSelector } from "@posthog/ui/primitives/ActionSelector";
 import { Box, Code } from "@radix-ui/themes";

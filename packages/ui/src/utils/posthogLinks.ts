@@ -121,6 +121,20 @@ export function channelShareUrl(
   );
 }
 
+/**
+ * Parse a URL, rejecting anything that isn't https. The gate every surface that
+ * renders a backend-supplied link goes through before fetching from it or
+ * handing it to the host's external-link opener.
+ */
+export function parseHttpsUrl(url: string): URL | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export type ShareLinkTarget =
   | { kind: "canvas"; channelId: string; dashboardId: string }
   | { kind: "channel"; channelId: string; taskId?: string };

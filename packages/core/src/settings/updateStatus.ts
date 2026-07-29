@@ -1,9 +1,12 @@
 export interface RawUpdateStatus {
   checking?: boolean;
   downloading?: boolean;
+  available?: boolean;
   upToDate?: boolean;
   updateReady?: boolean;
   version?: string;
+  availableVersion?: string;
+  error?: string;
 }
 
 export interface DerivedUpdateStatus {
@@ -33,6 +36,18 @@ export function deriveUpdateStatus(
       type: "success",
       checking: false,
     };
+  }
+  if (status.checking === false && status.available) {
+    return {
+      message: status.availableVersion
+        ? `Update ${status.availableVersion} available`
+        : "Update available",
+      type: "success",
+      checking: false,
+    };
+  }
+  if (status.checking === false && status.error) {
+    return { message: status.error, type: "error", checking: false };
   }
   if (status.checking === false) {
     return { checking: false };

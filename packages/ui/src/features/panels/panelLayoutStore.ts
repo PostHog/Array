@@ -7,7 +7,7 @@ import {
   closeTabsToRight as coreCloseTabsToRight,
   keepTab as coreKeepTab,
   moveTab as coreMoveTab,
-  openReadonlyTabInSplit as coreOpenReadonlyTabInSplit,
+  openReadonlyTab as coreOpenReadonlyTab,
   openTab as coreOpenTab,
   openTabInSplit as coreOpenTabInSplit,
   reorderTabs as coreReorderTabs,
@@ -64,6 +64,10 @@ export interface PanelLayoutStore {
     instructions: { body: string },
   ) => void;
   openAutoresearchTab: (taskId: string) => void;
+  openArtifactTab: (
+    taskId: string,
+    artifact: { runId: string; artifactId: string; name: string },
+  ) => void;
   keepTab: (taskId: string, panelId: string, tabId: string) => void;
   closeTab: (taskId: string, panelId: string, tabId: string) => void;
   closeOtherTabs: (taskId: string, panelId: string, tabId: string) => void;
@@ -248,7 +252,7 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(layout, tabId, label, {
+              coreOpenReadonlyTab(layout, tabId, label, {
                 type: "context",
                 channelName: context.channelName,
                 body: context.body,
@@ -263,7 +267,7 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(
+              coreOpenReadonlyTab(
                 layout,
                 "canvas-instructions",
                 "Canvas instructions",
@@ -279,13 +283,30 @@ export const usePanelLayoutStore = createWithEqualityFn<PanelLayoutStore>()(
             state,
             taskId,
             (layout) =>
-              coreOpenReadonlyTabInSplit(
+              coreOpenReadonlyTab(layout, "autoresearch", "Autoresearch", {
+                type: "autoresearch",
+              }) as Partial<TaskLayout>,
+          ),
+        );
+      },
+
+      openArtifactTab: (taskId, artifact) => {
+        const tabId = `artifact-${artifact.artifactId}`;
+        set((state) =>
+          updateTaskLayout(
+            state,
+            taskId,
+            (layout) =>
+              coreOpenReadonlyTab(
                 layout,
-                "autoresearch",
-                "Autoresearch",
+                tabId,
+                artifact.name,
                 {
-                  type: "autoresearch",
+                  type: "artifact",
+                  runId: artifact.runId,
+                  artifactId: artifact.artifactId,
                 },
+                "main",
               ) as Partial<TaskLayout>,
           ),
         );

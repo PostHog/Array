@@ -91,6 +91,7 @@ function tomlInlineTable(entries: Record<string, string>): string {
 
 export function buildAppServerArgs(
   options: CodexAppServerProcessOptions,
+  environment: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const args: string[] = ["app-server"];
 
@@ -129,6 +130,16 @@ export function buildAppServerArgs(
   // serve — so every review 403s. Default codex's own `user` reviewer; a caller can
   // still override it via configOverrides, which the trailing loop appends last.
   args.push("-c", `approvals_reviewer="user"`);
+
+  // Codex snapshots shell state only for the thread's initial cwd. Cloud tasks
+  // can work in additional checkouts, so pin the backend-controlled BASH_ENV
+  // path into every tool shell instead of relying on snapshot restoration.
+  if (environment.IS_SANDBOX && environment.BASH_ENV) {
+    args.push(
+      "-c",
+      `shell_environment_policy.set.BASH_ENV=${tomlBasicString(environment.BASH_ENV)}`,
+    );
+  }
 
   // Disable the user's ambient ~/.codex MCP servers so the adapter only exposes
   // MCP servers PostHog injects per-thread; otherwise codex fails connecting to them.
@@ -199,7 +210,7 @@ export function spawnCodexAppServerProcess(
   }
   env.PATH = `${dirname(options.binaryPath)}${delimiter}${env.PATH ?? ""}`;
 
-  const args = buildAppServerArgs(options);
+  const args = buildAppServerArgs(options, env);
 
   logger.info("Spawning codex app-server process", {
     command: options.binaryPath,

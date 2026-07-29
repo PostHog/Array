@@ -3,8 +3,8 @@ import {
   buildThreadTimeline,
   deriveThreadAgentStatus,
   hasAgentMention,
-  normalizeAgentPromptText,
   shouldSuspendThreadSession,
+  threadMessageArtifact,
 } from "./threadTimeline";
 
 describe("hasAgentMention", () => {
@@ -19,96 +19,176 @@ describe("hasAgentMention", () => {
   });
 });
 
-describe("normalizeAgentPromptText", () => {
+describe("threadMessageArtifact", () => {
+  it("maps a canvas_created message to a canvas artifact", () => {
+    expect(
+      threadMessageArtifact({
+        id: "m1",
+        content:
+          "[Signups](https://us.posthog.com/code/canvas/c/d) has been created",
+        created_at: "2026-07-17T00:00:00Z",
+        author_kind: "agent",
+        event: "canvas_created",
+        payload: {
+          canvas_name: "Signups",
+          canvas_url: "https://us.posthog.com/code/canvas/c/d",
+        },
+      }),
+    ).toEqual({
+      kind: "canvas",
+      name: "Signups",
+      url: "https://us.posthog.com/code/canvas/c/d",
+    });
+  });
+
+  it("falls back to a default canvas name and no url", () => {
+    expect(
+      threadMessageArtifact({
+        id: "m1",
+        content: "Canvas has been created",
+        created_at: "2026-07-17T00:00:00Z",
+        author_kind: "agent",
+        event: "canvas_created",
+        payload: {},
+      }),
+    ).toEqual({ kind: "canvas", name: "Canvas", url: null });
+  });
+
+  it("maps a pr_created message to a pr artifact", () => {
+    expect(
+      threadMessageArtifact({
+        id: "m2",
+        content: "Pull request opened",
+        created_at: "2026-07-17T00:00:00Z",
+        author_kind: "agent",
+        event: "pr_created",
+        payload: { pr_url: "https://github.com/org/repo/pull/123" },
+      }),
+    ).toEqual({ kind: "pr", url: "https://github.com/org/repo/pull/123" });
+  });
+
   it.each([
     [
-      "forwarded thread comment",
-      "[Thread comment from Peter Kirkham] @agent which model are you?",
-      "which model are you?",
+      "a pr_created message without a url",
+      {
+        id: "m3",
+        content: "Pull request opened",
+        created_at: "2026-07-17T00:00:00Z",
+        author_kind: "agent" as const,
+        event: "pr_created",
+        payload: {},
+      },
     ],
-    ["direct prompt", "which model are you?", "which model are you?"],
     [
-      "direct prompt with mention",
-      "@agent which model are you?",
-      "which model are you?",
+      "a turn_complete message",
+      {
+        id: "m4",
+        content: "@[Casey](casey@example.com) Done.",
+        created_at: "2026-07-17T00:00:00Z",
+        author_kind: "agent" as const,
+        event: "turn_complete",
+        payload: { run_id: "run" },
+      },
     ],
-  ])("normalizes a %s", (_name, content, expected) => {
-    expect(normalizeAgentPromptText(content)).toBe(expected);
+    [
+      "a human message",
+      {
+        id: "m5",
+        content: "Looks good",
+        created_at: "2026-07-17T00:00:00Z",
+      },
+    ],
+  ])("returns no artifact for %s", (_name, message) => {
+    expect(threadMessageArtifact(message)).toBeNull();
   });
 });
 
 describe("buildThreadTimeline", () => {
-  it("omits the session echo of a forwarded thread message", () => {
-    const timeline = buildThreadTimeline({
-      prompts: [
-        {
-          id: "prompt",
-          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
-          timestamp: 200,
-        },
-      ],
-      humanMessages: [
-        {
-          id: "human",
-          content: "@agent which model are you?",
-          createdAt: "1970-01-01T00:00:00.100Z",
-          forwardedToAgent: true,
-        },
-      ],
-      agentMessages: [],
-    });
-
-    expect(timeline.map((row) => row.kind)).toEqual(["human"]);
-  });
-
-  it("keeps a thread-comment prompt without a matching forwarded message", () => {
-    const timeline = buildThreadTimeline({
-      prompts: [
-        {
-          id: "prompt",
-          text: "[Thread comment from Peter Kirkham] @agent which model are you?",
-          timestamp: 200,
-        },
-      ],
-      humanMessages: [],
-      agentMessages: [],
-    });
-
-    expect(timeline.map((row) => row.kind)).toEqual(["prompt"]);
-  });
-
-  it("interleaves prompts, human replies, and agent turns chronologically", () => {
-    const timeline = buildThreadTimeline({
-      prompts: [{ id: "prompt", text: "Start", timestamp: 100 }],
-      humanMessages: [
-        {
-          id: "human",
-          content: "Reply",
-          createdAt: "1970-01-01T00:00:00.150Z",
-        },
-      ],
-      agentMessages: [{ id: "agent", text: "Done", timestamp: 200 }],
-    });
-
-    expect(timeline.map((row) => row.kind)).toEqual([
-      "prompt",
-      "human",
-      "agent",
+  it("keeps only human messages and artifacts", () => {
+    const timeline = buildThreadTimeline([
+      {
+        id: "human",
+        content: "Kicking this off",
+        created_at: "1970-01-01T00:00:00.100Z",
+      },
+      {
+        id: "turn",
+        content: "@[Casey](casey@example.com) Shipped it.",
+        created_at: "1970-01-01T00:00:00.200Z",
+        author_kind: "agent",
+        event: "turn_complete",
+        payload: { run_id: "run" },
+      },
+      {
+        id: "system",
+        content: "Status changed",
+        created_at: "1970-01-01T00:00:00.250Z",
+        author_kind: "system",
+        event: "status_changed",
+      },
+      {
+        id: "canvas",
+        content: "Canvas has been created",
+        created_at: "1970-01-01T00:00:00.300Z",
+        author_kind: "agent",
+        event: "canvas_created",
+        payload: { canvas_name: "Signups", canvas_url: null },
+      },
     ]);
+
+    expect(timeline.map((row) => row.kind)).toEqual(["human", "artifact"]);
+  });
+
+  it("orders human messages and artifacts chronologically", () => {
+    const timeline = buildThreadTimeline([
+      {
+        id: "pr",
+        content: "Pull request opened",
+        created_at: "1970-01-01T00:00:00.200Z",
+        author_kind: "agent",
+        event: "pr_created",
+        payload: { pr_url: "https://github.com/org/repo/pull/1" },
+      },
+      {
+        id: "human",
+        content: "Reply",
+        created_at: "1970-01-01T00:00:00.100Z",
+      },
+    ]);
+
+    expect(timeline.map((row) => row.message.id)).toEqual(["human", "pr"]);
   });
 
   it("keeps malformed timestamps at the end", () => {
-    const timeline = buildThreadTimeline({
-      prompts: [{ id: "prompt", text: "Start", timestamp: 100 }],
-      humanMessages: [{ id: "human", content: "Reply", createdAt: "invalid" }],
-      agentMessages: [{ id: "agent", text: "Done", timestamp: 200 }],
-    });
-
-    expect(timeline.map((row) => row.kind)).toEqual([
-      "prompt",
-      "agent",
-      "human",
+    const timeline = buildThreadTimeline([
+      { id: "broken", content: "Reply", created_at: "invalid" },
+      {
+        id: "human",
+        content: "Reply",
+        created_at: "1970-01-01T00:00:00.100Z",
+      },
     ]);
+
+    expect(timeline.map((row) => row.message.id)).toEqual(["human", "broken"]);
+  });
+
+  it("exposes the artifact and the source message on artifact rows", () => {
+    const [row] = buildThreadTimeline([
+      {
+        id: "pr",
+        content: "Pull request opened",
+        created_at: "1970-01-01T00:00:00.200Z",
+        author_kind: "agent",
+        event: "pr_created",
+        payload: { pr_url: "https://github.com/org/repo/pull/1" },
+      },
+    ]);
+
+    expect(row).toMatchObject({
+      kind: "artifact",
+      artifact: { kind: "pr", url: "https://github.com/org/repo/pull/1" },
+      message: { id: "pr" },
+    });
   });
 });
 

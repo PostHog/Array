@@ -1,4 +1,4 @@
-import { Stop } from "@phosphor-icons/react";
+import { StopCircle } from "@phosphor-icons/react";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -58,7 +58,7 @@ export function StopCloudRunDialog({
     <GitDialog
       open={open}
       onOpenChange={handleOpenChange}
-      icon={<Stop size={14} />}
+      icon={<StopCircle size={14} />}
       title={title}
       error={error}
       buttonLabel={buttonLabel}

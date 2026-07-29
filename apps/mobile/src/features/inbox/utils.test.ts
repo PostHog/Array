@@ -1,20 +1,52 @@
-import { describe, expect, it } from "vitest";
-import type { SignalReport, SignalReportStatus } from "./types";
+import { buildInboxViewedProperties } from "@posthog/core/inbox/engagement";
 import {
-  buildInboxViewedProperties,
-  dismissalReasonLabel,
-  formatSignalReportSummaryMarkdown,
-  isRestorableReport,
-} from "./utils";
+  buildArchiveListOrdering,
+  buildPriorityFilterParam,
+  buildSignalReportListOrdering,
+  INBOX_PIPELINE_STATUSES,
+} from "@posthog/core/inbox/reportFiltering";
+import { isRestorableReport } from "@posthog/core/inbox/reportMembership";
+import { formatSignalReportSummaryMarkdown } from "@posthog/core/inbox/reportPresentation";
+import { dismissalReasonLabel } from "@posthog/shared";
+import type {
+  Signal,
+  SignalReport,
+  SignalReportOrderingField,
+  SignalReportStatus,
+} from "@posthog/shared/domain-types";
+import { describe, expect, it } from "vitest";
+import { sourceLine } from "./utils";
 
-const DEFAULT_STATUS_FILTER: SignalReportStatus[] = [
-  "ready",
-  "pending_input",
-  "in_progress",
-  "failed",
-  "candidate",
-  "potential",
-];
+function signal(source_product: string, source_type: string): Signal {
+  return {
+    signal_id: "s1",
+    content: "",
+    source_product,
+    source_type,
+    source_id: "id",
+    weight: 1,
+    timestamp: "",
+    extra: {},
+  };
+}
+
+function buildMobileInboxViewedProperties(
+  reports: SignalReport[],
+  totalCount: number,
+  filters: {
+    sourceProductFilter: string[];
+    statusFilter: readonly SignalReportStatus[];
+    suggestedReviewerFilter: string[];
+    priorityFilter: string[];
+    defaultStatusFilter: readonly SignalReportStatus[];
+  },
+) {
+  return buildInboxViewedProperties({
+    visibleReports: reports,
+    totalCount,
+    filters: { surface: "mobile", ...filters },
+  });
+}
 
 function makeReport(
   partial: Partial<SignalReport> & Pick<SignalReport, "id">,
@@ -72,12 +104,12 @@ describe("formatSignalReportSummaryMarkdown", () => {
 
 describe("buildInboxViewedProperties", () => {
   it("emits zero counts for an empty list", () => {
-    const props = buildInboxViewedProperties([], 0, {
+    const props = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(props).toMatchObject({
       report_count: 0,
@@ -121,12 +153,12 @@ describe("buildInboxViewedProperties", () => {
       makeReport({ id: "4", status: "failed" }),
     ];
 
-    const props = buildInboxViewedProperties(reports, 4, {
+    const props = buildMobileInboxViewedProperties(reports, 4, {
       sourceProductFilter: [],
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
 
     expect(props.report_count).toBe(4);
@@ -142,55 +174,129 @@ describe("buildInboxViewedProperties", () => {
   });
 
   it("marks filters active when any of status/source/reviewer/priority differs from defaults", () => {
-    const narrowed = buildInboxViewedProperties([], 0, {
+    const narrowed = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: ["ready"],
       suggestedReviewerFilter: [],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(narrowed.has_active_filters).toBe(true);
     expect(narrowed.status_filter_count).toBe(1);
 
-    const sourced = buildInboxViewedProperties([], 0, {
+    const sourced = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: ["error_tracking"],
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(sourced.has_active_filters).toBe(true);
     expect(sourced.source_product_filter).toEqual(["error_tracking"]);
 
-    const reviewer = buildInboxViewedProperties([], 0, {
+    const reviewer = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: ["uuid-1"],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(reviewer.has_active_filters).toBe(true);
 
-    const prioritized = buildInboxViewedProperties([], 0, {
+    const prioritized = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
-      statusFilter: DEFAULT_STATUS_FILTER,
+      statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
       priorityFilter: ["P0"],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(prioritized.has_active_filters).toBe(true);
   });
 
   it("treats a reordered default status set as not filtered", () => {
-    const props = buildInboxViewedProperties([], 0, {
+    const props = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
-      statusFilter: [...DEFAULT_STATUS_FILTER].reverse(),
+      statusFilter: [...INBOX_PIPELINE_STATUSES].reverse(),
       suggestedReviewerFilter: [],
       priorityFilter: [],
-      defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      defaultStatusFilter: INBOX_PIPELINE_STATUSES,
     });
     expect(props.has_active_filters).toBe(false);
   });
+});
+
+describe("buildSignalReportListOrdering", () => {
+  it.each([
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-priority,-created_at",
+    },
+    {
+      field: "priority" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,priority,-created_at",
+    },
+    {
+      field: "signal_count" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-signal_count,priority",
+    },
+    {
+      field: "total_weight" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,total_weight,priority",
+    },
+    {
+      field: "created_at" as SignalReportOrderingField,
+      direction: "desc" as const,
+      expected: "status,-created_at,priority",
+    },
+    {
+      field: "updated_at" as SignalReportOrderingField,
+      direction: "asc" as const,
+      expected: "status,updated_at,priority",
+    },
+  ])(
+    "orders $field $direction as $expected",
+    ({ field, direction, expected }) => {
+      expect(buildSignalReportListOrdering(field, direction)).toBe(expected);
+    },
+  );
+});
+
+describe("buildPriorityFilterParam", () => {
+  it.each([
+    {
+      name: "returns undefined for an empty selection",
+      input: [],
+      expected: undefined,
+    },
+    {
+      name: "joins selected priorities with commas",
+      input: ["P0", "P2"] as const,
+      expected: "P0,P2",
+    },
+    {
+      name: "dedupes repeated priorities",
+      input: ["P1", "P1", "P3"] as const,
+      expected: "P1,P3",
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(buildPriorityFilterParam([...input])).toBe(expected);
+  });
+});
+
+describe("buildArchiveListOrdering", () => {
+  it.each([
+    { direction: "desc" as const, expected: "-updated_at" },
+    { direction: "asc" as const, expected: "updated_at" },
+  ])(
+    "sorts by field without a status prefix ($direction)",
+    ({ direction, expected }) => {
+      expect(buildArchiveListOrdering("updated_at", direction)).toBe(expected);
+    },
+  );
 });
 
 describe("isRestorableReport", () => {
@@ -211,5 +317,23 @@ describe("dismissalReasonLabel", () => {
     { value: "totally_unknown_code", expected: "totally_unknown_code" },
   ])("maps $value", ({ value, expected }) => {
     expect(dismissalReasonLabel(value)).toBe(expected);
+  });
+});
+
+describe("sourceLine", () => {
+  it.each([
+    {
+      product: "error_tracking",
+      type: "issue_created",
+      expected: "Error tracking · New issue",
+    },
+    { product: "sentry", type: "issue", expected: "Sentry · issue" },
+    {
+      product: "mystery_source",
+      type: "thing",
+      expected: "mystery source · thing",
+    },
+  ])("labels $product", ({ product, type, expected }) => {
+    expect(sourceLine(signal(product, type))).toBe(expected);
   });
 });

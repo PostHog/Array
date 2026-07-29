@@ -10,7 +10,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## File Mapping
 
-| PostHog Code | Upstream |
+| PostHog | Upstream |
 |---|---|
 | `conversion/tool-use-to-acp.ts` | `tools.ts` |
 | `conversion/sdk-to-acp.ts` | inline in `acp-agent.ts` |
@@ -22,7 +22,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 | `hooks.ts` | `tools.ts` |
 | `types.ts` | inline |
 
-## PostHog Code-Only Code (Do Not Sync)
+## PostHog-Only Code (Do Not Sync)
 
 - PostHog analytics (`_posthog/*` ext notifications, `_posthog/usage_update`)
 - Process lifecycle (spawn wrappers, PID tracking, `onProcessSpawned`/`onProcessExited`)
@@ -37,7 +37,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - Steer mode: `_meta.steer` maps to `priority:"next"` in `promptToClaude` (`acp-to-sdk.ts`). A mid-turn branch in `prompt()` pushes the message into the running turn's input and returns immediately with a benign `end_turn` instead of queueing a new turn. Advertised via `_meta.posthog.steering:"native"` in `initialize()`
 - `SYSTEM_REMINDER` stripping from Read tool results
 - WebFetch `resourceLink` content enrichment
-- `customTitle` in listSessions (PostHog Code is ahead of upstream here)
+- `customTitle` in listSessions (PostHog is ahead of upstream here)
 - Refusal support: `Options.fallbackModel` defaults to `FALLBACK_MODEL` in
   `session/options.ts`; `model_refusal_fallback` system messages emit a
   `_posthog/status` notification (`refusal_fallback`) in `sdk-to-acp.ts`; a
@@ -50,9 +50,9 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 
 ## Intentional Divergences
 
-| Area | Upstream | PostHog Code | Reason |
+| Area | Upstream | PostHog | Reason |
 |---|---|---|---|
-| AskUserQuestion | Always disallowed | Enabled via env var + permission handler | PostHog Code supports structured questions |
+| AskUserQuestion | Always disallowed | Enabled via env var + permission handler | PostHog supports structured questions |
 | Model resolution | `initializationResult.models` from SDK | `fetchGatewayModels()` from gateway API | Different model backend |
 | permissionMode | Hardcoded `"default"` | Reads from `meta.permissionMode` | More flexible mode selection |
 | Session storage | `this.sessions[sessionId]` (multi) | `this.session` (single) | Architectural choice |
@@ -134,7 +134,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
   were not adopted — the renderer consumes selects; revisit if it advertises
   `sessionConfigOptions.boolean`.
 - **ReportFindings tool rendering** (#826, ef42c46): Not ported to `toolInfoFromToolUse` — see
-  Skipped (the fork renders unknown tools generically and PostHog Code has no code-review
+  Skipped (the fork renders unknown tools generically and PostHog has no code-review
   ReportFindings flow); re-evaluate if the SDK starts emitting it in our sessions.
 - **Test mock**: added `setMcpPermissionModeOverride` and `reinitialize` to the SDK `MockQuery`
   (new methods on the SDK `Query` interface by 0.3.197).
@@ -152,7 +152,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 - **Version flag handling** (#813, 9616bda): `src/index.ts` CLI-entrypoint concern; the fork is
   embedded in the agent server and has no standalone binary.
 - **Agent selection dropdown** (#794, 5729c47): Surfaces custom main-thread agent personas
-  (`supportedAgents()` minus built-ins) as an `agent` config option. PostHog Code drives its own
+  (`supportedAgents()` minus built-ins) as an `agent` config option. PostHog drives its own
   agent concepts; defer until product wants persona selection in the picker.
 - **availableModels allowlist fixes** (#768 cc2885f, #827 98c284b) and **1M inference from model
   descriptions** (#799, 508453c): All operate on upstream's SDK-settings model pipeline
@@ -387,7 +387,7 @@ Fork of `@anthropic-ai/claude-agent-acp`. Upstream repo: https://github.com/anth
 ## Next Sync
 
 1. Check upstream changelog since v0.54.1
-2. Diff upstream source against PostHog Code using the file mapping above
+2. Diff upstream source against PostHog using the file mapping above
 3. Port in phases: bug fixes first, then features
 4. After each phase: `pnpm --filter agent typecheck && pnpm --filter agent build && pnpm lint`
 5. After all phases: `pnpm typecheck && pnpm test`

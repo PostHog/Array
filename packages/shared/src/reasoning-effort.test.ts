@@ -8,6 +8,9 @@ describe("isSupportedReasoningEffort", () => {
     ["codex", "gpt-5.4", "max", false],
     ["claude", "claude-opus-4-8", "xhigh", true],
     ["claude", "claude-sonnet-4-6", "xhigh", false],
+    ["claude", "@cf/zai-org/glm-5.2", "high", true],
+    ["claude", "@cf/zai-org/glm-5.2", "max", true],
+    ["claude", "@cf/zai-org/glm-5.2", "medium", false],
     ["claude", "claude-opus-4-8", "minimal", false],
   ] as const)(
     "validates %s %s effort %s",

@@ -1,4 +1,10 @@
-import { ChartLineUp, Pause, Play, Plus, Stop } from "@phosphor-icons/react";
+import {
+  ChartLineUp,
+  Pause,
+  Play,
+  Plus,
+  StopCircle,
+} from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import type {
@@ -344,7 +350,7 @@ function RunHeader({
               color="red"
               onClick={() => service.stopRun(run.id)}
             >
-              <Stop size={12} /> Stop
+              <StopCircle size={12} /> Stop
             </Button>
           )}
           {!isLive && (

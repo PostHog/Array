@@ -8,7 +8,7 @@
 set -euo pipefail
 
 BUNDLE_ID="com.posthog.code.mobile"
-TITLE="${1:-PostHog Code}"
+TITLE="${1:-PostHog}"
 BODY="${2:-Test push — tap me}"
 TASK_ID="${3:-00000000-0000-0000-0000-000000000000}"
 TASK_RUN_ID="${4:-00000000-0000-0000-0000-000000000000}"

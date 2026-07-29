@@ -123,7 +123,7 @@ export function resolveActionProperties(
 /** Bulk-capable report actions fired from the selection toolbar / dismiss flows. */
 export type InboxBulkActionType = Extract<
   InboxReportActionProperties["action_type"],
-  "dismiss" | "snooze" | "delete" | "reingest"
+  "dismiss" | "snooze" | "delete" | "reingest" | "remove_suggested_reviewer"
 >;
 
 export interface BuildBulkActionEventsInput {
@@ -137,8 +137,9 @@ export interface BuildBulkActionEventsInput {
 
 /**
  * Build `INBOX_REPORT_ACTION` payloads for a bulk (or single-report) dismiss /
- * snooze / delete / reingest. Pure so it can be unit-tested and reused across
- * the toolbar, the per-row dismiss action, and detail-screen dismiss.
+ * snooze / delete / reingest / remove-suggested-reviewer. Pure so it can be
+ * unit-tested and reused across the toolbar, the per-row dismiss action, and
+ * detail-screen dismiss.
  *
  * `is_bulk` / `bulk_size` carry the grouping; `rank` / `list_size` are left at 0
  * because these flows act on a selection, not a positional list slot.
@@ -170,9 +171,14 @@ export function buildBulkActionEvents(
   }));
 }
 
-export interface InboxViewedFilterState {
+interface InboxViewedFilterStateBase {
   sourceProductFilter: string[];
   priorityFilter: string[];
+}
+
+export interface DesktopInboxViewedFilterState
+  extends InboxViewedFilterStateBase {
+  surface: "desktop";
   searchQuery: string;
   /**
    * True when the reviewer scope is the default ("For you"). False when the
@@ -182,7 +188,19 @@ export interface InboxViewedFilterState {
   isDefaultScope: boolean;
 }
 
-export interface BuildInboxViewedInput {
+export interface MobileInboxViewedFilterState
+  extends InboxViewedFilterStateBase {
+  surface: "mobile";
+  statusFilter: readonly string[];
+  defaultStatusFilter: readonly string[];
+  suggestedReviewerFilter: string[];
+}
+
+export type InboxViewedFilterState =
+  | DesktopInboxViewedFilterState
+  | MobileInboxViewedFilterState;
+
+interface BuildInboxViewedInputBase {
   /**
    * Reports currently visible to the user (after reviewer scope + search), used
    * for `report_count`, `ready_count`, and the priority/actionability breakdown.
@@ -190,10 +208,18 @@ export interface BuildInboxViewedInput {
   visibleReports: SignalReport[];
   /** Server-reported total of reports matching the active query — the headline inbox number. */
   totalCount: number;
-  /** Tab badge counts shown in the v2 header (the numbers the user actually sees). */
-  tabCounts: { pulls: number; reports: number };
-  filters: InboxViewedFilterState;
 }
+
+export type BuildInboxViewedInput =
+  | (BuildInboxViewedInputBase & {
+      filters: DesktopInboxViewedFilterState;
+      /** Tab badge counts shown in the desktop header. */
+      tabCounts: { pulls: number; reports: number };
+    })
+  | (BuildInboxViewedInputBase & {
+      filters: MobileInboxViewedFilterState;
+      tabCounts?: never;
+    });
 
 /**
  * Build the property payload for the `Inbox viewed` analytics event from the
@@ -206,7 +232,8 @@ export interface BuildInboxViewedInput {
 export function buildInboxViewedProperties(
   input: BuildInboxViewedInput,
 ): InboxViewedProperties {
-  const { visibleReports, totalCount, tabCounts, filters } = input;
+  const { visibleReports, totalCount, filters } = input;
+  const tabCounts = input.tabCounts ?? { pulls: 0, reports: totalCount };
 
   const priorityCounts = { P0: 0, P1: 0, P2: 0, P3: 0, P4: 0, unknown: 0 };
   const actionabilityCounts = {
@@ -236,11 +263,20 @@ export function buildInboxViewedProperties(
     }
   }
 
+  const statusFiltered =
+    filters.surface === "mobile" &&
+    (filters.statusFilter.length !== filters.defaultStatusFilter.length ||
+      filters.statusFilter.some(
+        (status) => !filters.defaultStatusFilter.includes(status),
+      ));
   const hasActiveFilters =
     filters.sourceProductFilter.length > 0 ||
     filters.priorityFilter.length > 0 ||
-    filters.searchQuery.trim().length > 0 ||
-    !filters.isDefaultScope;
+    (filters.surface === "desktop" && filters.searchQuery.trim().length > 0) ||
+    statusFiltered ||
+    (filters.surface === "mobile" &&
+      filters.suggestedReviewerFilter.length > 0) ||
+    (filters.surface === "desktop" && !filters.isDefaultScope);
 
   return {
     report_count: visibleReports.length,
@@ -248,7 +284,8 @@ export function buildInboxViewedProperties(
     ready_count: readyCount,
     has_active_filters: hasActiveFilters,
     source_product_filter: filters.sourceProductFilter,
-    status_filter_count: 0,
+    status_filter_count:
+      filters.surface === "mobile" ? filters.statusFilter.length : 0,
     is_empty: totalCount === 0,
     priority_p0_count: priorityCounts.P0,
     priority_p1_count: priorityCounts.P1,

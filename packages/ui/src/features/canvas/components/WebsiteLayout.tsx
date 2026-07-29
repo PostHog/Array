@@ -1,12 +1,21 @@
 import {
+  ArrowClockwiseIcon,
   DotsThreeIcon,
   GitForkIcon,
   LinkIcon,
   PencilSimpleIcon,
   PushPinIcon,
+  TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -16,9 +25,17 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import {
+  channelPageIcon,
+  channelPageLabel,
+} from "@posthog/ui/features/canvas/components/channelPages";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
+import { deleteCanvasWithUndo } from "@posthog/ui/features/canvas/deleteCanvasWithUndo";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
+import { useCanvasFrameStore } from "@posthog/ui/features/canvas/freeform/canvasFrameStore";
+import { CANVAS_QUERY_KEY } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboard,
@@ -39,13 +56,14 @@ import { toast } from "@posthog/ui/primitives/toast";
 import { track } from "@posthog/ui/shell/analytics";
 import { useHeaderStore } from "@posthog/ui/shell/headerStore";
 import { Box, Flex } from "@radix-ui/themes";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Outlet,
   useNavigate,
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 function threadIdFor(dashboardId: string): string {
   return `dashboard:${dashboardId}`;
@@ -64,11 +82,37 @@ function FreeformEditControls({
   dashboardId: string;
 }) {
   const navigate = useNavigate();
+  // Pinning is scoped to whatever holds the canvas; the new layout calls that a
+  // space, the old one a channel.
+  const spacesLayout = useChannelsLayout();
+  const containerNoun = spacesLayout ? "space" : "channel";
   const editing = useIsDashboardEditing(dashboardId);
   const setEditing = useDashboardEditStore((s) => s.setEditing);
   const { dashboard } = useDashboard(dashboardId);
-  const { forkFreeform, isCreating, setPinned } = useDashboardMutations();
+  const { forkFreeform, isCreating, setPinned, invalidateDashboards } =
+    useDashboardMutations();
   const isPinned = dashboard?.pinnedAt != null;
+  // "Delete…" opens a confirmation rather than deleting inline — the canvas and
+  // its version history go away for everyone in the space.
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  // Once confirmed the canvas vanishes from every list and we leave for the
+  // space's artifacts list, but the delete isn't sent until the undo toast's
+  // timer runs out — Undo simply cancels it.
+  const confirmDelete = () => {
+    setConfirmDeleteOpen(false);
+    deleteCanvasWithUndo({
+      dashboardId,
+      channelId,
+      name: dashboard?.name ?? "Canvas",
+      surface: "canvas",
+      invalidate: invalidateDashboards,
+    });
+    void navigate({
+      to: "/website/$channelId/artifacts",
+      params: { channelId },
+    });
+  };
 
   const onTogglePin = () => {
     void setPinned(dashboardId, !isPinned)
@@ -105,6 +149,23 @@ function FreeformEditControls({
     useFreeformThread(threadId);
   const revert = useFreeformChatStore((s) => s.revert);
   const goToLatest = useFreeformChatStore((s) => s.goToLatest);
+
+  const queryClient = useQueryClient();
+  const remountFrame = useCanvasFrameStore((s) => s.remount);
+  // Fully remount the mounted canvas iframe: drop the host-side read cache so
+  // queries re-run, then recreate the iframe element (not just reload its
+  // document) so a refresh also recovers from a wedged frame.
+  const onRefresh = () => {
+    track(ANALYTICS_EVENTS.DASHBOARD_ACTION, {
+      action_type: "refresh",
+      surface: "canvas",
+      channel_id: channelId,
+      dashboard_id: dashboardId,
+      kind: "freeform",
+    });
+    void queryClient.invalidateQueries({ queryKey: [CANVAS_QUERY_KEY] });
+    remountFrame(dashboardId);
+  };
 
   const hasCode = code.length > 0;
   // Viewing the head version (or there's no history yet) → autosave is live.
@@ -211,7 +272,18 @@ function FreeformEditControls({
             </Button>
           }
         />
-        <DropdownMenuContent align="end" side="bottom" sideOffset={4}>
+        {/* Sized to its longest item — the default width clipped "Unpin from
+            space". Same treatment as the channel-list menus. */}
+        <DropdownMenuContent
+          align="end"
+          side="bottom"
+          sideOffset={4}
+          className="w-auto min-w-fit"
+        >
+          <DropdownMenuItem onClick={onRefresh}>
+            <ArrowClockwiseIcon size={14} />
+            Refresh
+          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
               void copyCanvasLink(channelId, dashboardId, "canvas")
@@ -222,10 +294,46 @@ function FreeformEditControls({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onTogglePin}>
             <PushPinIcon size={14} weight={isPinned ? "fill" : "regular"} />
-            {isPinned ? "Unpin from channel" : "Pin to channel"}
+            {isPinned
+              ? `Unpin from ${containerNoun}`
+              : `Pin to ${containerNoun}`}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setConfirmDeleteOpen(true)}
+          >
+            <TrashIcon size={14} />
+            Delete…
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* Destructive confirm for "Delete…" — the canvas goes for everyone. */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete canvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete{" "}
+              <span className="font-medium">{dashboard?.name ?? "Canvas"}</span>
+              ? Its code and version history go for everyone in the{" "}
+              {containerNoun}. You get a few seconds to undo, then it's
+              permanent.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose
+              render={
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
+              }
+            />
+            <Button variant="destructive" size="sm" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Button
         variant="outline"
         size="sm"
@@ -292,6 +400,7 @@ function CanvasBreadcrumb({
 // single toolbar carries the channel breadcrumb (left) and data controls /
 // actions (right).
 export function WebsiteLayout() {
+  const spacesLayout = useChannelsLayout();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const params = useParams({ strict: false });
 
@@ -314,8 +423,11 @@ export function WebsiteLayout() {
 
   const { channels } = useChannels();
   const channelName = channelId
-    ? (channels.find((c) => c.id === channelId)?.name ?? "Channel")
-    : "Channel";
+    ? (channels.find((c) => c.id === channelId)?.name ??
+      (spacesLayout ? "Space" : "Channel"))
+    : spacesLayout
+      ? "Space"
+      : "Channel";
 
   const isDashboardDetail = Boolean(channelId && dashboardId);
   // The canvases grid (its own sub-route now that the channel index is the
@@ -375,7 +487,8 @@ export function WebsiteLayout() {
             <ChannelBreadcrumb
               channelName={channelName}
               channelId={channelId}
-              leafLabel="Canvases"
+              leafIcon={channelPageIcon("canvases", { size: 12 })}
+              leafLabel={channelPageLabel("canvases")}
               trailing={<NewCanvasMenu channelId={channelId} />}
             />
           )}

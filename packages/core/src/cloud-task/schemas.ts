@@ -1,20 +1,12 @@
-import type { TaskRunStatus } from "@posthog/shared";
+import type { CloudTaskUpdatePayload } from "@posthog/shared";
 import { z } from "zod";
-import type { CloudTaskUpdatePayload } from "./cloud-task-types";
 
-export type { CloudTaskUpdatePayload, TaskRunStatus };
-
-export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
-
-export function isTerminalStatus(
-  status: TaskRunStatus | string | null | undefined,
-): boolean {
-  return (
-    status !== null &&
-    status !== undefined &&
-    TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])
-  );
-}
+export {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type TaskRunStatus,
+  TERMINAL_STATUSES,
+} from "@posthog/shared";
 
 // --- Events ---
 

@@ -149,7 +149,17 @@ function textDelta(sessionId: string, text: string) {
   };
 }
 
-function assistantMessage(sessionId: string, apiId: string, text: string) {
+function assistantMessage(
+  sessionId: string,
+  apiId: string,
+  text: string,
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  },
+) {
   return {
     type: "assistant",
     parent_tool_use_id: null,
@@ -159,6 +169,20 @@ function assistantMessage(sessionId: string, apiId: string, text: string) {
       id: apiId,
       role: "assistant",
       content: [{ type: "text", text }],
+      ...(usage ? { usage } : {}),
+    },
+  };
+}
+
+function compactBoundary(sessionId: string) {
+  return {
+    type: "system",
+    subtype: "compact_boundary",
+    session_id: sessionId,
+    uuid: "compact-1",
+    compact_metadata: {
+      trigger: "auto",
+      pre_tokens: 434_000,
     },
   };
 }
@@ -190,6 +214,23 @@ function messageChunkTexts(
     )
     .filter((update) => update?.sessionUpdate === "agent_message_chunk")
     .map((update) => update?.content?.text ?? "");
+}
+
+function usageUpdates(
+  calls: ClientMocks["sessionUpdate"]["mock"]["calls"],
+): Array<{ used: number; size: number }> {
+  return calls.flatMap(([call]) => {
+    const update = (
+      call as {
+        update?: { sessionUpdate?: string; used?: number; size?: number };
+      }
+    ).update;
+    return update?.sessionUpdate === "usage_update" &&
+      typeof update.used === "number" &&
+      typeof update.size === "number"
+      ? [{ used: update.used, size: update.size }]
+      : [];
+  });
 }
 
 describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
@@ -241,6 +282,48 @@ describe("ClaudeAcpAgent.prompt — streamed assistant text wiring", () => {
     expect(messageChunkTexts(client.sessionUpdate.mock.calls)).toEqual([
       "gateway answer",
     ]);
+  });
+
+  it("does not replace known context usage with incomplete gateway snapshots", async () => {
+    const { agent, client } = makeAgent();
+    const sessionId = "s-context-usage";
+    const { query, input } = installFakeSession(agent, sessionId);
+    const session = (
+      agent as unknown as {
+        session: { contextUsed?: number; lastContextWindowSize?: number };
+      }
+    ).session;
+    session.contextUsed = 434_000;
+    session.lastContextWindowSize = 1_000_000;
+    vi.mocked(query.getContextUsage).mockRejectedValue(
+      new Error("context usage unavailable"),
+    );
+
+    const promptPromise = agent.prompt({
+      sessionId,
+      prompt: [{ type: "text", text: "continue" }],
+    });
+    await tick();
+
+    await echoUserMessage(query, input);
+    await send(query, messageStart(sessionId, "msg-context"));
+    await send(query, compactBoundary(sessionId));
+    await send(
+      query,
+      assistantMessage(sessionId, "msg-context", "done", {
+        input_tokens: 440_000,
+        output_tokens: 100,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      }),
+    );
+    await send(query, resultSuccess(sessionId));
+    await promptPromise;
+
+    const updates = usageUpdates(client.sessionUpdate.mock.calls);
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.every(({ used }) => used >= 434_000)).toBe(true);
+    expect(updates.every(({ size }) => size === 1_000_000)).toBe(true);
   });
 
   it("keeps the original turn open until a pending steer is consumed", async () => {

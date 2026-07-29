@@ -8,7 +8,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import type { Adapter } from "./adapter";
 import type { SkillButtonId } from "./analytics-events";
-import type { TaskRunStatus } from "./domain-types";
+import type { TaskRunArtifact, TaskRunStatus } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
 
@@ -94,6 +94,7 @@ export interface AgentSession {
   cloudStatus?: TaskRunStatus;
   cloudStage?: string | null;
   cloudOutput?: Record<string, unknown> | null;
+  cloudArtifacts?: TaskRunArtifact[];
   cloudErrorMessage?: string | null;
   initialPrompt?: ContentBlock[];
   cloudBranch?: string | null;
@@ -161,6 +162,28 @@ export function mergeConfigOptions(
     }
     return liveOpt;
   });
+}
+
+/**
+ * Whether a persisted config option can be restored into a resumed session's
+ * live options. The live session must still advertise an option with the same
+ * id and type, and — for selects — must still offer the persisted value.
+ * Matching by id alone would restore a value the resumed agent dropped (e.g. a
+ * reasoning level the resumed model no longer supports), which the server
+ * rejects and which leaves the UI showing a setting that never took effect.
+ */
+export function isPersistedOptionSupported(
+  persisted: SessionConfigOption,
+  liveOptions: SessionConfigOption[],
+): boolean {
+  const live = liveOptions.find((opt) => opt.id === persisted.id);
+  if (!live || live.type !== persisted.type) return false;
+  if (live.type === "select") {
+    return flattenSelectOptions(live.options).some(
+      (opt) => opt.value === persisted.currentValue,
+    );
+  }
+  return true;
 }
 
 export function getConfigOptionByCategory(

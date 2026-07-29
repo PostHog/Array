@@ -1,10 +1,19 @@
 import { Text } from "@components/text";
+import { DEFAULT_CLAUDE_EXECUTION_MODE } from "@posthog/core/sessions/executionModes";
 import {
   countUserMessages,
   getSessionActivityPhase,
 } from "@posthog/core/sessions/sessionActivity";
 import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
-import type { Task } from "@posthog/shared";
+import {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
+  getReasoningEffortOptions,
+  type SupportedReasoningEffort,
+  serializeCloudPrompt,
+  type Task,
+} from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,7 +29,6 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { runTaskInCloud } from "@/features/tasks/api";
 import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -28,16 +36,7 @@ import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
-import {
-  DEFAULT_EXECUTION_MODE,
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  type ExecutionMode,
-  modelSupportsReasoning,
-  type ReasoningEffort,
-} from "@/features/tasks/composer/options";
 import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import {
@@ -169,10 +168,10 @@ export default function TaskDetailScreen() {
     string | undefined
   >();
   const composerMode: ExecutionMode =
-    composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
-  const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
-  const composerReasoning: ReasoningEffort =
-    composerConfig?.reasoning ?? DEFAULT_REASONING;
+    composerConfig?.mode ?? DEFAULT_CLAUDE_EXECUTION_MODE;
+  const composerModel = composerConfig?.model ?? DEFAULT_GATEWAY_MODEL;
+  const composerReasoning: SupportedReasoningEffort =
+    composerConfig?.reasoning ?? DEFAULT_REASONING_EFFORT;
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
@@ -286,8 +285,11 @@ export default function TaskDetailScreen() {
   // creates a fresh run that resumes from the previous one and queues the
   // message as pending_user_message.
   const handleSendAfterTerminal = useCallback(
-    async (text: string, attachments: PendingAttachment[]) => {
-      if (!taskId || !task) return;
+    async (
+      text: string,
+      attachments: PendingAttachment[],
+    ): Promise<boolean> => {
+      if (!taskId || !task) return false;
       // Optimistically echo into the chat before tearing down the old session
       // and waiting for the resume run's SSE stream to come up.
       const echoAttachments = attachments.map((a) => ({
@@ -312,19 +314,25 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning = modelSupportsReasoning(composerModel);
-        const updatedTask = await runTaskInCloud(taskId, {
-          resumeFromRunId: task.latest_run?.id,
-          pendingUserMessage,
-          runtimeAdapter: "claude",
-          model: composerModel,
-          reasoningEffort: supportsReasoning ? composerReasoning : undefined,
-          initialPermissionMode: composerMode,
-          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-        });
+        const supportsReasoning =
+          getReasoningEffortOptions("claude", composerModel) !== null;
+        const updatedTask = await getPostHogApiClient().runTaskInCloud(
+          taskId,
+          undefined,
+          {
+            resumeFromRunId: task.latest_run?.id,
+            pendingUserMessage,
+            adapter: "claude",
+            model: composerModel,
+            reasoningLevel: supportsReasoning ? composerReasoning : undefined,
+            initialPermissionMode: composerMode,
+            rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+          },
+        );
         setTask(updatedTask);
         await connectToTask(updatedTask);
         updateTaskInCache(updatedTask);
+        return true;
       } catch (err) {
         log.error("Failed to send after terminal", err);
         pendingTaskPromptStoreApi.clear(taskId);
@@ -333,6 +341,7 @@ export default function TaskDetailScreen() {
           "Failed to send",
           "Could not continue this task. Please try again.",
         );
+        return false;
       }
     },
     [
@@ -362,8 +371,11 @@ export default function TaskDetailScreen() {
   );
 
   const handleSendPrompt = useCallback(
-    (text: string, attachments: PendingAttachment[]) => {
-      if (!taskId) return;
+    async (
+      text: string,
+      attachments: PendingAttachment[],
+    ): Promise<boolean> => {
+      if (!taskId) return false;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       // Saving an in-place edit: overwrite the queued message and release the
@@ -375,38 +387,37 @@ export default function TaskDetailScreen() {
         queue.update(taskId, editingId, { content: text, attachments });
         queue.clearEditing(taskId);
         flushQueuedMessagesIfIdle(taskId);
-        return;
+        return true;
       }
 
       if (session?.terminalStatus) {
-        handleSendAfterTerminal(text, attachments);
-        return;
+        return handleSendAfterTerminal(text, attachments);
       }
 
-      const onSendFailed = (err: unknown) => {
+      // A turn is running. Queue holds the message locally until it ends;
+      // Steer interrupts the turn and resends right away.
+      const isSteer = !!session?.isPromptPending;
+      if (isSteer && messagingMode === "queue") {
+        useMessageQueueStore.getState().enqueue(taskId, text, attachments);
+        return true;
+      }
+
+      try {
+        if (isSteer) {
+          await sendInterrupting(taskId, text, attachments);
+        } else {
+          await sendPrompt(taskId, text, attachments);
+        }
+        trackPromptSent(text, isSteer);
+        return true;
+      } catch (err) {
         log.error("Failed to send prompt", err);
         Alert.alert(
           "Failed to send",
           "Your message could not be delivered. Please try again.",
         );
-      };
-
-      // A turn is running. Queue holds the message locally until it ends;
-      // Steer interrupts the turn and resends right away.
-      if (session?.isPromptPending) {
-        if (messagingMode === "queue") {
-          useMessageQueueStore.getState().enqueue(taskId, text, attachments);
-          return;
-        }
-        sendInterrupting(taskId, text, attachments)
-          .then(() => trackPromptSent(text, true))
-          .catch(onSendFailed);
-        return;
+        return false;
       }
-
-      sendPrompt(taskId, text, attachments)
-        .then(() => trackPromptSent(text, false))
-        .catch(onSendFailed);
     },
     [
       taskId,
@@ -506,7 +517,7 @@ export default function TaskDetailScreen() {
   );
 
   const handleReasoningChange = useCallback(
-    (value: ReasoningEffort) => {
+    (value: SupportedReasoningEffort) => {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
       setConfigOption(taskId, "effort", value).catch(() => {});
@@ -559,10 +570,14 @@ export default function TaskDetailScreen() {
       setRetrying(true);
       disconnectFromTask(taskId);
 
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-      });
+      const updatedTask = await getPostHogApiClient().runTaskInCloud(
+        taskId,
+        undefined,
+        {
+          resumeFromRunId: task.latest_run?.id,
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+        },
+      );
       setTask(updatedTask);
       await connectToTask(updatedTask);
       updateTaskInCache(updatedTask);
@@ -705,6 +720,7 @@ export default function TaskDetailScreen() {
             small visual buffer at the bottom. */}
         <TaskSessionView
           events={session?.events ?? []}
+          taskId={taskId}
           pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}

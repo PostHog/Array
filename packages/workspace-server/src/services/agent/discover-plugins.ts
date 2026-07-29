@@ -16,7 +16,7 @@ interface DiscoverPluginsOptions {
   repoPath?: string;
   /**
    * The bundled PostHog skills dir (`<plugin>/skills`). Used only to dedupe the
-   * user's Codex skills against names PostHog Code already provides.
+   * user's Codex skills against names PostHog already provides.
    */
   bundledSkillsDir?: string;
 }
@@ -53,7 +53,7 @@ export async function discoverExternalPlugins(
 /**
  * Surfaces the user's own Codex skills (`~/.agents/skills`) in Claude sessions
  * too — the symmetric half of the cross-harness merge. Names already provided
- * by PostHog Code (bundled catalog) or the user's `~/.claude/skills` are
+ * by PostHog (bundled catalog) or the user's `~/.claude/skills` are
  * skipped so a skill never loads twice under different plugins.
  */
 async function discoverCodexSkills(

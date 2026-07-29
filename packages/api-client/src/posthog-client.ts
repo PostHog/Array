@@ -7,6 +7,8 @@ import type {
   CreateTaskAutomationOptions,
   ExecutionMode,
   PrAuthorshipMode,
+  SourceProduct,
+  SourceType,
   StoredLogEntry,
   TaskAutomation,
   TaskRunArtifactMetadata,
@@ -96,6 +98,9 @@ import type {
   SuggestedReviewersArtefact,
   SuggestedReviewerWriteEntry,
   Task,
+  TaskActivityMarkReadResult,
+  TaskActivityPage,
+  TaskActivityReadMarker,
   TaskChannel,
   TaskMention,
   TaskRun,
@@ -112,6 +117,7 @@ import {
   ApiRequestError,
   buildApiFetcher,
   type FetchImplementation,
+  requestErrorStatus,
 } from "./fetcher";
 import { createApiClient, type Schemas } from "./generated";
 import type { SpendAnalysisResponse } from "./spend-analysis";
@@ -142,6 +148,10 @@ export interface PostHogAPIClientOptions {
   appVersion?: string;
   userAgent?: string | null;
   githubConnectFrom?: string;
+}
+
+export function getPosthogApiClientAppVersion(): string {
+  return clientAppVersion;
 }
 
 export class SandboxCustomImagesDisabledError extends Error {
@@ -301,26 +311,8 @@ export interface LlmSkillFileInput {
 
 export interface SignalSourceConfig {
   id: string;
-  source_product:
-    | "session_replay"
-    | "llm_analytics"
-    | "github"
-    | "linear"
-    | "jira"
-    | "zendesk"
-    | "conversations"
-    | "error_tracking"
-    | "pganalyze"
-    | "signals_scout";
-  source_type:
-    | "session_analysis_cluster"
-    | "evaluation"
-    | "issue"
-    | "ticket"
-    | "issue_created"
-    | "issue_reopened"
-    | "issue_spiking"
-    | "cross_source_issue";
+  source_product: SourceProduct;
+  source_type: SourceType;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
@@ -660,7 +652,6 @@ export interface CloudRunOptions {
   runSource?: CloudRunSource;
   signalReportId?: string;
   initialPermissionMode?: ExecutionMode;
-  homeQuickAction?: string;
   /**
    * Local url-based MCP servers to make available inside the sandbox. The
    * backend merges these into the agent server's `--mcpServers` at spawn.
@@ -796,7 +787,7 @@ function buildCloudRunRequestBody(
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
   }
-  if (options?.autoPublish) {
+  if (options?.autoPublish !== undefined) {
     body.auto_publish = options.autoPublish;
   }
   if (options?.rtkEnabled === false) {
@@ -807,9 +798,6 @@ function buildCloudRunRequestBody(
   }
   if (options?.signalReportId) {
     body.signal_report_id = options.signalReportId;
-  }
-  if (options?.homeQuickAction) {
-    body.home_quick_action = options.homeQuickAction;
   }
   if (options?.importedMcpServers?.length) {
     body.imported_mcp_servers = options.importedMcpServers;
@@ -1985,82 +1973,6 @@ export class PostHogAPIClient {
     return data as Schemas.Team;
   }
 
-  async getHomeSnapshot(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch home snapshot: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async refreshHomeSnapshot(): Promise<void> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_home/refresh/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to request home refresh: ${response.status}`);
-    }
-  }
-
-  async getCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/`;
-    const response = await this.api.fetcher.fetch({
-      method: "get",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  // 409/422 carry a structured save-result body the caller validates.
-  async saveCodeWorkflow(body: {
-    config: unknown;
-    expectedVersion: number;
-  }): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/save/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-      overrides: {
-        body: JSON.stringify(body),
-      },
-    });
-    if (!response.ok && response.status !== 409 && response.status !== 422) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
-  async resetCodeWorkflow(): Promise<unknown> {
-    const teamId = await this.getTeamId();
-    const urlPath = `/api/projects/${teamId}/code_workflow/reset/`;
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url: new URL(`${this.api.baseUrl}${urlPath}`),
-      path: urlPath,
-    });
-    if (!response.ok) {
-      throw new Error(`Workflow request failed: ${response.status}`);
-    }
-    return response.json();
-  }
-
   async listSignalSourceConfigs(
     projectId: number,
   ): Promise<SignalSourceConfig[]> {
@@ -2558,6 +2470,37 @@ export class PostHogAPIClient {
     return normalizeTaskResponse(data, { teamId });
   }
 
+  async getPinnedTaskIds(): Promise<string[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/pinned/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch pinned tasks: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { task_ids: string[] };
+    return data.task_ids;
+  }
+
+  async setTaskPinned(taskId: string, pinned: boolean): Promise<boolean> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/pin/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ pinned }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update task pin: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { pinned: boolean };
+    return data.pinned;
+  }
+
   async listTaskAutomations(options?: {
     limit?: number;
     offset?: number;
@@ -2692,13 +2635,16 @@ export class PostHogAPIClient {
     return normalizeTaskResponse(data, { teamId });
   }
 
-  async updateTask(taskId: string, updates: Partial<Task>): Promise<Task> {
+  async updateTask(
+    taskId: string,
+    updates: Partial<Schemas.Task>,
+  ): Promise<Task> {
     const teamId = await this.getTeamId();
     const data = await this.api.patch(
       `/api/projects/{project_id}/tasks/{id}/`,
       {
         path: { project_id: teamId.toString(), id: taskId },
-        body: updates as unknown as Partial<Schemas.Task>,
+        body: updates,
       },
     );
 
@@ -2829,6 +2775,53 @@ export class PostHogAPIClient {
     return (await response.json()) as TaskMention[];
   }
 
+  // Tasks the current user is involved in (created, mentioned, or messaged),
+  // one row per task, newest activity first.
+  async getTaskActivity(options?: {
+    before?: string;
+    beforeId?: string;
+  }): Promise<TaskActivityPage> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/`;
+    const url = new URL(`${this.api.baseUrl}${urlPath}`);
+    if (options?.before && options.beforeId) {
+      url.searchParams.set("before", options.before);
+      url.searchParams.set("before_id", options.beforeId);
+    }
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch task activity: ${response.statusText}`);
+    }
+    return (await response.json()) as TaskActivityPage;
+  }
+
+  // Read state is per task, so callers name the tasks the user has seen rather than
+  // clearing the whole feed.
+  async markTaskActivityRead(
+    activities: TaskActivityReadMarker[],
+  ): Promise<TaskActivityMarkReadResult> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/task_activity/mark_read/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: {
+        body: JSON.stringify({ activities }),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Failed to mark task activity read: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as TaskActivityMarkReadResult;
+  }
+
   async getTaskThreadMessages(taskId: string): Promise<TaskThreadMessage[]> {
     const teamId = await this.getTeamId();
     const urlPath = `/api/projects/${teamId}/tasks/${taskId}/thread_messages/`;
@@ -2912,6 +2905,14 @@ export class PostHogAPIClient {
   // Everyone in the current organization — the pool of taggable teammates for
   // thread @-mentions. Membership churn is slow, so callers cache aggressively.
   async listOrganizationMembers(): Promise<OrganizationMemberBasic[]> {
+    const result = await this.listOrganizationMembersWithStatus();
+    return result.members;
+  }
+
+  async listOrganizationMembersWithStatus(): Promise<{
+    members: OrganizationMemberBasic[];
+    isComplete: boolean;
+  }> {
     const ORG_MEMBERS_MAX_PAGES = 20;
     const ORG_MEMBERS_PAGE_SIZE = 200;
     const all: OrganizationMemberBasic[] = [];
@@ -2932,7 +2933,7 @@ export class PostHogAPIClient {
         next: string | null;
       };
       all.push(...page.results);
-      if (!page.next) return all;
+      if (!page.next) return { members: all, isComplete: true };
       const nextUrl = new URL(page.next);
       urlPath = `${nextUrl.pathname}${nextUrl.search}`;
     }
@@ -2940,7 +2941,7 @@ export class PostHogAPIClient {
       `listOrganizationMembers hit MAX_PAGES (${ORG_MEMBERS_MAX_PAGES}); returning partial results`,
       { returned: all.length },
     );
-    return all;
+    return { members: all, isComplete: false };
   }
 
   async sendRunCommand(
@@ -3255,6 +3256,34 @@ export class PostHogAPIClient {
       artifacts?: FinalizedTaskArtifactUpload[];
     };
     return data.artifacts ?? [];
+  }
+
+  async presignTaskRunArtifact(
+    taskId: string,
+    runId: string,
+    storagePath: string,
+  ): Promise<string> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+      overrides: {
+        body: JSON.stringify({ storage_path: storagePath }),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to generate artifact preview URL: ${response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as { url: string };
+    return data.url;
   }
 
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {
@@ -4472,6 +4501,40 @@ export class PostHogAPIClient {
     return data.results ?? [];
   }
 
+  /**
+   * Object URL for an MCP server's brand icon, proxied from logo.dev by the
+   * authenticated `mcp_servers/icon/` endpoint. Returns null when no brand
+   * icon exists for the domain (the endpoint 404s so callers render their own
+   * fallback glyph, e.g. on self-hosted instances without a logo.dev token).
+   */
+  async getMcpServerIconUrl(
+    domain: string,
+    theme?: "light" | "dark",
+  ): Promise<string | null> {
+    const teamId = await this.getTeamId();
+    const path = `/api/environments/${teamId}/mcp_servers/icon/`;
+    const url = new URL(`${this.api.baseUrl}${path}`);
+    url.searchParams.set("domain", domain);
+    if (theme) {
+      url.searchParams.set("theme", theme);
+    }
+    let response: Response;
+    try {
+      response = await this.api.fetcher.fetch({
+        method: "get",
+        url,
+        path,
+      });
+    } catch (error) {
+      // 404 is the endpoint's definitive "no icon for this domain" answer,
+      // not a failure; anything else propagates so callers can retry.
+      if (requestErrorStatus(error) === 404) return null;
+      throw error;
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  }
+
   async getMcpServerInstallations(): Promise<McpServerInstallation[]> {
     const teamId = await this.getTeamId();
     const url = new URL(
@@ -4964,6 +5027,34 @@ export class PostHogAPIClient {
     if (!response.ok) {
       throw new Error(
         `Failed to fetch sandbox custom image: ${response.statusText}`,
+      );
+    }
+    return (await response.json()) as SandboxCustomImage;
+  }
+
+  async updateSandboxCustomImage(
+    id: string,
+    input: { name?: string; description?: string },
+  ): Promise<SandboxCustomImage> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "patch",
+      url,
+      path: `/api/projects/${teamId}/sandbox_custom_images/${id}/`,
+      overrides: {
+        body: JSON.stringify(input),
+      },
+    });
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as {
+        detail?: string;
+      };
+      throw new Error(
+        errorData.detail ??
+          `Failed to update sandbox custom image: ${response.statusText}`,
       );
     }
     return (await response.json()) as SandboxCustomImage;

@@ -9711,7 +9711,10 @@ export namespace Schemas {
     id: string;
     template_id: string | null;
     name: string;
+    /** Deprecated: use icon_domain instead. Lowercase key from the linked template for clients that still render bundled icon assets. Empty if custom install (no template). */
     icon_key: string;
+    /** Brand domain from the linked template, rendered via the logo.dev icon proxy. Empty if custom install (no template). */
+    icon_domain: string;
     display_name?: string | undefined;
     url?: string | undefined;
     description?: string | undefined;
@@ -9744,7 +9747,10 @@ export namespace Schemas {
     docs_url?: string | undefined;
     description?: string | undefined;
     auth_type?: MCPAuthTypeEnum | undefined;
-    icon_key?: string | undefined;
+    /** Deprecated: use icon_domain instead. Lowercase key for clients that still render bundled icon assets. */
+    icon_key: string;
+    /** The vendor's brand domain (e.g. 'linear.app'), resolved to an icon at render time via the logo.dev proxy endpoint. Empty when no brand icon is known. */
+    icon_domain: string;
     category?: CategoryEnum | undefined;
   };
   export type MarkToleratedInput = { snapshot_id: string };

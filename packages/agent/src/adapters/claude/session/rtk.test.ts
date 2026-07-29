@@ -68,15 +68,15 @@ describe("rewriteBashForRtk", () => {
   });
 
   test("shell-quotes a binary path containing spaces", () => {
-    expect(rewriteBashForRtk("git status", "/Apps/PostHog Code/rtk")).toBe(
-      "'/Apps/PostHog Code/rtk' git status",
+    expect(rewriteBashForRtk("git status", "/Apps/My Tools/rtk")).toBe(
+      "'/Apps/My Tools/rtk' git status",
     );
   });
 
   test("is idempotent for a space-containing prefix (quoted round-trip)", () => {
-    const prefix = "/Apps/PostHog Code/rtk";
+    const prefix = "/Apps/My Tools/rtk";
     const wrapped = rewriteBashForRtk("git status", prefix);
-    expect(wrapped).toBe("'/Apps/PostHog Code/rtk' git status");
+    expect(wrapped).toBe("'/Apps/My Tools/rtk' git status");
     // Feeding our own quoted output back through must not double-wrap, even
     // though the quoted first token never equals the bare prefix.
     expect(rewriteBashForRtk(wrapped as string, prefix)).toBeNull();

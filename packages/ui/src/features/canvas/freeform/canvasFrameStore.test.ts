@@ -5,7 +5,7 @@ import {
 } from "./canvasFrameStore";
 
 function inputs(code: string): CanvasFrameInputs {
-  return { code, refreshKey: 0, onDataRequest: vi.fn() };
+  return { code, onDataRequest: vi.fn() };
 }
 
 function reset() {
@@ -13,6 +13,7 @@ function reset() {
     slots: [],
     activeDashboardId: null,
     maxWarmFrames: 2,
+    frameKeys: {},
   });
 }
 
@@ -86,6 +87,38 @@ describe("canvasFrameStore", () => {
     const after = useCanvasFrameStore.getState().slots;
     setRect("a", { top: 1, left: 2, width: 3, height: 4 });
     expect(useCanvasFrameStore.getState().slots).toBe(after);
+  });
+
+  it("remount bumps only the frame generation of the canvas's slot", () => {
+    const { register, remount } = useCanvasFrameStore.getState();
+    register("a", inputs("A"));
+    register("b", inputs("B"));
+
+    remount("a");
+    expect(useCanvasFrameStore.getState().frameKeys[0]).toBe(1);
+    expect(useCanvasFrameStore.getState().frameKeys[1] ?? 0).toBe(0);
+  });
+
+  it("remount is a no-op for a canvas with no slot", () => {
+    const { remount } = useCanvasFrameStore.getState();
+    const before = useCanvasFrameStore.getState().frameKeys;
+    remount("missing");
+    expect(useCanvasFrameStore.getState().frameKeys).toBe(before);
+  });
+
+  it("keeps a slot's remount generation when it is reassigned (warm reuse)", () => {
+    const { register, activate, remount } = useCanvasFrameStore.getState();
+    register("a", inputs("A"));
+    activate("a");
+    remount("a"); // slot 0 generation -> 1
+    register("b", inputs("B"));
+    activate("b");
+    register("c", inputs("C")); // evicts LRU "a", "c" takes slot 0
+
+    expect(slotIndexOf("c")).toBe(0);
+    // Reassigning slot 0 to a different canvas must NOT change its key, so the
+    // warm iframe is reused (code-swap) rather than remounted on navigation.
+    expect(useCanvasFrameStore.getState().frameKeys[0]).toBe(1);
   });
 
   it("deactivate clears the active id only when it matches", () => {

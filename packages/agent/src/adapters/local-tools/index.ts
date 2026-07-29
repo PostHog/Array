@@ -1,10 +1,12 @@
 import type { LocalTool, LocalToolCtx, LocalToolGateMeta } from "./registry";
 import { cloneRepoTool } from "./tools/clone-repo";
+import { finishTool } from "./tools/finish";
 import { listReposTool } from "./tools/list-repos";
 import { signedCommitTool } from "./tools/signed-commit";
 import { signedMergeTool } from "./tools/signed-merge";
 import { signedRewriteTool } from "./tools/signed-rewrite";
 import { speakTool } from "./tools/speak";
+import { uploadArtifactTool } from "./tools/upload-artifact";
 
 export {
   LOCAL_TOOLS_MCP_NAME,
@@ -23,6 +25,8 @@ export const LOCAL_TOOLS: LocalTool[] = [
   listReposTool,
   cloneRepoTool,
   speakTool,
+  uploadArtifactTool,
+  finishTool,
 ];
 
 /** Tools whose gate passes for the given context — the set to actually expose. */

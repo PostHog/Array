@@ -1,4 +1,4 @@
-import { CheckCircle, Stop, XCircle } from "@phosphor-icons/react";
+import { CheckCircle, StopCircle, XCircle } from "@phosphor-icons/react";
 import { Box, Flex, Text } from "@radix-ui/themes";
 
 interface TaskNotificationViewProps {
@@ -18,7 +18,7 @@ const statusConfig = {
     borderColor: "border-red-6 dark:border-red-8",
   },
   stopped: {
-    icon: <Stop size={14} weight="fill" className="text-orange-9" />,
+    icon: <StopCircle size={14} weight="fill" className="text-orange-9" />,
     label: "Task stopped",
     borderColor: "border-orange-6 dark:border-orange-8",
   },

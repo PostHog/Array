@@ -11,11 +11,16 @@ import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
-import type { PosthogProviderOptions } from "@posthog/harness/extensions/posthog-provider/provider";
 import { safePiEnvironment } from "./rpc-environment";
 import type { PiModelOption, PiThinkingLevel } from "./types";
 
 export type PiRpcClient = RpcClient;
+
+export interface PiRpcProviderOptions {
+  region?: "us" | "eu" | "dev";
+  apiKey: string;
+  baseUrl?: string;
+}
 
 export async function getAvailableModelsWithThinkingLevels(
   client: PiRpcClient,
@@ -70,7 +75,7 @@ function attachJsonlReader(
 class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
-    private readonly providerOptions: PosthogProviderOptions,
+    private readonly providerOptions: PiRpcProviderOptions,
   ) {
     super(secureOptions);
   }
@@ -164,7 +169,7 @@ export function getPiRpcClientProcess(
 
 export type PiRpcClientOptions = Pick<RpcClientOptions, "cwd" | "model"> & {
   sessionFile?: string;
-  providerOptions: PosthogProviderOptions & { apiKey: string };
+  providerOptions: PiRpcProviderOptions;
 };
 
 export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {

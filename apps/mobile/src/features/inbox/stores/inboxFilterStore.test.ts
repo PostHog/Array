@@ -1,3 +1,4 @@
+import type { SourceProduct } from "@posthog/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -8,14 +9,14 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-import { type SourceProduct, useInboxFilterStore } from "./inboxFilterStore";
+import { useInboxFilterStore } from "./inboxFilterStore";
 
 describe("inboxFilterStore", () => {
   beforeEach(() => {
     useInboxFilterStore.getState().resetFilters();
   });
 
-  it.each<SourceProduct>(["signals_scout", "error_tracking", "github"])(
+  it.each<SourceProduct>(["signals_scout", "error_tracking", "sentry"])(
     "toggles %s in and out of the source filter",
     (source) => {
       const { toggleSourceProduct } = useInboxFilterStore.getState();
@@ -29,6 +30,21 @@ describe("inboxFilterStore", () => {
       expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
     },
   );
+
+  it("clears the source filter", () => {
+    const { toggleSourceProduct, clearSourceProductFilter } =
+      useInboxFilterStore.getState();
+
+    toggleSourceProduct("github");
+    toggleSourceProduct("linear");
+    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([
+      "github",
+      "linear",
+    ]);
+
+    clearSourceProductFilter();
+    expect(useInboxFilterStore.getState().sourceProductFilter).toEqual([]);
+  });
 });
 
 const INITIAL_STATE = useInboxFilterStore.getState();

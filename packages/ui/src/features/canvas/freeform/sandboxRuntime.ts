@@ -143,6 +143,25 @@ export function decodeJsxUnicodeEscapes(value: string): string {
   );
 }
 
+// Resolves a click target to the absolute URL of an enclosing target="_blank"
+// anchor, or null. Interpolated into the sandbox bootstrap; exported for tests.
+export function resolveExternalAnchorUrl(target: unknown): string | null {
+  const anchor = target instanceof Element ? target.closest("a[href]") : null;
+  if (!anchor) return null;
+  // HTML matches the _blank keyword ASCII-case-insensitively.
+  if ((anchor.getAttribute("target") ?? "").toLowerCase() !== "_blank") {
+    return null;
+  }
+  // getAttribute, not the .href property: SVG anchors expose SVGAnimatedString
+  // there, and relative hrefs would resolve against the host's base URL.
+  const href = anchor.getAttribute("href") ?? "";
+  try {
+    return new URL(href).href;
+  } catch {
+    return null;
+  }
+}
+
 export function buildSandboxDocument(
   mode: SandboxMode,
   // The PostHog host, when in-iframe analytics/replay is enabled. Opens CSP for
@@ -226,6 +245,9 @@ export function buildSandboxDocument(
         }
         return call("capture", { event, properties: properties ?? {}, distinctId });
       },
+      // Brokered by the host: PostHog-only https URLs, rate-limited, and
+      // ignored while the canvas is unfocused (no auto-opens on load).
+      openExternal: (url) => post({ type: "open-external", url }),
       // Navigate the host app. Fire-and-forget: the host validates the intent
       // against its allowlist and routes within the current channel. The canvas
       // cannot pick the channel or an arbitrary path — only these four targets.
@@ -236,6 +258,23 @@ export function buildSandboxDocument(
         toNewCanvas: () => post({ type: "navigate", nav: { target: "new-canvas" } }),
       },
     };
+
+    // Keep target="_blank" anchors working without popup permission. Capture
+    // phase so stopPropagation() can't swallow the click; the open is deferred
+    // a tick so preventDefault() is honored (the native popup attempt is
+    // sandbox-blocked regardless, so we never call preventDefault ourselves).
+    const resolveExternalAnchorUrl = ${resolveExternalAnchorUrl.toString()};
+    document.addEventListener(
+      "click",
+      (event) => {
+        const url = resolveExternalAnchorUrl(event.target);
+        if (!url) return;
+        setTimeout(() => {
+          if (!event.defaultPrevented) window.ph.openExternal(url);
+        }, 0);
+      },
+      true,
+    );
 
     // Boot posthog-js with the PUBLIC key the host passed in (never the read
     // token). Enables session replay so the author/viewer can be watched.
@@ -414,9 +453,18 @@ ${FREEFORM_QUILL_CSS_URLS.map(
   /* Fill the iframe viewport exactly so overflow scrolls on the iframe's own root
      scroller — the iframe is pinned to its parent's height and never grows it. */
   html, body { margin: 0; padding: 0; height: 100%; }
+  /* No light default: leaving \`color-scheme\` alone lets the base canvas inherit
+     the embedder's scheme (the host sets it on the iframe), so the first paint
+     is already dark in a dark app. Once the host's theme message toggles
+     \`.dark\`, this pins it so form controls and scrollbars match too. */
+  html.dark { color-scheme: dark; }
   /* Track the theme via Quill's tokens (set on :root / .dark) so the page chrome
-     flips with the host theme; fall back to light if the tokens haven't loaded. */
-  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, #111); background: var(--background, #fff); }
+     flips with the host theme. Until those tokens land — the stylesheets are
+     still loading, and \`.dark\` is only applied once the host's init/set-theme
+     message arrives — stay transparent and inherit, so the host iframe's own
+     themed background shows through. A hard light fallback here flashed white
+     over a dark app every time a preview scrolled into view. */
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, inherit); background: var(--background, transparent); }
   #root { min-height: 100vh; }
 </style>
 </head>

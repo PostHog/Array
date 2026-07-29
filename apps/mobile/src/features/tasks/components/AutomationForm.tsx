@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { CreateTaskAutomationOptions } from "@posthog/api-client/posthog-client";
 import {
   type AutomationScheduleDraft,
   buildCronExpression,
@@ -6,7 +7,6 @@ import {
   deriveAutomationName,
   parseCronExpression,
 } from "@posthog/core/automations/automationSchedule";
-import type { CreateTaskAutomationOptions } from "@posthog/shared";
 import { CaretDown, GithubLogo } from "phosphor-react-native";
 import { type MutableRefObject, useEffect, useMemo, useState } from "react";
 import {

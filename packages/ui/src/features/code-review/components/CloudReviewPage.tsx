@@ -25,6 +25,9 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
   const isReviewOpen = useReviewNavigationStore(
     (s) => (s.reviewModes[taskId] ?? "closed") !== "closed",
   );
+  const selectedPrUrl = useReviewNavigationStore(
+    (s) => s.selectedPrUrls[taskId],
+  );
   const showReviewComments = useDiffViewerStore((s) => s.showReviewComments);
   const {
     effectiveBranch,
@@ -34,7 +37,7 @@ export function CloudReviewPage({ task }: CloudReviewPageProps) {
     reviewFiles,
     toolCalls,
     isLoading,
-  } = useCloudChangedFiles(taskId, task, isReviewOpen);
+  } = useCloudChangedFiles(taskId, task, isReviewOpen, selectedPrUrl);
   const { commentThreads, commentsLoading } = usePrDetails(prUrl, {
     includeComments: isReviewOpen && showReviewComments,
   });

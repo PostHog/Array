@@ -1,19 +1,12 @@
 {
   "expo": {
-    "name": "PostHog Code",
+    "name": "PostHog",
     "slug": "posthog",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "bundler": "metro",
     "scheme": "posthog",
     "icon": "./assets/app-icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0f0f0f"
-    },
     "ios": {
       "icon": "./assets/app.icon",
       "supportsTablet": true,
@@ -33,7 +26,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.posthog.code.mobile",
       "permissions": [
@@ -60,12 +52,7 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-av",
-        {
-          "microphonePermission": "Allow PostHog to use your microphone for voice-to-text input"
-        }
-      ],
+      "expo-audio",
       [
         "expo-camera",
         {
@@ -120,7 +107,18 @@
           "microphonePermission": "Allow PostHog to use your microphone for voice-to-text input",
           "speechRecognitionPermission": "Allow PostHog to transcribe your voice input on-device"
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0f0f0f"
+        }
+      ],
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {},

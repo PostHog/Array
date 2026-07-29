@@ -3,7 +3,7 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  HashIcon,
+  RepeatIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -24,14 +24,16 @@ import {
   DialogContent,
   Kbd,
 } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import {
   ANALYTICS_EVENTS,
   type CommandMenuAction,
 } from "@posthog/shared/analytics-events";
 import type { Task } from "@posthog/shared/domain-types";
 import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
@@ -59,6 +61,7 @@ import {
   navigateToChannel,
   navigateToCommandCenter,
   navigateToInbox,
+  navigateToLoops,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -132,6 +135,7 @@ function TaskCommandIcon({ task }: { task: Task }) {
 }
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
+  const spacesLayout = useChannelsLayout();
   const openSettingsDialog = openSettings;
   const closeSettingsDialog = closeSettings;
   const { folders } = useFolders();
@@ -141,6 +145,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
+  const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   const { channels } = useChannels({ enabled: bluebirdEnabled });
   const taskChannelMap = useTaskChannelMap(channels, {
     enabled: open && bluebirdEnabled,
@@ -278,6 +283,21 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           navigateToCommandCenter();
         },
       },
+      ...(loopsEnabled
+        ? [
+            {
+              id: "loops",
+              label: "Loops",
+              keywords: "automations schedules recurring",
+              icon: <RepeatIcon size={12} className="text-gray-11" />,
+              action: "open-loops" as CommandMenuAction,
+              onRun: () => {
+                closeSettingsDialog();
+                navigateToLoops();
+              },
+            },
+          ]
+        : []),
       {
         id: "plan-usage",
         label: "Plan & usage",
@@ -320,7 +340,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         ? [
             {
               id: "open-review-panel",
-              label: "Open review panel",
+              label: "Open diff view",
               icon: (
                 <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
               ),
@@ -449,6 +469,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     reviewTaskId,
     canSearchFiles,
     openFilePicker,
+    loopsEnabled,
   ]);
 
   const taskSections = useMemo<CommandSection[]>(() => {
@@ -505,12 +526,16 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (channels.length === 0) return [];
     return [
       {
-        label: "Channels",
+        label: spacesLayout ? "Spaces" : "Channels",
         items: channels.map((channel) => ({
           id: `channel-${channel.id}`,
           label: channel.name,
-          keywords: "channel",
-          icon: <HashIcon size={12} className="text-gray-11" />,
+          keywords: "space channel",
+          icon: channelGlyph(channel.name, {
+            size: 12,
+            space: spacesLayout,
+            className: "text-muted-foreground",
+          }),
           action: "open-channel" as CommandMenuAction,
           channelId: channel.id,
           onRun: () => {
@@ -520,7 +545,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         })),
       },
     ];
-  }, [channels, closeSettingsDialog]);
+  }, [channels, closeSettingsDialog, spacesLayout]);
 
   // Commands, channels, and tasks share a single filterable list.
   const sections = useMemo(
@@ -574,7 +599,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           <AutocompleteInput
             placeholder={
               bluebirdEnabled
-                ? "Search commands, channels, and tasks…"
+                ? `Search commands, ${spacesLayout ? "spaces" : "channels"}, and tasks…`
                 : "Search commands and tasks…"
             }
             autoFocus

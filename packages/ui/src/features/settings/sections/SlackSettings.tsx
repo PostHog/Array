@@ -42,8 +42,8 @@ export function SlackSettings() {
   return (
     <Flex direction="column" gap="3">
       <Text className="text-(--gray-11) text-[13px]">
-        Connect Slack to PostHog Code to kick off tasks like pull requests
-        directly from Slack.
+        Connect Slack to PostHog to kick off tasks like pull requests directly
+        from Slack.
       </Text>
 
       <Flex>{manageButtonWithTooltip}</Flex>

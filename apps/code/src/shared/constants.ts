@@ -4,7 +4,6 @@ export const EXPERIMENT_SUGGESTIONS_FLAG =
 export const SELF_DRIVING_SETUP_TASK_FLAG =
   "posthog-code-self-driving-setup-task";
 export const SYNC_CLOUD_TASKS_FLAG = "posthog-code-sync-cloud-tasks";
-export const HOME_TAB_FLAG = "posthog-code-home-tab";
 export const DISCOVERY_RUN_FLAG = "posthog-code-discovery-run";
 export const BRANCH_PREFIX = "posthog-code/";
 export const DATA_DIR = ".posthog-code";

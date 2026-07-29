@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { McpAuthType } from "@posthog/api-client/types";
 import { router } from "expo-router";
 import { Lock } from "phosphor-react-native";
 import { useState } from "react";
@@ -14,7 +15,6 @@ import {
 import { FloatingMcpHeader } from "@/features/mcp/components/FloatingMcpHeader";
 import { useMcpInstallations } from "@/features/mcp/hooks";
 import { installCustomWithOAuth } from "@/features/mcp/oauth";
-import type { McpAuthType } from "@/features/mcp/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";

@@ -86,6 +86,9 @@ function signalCardSourceLine(signal: {
   if (source_product === "pganalyze" && source_type === "issue") {
     return "pganalyze · Issue";
   }
+  if (source_product === "health_checks" && source_type === "health_issue") {
+    return "Health checks · Issue";
+  }
   if (
     source_product === "signals_scout" &&
     source_type === "cross_source_issue"

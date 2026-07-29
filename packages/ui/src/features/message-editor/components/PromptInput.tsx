@@ -1,6 +1,7 @@
 import "./message-editor.css";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
-import { ArrowUp, Stop } from "@phosphor-icons/react";
+import { ArrowUp, StopCircle } from "@phosphor-icons/react";
+import type { FileAttachment } from "@posthog/core/message-editor/content";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
@@ -19,7 +20,7 @@ import { useDraftStore } from "../draftStore";
 import { useTiptapEditor } from "../tiptap/useTiptapEditor";
 import type { EditorHandle } from "../types";
 import { AttachmentMenu } from "./AttachmentMenu";
-import { AttachmentsBar } from "./AttachmentsBar";
+import { AttachmentsBar, type AttachmentUploadStatus } from "./AttachmentsBar";
 import { SlotMachineSubmit } from "./SlotMachineSubmit";
 
 export type { EditorHandle };
@@ -94,6 +95,8 @@ export interface PromptInputProps {
   onCancelEdit?: () => void;
   onToggleMessagingMode?: () => void;
   onAttachFiles?: (files: File[]) => void;
+  onAttachmentsChange?: (attachments: FileAttachment[]) => void;
+  attachmentUploadStatuses?: Record<string, AttachmentUploadStatus>;
   onEmptyChange?: (isEmpty: boolean) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -141,6 +144,8 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onCancelEdit,
       onToggleMessagingMode,
       onAttachFiles,
+      onAttachmentsChange,
+      attachmentUploadStatuses,
       onEmptyChange,
       onFocus,
       onBlur,
@@ -195,6 +200,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
       onSubmit,
       onBashCommand,
       onBashModeChange,
+      onAttachmentsChange,
       onEmptyChange,
       onFocus,
       onBlur,
@@ -366,7 +372,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
           onClick={onCancel}
           aria-label="Stop"
         >
-          <Stop size={14} weight="fill" />
+          <StopCircle size={14} weight="fill" />
         </InputGroupButton>
       </Tooltip>
     ) : slotMachineMode ? null : (
@@ -406,6 +412,7 @@ export const PromptInput = forwardRef<EditorHandle, PromptInputProps>(
                 <AttachmentsBar
                   attachments={attachments}
                   onRemove={removeAttachment}
+                  uploadStatuses={attachmentUploadStatuses}
                 />
               </InputGroupAddon>
             )}

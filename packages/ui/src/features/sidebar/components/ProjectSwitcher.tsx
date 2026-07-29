@@ -1,5 +1,6 @@
 import { Menu as BaseMenu } from "@base-ui/react/menu";
 import {
+  Archive,
   ArrowSquareOut,
   Buildings,
   Check,
@@ -39,6 +40,7 @@ import {
   ItemTitle,
 } from "@posthog/quill";
 import { EXTERNAL_LINKS } from "@posthog/shared";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
@@ -47,44 +49,44 @@ import {
   useSwitchOrgMutation,
 } from "@posthog/ui/features/auth/useAuthMutations";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import {
-  holdSidebarPeek,
-  releaseSidebarPeek,
-} from "@posthog/ui/features/sidebar/sidebarPeekStore";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { useWhatsNewStore } from "@posthog/ui/features/updates/whatsNewStore";
+import { navigateToArchived } from "@posthog/ui/router/navigationBridge";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Avatar, Box } from "@radix-ui/themes";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
-// The two-line user/project card used at the bottom of the sidebar.
+/** The account / project / org menu at the bottom of the sidebar. */
 export function ProjectSwitcher() {
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // Hold the sidebar's hover-peek open while this dropdown is open: it lives in
-  // a portal anchored to the trigger, so if the peek collapsed underneath it
-  // (pointer leaving the panel, e.g. toward a submenu flyout) the menu would be
-  // left floating over the content, chasing its vanished anchor.
+  const holdPeek = useHoldSidebarPeek();
   const handleOpenChange = (next: boolean): void => {
     setPopoverOpen(next);
-    if (next) holdSidebarPeek();
-    else releaseSidebarPeek();
+    holdPeek(next);
   };
-  // Release if we unmount while the menu is open (e.g. a route change) so the
-  // hold can't outlive it.
-  useEffect(() => () => releaseSidebarPeek(), []);
 
   const currentOrgId = useAuthStateValue((state) => state.currentOrgId);
+  const sessionType = useAuthStateValue((state) => state.sessionType);
+  const sessionExpiresAt = useAuthStateValue((state) => state.sessionExpiresAt);
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
   const selectProjectMutation = useSelectProjectMutation();
   const switchOrgMutation = useSwitchOrgMutation();
   const logoutMutation = useLogoutMutation();
   const { groupedProjects, currentProject, currentProjectId } = useProjects();
+  // The channels layout has no room for a standing Archived row, so archived
+  // tasks live here — a peer of Settings, not buried inside it. Still hidden
+  // when there is nothing archived, exactly as the row was.
+  const channelsLayout = useChannelsLayout();
+  const archivedTaskIds = useArchivedTaskIds();
+  const showArchived = channelsLayout && archivedTaskIds.size > 0;
 
   const currentOrgGroup =
     groupedProjects.find((group) => group.orgId === currentOrgId) ?? null;
@@ -92,6 +94,13 @@ export function ProjectSwitcher() {
     currentOrgGroup?.orgName ??
     currentProject?.organization.name ??
     "No organization";
+  const impersonationExpiry =
+    sessionType === "impersonated" && sessionExpiresAt
+      ? new Date(sessionExpiresAt).toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
   const projectItems = useMemo<FlyoutItem[]>(
     () =>
       (currentOrgGroup?.projects ?? []).map((project) => ({
@@ -154,6 +163,11 @@ export function ProjectSwitcher() {
     setPopoverOpen(false);
   };
 
+  const handleArchived = () => {
+    setPopoverOpen(false);
+    navigateToArchived();
+  };
+
   const handleSettings = () => {
     setPopoverOpen(false);
     openSettings();
@@ -197,7 +211,9 @@ export function ProjectSwitcher() {
                 {currentProject?.name ?? "No project selected"}
               </ItemTitle>
               <ItemDescription className="text-[11px]">
-                {currentUser?.email ?? "No email"}
+                {impersonationExpiry
+                  ? `Impersonating until ${impersonationExpiry}`
+                  : (currentUser?.email ?? "No email")}
               </ItemDescription>
             </ItemContent>
             <ItemActions>
@@ -229,6 +245,11 @@ export function ProjectSwitcher() {
                   <ItemDescription className="text-[11px]">
                     {currentUser.email}
                   </ItemDescription>
+                  {impersonationExpiry && (
+                    <ItemDescription className="text-[11px] text-warning">
+                      Impersonated session ends at {impersonationExpiry}
+                    </ItemDescription>
+                  )}
                 </ItemContent>
               </Item>
             ) : (
@@ -313,7 +334,7 @@ export function ProjectSwitcher() {
                   onClick={() => handleOpenExternal(EXTERNAL_LINKS.website)}
                 >
                   <ArrowSquareOut size={14} className="text-gray-11" />
-                  PostHog Code Website
+                  Website
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -332,6 +353,13 @@ export function ProjectSwitcher() {
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+
+            {showArchived && (
+              <DropdownMenuItem onClick={handleArchived}>
+                <Archive size={14} className="text-gray-11" />
+                Archived
+              </DropdownMenuItem>
+            )}
 
             <DropdownMenuItem onClick={handleSettings}>
               <Gear size={14} className="text-gray-11" />

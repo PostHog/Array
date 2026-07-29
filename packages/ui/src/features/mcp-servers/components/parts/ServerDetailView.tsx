@@ -72,7 +72,7 @@ export function ServerDetailView({
   const [showRemoved, setShowRemoved] = useState(false);
   const [toolSearch, setToolSearch] = useState("");
 
-  const { name, description, docsUrl, iconKey, authType } =
+  const { name, description, docsUrl, iconDomain, serverUrl, authType } =
     resolveServerDetails(installation, template);
 
   const {
@@ -113,7 +113,7 @@ export function ServerDetailView({
       </Flex>
 
       <Flex align="start" gap="3">
-        <ServerIcon iconKey={iconKey} size={56} />
+        <ServerIcon iconDomain={iconDomain} serverUrl={serverUrl} size={56} />
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Flex align="center" gap="2">
             <Text truncate className="font-bold text-xl">

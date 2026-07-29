@@ -4,13 +4,16 @@ import { CHANNEL_TASK_SUGGESTIONS } from "@posthog/ui/features/canvas/channelTas
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { ChannelContextPanel } from "@posthog/ui/features/canvas/components/ChannelContextPanel";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useChannelTaskMutations } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
+import { useBackendChannel } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { TaskInput } from "@posthog/ui/features/task-detail/components/TaskInput";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { toast } from "@posthog/ui/primitives/toast";
+import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
@@ -22,11 +25,14 @@ import { useCallback, useMemo, useState } from "react";
 // files the task to the channel by creating an extra `task` row under the
 // channel folder on the project's desktop_file_system surface.
 export function WebsiteNewTask({ channelId }: { channelId: string }) {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
+  const view = useAppView();
   const queryClient = useQueryClient();
   const { fileTask } = useChannelTaskMutations();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
+  const { channel: backendChannel } = useBackendChannel(channelName);
 
   // Surface the channel breadcrumb in the shared header, same as the other
   // channel scenes ("# channel / New task").
@@ -34,12 +40,12 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
     useMemo(
       () => (
         <ChannelBreadcrumb
-          channelName={channelName ?? "Channel"}
+          channelName={channelName ?? (spacesLayout ? "Space" : "Channel")}
           channelId={channelId}
           leafLabel="New task"
         />
       ),
-      [channelName, channelId],
+      [channelName, channelId, spacesLayout],
     ),
   );
   // The channel's CONTEXT.md, passed to the agent as optional background so
@@ -110,8 +116,16 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
           onTaskCreated={onTaskCreated}
           channelContext={channelContext}
           channelName={channelName}
+          channelId={backendChannel?.id}
           channelContextId={channelId}
           allowNoRepo
+          // So a prompt handed to openTaskInput survives routing into a channel.
+          initialPrompt={view.initialPrompt}
+          initialPromptKey={view.taskInputRequestId}
+          initialCloudRepository={view.initialCloudRepository}
+          initialModel={view.initialModel}
+          initialMode={view.initialMode}
+          reportAssociation={view.reportAssociation}
           suggestions={CHANNEL_TASK_SUGGESTIONS}
           onSuggestionSelect={(label) =>
             track(ANALYTICS_EVENTS.CHANNEL_ACTION, {

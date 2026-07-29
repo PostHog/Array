@@ -54,7 +54,7 @@ export function SpendKpiStrip({ data, filledDays }: SpendKpiStripProps) {
       </KpiCell>
       <KpiCell>
         <MetricCard
-          title={tileTitle("PostHog Code")}
+          title={tileTitle("This app")}
           value={Math.max(0, summary.scoped_cost_usd)}
           data={costSeries}
           labels={labels}

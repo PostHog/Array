@@ -1,11 +1,13 @@
 import {
   getToolUiResourceUri,
+  type McpUiResourceCsp,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServerInstallation } from "@posthog/api-client/types";
 import { useQuery } from "@tanstack/react-query";
+import type { McpUiResource } from "../mcpUiResource";
 import { getMcpConnectionManager } from "../service";
-import type { McpServerInstallation, McpUiResource } from "../types";
 
 interface UseMcpUiResourceArgs {
   installation: McpServerInstallation | null;
@@ -67,7 +69,7 @@ export function useMcpUiResource({
       const permissions =
         (ui.permissions as Record<string, Record<string, unknown>>) ??
         undefined;
-      const csp = (ui.csp as Record<string, unknown> | undefined) ?? undefined;
+      const csp = ui.csp as McpUiResourceCsp | undefined;
 
       return {
         resource: { uri, html: text, csp, permissions },

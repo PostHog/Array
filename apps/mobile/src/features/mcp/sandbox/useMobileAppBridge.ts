@@ -3,6 +3,7 @@ import {
   type McpUiDisplayMode,
   type McpUiHostCapabilities,
   type McpUiHostContext,
+  type McpUiResourceCsp,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type {
   CallToolResult,
@@ -15,6 +16,7 @@ import type { EdgeInsets } from "react-native-safe-area-context";
 import type WebView from "react-native-webview";
 import { logger } from "@/lib/logger";
 import type { ThemeColors } from "@/lib/theme";
+import { applyCspToHtml } from "./mcpAppCsp";
 import { buildMcpHostStyles } from "./mcpAppTheme";
 import { WebViewTransport } from "./webViewTransport";
 
@@ -30,8 +32,7 @@ export type Phase =
 interface UiResource {
   uri: string;
   html: string;
-  /** Opaque `McpUiResourceCsp` shape — passed through to AppBridge unchanged. */
-  csp?: Record<string, unknown>;
+  csp?: McpUiResourceCsp;
   permissions?: Record<string, Record<string, unknown>>;
 }
 
@@ -256,7 +257,7 @@ export function useMobileAppBridge(
         bridgeRef.current = bridge;
 
         await bridge.sendSandboxResourceReady({
-          html: uiResource.html,
+          html: applyCspToHtml(uiResource.html, uiResource.csp),
           csp: uiResource.csp,
           permissions: uiResource.permissions,
         });

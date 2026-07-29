@@ -1,10 +1,13 @@
 import { Text } from "@components/text";
+import type {
+  McpRecommendedServer,
+  McpServerInstallation,
+} from "@posthog/api-client/types";
 import { CaretRight, Lock, Warning } from "phosphor-react-native";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import type { McpRecommendedServer, McpServerInstallation } from "../types";
-import { isStdioServer } from "../types";
+import { isStdioMcpServer } from "../presentation";
 import { ServerIcon } from "./ServerIcon";
 
 interface McpServerRowProps {
@@ -16,7 +19,8 @@ interface McpServerRowProps {
   isStdio?: boolean;
   needsReauth?: boolean;
   installed?: boolean;
-  iconKey?: string | null;
+  iconDomain?: string | null;
+  serverUrl?: string | null;
   onPress: () => void;
 }
 
@@ -35,7 +39,8 @@ export function McpServerRow({
   isStdio,
   needsReauth,
   installed,
-  iconKey,
+  iconDomain,
+  serverUrl,
   onPress,
 }: McpServerRowProps) {
   const themeColors = useThemeColors();
@@ -46,7 +51,7 @@ export function McpServerRow({
       onPress={onPress}
       className="flex-row items-center gap-3 border-gray-5 border-b bg-card px-4 py-3 active:bg-gray-2"
     >
-      <ServerIcon iconKey={iconKey} size={36} />
+      <ServerIcon iconDomain={iconDomain} serverUrl={serverUrl} size={36} />
       <View className="min-w-0 flex-1">
         <View className="flex-row items-center gap-2">
           <Text
@@ -119,9 +124,10 @@ export function recommendedToRowProps(
     title: template.name,
     description: template.description,
     authType: template.auth_type,
-    isStdio: isStdioServer(template),
+    isStdio: isStdioMcpServer(template),
     installed: installedNames.has(template.name),
-    iconKey: template.icon_key,
+    iconDomain: template.icon_domain,
+    serverUrl: template.url,
     onPress: () => onPress(template),
   };
 }
@@ -134,10 +140,11 @@ export function installationToRowProps(
     title: installation.display_name || installation.name,
     subtitle: installation.url,
     authType: installation.auth_type,
-    isStdio: isStdioServer(installation),
+    isStdio: isStdioMcpServer(installation),
     needsReauth: installation.needs_reauth,
     installed: true,
-    iconKey: installation.icon_key,
+    iconDomain: installation.icon_domain,
+    serverUrl: installation.url,
     onPress: () => onPress(installation),
   };
 }

@@ -16,7 +16,7 @@ function installation(
     id: "inst-1",
     template_id: null,
     name: "",
-    icon_key: "",
+    icon_domain: "",
     proxy_url: "https://proxy.example.com/inst-1",
     tool_count: 0,
     created_at: "2026-01-01T00:00:00Z",
@@ -59,18 +59,32 @@ describe("resolveServerName", () => {
 describe("resolveServerDetails", () => {
   it("resolves description/docs/icon/auth fallbacks", () => {
     const out = resolveServerDetails(
-      installation({ name: "N", icon_key: "" }),
+      installation({
+        name: "N",
+        icon_domain: "",
+        url: "https://mcp.acme.dev/mcp",
+      }),
       template({
         description: "desc",
         docs_url: "https://docs",
-        icon_key: "k",
+        icon_domain: "linear.app",
       }),
     );
     expect(out.name).toBe("N");
     expect(out.description).toBe("desc");
     expect(out.docsUrl).toBe("https://docs");
-    expect(out.iconKey).toBe("k");
+    expect(out.iconDomain).toBe("linear.app");
+    expect(out.serverUrl).toBe("https://mcp.acme.dev/mcp");
     expect(out.authType).toBe("oauth");
+  });
+
+  it("falls back to the template url when the installation has none", () => {
+    const out = resolveServerDetails(
+      null,
+      template({ icon_domain: "", url: "https://mcp.linear.app/sse" }),
+    );
+    expect(out.iconDomain).toBeNull();
+    expect(out.serverUrl).toBe("https://mcp.linear.app/sse");
   });
 });
 

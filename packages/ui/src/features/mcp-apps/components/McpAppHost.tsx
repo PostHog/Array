@@ -239,10 +239,8 @@ export function McpAppHost({
     <iframe
       ref={setIframeEl}
       src={sandboxProxyUrl}
-      // No allow-popups: app JS is same-origin with the proxy realm, so popup
-      // permission here would let it window.open() past the sandbox. Apps
-      // open links via ui/open-link, which the host scheme-validates.
-      sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+      // allow-same-origin would resolve this frame to the host's own origin.
+      sandbox="allow-scripts allow-forms allow-presentation"
       style={{
         height: displayMode === "fullscreen" ? "100%" : `${iframeHeight}px`,
       }}

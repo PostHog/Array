@@ -1,3 +1,6 @@
+import { buildInboxViewedProperties } from "@posthog/core/inbox/engagement";
+import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
+import type { SignalReport } from "@posthog/shared/domain-types";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
@@ -20,13 +23,8 @@ import {
   decidedIds,
   useDismissedReportsStore,
 } from "@/features/inbox/stores/dismissedReportsStore";
-import {
-  DEFAULT_STATUS_FILTER,
-  useInboxFilterStore,
-} from "@/features/inbox/stores/inboxFilterStore";
+import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
-import type { SignalReport } from "@/features/inbox/types";
-import { buildInboxViewedProperties } from "@/features/inbox/utils";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { ANALYTICS_EVENTS, useAnalytics } from "@/lib/analytics";
 
@@ -69,12 +67,17 @@ export default function InboxScreen() {
     viewedFiredForFocusRef.current = focusVersion;
     analytics.track(
       ANALYTICS_EVENTS.INBOX_VIEWED,
-      buildInboxViewedProperties(reports, totalCount, {
-        sourceProductFilter,
-        statusFilter,
-        suggestedReviewerFilter,
-        priorityFilter,
-        defaultStatusFilter: DEFAULT_STATUS_FILTER,
+      buildInboxViewedProperties({
+        visibleReports: reports,
+        totalCount,
+        filters: {
+          surface: "mobile",
+          sourceProductFilter,
+          statusFilter,
+          suggestedReviewerFilter,
+          priorityFilter,
+          defaultStatusFilter: INBOX_PIPELINE_STATUSES,
+        },
       }),
     );
   }, [

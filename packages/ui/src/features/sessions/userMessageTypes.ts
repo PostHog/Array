@@ -1,4 +1,3 @@
-export interface UserMessageAttachment {
-  id: string;
-  label: string;
-}
+import type { AttachmentRef } from "@posthog/core/sessions/promptContent";
+
+export type UserMessageAttachment = AttachmentRef;

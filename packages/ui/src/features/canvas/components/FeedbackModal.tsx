@@ -15,6 +15,7 @@ import {
   FEEDBACK_SURVEY_QUESTION_ID,
   FEEDBACK_SURVEY_SOURCE_QUESTION_ID,
 } from "@posthog/ui/features/canvas/feedbackSurvey";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { captureSurveyResponse } from "@posthog/ui/shell/analytics";
 import { useState } from "react";
 
@@ -50,6 +51,13 @@ export interface FeedbackModalProps {
  */
 export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
   const open = mode !== null;
+  const spacesLayout = useChannelsLayout();
+  const prompt =
+    mode === "feedback" && spacesLayout
+      ? "How's the Spaces experience? Tell us what's working and what you'd change."
+      : mode
+        ? MODAL_COPY[mode].prompt
+        : "";
 
   return (
     <Dialog
@@ -65,7 +73,7 @@ export function FeedbackModal({ mode, onFinished }: FeedbackModalProps) {
           {/* The prompt is the question we want answered, so render it at full
               contrast rather than the muted default. */}
           <DialogDescription className="text-base text-gray-12">
-            {mode ? MODAL_COPY[mode].prompt : ""}
+            {prompt}
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open so the textarea resets on each open without

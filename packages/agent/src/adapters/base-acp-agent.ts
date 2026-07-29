@@ -26,6 +26,8 @@ import {
   isAnthropicModel,
   isCloudflareModel,
   isCloudflareModelId,
+  isModalModel,
+  isModalModelId,
   pickAllowedModel,
 } from "../gateway-models";
 import { Logger } from "../utils/logger";
@@ -152,7 +154,12 @@ export abstract class BaseAcpAgent implements Agent {
     const adapterModels = this.gatewayModels
       // Cloudflare models are servable on the Claude adapter too — the gateway translates the
       // `@cf/` path onto its Anthropic-Messages surface — so include them alongside Anthropic models.
-      .filter((model) => isAnthropicModel(model) || isCloudflareModel(model));
+      .filter(
+        (model) =>
+          isAnthropicModel(model) ||
+          isCloudflareModel(model) ||
+          isModalModel(model),
+      );
 
     const options = adapterModels
       .map((model) => ({
@@ -171,7 +178,8 @@ export abstract class BaseAcpAgent implements Agent {
     const isClaudeAdapterModelId = (modelId: string): boolean =>
       modelId.startsWith("claude-") ||
       modelId.startsWith("anthropic/") ||
-      isCloudflareModelId(modelId);
+      isCloudflareModelId(modelId) ||
+      isModalModelId(modelId);
 
     let currentModelId = currentModelOverride ?? DEFAULT_GATEWAY_MODEL;
 

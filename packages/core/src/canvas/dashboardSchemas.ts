@@ -23,6 +23,7 @@ export const dashboardRecordSchema = z.object({
   // Display name of whoever created the file-system row (from the backend's
   // `created_by` user). Absent for rows the API returns without a creator.
   createdBy: z.string().optional(),
+  createdByUuid: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
   // Epoch ms the canvas was pinned to its channel; absent = not pinned. Stored
@@ -49,9 +50,8 @@ export const dashboardFileMetaSchema = z.object({
   context: z.string().optional(),
   // Id of the task currently generating this canvas (see dashboardRecordSchema).
   generationTaskId: z.string().nullish(),
-  // Display name of the creator, stamped at create time. We can't rely on the
-  // FS row's `created_by` (the list endpoint doesn't expand it), so we store our
-  // own. Absent on boards created before this field existed.
+  // Display name of the creator, stamped at create time for compatibility with
+  // rows created before the API exposed its `created_by` user.
   createdBy: z.string().optional(),
   // Epoch ms. createdAt mirrors the row's created_at; updatedAt is ours because
   // the FileSystem row has no updated_at column to sort the dashboards list by.
@@ -73,6 +73,7 @@ export const dashboardSummarySchema = z.object({
   name: z.string(),
   templateId: z.string().default("freeform"),
   createdBy: z.string().optional(),
+  createdByUuid: z.string().optional(),
   updatedAt: z.number(),
   // The React source, included so the grid can render a live preview without an
   // N+1 of get()s (it rides in the FS row's meta, already loaded when listing).

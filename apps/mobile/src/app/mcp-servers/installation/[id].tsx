@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { McpApprovalState } from "@posthog/api-client/types";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowsClockwise,
@@ -27,9 +28,8 @@ import {
   useUpdateMcpToolApproval,
 } from "@/features/mcp/hooks";
 import { reauthorizeInstallation } from "@/features/mcp/oauth";
+import { isStdioMcpServer } from "@/features/mcp/presentation";
 import { getMcpConnectionManager } from "@/features/mcp/service";
-import type { McpApprovalState } from "@/features/mcp/types";
-import { isStdioServer } from "@/features/mcp/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
@@ -75,7 +75,7 @@ export default function McpInstallationDetailScreen() {
     );
   }
 
-  const stdio = isStdioServer(installation);
+  const stdio = isStdioMcpServer(installation);
 
   const handleEnabledChange = (enabled: boolean) => {
     updateMutation.mutate({
@@ -158,7 +158,11 @@ export default function McpInstallationDetailScreen() {
       >
         {/* Header */}
         <View className="mb-4 flex-row items-center gap-3">
-          <ServerIcon iconKey={installation.icon_key} size={48} />
+          <ServerIcon
+            iconDomain={installation.icon_domain}
+            serverUrl={installation.url}
+            size={48}
+          />
           <View className="min-w-0 flex-1">
             <Text className="font-semibold text-[18px] text-gray-12">
               {installation.display_name || installation.name}

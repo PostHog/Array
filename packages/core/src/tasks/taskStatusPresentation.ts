@@ -1,4 +1,5 @@
 import { readPrUrls } from "@posthog/shared";
+import type { Task } from "@posthog/shared/domain-types";
 
 export type TaskStatusPresentationKind =
   | "pr"
@@ -8,34 +9,9 @@ export type TaskStatusPresentationKind =
   | "started"
   | "chat";
 
-export function getTaskRunStatusPresentationKind(
-  status: string | null | undefined,
-  isGenerating = false,
-): Exclude<TaskStatusPresentationKind, "pr"> {
-  if (isGenerating) return "running";
-
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "failed":
-      return "failed";
-    case "in_progress":
-      return "running";
-    case "queued":
-    case "started":
-      return "started";
-    default:
-      return "chat";
-  }
-}
-
-export function getTaskStatusPresentationKind(task: {
-  latest_run?: {
-    environment?: "local" | "cloud";
-    status: string;
-    output: Record<string, unknown> | null;
-  };
-}): TaskStatusPresentationKind {
+export function getTaskStatusPresentationKind(
+  task: Pick<Task, "latest_run">,
+): TaskStatusPresentationKind {
   const latestRun = task.latest_run;
 
   if (readPrUrls(latestRun?.output)[0]) {
@@ -46,5 +22,16 @@ export function getTaskStatusPresentationKind(task: {
     return "chat";
   }
 
-  return getTaskRunStatusPresentationKind(latestRun?.status);
+  switch (latestRun?.status) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "in_progress":
+      return "running";
+    case "queued":
+      return "started";
+    default:
+      return "chat";
+  }
 }

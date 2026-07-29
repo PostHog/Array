@@ -9,7 +9,9 @@ vi.mock("posthog-react-native", () => ({
   useFeatureFlag: () => flagState.enabled,
 }));
 vi.mock("@/lib/posthogApiClient", () => ({
-  getPostHogApiClient: () => ({ warmTask: mockWarmTask }),
+  getPostHogApiClient: vi.fn(() => ({
+    warmTask: mockWarmTask,
+  })),
 }));
 vi.mock("@/lib/logger", () => {
   const mockLogger = {
@@ -32,6 +34,8 @@ interface Props {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 const composing: Props = {
@@ -197,6 +201,42 @@ describe("useWarmTask", () => {
       expect(mockWarmTask).toHaveBeenCalledTimes(2);
     },
   );
+
+  it("forwards the sandbox environment and custom image", async () => {
+    render({
+      ...composing,
+      sandboxEnvironmentId: "environment-123",
+      customImageId: "image-123",
+    });
+    await flushDebounce();
+
+    expect(mockWarmTask).toHaveBeenCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      sandbox_environment_id: "environment-123",
+      custom_image_id: "image-123",
+    });
+  });
+
+  it("re-warms when the custom image changes", async () => {
+    const { rerender } = render({ ...composing, customImageId: "image-123" });
+    await flushDebounce();
+    expect(mockWarmTask).toHaveBeenCalledOnce();
+
+    rerender({ ...composing, customImageId: "image-456" });
+    await flushDebounce();
+
+    expect(mockWarmTask).toHaveBeenCalledTimes(2);
+    expect(mockWarmTask).toHaveBeenLastCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      ...NULL_RUNTIME,
+      custom_image_id: "image-456",
+    });
+  });
 
   it("warms again for a new selection after a failed warm", async () => {
     mockWarmTask.mockRejectedValueOnce(new Error("boom"));

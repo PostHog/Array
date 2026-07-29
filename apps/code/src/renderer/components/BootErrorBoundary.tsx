@@ -57,7 +57,7 @@ export function BootErrorScreen({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : String(error);
   return (
     <div ref={containerRef} role="alert" tabIndex={-1} style={screenStyle}>
-      <h1 style={titleStyle}>PostHog Code failed to start</h1>
+      <h1 style={titleStyle}>PostHog failed to start</h1>
       <p style={messageStyle}>{message}</p>
       <button
         type="button"

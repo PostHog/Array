@@ -1,14 +1,7 @@
 import { Text } from "@components/text";
-import { getAutomationStatusPresentation } from "@posthog/core/automations/automationStatus";
 import type { TaskRun } from "@posthog/shared";
 import { View } from "react-native";
-
-const STATUS_TONE_CLASSES = {
-  neutral: "bg-gray-4 text-gray-11",
-  warning: "bg-status-warning/20 text-status-warning",
-  success: "bg-status-success/20 text-status-success",
-  error: "bg-status-error/20 text-status-error",
-} as const;
+import { getAutomationStatusPresentation } from "../utils/automationStatus";
 
 interface AutomationStatusBadgeProps {
   enabled: boolean;
@@ -25,9 +18,6 @@ export function AutomationStatusBadge({
     lastRunStatus,
     lastTaskRunStatus,
   });
-  const runStatusClassName = runStatus
-    ? STATUS_TONE_CLASSES[runStatus.tone]
-    : null;
 
   return (
     <View className="flex-row flex-wrap gap-2">
@@ -42,9 +32,9 @@ export function AutomationStatusBadge({
           {enabled ? "Enabled" : "Paused"}
         </Text>
       </View>
-      {runStatus && runStatusClassName ? (
-        <View className={`rounded px-1.5 py-0.5 ${runStatusClassName}`}>
-          <Text className={`text-xs ${runStatusClassName.split(" ")[1]}`}>
+      {runStatus ? (
+        <View className={`rounded px-1.5 py-0.5 ${runStatus.className}`}>
+          <Text className={`text-xs ${runStatus.className.split(" ")[1]}`}>
             {runStatus.label}
           </Text>
         </View>

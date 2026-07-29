@@ -2,7 +2,7 @@ import type {
   CreateTaskAutomationOptions,
   TaskAutomation,
   UpdateTaskAutomationOptions,
-} from "@posthog/shared";
+} from "@posthog/api-client/posthog-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/features/auth";
 import { logger } from "@/lib/logger";

@@ -1,9 +1,6 @@
 import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
-import {
-  getTaskRunStatusPresentationKind,
-  getTaskStatusPresentationKind,
-} from "./taskStatusPresentation";
+import { getTaskStatusPresentationKind } from "./taskStatusPresentation";
 
 function makeTask(latestRun?: Partial<TaskRun>): Pick<Task, "latest_run"> {
   return {
@@ -69,34 +66,4 @@ describe("getTaskStatusPresentationKind", () => {
   it("falls back to chat when a task has no run", () => {
     expect(getTaskStatusPresentationKind(makeTask())).toBe("chat");
   });
-
-  it("preserves the legacy started presentation", () => {
-    expect(
-      getTaskStatusPresentationKind({
-        latest_run: {
-          environment: "local",
-          status: "started",
-          output: null,
-        },
-      }),
-    ).toBe("started");
-  });
-});
-
-describe("getTaskRunStatusPresentationKind", () => {
-  it.each([
-    ["completed", false, "completed"],
-    ["failed", false, "failed"],
-    ["in_progress", false, "running"],
-    ["queued", false, "started"],
-    ["not_started", false, "chat"],
-    ["completed", true, "running"],
-  ] as const)(
-    "maps %s with generating=%s to %s",
-    (status, isGenerating, expected) => {
-      expect(getTaskRunStatusPresentationKind(status, isGenerating)).toBe(
-        expected,
-      );
-    },
-  );
 });

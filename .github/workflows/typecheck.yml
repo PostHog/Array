@@ -59,8 +59,13 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
+      - name: Restore turbo cache
+        uses: ./.github/actions/restore-turbo-cache
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          SKIP_ELECTRON_REBUILD: "1"
 
       - name: Run type check
         run: pnpm run typecheck

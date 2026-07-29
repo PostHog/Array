@@ -62,14 +62,12 @@ export function UsageBillingAnnouncementModal() {
         <Flex direction="column" gap="3">
           <Flex align="center" gap="2">
             <CreditCard size={20} weight="bold" color="var(--accent-9)" />
-            <Dialog.Title className="mb-0">
-              PostHog Code billing has changed
-            </Dialog.Title>
+            <Dialog.Title className="mb-0">Billing has changed</Dialog.Title>
           </Flex>
           <Dialog.Description>
             <Text className="text-sm">
-              Seat-based plans are gone — PostHog Code is now usage-based. You
-              only pay for what you use.
+              Seat-based plans are gone — usage-based billing is here. You only
+              pay for what you use.
             </Text>
           </Dialog.Description>
           <Flex direction="column" gap="2" className="text-sm">

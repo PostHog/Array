@@ -600,7 +600,7 @@ describe("TaskRunEventStreamSender", () => {
         },
       }),
       retryDelayMs: 10_000,
-      stopTimeoutMs: 1,
+      stopTimeoutMs: 0,
     });
 
     sender.enqueue({ type: "notification", notification: { method: "first" } });

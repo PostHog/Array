@@ -11,6 +11,7 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { PostHogProductId } from "../../posthog-products";
+import type { AgentMode } from "../../types";
 import type { Pushable } from "../../utils/streams";
 import type { BaseSession } from "../base-acp-agent";
 import type { ContextBreakdownBaseline } from "./context-breakdown";
@@ -68,6 +69,9 @@ export type Session = BaseSession & {
   input: Pushable<SDKUserMessage>;
   settingsManager: SettingsManager;
   permissionMode: CodeExecutionMode;
+  /** Whether permission decisions are delegated to the cloud AgentServer. */
+  cloudMode: boolean;
+  posthogExecPermissionRegex?: RegExp;
   modeBeforePlan?: CodeExecutionMode;
   modelId?: string;
   cwd: string;
@@ -178,6 +182,12 @@ export type NewSessionMeta = {
   taskRunId?: string;
   taskId?: string;
   environment?: "local" | "cloud";
+  /**
+   * Run mode. "background" means unattended (loops, durable ingest) — no human
+   * drives the turns, so the agent may end its own run via the `finish` tool.
+   * "interactive" runs are driven turn-by-turn and are ended by the human.
+   */
+  mode?: AgentMode;
   disableBuiltInTools?: boolean;
   systemPrompt?: unknown;
   sessionId?: string;
@@ -203,6 +213,7 @@ export type NewSessionMeta = {
   spokenNarration?: boolean;
   jsonSchema?: Record<string, unknown> | null;
   mcpToolApprovals?: McpToolApprovals;
+  posthogExecPermissionRegex?: string;
   claudeCode?: {
     options?: Options;
     emitRawSDKMessages?: boolean | SDKMessageFilter[];

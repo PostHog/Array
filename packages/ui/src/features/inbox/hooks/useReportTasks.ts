@@ -1,3 +1,4 @@
+import { humanizeIdentifier } from "@posthog/core/inbox/activityLog";
 import type {
   SignalReportStatus,
   Task,
@@ -17,11 +18,6 @@ export interface ReportTaskData {
   /** Human-readable row label — "Research" / "Implementation" / a humanized custom pair. */
   purposeLabel: string;
   startedAt: string;
-}
-
-function humanizeIdentifier(value: string): string {
-  const words = value.replace(/[_-]+/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function derivePurpose(taskRun: {

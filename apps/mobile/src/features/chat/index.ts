@@ -5,7 +5,12 @@
 
 // Components
 export { AgentMessage } from "./components/AgentMessage";
-export { HumanMessage } from "./components/HumanMessage";
+export {
+  HumanMessage,
+  type HumanMessageAttachment,
+  MessageFileChip,
+} from "./components/HumanMessage";
+export { MarkdownImage } from "./components/MarkdownImage";
 export { MarkdownText } from "./components/MarkdownText";
 export type {
   ToolKind,

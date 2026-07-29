@@ -17,7 +17,7 @@ import {
   useMcpMarketplace,
 } from "@/features/mcp/hooks";
 import { installTemplateWithOAuth } from "@/features/mcp/oauth";
-import { isStdioServer } from "@/features/mcp/types";
+import { isStdioMcpServer } from "@/features/mcp/presentation";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
 import { openExternalUrl } from "@/lib/openExternalUrl";
@@ -71,7 +71,7 @@ export default function McpTemplateDetailScreen() {
     );
   }
 
-  const stdio = isStdioServer(template);
+  const stdio = isStdioMcpServer(template);
 
   const handleInstall = async () => {
     if (!template) return;
@@ -121,7 +121,11 @@ export default function McpTemplateDetailScreen() {
         }}
       >
         <View className="mb-4 flex-row items-center gap-3">
-          <ServerIcon iconKey={template.icon_key} size={48} />
+          <ServerIcon
+            iconDomain={template.icon_domain}
+            serverUrl={template.url}
+            size={48}
+          />
           <View className="min-w-0 flex-1">
             <Text className="font-semibold text-[18px] text-gray-12">
               {template.name}

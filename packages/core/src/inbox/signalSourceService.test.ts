@@ -60,6 +60,13 @@ describe("computeSourceValues", () => {
     const values = computeSourceValues([config("github", "issue", true)]);
     expect(values.github).toBe(true);
   });
+
+  it("enables health_checks when its config is enabled", () => {
+    const values = computeSourceValues([
+      config("health_checks", "health_issue", true),
+    ]);
+    expect(values.health_checks).toBe(true);
+  });
 });
 
 describe("deriveSourceStates", () => {
@@ -104,6 +111,17 @@ describe("SignalSourceService.toggleSource", () => {
     );
     expect(result.isFirstConnection).toBe(true);
     expect(client.createSignalSourceConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a health_checks config with the health_issue source type", async () => {
+    const client = fakeClient();
+    const service = new SignalSourceService();
+    await service.toggleSource(client, 1, "health_checks", true, [], []);
+    expect(client.createSignalSourceConfig).toHaveBeenCalledWith(1, {
+      source_product: "health_checks",
+      source_type: "health_issue",
+      enabled: true,
+    });
   });
 
   it("ensures the issues table syncs with full_refresh for github before enabling", async () => {

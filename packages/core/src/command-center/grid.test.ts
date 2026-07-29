@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BRAINROT_CELL,
   clampZoom,
+  countActiveTaskCells,
   getCellCount,
   getCellSessionId,
   getGridDimensions,
@@ -95,5 +96,36 @@ describe("terminal cells", () => {
 describe("getCellSessionId", () => {
   it("formats the cell session id", () => {
     expect(getCellSessionId(2)).toBe("cc-cell-2");
+  });
+});
+
+describe("countActiveTaskCells", () => {
+  const live = new Set(["task-1", "task-2"]);
+
+  it("counts only cells whose task still exists", () => {
+    expect(countActiveTaskCells(["task-1", "task-2"], live)).toBe(2);
+  });
+
+  // Cells are persisted and only pruned on archive, so a deleted task's id
+  // lingers forever — counting the array's non-empty entries would never drop.
+  it("ignores a task that has since been deleted", () => {
+    expect(countActiveTaskCells(["task-1", "deleted-task"], live)).toBe(1);
+  });
+
+  it.each([
+    { name: "empty cells", cells: [null, null] },
+    { name: "the brainrot sentinel", cells: [BRAINROT_CELL] },
+    { name: "terminal cells", cells: [makeTerminalCellValue("abc123")] },
+  ])("does not count $name", ({ cells }) => {
+    expect(countActiveTaskCells(cells, live)).toBe(0);
+  });
+
+  it("counts a mixed grid correctly", () => {
+    expect(
+      countActiveTaskCells(
+        [null, BRAINROT_CELL, "task-1", "deleted", makeTerminalCellValue("t")],
+        live,
+      ),
+    ).toBe(1);
   });
 });

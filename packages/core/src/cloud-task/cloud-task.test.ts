@@ -5,14 +5,17 @@ const mockNetFetch = vi.hoisted(() => vi.fn());
 const mockStreamFetch = vi.hoisted(() => vi.fn());
 const mockStreamTokenFetch = vi.hoisted(() => vi.fn());
 
-// The service now uses global fetch for BOTH authenticated API calls (JSON)
-// and SSE streaming. The two used to be distinct (net.fetch vs global fetch).
 // Route by URL: /stream_token/ → token mock (read-leg resolution), the stream leg
 // (Django /stream/ or proxy /v1/runs/:run/stream) → stream mock, everything else → API mock.
 // The token mock has a Django-path default so existing fixtures (which never set it) are untouched.
 const fetchRouter = vi.hoisted(() =>
-  vi.fn((input: string | Request, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.url;
+  vi.fn((input: string | URL | Request, init?: RequestInit) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
     const impl = url.includes("/stream_token/")
       ? mockStreamTokenFetch
       : /\/stream(\/|\?|$)/.test(url)
@@ -22,7 +25,10 @@ const fetchRouter = vi.hoisted(() =>
   }),
 );
 
-import { CloudTaskService } from "./cloud-task";
+import {
+  type CloudTaskEngine,
+  createCloudTaskEngine,
+} from "./cloud-task-engine";
 
 const mockAuthService = {
   authenticatedFetch: vi.fn(),
@@ -86,8 +92,8 @@ async function waitFor(
   }
 }
 
-describe("CloudTaskService", () => {
-  let service: CloudTaskService;
+describe("CloudTaskEngine", () => {
+  let service: CloudTaskEngine;
 
   beforeEach(() => {
     const scopedLog = {
@@ -98,11 +104,12 @@ describe("CloudTaskService", () => {
     };
     const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
     const analyticsMock = { track: vi.fn() };
-    service = new CloudTaskService(
-      mockAuthService as never,
-      analyticsMock as never,
-      loggerMock,
-    );
+    service = createCloudTaskEngine({
+      auth: mockAuthService as never,
+      analytics: analyticsMock as never,
+      logger: loggerMock,
+      streamFetch: fetchRouter,
+    });
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();
     mockStreamTokenFetch.mockReset();
@@ -2525,6 +2532,104 @@ describe("CloudTaskService", () => {
     expect(statusFetchCount).toBeLessThanOrEqual(2);
   });
 
+  it("loads archived logs when a terminal run has no persisted session logs", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+    const archivedEntry = {
+      type: "notification",
+      timestamp: "2026-01-01T00:00:00Z",
+    };
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      if (url === "https://logs.example.com/run-1.jsonl") {
+        return Promise.resolve(
+          new Response(`${JSON.stringify(archivedEntry)}\n`, { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          log_url: "https://logs.example.com/run-1.jsonl",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => updates.length === 1);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({
+        kind: "snapshot",
+        newEntries: [archivedEntry],
+        totalEntryCount: 1,
+        status: "completed",
+      }),
+    );
+    expect(
+      mockNetFetch.mock.calls.find(
+        ([input]) => input === "https://logs.example.com/run-1.jsonl",
+      )?.[1]?.signal,
+    ).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps valid archived entries around malformed lines", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+    const archivedEntry = {
+      type: "notification",
+      timestamp: "2026-01-01T00:00:00Z",
+    };
+
+    mockNetFetch.mockImplementation((input: string | Request) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.includes("/session_logs/")) {
+        return Promise.resolve(
+          createJsonResponse([], 200, { "X-Has-More": "false" }),
+        );
+      }
+      if (url === "https://logs.example.com/run-1.jsonl") {
+        return Promise.resolve(
+          new Response(`invalid\n${JSON.stringify(archivedEntry)}\n`, {
+            status: 200,
+          }),
+        );
+      }
+      return Promise.resolve(
+        createJsonResponse({
+          id: "run-1",
+          status: "completed",
+          log_url: "https://logs.example.com/run-1.jsonl",
+          updated_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+    });
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => updates.length === 1);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({ newEntries: [archivedEntry] }),
+    );
+  });
+
   const guardedFetchStatusExpectations = [
     [
       401,
@@ -3077,8 +3182,8 @@ describe("CloudTaskService", () => {
   });
 });
 
-describe("CloudTaskService MCP relay", () => {
-  let relayService: CloudTaskService;
+describe("CloudTaskEngine MCP relay", () => {
+  let relayService: CloudTaskEngine;
   let mcpRelayExecutor: {
     execute: ReturnType<typeof vi.fn>;
     closeRun: ReturnType<typeof vi.fn>;
@@ -3099,12 +3204,12 @@ describe("CloudTaskService MCP relay", () => {
       })),
       closeRun: vi.fn(async () => {}),
     };
-    relayService = new CloudTaskService(
-      mockAuthService as never,
-      analyticsMock as never,
-      loggerMock,
-      mcpRelayExecutor as never,
-    );
+    relayService = createCloudTaskEngine({
+      auth: mockAuthService as never,
+      analytics: analyticsMock as never,
+      logger: loggerMock,
+      mcpRelayExecutor: mcpRelayExecutor as never,
+    });
 
     mockNetFetch.mockReset();
     mockStreamFetch.mockReset();

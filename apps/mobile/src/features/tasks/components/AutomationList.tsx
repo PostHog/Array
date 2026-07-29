@@ -1,5 +1,5 @@
 import { Text } from "@components/text";
-import type { TaskAutomation } from "@posthog/shared";
+import type { TaskAutomation } from "@posthog/api-client/posthog-client";
 import { Plus } from "phosphor-react-native";
 import {
   ActivityIndicator,

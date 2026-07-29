@@ -10,12 +10,14 @@ interface InboxItemProps {
   isActive: boolean;
   onClick: () => void;
   pullRequestCount?: number;
+  depth?: number;
 }
 
 export function InboxItem({
   isActive,
   onClick,
   pullRequestCount = 0,
+  depth = 0,
 }: InboxItemProps) {
   return (
     <Tooltip
@@ -28,7 +30,7 @@ export function InboxItem({
     >
       <div>
         <SidebarItem
-          depth={0}
+          depth={depth}
           icon={
             <EnvelopeSimple size={16} weight={isActive ? "fill" : "regular"} />
           }

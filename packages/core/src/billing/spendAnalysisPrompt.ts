@@ -91,7 +91,7 @@ export function buildAnalysisPrompt(data: SpendAnalysisResponse): string {
     )
     .join("\n");
 
-  return `Here is my PostHog Code LLM spend for the last ${windowLabel}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
+  return `Here is my LLM spend in this app for the last ${windowLabel}. Help me understand what's driving the cost and what concrete changes I should make to reduce it.
 
 Work only from the tables below. Do **not** try to query PostHog AI observability or any external data source. The numbers here are everything you have. Rank advice by impact, lead with the biggest lever, and keep each suggestion concrete and actionable.
 
@@ -99,7 +99,7 @@ Work only from the tables below. Do **not** try to query PostHog AI observabilit
 
 ### Summary
 - Total spend: ${formatUsd(summary.total_cost_usd)}
-- PostHog Code spend: ${formatUsd(summary.scoped_cost_usd)} (${codeShare}% of total)
+- This app's spend: ${formatUsd(summary.scoped_cost_usd)} (${codeShare}% of total)
 - Generations: ${summary.scoped_event_count.toLocaleString()}
 - Window: ${windowLabel}
 
@@ -108,12 +108,12 @@ Work only from the tables below. Do **not** try to query PostHog AI observabilit
 | --- | --- | --- |
 ${productRows || "| (none) | 0 | $0 |"}
 
-### By tool (PostHog Code, top 10)
+### By tool (this app, top 10)
 | Tool | Generations | Avg input | Cost |
 | --- | --- | --- | --- |
 ${toolRows || "| (none) | 0 | 0 | $0 |"}
 
-### By model (PostHog Code)
+### By model (this app)
 | Model | Generations | Input | Output | Cost |
 | --- | --- | --- | --- | --- |
 ${modelRows || "| (none) | 0 | 0 | 0 | $0 |"}

@@ -8,6 +8,9 @@ import {
   isAnthropicModel,
   isBlockedModelId,
   isCloudflareModel,
+  isModalModel,
+  isModalModelId,
+  normalizeGatewayModelsResponse,
   pickAllowedModel,
 } from "./cloud-task-models";
 
@@ -29,6 +32,7 @@ describe("formatGatewayModelName", () => {
     [model("claude-opus-4-8"), "Claude Opus 4.8"],
     [model("GPT-5.5", "openai"), "GPT-5.5"],
     [model("openai/gpt-5.6-sol", "openai"), "GPT-5.6 Sol"],
+    [model("moonshotai/kimi-k3", "modal"), "Kimi K3"],
     [model("@cf/zai-org/glm-5.2", "cloudflare"), "GLM-5.2"],
     [
       model("@cf/meta/llama-3.1-8b-instruct", "cloudflare"),
@@ -36,6 +40,16 @@ describe("formatGatewayModelName", () => {
     ],
   ])("formats $id", (gatewayModel, expected) => {
     expect(formatGatewayModelName(gatewayModel)).toBe(expected);
+  });
+});
+
+describe("normalizeGatewayModelsResponse", () => {
+  it("corrects stale GLM 5.2 context-window metadata", () => {
+    const models = normalizeGatewayModelsResponse([
+      model("@cf/zai-org/glm-5.2", "cloudflare"),
+    ]);
+
+    expect(models[0]?.context_window).toBe(1_000_000);
   });
 });
 
@@ -103,6 +117,12 @@ describe("model classification", () => {
     expect(isCloudflareModel(gatewayModel)).toBe(true);
     expect(isAnthropicModel(gatewayModel)).toBe(false);
   });
+
+  it("recognizes Modal models by owner and id", () => {
+    const gatewayModel = model("moonshotai/kimi-k3", "modal");
+    expect(isModalModel(gatewayModel)).toBe(true);
+    expect(isModalModelId(gatewayModel.id)).toBe(true);
+  });
 });
 
 describe("pickAllowedModel", () => {
@@ -153,8 +173,17 @@ describe("buildCloudTaskConfigOptions", () => {
           { value: "@cf/zai-org/glm-5.2" },
         ],
       },
+      {
+        id: "effort",
+        currentValue: "high",
+        options: [{ value: "high" }, { value: "max" }],
+      },
     ]);
-    expect(options.map((option) => option.id)).toEqual(["mode", "model"]);
+    expect(options.map((option) => option.id)).toEqual([
+      "mode",
+      "model",
+      "effort",
+    ]);
   });
 
   it("builds Codex options with the shared default and reasoning levels", () => {
@@ -184,6 +213,20 @@ describe("buildCloudTaskConfigOptions", () => {
           { value: "xhigh" },
         ],
       },
+    ]);
+  });
+
+  it("offers Modal models to Claude sessions", () => {
+    const options = buildCloudTaskConfigOptions(
+      [model("moonshotai/kimi-k3", "modal")],
+      "claude",
+    );
+
+    expect(options.find((option) => option.id === "model")?.options).toEqual([
+      expect.objectContaining({
+        value: "moonshotai/kimi-k3",
+        name: "Kimi K3",
+      }),
     ]);
   });
 });

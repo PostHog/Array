@@ -97,6 +97,9 @@ export function ReviewPage({ task }: ReviewPageProps) {
   const isReviewOpen = useReviewNavigationStore(
     (s) => (s.reviewModes[taskId] ?? "closed") !== "closed",
   );
+  const selectedPrUrl = useReviewNavigationStore(
+    (s) => s.selectedPrUrls[taskId],
+  );
 
   const {
     effectiveSource,
@@ -105,7 +108,7 @@ export function ReviewPage({ task }: ReviewPageProps) {
     defaultBranch,
     branchSourceAvailable,
     prSourceAvailable,
-  } = useEffectiveDiffSource(taskId);
+  } = useEffectiveDiffSource(taskId, selectedPrUrl);
 
   const showReviewComments = useDiffViewerStore((s) => s.showReviewComments);
   const { commentThreads, commentsLoading } = usePrDetails(prUrl, {

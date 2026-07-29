@@ -1,4 +1,10 @@
-import type { Adapter, StoredLogEntry, Task, TaskRun } from "@posthog/shared";
+import type {
+  Adapter,
+  ExecutionMode,
+  StoredLogEntry,
+  Task,
+  TaskRun,
+} from "@posthog/shared";
 import { fetch } from "expo/fetch";
 import {
   authedFetch,
@@ -8,6 +14,7 @@ import {
   getProjectId,
   HttpError,
 } from "@/lib/api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 export { HttpError } from "@/lib/api";
 
@@ -78,84 +85,34 @@ export interface RunTaskInCloudOptions {
   autoPublish?: boolean;
   /** Only false is sent: opts the run out of rtk command-output compression. */
   rtkEnabled?: boolean;
+  sandboxEnvironmentId?: string | null;
+  customImageId?: string | null;
 }
 
 export async function runTaskInCloud(
   taskId: string,
   options?: RunTaskInCloudOptions,
 ): Promise<Task> {
-  const baseUrl = getBaseUrl();
-  const projectId = getProjectId();
-
-  // Only serialize a body when we have options to send. Sending an empty
-  // or minimal body on the initial run historically changed backend
-  // behavior, so we preserve the "no body" path for the common case.
-  const hasOptions =
-    !!options &&
-    (options.branch !== undefined ||
-      options.resumeFromRunId !== undefined ||
-      options.pendingUserMessage !== undefined ||
-      options.mode !== undefined ||
-      options.runtimeAdapter !== undefined ||
-      options.model !== undefined ||
-      options.reasoningEffort !== undefined ||
-      options.initialPermissionMode !== undefined ||
-      options.runSource !== undefined ||
-      options.signalReportId !== undefined ||
-      options.autoPublish !== undefined ||
-      options.rtkEnabled === false);
-
-  let body: string | undefined;
-  if (hasOptions) {
-    const payload: Record<string, unknown> = {
-      mode: options?.mode ?? "interactive",
-    };
-    if (options?.branch) payload.branch = options.branch;
-    if (options?.resumeFromRunId) {
-      payload.resume_from_run_id = options.resumeFromRunId;
-    }
-    if (options?.pendingUserMessage) {
-      payload.pending_user_message = options.pendingUserMessage;
-    }
-    if (options?.runtimeAdapter) {
-      payload.runtime_adapter = options.runtimeAdapter;
-      if (options?.model) payload.model = options.model;
-      if (options?.reasoningEffort) {
-        payload.reasoning_effort = options.reasoningEffort;
-      }
-    }
-    if (options?.initialPermissionMode) {
-      payload.initial_permission_mode = options.initialPermissionMode;
-    }
-    if (options?.runSource) payload.run_source = options.runSource;
-    if (options?.signalReportId)
-      payload.signal_report_id = options.signalReportId;
-    if (options?.autoPublish !== undefined) {
-      payload.auto_publish = options.autoPublish;
-    }
-    if (options?.rtkEnabled === false) {
-      payload.rtk_enabled = false;
-    }
-    body = JSON.stringify(payload);
+  if (!options) {
+    return getPostHogApiClient().runTaskInCloud(taskId);
   }
 
-  const response = await authedFetch(
-    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/run/`,
-    {
-      method: "POST",
-      body,
-    },
-  );
-
-  if (!response.ok) {
-    throw new HttpError(
-      response.status,
-      response.statusText,
-      "Failed to run task",
-    );
-  }
-
-  return await response.json();
+  return getPostHogApiClient().runTaskInCloud(taskId, options.branch, {
+    adapter: options.runtimeAdapter,
+    model: options.model,
+    reasoningLevel: options.reasoningEffort,
+    initialPermissionMode: options.initialPermissionMode as
+      | ExecutionMode
+      | undefined,
+    runSource: options.runSource,
+    signalReportId: options.signalReportId,
+    autoPublish: options.autoPublish,
+    rtkEnabled: options.rtkEnabled,
+    sandboxEnvironmentId: options.sandboxEnvironmentId ?? undefined,
+    customImageId: options.customImageId ?? undefined,
+    resumeFromRunId: options.resumeFromRunId,
+    pendingUserMessage: options.pendingUserMessage,
+  });
 }
 
 export async function getTaskRun(
@@ -178,6 +135,38 @@ export async function getTaskRun(
   }
 
   return await response.json();
+}
+
+/**
+ * Exchanges an artifact's storage path for a short-lived presigned S3 URL used
+ * to render image attachment previews.
+ */
+export async function presignTaskRunArtifact(
+  taskId: string,
+  runId: string,
+  storagePath: string,
+): Promise<string> {
+  const baseUrl = getBaseUrl();
+  const projectId = getProjectId();
+
+  const response = await authedFetch(
+    `${baseUrl}/api/projects/${projectId}/tasks/${taskId}/runs/${runId}/artifacts/presign/`,
+    {
+      method: "POST",
+      body: JSON.stringify({ storage_path: storagePath }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      response.statusText,
+      "Failed to generate artifact preview URL",
+    );
+  }
+
+  const data = (await response.json()) as { url: string };
+  return data.url;
 }
 
 export async function cancelRun(

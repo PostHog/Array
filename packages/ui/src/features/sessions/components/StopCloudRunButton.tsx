@@ -1,4 +1,4 @@
-import { Spinner, Stop } from "@phosphor-icons/react";
+import { Spinner, StopCircle } from "@phosphor-icons/react";
 import { isTerminalStatus } from "@posthog/core/cloud-task/schemas";
 import { Button as QuillButton } from "@posthog/quill";
 import { useState } from "react";
@@ -36,7 +36,7 @@ export function StopCloudRunButton({ taskId }: StopCloudRunButtonProps) {
           {stopRequested ? (
             <Spinner size={14} className="shrink-0 animate-spin" />
           ) : (
-            <Stop size={14} weight="regular" className="shrink-0" />
+            <StopCircle size={14} weight="regular" className="shrink-0" />
           )}
           {stopRequested ? "Stopping..." : "Stop run"}
         </QuillButton>

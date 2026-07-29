@@ -26,6 +26,15 @@ function createDependencies() {
         accessToken: "fresh-access-token",
         apiHost: "https://app.posthog.com",
       }),
+      getState: vi.fn(
+        (): {
+          currentProjectId: number | null;
+          sessionType?: "persistent" | "impersonated" | null;
+        } => ({
+          currentProjectId: 1,
+          sessionType: "persistent",
+        }),
+      ),
       authenticatedFetch: vi
         .fn()
         .mockImplementation(
@@ -80,6 +89,25 @@ describe("AgentAuthAdapter", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.POSTHOG_API_KEY;
+    delete process.env.POSTHOG_AUTH_HEADER;
+  });
+
+  describe("getCurrentCredentials", () => {
+    it("returns the auth host and selected project", async () => {
+      deps.authService.getState.mockReturnValue({ currentProjectId: 42 });
+
+      await expect(adapter.getCurrentCredentials()).resolves.toEqual({
+        apiHost: "https://app.posthog.com",
+        projectId: 42,
+      });
+    });
+
+    it("returns null when no project is selected", async () => {
+      deps.authService.getState.mockReturnValue({ currentProjectId: null });
+
+      await expect(adapter.getCurrentCredentials()).resolves.toBeNull();
+    });
   });
 
   it("builds the default PostHog MCP server routed through the local proxy", async () => {
@@ -103,7 +131,7 @@ describe("AgentAuthAdapter", () => {
     );
   });
 
-  it("identifies as the PostHog Code consumer so the MCP server emits UI-app metadata", async () => {
+  it("identifies as the posthog-code consumer so the MCP server emits UI-app metadata", async () => {
     const { servers } = await adapter.buildMcpServers(baseCredentials);
 
     const posthogServer = servers.find((s) => s.name === "posthog");
@@ -244,6 +272,24 @@ describe("AgentAuthAdapter", () => {
     expect(process.env.POSTHOG_PROJECT_ID).toBe("1");
     // The node-shim era prepended a shim dir here; PATH must stay untouched.
     expect(process.env.PATH).toBe(pathBefore);
+  });
+
+  it("does not export impersonated credentials to the process environment", async () => {
+    process.env.POSTHOG_API_KEY = "stale-token";
+    process.env.POSTHOG_AUTH_HEADER = "Bearer stale-token";
+    deps.authService.getState.mockReturnValue({
+      currentProjectId: 1,
+      sessionType: "impersonated",
+    });
+
+    await adapter.configureProcessEnv({
+      credentials: baseCredentials,
+      proxyUrl: "http://127.0.0.1:9999",
+      claudeCliPath: "/mock/claude-cli.js",
+    });
+
+    expect(process.env.POSTHOG_API_KEY).toBeUndefined();
+    expect(process.env.POSTHOG_AUTH_HEADER).toBeUndefined();
   });
 
   it.each([

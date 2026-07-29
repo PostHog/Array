@@ -1,7 +1,7 @@
 import type { PermissionOption } from "@agentclientprotocol/sdk";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanApprovalSelector } from "./PlanApprovalSelector";
@@ -90,6 +90,91 @@ describe("PlanApprovalSelector", () => {
     await user.click(screen.getByText("Approve and proceed"));
 
     expect(useSettingsStore.getState().lastPlanApprovalMode).toBe("auto");
+  });
+
+  it("picks up a remembered mode that loads after mount", async () => {
+    // Settings persist asynchronously (an IPC round trip on desktop), so the
+    // selector can mount before `lastPlanApprovalMode` has loaded from disk.
+    const user = userEvent.setup();
+    const { onSelect } = renderSelector([AUTO, ACCEPT_EDITS, DEFAULT_MODE]);
+
+    // The remembered choice loads in after mount.
+    act(() => {
+      useSettingsStore.setState({ lastPlanApprovalMode: "acceptEdits" });
+    });
+
+    await user.click(screen.getByText("Approve and proceed"));
+
+    expect(onSelect).toHaveBeenCalledWith("acceptEdits");
+  });
+
+  it("does not clobber a mode the user already picked", async () => {
+    const user = userEvent.setup();
+    const { onSelect } = renderSelector([AUTO, ACCEPT_EDITS, DEFAULT_MODE]);
+
+    await user.click(screen.getByRole("button", { name: "Mode" }));
+    await user.click(await screen.findByText("Manually approve edits"));
+    // The dropdown applies the pick when its close animation completes, not
+    // synchronously with the click, so wait for it to actually land before
+    // moving on — otherwise this race decides the test's outcome.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Mode" })).toHaveTextContent(
+        "Manually approve edits",
+      ),
+    );
+
+    // The remembered choice loads in after the user already picked a mode.
+    act(() => {
+      useSettingsStore.setState({ lastPlanApprovalMode: "acceptEdits" });
+    });
+
+    await user.click(screen.getByText("Approve and proceed"));
+
+    expect(onSelect).toHaveBeenCalledWith("default");
+  });
+
+  it("drops a manual pick when a later approval request reuses this instance", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const options = [AUTO, ACCEPT_EDITS, DEFAULT_MODE];
+    const { rerender } = render(
+      <Theme>
+        <PlanApprovalSelector
+          toolCall={toolCall}
+          options={options}
+          onSelect={onSelect}
+          onCancel={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Mode" }));
+    await user.click(await screen.findByText("Manually approve edits"));
+    // The dropdown applies the pick when its close animation completes, not
+    // synchronously with the click — wait for it to land before rerendering,
+    // or the pending pick can apply after (and survive) the reset below.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Mode" })).toHaveTextContent(
+        "Manually approve edits",
+      ),
+    );
+
+    // The component isn't guaranteed to unmount between requests; a new
+    // toolCallId means a new request even if this instance is reused.
+    rerender(
+      <Theme>
+        <PlanApprovalSelector
+          toolCall={{ ...toolCall, toolCallId: "plan-2" } as PermissionToolCall}
+          options={options}
+          onSelect={onSelect}
+          onCancel={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    await user.click(screen.getByText("Approve and proceed"));
+
+    expect(onSelect).toHaveBeenCalledWith("auto");
   });
 
   it("rejects with the typed feedback", async () => {

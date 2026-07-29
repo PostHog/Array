@@ -1,4 +1,5 @@
 import { X } from "@phosphor-icons/react";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { Box, Flex, ScrollArea, Text, Tooltip } from "@radix-ui/themes";
 
@@ -16,6 +17,7 @@ export function ChannelContextPanel({
   body,
   onClose,
 }: ChannelContextPanelProps) {
+  const spacesLayout = useChannelsLayout();
   return (
     <Flex direction="column" className="h-full min-w-0">
       <Flex
@@ -45,7 +47,8 @@ export function ChannelContextPanel({
       <ScrollArea type="auto" scrollbars="vertical" className="min-h-0 flex-1">
         <Box p="4">
           <Text className="mb-3 block text-[12px] text-gray-9">
-            Included with new tasks in this channel as background context.
+            Included with new tasks in this {spacesLayout ? "space" : "channel"}{" "}
+            as background context.
           </Text>
           <Box className="text-[13px]">
             <MarkdownRenderer content={body} />

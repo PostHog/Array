@@ -57,6 +57,8 @@ import {
   type Enrichment,
   type FileEnrichmentDeps,
 } from "../../enrichment/file-enricher";
+import { PostHogAPIClient } from "../../posthog-api";
+import { resolvePostHogExecPermissionRegex } from "../../posthog-exec-permission";
 import {
   classifyPostHogExecCall,
   isUnclassifiedPostHogSubTool,
@@ -74,7 +76,7 @@ import { resolveGithubToken } from "../../utils/github-token";
 import { Logger } from "../../utils/logger";
 import { Pushable } from "../../utils/streams";
 import { BaseAcpAgent } from "../base-acp-agent";
-import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
+import { LOCAL_TOOLS_MCP_NAME, type LocalToolCtx } from "../local-tools";
 import { resolveSpokenNarration, resolveTaskId } from "../session-meta";
 import {
   buildBreakdown,
@@ -650,6 +652,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       };
     };
 
+    const recordContextUsage = (nextTotal: number): boolean => {
+      if (nextTotal <= 0 || nextTotal === lastAssistantTotalUsage) {
+        return false;
+      }
+      const knownTotal = Math.max(
+        lastAssistantTotalUsage ?? 0,
+        session.contextUsed ?? 0,
+      );
+      if (nextTotal < knownTotal) {
+        return false;
+      }
+      lastAssistantTotalUsage = nextTotal;
+      return true;
+    };
+
     const resetTurnScratch = () => {
       lastAssistantTotalUsage = null;
       lastRefusalExplanation = null;
@@ -831,16 +848,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 fetchContextUsedTokens(query, this.logger),
                 cancelController.signal,
               );
-              lastAssistantTotalUsage =
-                usedTokens.result === "success" ? (usedTokens.value ?? 0) : 0;
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                },
-              });
+              if (usedTokens.result === "success" && usedTokens.value != null) {
+                lastAssistantTotalUsage = usedTokens.value;
+                session.contextUsed = usedTokens.value;
+                session.contextSize = windowSize();
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: lastAssistantTotalUsage,
+                    size: windowSize(),
+                  },
+                });
+              }
             }
             if (message.subtype === "commands_changed") {
               session.knownSlashCommands = collectKnownSlashCommands(
@@ -955,7 +975,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                     sessionUpdate: "agent_message_chunk",
                     content: {
                       type: "text",
-                      text: `Unsupported slash command: \`${cmd}\`. PostHog Code does not implement this command.`,
+                      text: `Unsupported slash command: \`${cmd}\`. PostHog does not implement this command.`,
                     },
                   },
                 });
@@ -1200,8 +1220,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 lastStreamUsage.cache_read_input_tokens +
                 lastStreamUsage.cache_creation_input_tokens;
 
-              if (nextTotal !== lastAssistantTotalUsage) {
-                lastAssistantTotalUsage = nextTotal;
+              if (recordContextUsage(nextTotal)) {
                 await this.client.sessionUpdate({
                   sessionId,
                   update: {
@@ -1296,21 +1315,23 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
                 cache_read_input_tokens: number | null;
                 cache_creation_input_tokens: number | null;
               };
-              lastAssistantTotalUsage =
+              const nextTotal =
                 (usage.input_tokens ?? 0) +
                 (usage.output_tokens ?? 0) +
                 (usage.cache_read_input_tokens ?? 0) +
                 (usage.cache_creation_input_tokens ?? 0);
 
-              await this.client.sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "usage_update",
-                  used: lastAssistantTotalUsage,
-                  size: windowSize(),
-                  cost: null,
-                },
-              });
+              if (recordContextUsage(nextTotal)) {
+                await this.client.sessionUpdate({
+                  sessionId,
+                  update: {
+                    sessionUpdate: "usage_update",
+                    used: nextTotal,
+                    size: windowSize(),
+                    cost: null,
+                  },
+                });
+              }
             }
 
             const result = await handleUserAssistantMessage(message, context);
@@ -1861,6 +1882,30 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
   }
 
+  // Backs the `finish` local tool: marks the task run terminal so the Temporal
+  // workflow tears the sandbox down. Only wired when we have both the run
+  // identifiers and a PostHog API config, i.e. a real cloud run.
+  private buildRequestFinish(
+    taskId: string | undefined,
+    taskRunId: string | undefined,
+  ): LocalToolCtx["requestFinish"] {
+    const config = this.options?.posthogApiConfig;
+    if (!config || !taskId || !taskRunId) {
+      return undefined;
+    }
+    return async (status, message) => {
+      try {
+        await new PostHogAPIClient(config).updateTaskRun(taskId, taskRunId, {
+          status,
+          ...(status === "failed" && message ? { error_message: message } : {}),
+        });
+      } catch (error) {
+        this.logger.error("finish tool failed to mark run terminal", error);
+        throw error;
+      }
+    };
+  }
+
   private async createSession(
     params: {
       cwd: string;
@@ -1919,6 +1964,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const baseBranch = meta?.baseBranch;
     const environment = meta?.environment;
     const spokenNarration = resolveSpokenNarration(meta);
+    const requestFinish = this.buildRequestFinish(taskId, meta?.taskRunId);
     const buildInProcessMcpServers = (): Record<
       string,
       McpSdkServerConfigWithInstance
@@ -1930,8 +1976,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           taskId,
           taskRunId: meta?.taskRunId,
           baseBranch,
+          requestFinish,
         },
-        { environment, spokenNarration },
+        {
+          environment,
+          spokenNarration,
+          background: meta?.mode === "background",
+        },
       );
       return server ? { [LOCAL_TOOLS_MCP_NAME]: server } : {};
     };
@@ -1977,12 +2028,21 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       CODE_EXECUTION_MODES.includes(meta.permissionMode as CodeExecutionMode)
         ? (meta.permissionMode as CodeExecutionMode)
         : "default";
+    const posthogExecPermissionRegex = resolvePostHogExecPermissionRegex(
+      meta?.posthogExecPermissionRegex,
+      (message) =>
+        this.logger.warn(
+          "Invalid posthogExecPermissionRegex in session metadata; using default",
+          { message },
+        ),
+    );
 
     const taskState: TaskState = new Map();
     const options = buildSessionOptions({
       cwd,
       mcpServers,
       permissionMode,
+      posthogExecPermissionRegex,
       canUseTool: this.createCanUseTool(sessionId, meta?.allowedDomains),
       logger: this.logger,
       systemPrompt,
@@ -2037,6 +2097,8 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       cancelled: false,
       settingsManager,
       permissionMode,
+      cloudMode: cloudRun,
+      posthogExecPermissionRegex,
       abortController,
       accumulatedUsage: {
         inputTokens: 0,
@@ -2190,6 +2252,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager.getSettings().model,
       meta?.model,
     ]);
+    modelOptions.currentModelId = resolvedModelId;
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
       this.getContextWindowForModel(resolvedModelId);

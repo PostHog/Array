@@ -32,7 +32,7 @@ pnpm --filter @posthog/mobile start
 
 ### Feature Folders
 
-Code is organized by feature in `src/features/`. Each feature is self-contained with its own components, hooks, stores, and API logic.
+Code is organized by feature in `src/features/`. Features own native components, one-source hooks, and view state. They do not own copies of cloud contracts, transport, orchestration, or presentation rules.
 
 ```
 src/features/
@@ -46,17 +46,30 @@ src/features/
 │   ├── hooks/
 │   ├── stores/
 │   └── types.ts
-├── conversations/  # PostHog AI conversation list & management
-│   ├── api.ts
+├── inbox/          # Native inbox rendering and query hooks
 │   ├── components/
 │   ├── hooks/
 │   └── stores/
-└── tasks/          # Task management
-    ├── api.ts
+└── tasks/          # Native cloud-task rendering and host adapters
     ├── components/
     ├── hooks/
+    ├── services/
     └── stores/
 ```
+
+### Portability boundary
+
+Mobile and desktop use the same cloud-task architecture. New work must preserve these ownership rules:
+
+- `@posthog/shared` owns runtime contracts and Zod schemas.
+- `@posthog/api-client` owns authenticated PostHog HTTPS transport and its request/response types.
+- `@posthog/core` owns cloud-task orchestration and headless presentation decisions, including sessions, queues, permissions, models, repositories, inbox rules, and automation semantics.
+- `apps/mobile` owns Expo lifecycle, React Native rendering, gestures, sheets, notifications, audio, secure storage, and small persisted view-state stores.
+- `@posthog/ui` owns the DOM/Quill renderer and web view state.
+
+Do not add a mobile API facade, duplicate a shared type, or re-export a core helper through a mobile file. Import the owning package directly. If desktop and mobile need different visuals, add a headless descriptor or decision function to core and keep two thin renderers.
+
+Intentional host differences are limited to platform capabilities and view state. Mobile may persist native navigation state, cached picker snapshots, optimistic attachment echoes, and notification preferences; it must not implement retries, reconnection, transport parsing, task lifecycle, or cross-store decisions in those stores.
 
 ### File-Based Routing
 
@@ -219,7 +232,7 @@ Canonical native source lives outside generated iOS output:
 - `native/watch/` — SwiftUI watch app source, Info.plists, and entitlements
 - `native/ios/` — iPhone WatchConnectivity bridge
 
-Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHogCode/WatchTaskControlModule.*`, and `PostHogCode.xcodeproj/project.pbxproj`.
+Generated output lives under `ios/`, including `ios/watch/`, `ios/PostHog/WatchTaskControlModule.*`, and `PostHog.xcodeproj/project.pbxproj`.
 
 ### Watch architecture
 
@@ -242,10 +255,10 @@ The `./plugins/withWatchApp` plugin copies native sources from `native/`, recrea
 
 ### Running in simulators
 
-1. Open `ios/PostHogCode.xcworkspace` in Xcode.
+1. Open `ios/PostHog.xcworkspace` in Xcode.
 2. Select the iOS app scheme with a paired iPhone + Apple Watch simulator destination.
 3. Build/run the iOS app; Xcode should install the embedded watch app.
-4. Sign in on iPhone and open or start a PostHog Code task.
+4. Sign in on iPhone and open or start a PostHog task.
 5. Open the watch app and verify the mission overview, checklist, timeline, approvals, and blocker cards.
 
 ### Verification checklist

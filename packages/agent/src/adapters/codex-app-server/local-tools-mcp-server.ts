@@ -34,6 +34,7 @@ if (!ctxEnv) {
 let parsed: {
   cwd: string;
   taskId?: string;
+  taskRunId?: string;
   token?: string;
   baseBranch?: string;
 };
@@ -51,6 +52,7 @@ const ctx: LocalToolCtx = {
   cwd: parsed.cwd,
   token: parsed.token ?? readGithubTokenFromEnv(),
   taskId: parsed.taskId,
+  taskRunId: parsed.taskRunId,
   baseBranch: parsed.baseBranch,
 };
 
