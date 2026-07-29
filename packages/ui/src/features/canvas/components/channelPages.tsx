@@ -2,12 +2,12 @@ import {
   BookOpenTextIcon,
   ChatsCircleIcon,
   ClockCounterClockwiseIcon,
-  type Icon,
+  type IconProps,
   PackageIcon,
-  RepeatIcon,
   ShapesIcon,
 } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
+import type { ComponentType, ReactNode } from "react";
 
 /**
  * The pages inside a space, and how each one is named and drawn. One table so
@@ -30,11 +30,11 @@ export type ChannelPageKey =
 
 export const CHANNEL_PAGES: Record<
   ChannelPageKey,
-  { label: string; Icon: Icon }
+  { label: string; Icon: ComponentType<IconProps> }
 > = {
   home: { label: "Feed", Icon: ChatsCircleIcon },
   context: { label: "Context", Icon: BookOpenTextIcon },
-  loops: { label: "Loops", Icon: RepeatIcon },
+  loops: { label: "Loops", Icon: LoopIcon },
   artifacts: { label: "Artifacts", Icon: PackageIcon },
   canvases: { label: "Canvases", Icon: ShapesIcon },
   history: { label: "Recents", Icon: ClockCounterClockwiseIcon },

@@ -2,7 +2,6 @@ import {
   BellIcon,
   EnvelopeSimple,
   Lightning,
-  RepeatIcon,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import {
@@ -31,6 +30,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { CountBadge } from "@posthog/ui/primitives/CountBadge";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import {
   navigateToActivity,
   navigateToInbox,
@@ -76,7 +76,7 @@ function NavIcon({
             aria-label={label}
             data-selected={isActive || undefined}
             onClick={onClick}
-            className="relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground"
+            className="group relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground"
           >
             {icon}
             {badge}
@@ -237,7 +237,7 @@ export function ChannelNav() {
         {loopsEnabled ? (
           <NavIcon
             icon={
-              <RepeatIcon
+              <LoopIcon
                 size={16}
                 weight={view.type === "loops" ? "fill" : "regular"}
               />

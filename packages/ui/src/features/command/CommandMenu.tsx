@@ -3,7 +3,6 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  RepeatIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -55,6 +54,7 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import {
   goBackInHistory,
   goForwardInHistory,
@@ -289,7 +289,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
               id: "loops",
               label: "Loops",
               keywords: "automations schedules recurring",
-              icon: <RepeatIcon size={12} className="text-gray-11" />,
+              icon: <LoopIcon size={12} className="text-gray-11" />,
               action: "open-loops" as CommandMenuAction,
               onRun: () => {
                 closeSettingsDialog();
@@ -628,7 +628,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       // fill the row (so a trailing shortcut can `ml-auto` to the
                       // end) and let it overflow visibly so the shortcut Kbd
                       // boxes aren't clipped by the wrapper's `truncate`.
-                      className="flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
+                      className="group flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
                     >
                       {cmd.icon}
                       <span className="wrap-break-word min-w-0 whitespace-normal">
