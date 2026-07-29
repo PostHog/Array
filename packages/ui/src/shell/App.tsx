@@ -21,6 +21,13 @@ import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
 import { router } from "@posthog/ui/router/router";
+import {
+  canRestoreLocation,
+  isRestorableLocation,
+  personalNewTaskLocation,
+  readStartupLocation,
+  writeStartupLocation,
+} from "@posthog/ui/router/startupLocation";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
@@ -88,6 +95,12 @@ function App({ devToolbar }: AppProps) {
     !isCheckingAccess &&
     !needsInviteCode &&
     !needsAiApproval;
+  const startupIdentity =
+    authState.status === "authenticated" &&
+    authState.cloudRegion &&
+    authState.currentProjectId != null
+      ? `${authState.cloudRegion}:${authState.currentProjectId}`
+      : null;
 
   // Run the initial route's loaders before the router ever mounts, so the boot
   // loading screen holds until the route is ready. The router turns loader
@@ -96,14 +109,26 @@ function App({ devToolbar }: AppProps) {
   // re-entry loads fresh.
   const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
   useEffect(() => {
-    if (!readyForMainApp) {
+    if (!readyForMainApp || !startupIdentity || !authenticatedClient) {
       setInitialRouteLoaded(false);
       return;
     }
     if (initialRouteLoaded) return;
     let cancelled = false;
-    void router
-      .load()
+    void readStartupLocation(startupIdentity)
+      .then(async (saved) => {
+        const canRestore =
+          saved !== null &&
+          isRestorableLocation(saved) &&
+          (await canRestoreLocation(authenticatedClient, saved));
+        const href =
+          canRestore && saved
+            ? saved
+            : await personalNewTaskLocation(authenticatedClient);
+        router.history.replace(href);
+        await writeStartupLocation(startupIdentity, href);
+        await router.load();
+      })
       .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setInitialRouteLoaded(true);
@@ -111,7 +136,21 @@ function App({ devToolbar }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [readyForMainApp, initialRouteLoaded]);
+  }, [
+    readyForMainApp,
+    initialRouteLoaded,
+    startupIdentity,
+    authenticatedClient,
+  ]);
+
+  useEffect(() => {
+    if (!initialRouteLoaded || !startupIdentity) return;
+    return router.history.subscribe(({ location }) => {
+      if (isRestorableLocation(location.href)) {
+        void writeStartupLocation(startupIdentity, location.href);
+      }
+    });
+  }, [initialRouteLoaded, startupIdentity]);
 
   const mainRef = useRef<HTMLDivElement>(null);
   // Mirrors the "main" branch of renderContent() below; keep the two in sync.
