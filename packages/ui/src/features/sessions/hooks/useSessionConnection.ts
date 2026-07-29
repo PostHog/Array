@@ -104,7 +104,9 @@ export function useSessionConnection({
       repoPath,
       isCloud,
       isTaskAuthor:
-        !!currentUser?.uuid && currentUser.uuid === task.created_by?.uuid,
+        currentUser?.uuid && task.created_by?.uuid
+          ? currentUser.uuid === task.created_by.uuid
+          : undefined,
       // While the user is away, freeze local reconciling too — otherwise the
       // idle-kill auto-reconnect would respawn the agent process seconds
       // after the server reclaimed it. Cloud reconcile ignores this flag.
