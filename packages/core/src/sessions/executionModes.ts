@@ -46,3 +46,15 @@ export function getAvailableModes(): ModeInfo[] {
 export function getAvailableCodexModes(): ModeInfo[] {
   return [...CODEX_MODE_PRESETS];
 }
+
+export function getAvailableModesForAdapter(
+  adapter: "claude" | "codex",
+): ModeInfo[] {
+  return adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
+}
+
+export function getDefaultExecutionModeForAdapter(
+  adapter: "claude" | "codex",
+): ExecutionMode {
+  return adapter === "codex" ? "auto" : DEFAULT_CLAUDE_EXECUTION_MODE;
+}

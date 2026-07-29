@@ -11,14 +11,23 @@ interface PillProps {
   placeholder?: boolean;
   /** Tone the label in accent (used for Plan Mode in the desktop). */
   accent?: boolean;
-  onPress: () => void;
+  onPress?: () => void;
+  disabled?: boolean;
 }
 
-export function Pill({ icon, label, placeholder, accent, onPress }: PillProps) {
+export function Pill({
+  icon,
+  label,
+  placeholder,
+  accent,
+  onPress,
+  disabled = false,
+}: PillProps) {
   const themeColors = useThemeColors();
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       className="flex-row items-center gap-1.5 rounded-md border border-gray-6 bg-card px-2.5 py-1.5 active:bg-gray-3"
     >
       {icon ? <View className="shrink-0">{icon}</View> : null}
@@ -34,7 +43,7 @@ export function Pill({ icon, label, placeholder, accent, onPress }: PillProps) {
       >
         {label}
       </Text>
-      <CaretDown size={12} color={themeColors.gray[10]} />
+      {disabled ? null : <CaretDown size={12} color={themeColors.gray[10]} />}
     </Pressable>
   );
 }
