@@ -11,6 +11,7 @@ import { formatRelativeTimeShort } from "@posthog/shared";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { InlineEditInput } from "@posthog/ui/features/sidebar/components/items/TaskItem";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
@@ -70,10 +71,18 @@ export function ChannelItemRow({
   item,
   isActive,
   actions,
+  isEditing = false,
+  onContextMenu,
+  onEditSubmit,
+  onEditCancel,
 }: {
   item: ChannelItemModel;
   isActive: boolean;
   actions: ChannelItemActions;
+  isEditing?: boolean;
+  onContextMenu?: (event: React.MouseEvent) => void;
+  onEditSubmit?: (newTitle: string) => void;
+  onEditCancel?: () => void;
 }) {
   const icon = itemIcon(item);
   const statusLabel = runStatusLabel(item.rawStatus);
@@ -85,6 +94,19 @@ export function ChannelItemRow({
   ) : (
     icon
   );
+
+  if (isEditing) {
+    return (
+      <InlineEditInput
+        depth={0}
+        icon={rowIcon}
+        label={item.title}
+        isActive={isActive}
+        onSubmit={(newTitle) => onEditSubmit?.(newTitle)}
+        onCancel={() => onEditCancel?.()}
+      />
+    );
+  }
 
   return (
     <PreviewCard.Root>
@@ -100,6 +122,7 @@ export function ChannelItemRow({
               label={<span>{item.title}</span>}
               isActive={isActive}
               onClick={() => actions.open(item)}
+              onContextMenu={onContextMenu}
               endContent={
                 <>
                   <span className={TIMESTAMP_CLASS}>

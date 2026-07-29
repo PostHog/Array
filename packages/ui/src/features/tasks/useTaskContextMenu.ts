@@ -49,6 +49,7 @@ export function useTaskContextMenu() {
         runId?: string;
         isInCommandCenter?: boolean;
         hasEmptyCommandCenterCell?: boolean;
+        showArchivePrior?: boolean;
         onTogglePin?: () => void;
         onStop?: (taskId: string, taskTitle: string, runId?: string) => void;
         onArchive?: (taskId: string) => void;
@@ -68,6 +69,7 @@ export function useTaskContextMenu() {
         runId,
         isInCommandCenter,
         hasEmptyCommandCenterCell,
+        showArchivePrior,
         onTogglePin,
         onStop,
         onArchive,
@@ -85,6 +87,7 @@ export function useTaskContextMenu() {
           canStop,
           isInCommandCenter,
           hasEmptyCommandCenterCell,
+          showArchivePrior,
           channels: channels.map(({ id, name }) => ({ id, name })),
         });
 
@@ -134,8 +137,14 @@ export function useTaskContextMenu() {
           case "file-to-channel":
             try {
               await fileTask(intent.channelId, task.id, task.title);
+              const channelName = channels.find(
+                (channel) => channel.id === intent.channelId,
+              )?.name;
+              toast.success(
+                channelName ? `Filed to ${channelName}` : "Task filed",
+              );
             } catch (error) {
-              toast.error("Couldn't file task to context", {
+              toast.error("Couldn't file task", {
                 description:
                   error instanceof Error ? error.message : String(error),
               });
