@@ -1,3 +1,5 @@
+import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
+import { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
 import type { Task } from "@posthog/shared/domain-types";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -228,6 +230,40 @@ describe("useChatTitleGenerator", () => {
       { queryKey: ["tasks", "summaries"] },
       expect.any(Function),
     );
+  });
+
+  it("persists the PR title even when the model returns a generic title", async () => {
+    const prPrompt =
+      '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />';
+    const prompt = vi.fn().mockResolvedValue({
+      content:
+        "TITLE: Review pull request #123\nSUMMARY: Reviewing the existing pull request.",
+    });
+    const generator = new TitleGeneratorService(
+      { prompt } as unknown as LlmGatewayService,
+      { readAbsoluteFile: vi.fn() },
+      { error: vi.fn() },
+    );
+    mockGenerateTitle.mockImplementation((content: string) =>
+      generator.generateTitleAndSummary(content),
+    );
+    mockPrompts.value = [prPrompt];
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "@#123 - Fix login redirect",
+          description: prPrompt,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Review PR #123: Fix login redirect",
+      });
+    });
+    expect(prompt).toHaveBeenCalledOnce();
   });
 
   it.each([
