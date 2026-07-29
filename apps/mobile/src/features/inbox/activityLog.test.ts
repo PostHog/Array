@@ -1,12 +1,12 @@
-import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
-import { describe, expect, it } from "vitest";
 import {
   attributionLabel,
   parseDiffLines,
   selectActivityArtefacts,
   shortSha,
   taskRunLabel,
-} from "./activityLog";
+} from "@posthog/core/inbox/activityLog";
+import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
+import { describe, expect, it } from "vitest";
 
 function commit(id: string, createdAt: string): AnySignalReportArtefact {
   return {

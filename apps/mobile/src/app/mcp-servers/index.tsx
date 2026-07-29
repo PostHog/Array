@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import type {
+  McpRecommendedServer,
+  McpServerInstallation,
+} from "@posthog/api-client/types";
 import { useRouter } from "expo-router";
 import { MagnifyingGlass, Plus, PuzzlePiece } from "phosphor-react-native";
 import { useMemo, useState } from "react";
@@ -17,10 +21,6 @@ import {
   recommendedToRowProps,
 } from "@/features/mcp/components/McpServerRow";
 import { useMcpInstallations, useMcpMarketplace } from "@/features/mcp/hooks";
-import type {
-  McpRecommendedServer,
-  McpServerInstallation,
-} from "@/features/mcp/types";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 

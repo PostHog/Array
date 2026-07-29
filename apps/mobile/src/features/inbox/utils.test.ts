@@ -1,9 +1,11 @@
+import { buildInboxViewedProperties } from "@posthog/core/inbox/engagement";
 import {
   buildArchiveListOrdering,
   buildPriorityFilterParam,
   buildSignalReportListOrdering,
   INBOX_PIPELINE_STATUSES,
 } from "@posthog/core/inbox/reportFiltering";
+import { isRestorableReport } from "@posthog/core/inbox/reportMembership";
 import { formatSignalReportSummaryMarkdown } from "@posthog/core/inbox/reportPresentation";
 import { dismissalReasonLabel } from "@posthog/shared";
 import type {
@@ -13,11 +15,7 @@ import type {
   SignalReportStatus,
 } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
-import {
-  buildInboxViewedProperties,
-  isRestorableReport,
-  sourceLine,
-} from "./utils";
+import { sourceLine } from "./utils";
 
 function signal(source_product: string, source_type: string): Signal {
   return {
@@ -30,6 +28,24 @@ function signal(source_product: string, source_type: string): Signal {
     timestamp: "",
     extra: {},
   };
+}
+
+function buildMobileInboxViewedProperties(
+  reports: SignalReport[],
+  totalCount: number,
+  filters: {
+    sourceProductFilter: string[];
+    statusFilter: readonly SignalReportStatus[];
+    suggestedReviewerFilter: string[];
+    priorityFilter: string[];
+    defaultStatusFilter: readonly SignalReportStatus[];
+  },
+) {
+  return buildInboxViewedProperties({
+    visibleReports: reports,
+    totalCount,
+    filters,
+  });
 }
 
 function makeReport(
@@ -88,7 +104,7 @@ describe("formatSignalReportSummaryMarkdown", () => {
 
 describe("buildInboxViewedProperties", () => {
   it("emits zero counts for an empty list", () => {
-    const props = buildInboxViewedProperties([], 0, {
+    const props = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
@@ -137,7 +153,7 @@ describe("buildInboxViewedProperties", () => {
       makeReport({ id: "4", status: "failed" }),
     ];
 
-    const props = buildInboxViewedProperties(reports, 4, {
+    const props = buildMobileInboxViewedProperties(reports, 4, {
       sourceProductFilter: [],
       statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
@@ -158,7 +174,7 @@ describe("buildInboxViewedProperties", () => {
   });
 
   it("marks filters active when any of status/source/reviewer/priority differs from defaults", () => {
-    const narrowed = buildInboxViewedProperties([], 0, {
+    const narrowed = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: ["ready"],
       suggestedReviewerFilter: [],
@@ -168,7 +184,7 @@ describe("buildInboxViewedProperties", () => {
     expect(narrowed.has_active_filters).toBe(true);
     expect(narrowed.status_filter_count).toBe(1);
 
-    const sourced = buildInboxViewedProperties([], 0, {
+    const sourced = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: ["error_tracking"],
       statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
@@ -178,7 +194,7 @@ describe("buildInboxViewedProperties", () => {
     expect(sourced.has_active_filters).toBe(true);
     expect(sourced.source_product_filter).toEqual(["error_tracking"]);
 
-    const reviewer = buildInboxViewedProperties([], 0, {
+    const reviewer = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: ["uuid-1"],
@@ -187,7 +203,7 @@ describe("buildInboxViewedProperties", () => {
     });
     expect(reviewer.has_active_filters).toBe(true);
 
-    const prioritized = buildInboxViewedProperties([], 0, {
+    const prioritized = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: INBOX_PIPELINE_STATUSES,
       suggestedReviewerFilter: [],
@@ -198,7 +214,7 @@ describe("buildInboxViewedProperties", () => {
   });
 
   it("treats a reordered default status set as not filtered", () => {
-    const props = buildInboxViewedProperties([], 0, {
+    const props = buildMobileInboxViewedProperties([], 0, {
       sourceProductFilter: [],
       statusFilter: [...INBOX_PIPELINE_STATUSES].reverse(),
       suggestedReviewerFilter: [],

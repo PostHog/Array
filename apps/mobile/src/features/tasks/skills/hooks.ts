@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getSkillStoreSkill, getSkillStoreSkills } from "./api";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 const skillStoreKeys = {
   all: ["skill-store"] as const,
@@ -13,7 +13,7 @@ const skillStoreKeys = {
 export function useSkillStoreSkills() {
   return useQuery({
     queryKey: skillStoreKeys.list(),
-    queryFn: getSkillStoreSkills,
+    queryFn: async () => (await getPostHogApiClient().listLlmSkills()) ?? [],
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -21,7 +21,7 @@ export function useSkillStoreSkills() {
 export function useSkillStoreSkill(skillName: string | null) {
   return useQuery({
     queryKey: skillStoreKeys.detail(skillName ?? ""),
-    queryFn: () => getSkillStoreSkill(skillName as string),
+    queryFn: () => getPostHogApiClient().getLlmSkillByName(skillName as string),
     enabled: !!skillName,
     staleTime: 5 * 60 * 1000,
   });
