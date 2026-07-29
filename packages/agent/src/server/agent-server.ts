@@ -407,6 +407,9 @@ export class AgentServer {
   private pendingCompactContinuationMessageIds = new Set<string>();
   private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
   private activeOwnedTurnCount = 0;
+  // Normal follow-ups own turns in arrival order. Explicit steering bypasses
+  // this tail so it can still reach the active adapter turn immediately.
+  private nonSteerDeliveryTail: Promise<void> = Promise.resolve();
   private pendingPermissions = new Map<
     string,
     {
@@ -1091,6 +1094,7 @@ export class AgentServer {
           this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
         }
         let deliveryCommitted = retryCompactContinuation;
+        let releaseNonSteerDelivery: (() => void) | undefined;
         const commitDelivery = (): void => {
           deliveryCommitted = true;
           if (!messageId) return;
@@ -1105,6 +1109,9 @@ export class AgentServer {
         };
 
         try {
+          if (params.steer !== true) {
+            releaseNonSteerDelivery = await this.acquireNonSteerDeliveryTurn();
+          }
           this.logger.debug("Received user_message command", {
             hasContent:
               typeof params.content === "string"
@@ -1302,6 +1309,7 @@ export class AgentServer {
           rejectDelivery(error);
           throw error;
         } finally {
+          releaseNonSteerDelivery?.();
           if (
             messageId &&
             this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
@@ -1928,6 +1936,16 @@ export class AgentServer {
     } finally {
       this.activeOwnedTurnCount -= 1;
     }
+  }
+
+  private async acquireNonSteerDeliveryTurn(): Promise<() => void> {
+    const previous = this.nonSteerDeliveryTail;
+    let release!: () => void;
+    this.nonSteerDeliveryTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    return release;
   }
 
   /**

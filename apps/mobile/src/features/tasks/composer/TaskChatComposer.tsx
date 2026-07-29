@@ -1,42 +1,29 @@
 import { Text } from "@components/text";
-import {
-  DEFAULT_CLAUDE_EXECUTION_MODE,
-  getAvailableModes,
-} from "@posthog/core/sessions/executionModes";
+import { DEFAULT_CLAUDE_EXECUTION_MODE } from "@posthog/core/sessions/executionModes";
+import type { CloudComposerSelection } from "@posthog/core/task-detail/composerModelPolicy";
 import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
+  type Adapter,
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
-  getReasoningEffortOptions,
+  KIMI_MODEL_FLAG,
   type SupportedReasoningEffort,
 } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import {
   ArrowUp,
-  BrainIcon,
   Lightning,
   Microphone,
   PaperclipIcon,
-  PauseIcon,
   PencilIcon,
-  Robot,
-  ShieldCheck,
-  Sparkle,
   Stack,
   Stop,
 } from "phosphor-react-native";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useFeatureFlag } from "posthog-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Keyboard,
   Pressable,
   ScrollView,
@@ -48,6 +35,7 @@ import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskCo
 import { logger } from "@/lib/logger";
 import { useThemeColors } from "@/lib/theme";
 import type { MessagingMode } from "../stores/messagingModeStore";
+import { AgentConfigControls } from "./AgentConfigControls";
 import { AttachmentSheet } from "./attachments/AttachmentSheet";
 import { AttachmentsBar } from "./attachments/AttachmentsBar";
 import {
@@ -57,14 +45,11 @@ import {
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
 import {
-  getComposerModelOptions,
-  getConfigOptionLabel,
-  getMobileExecutionModes,
+  filterKimiModelConfigOptions,
   getModelConfigOption,
   resolveComposerPrimaryAction,
 } from "./options";
 import { Pill } from "./Pill";
-import { SelectSheet } from "./SelectSheet";
 import {
   type ComposerContent,
   isComposerEmpty,
@@ -72,8 +57,6 @@ import {
 } from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
-const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
-
 interface TaskChatComposerProps {
   onSend: (
     message: string,
@@ -85,9 +68,12 @@ interface TaskChatComposerProps {
   initialMessage?: string;
   isUserTurn?: boolean;
   /** Current pill values (persisted per-task by the caller). */
+  adapter: Adapter;
   mode: ExecutionMode;
   model: string;
   reasoning: SupportedReasoningEffort;
+  onAdapterChange: (selection: CloudComposerSelection) => void;
+  canChangeAdapter?: boolean;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
@@ -102,78 +88,6 @@ interface TaskChatComposerProps {
   onCancelEdit?: () => void;
 }
 
-function modeIcon(mode: ExecutionMode, color: string, size = 14): ReactNode {
-  switch (mode) {
-    case "plan":
-      return <PauseIcon size={size} color={color} weight="bold" />;
-    case "default":
-      return <PencilIcon size={size} color={color} />;
-    case "acceptEdits":
-      return <ShieldCheck size={size} color={color} />;
-    case "bypassPermissions":
-    case "full-access":
-      return <ShieldCheck size={size} color={color} weight="fill" />;
-    case "read-only":
-      return <PauseIcon size={size} color={color} />;
-    case "auto":
-      return <Sparkle size={size} color={color} weight="fill" />;
-  }
-}
-
-function PulsingBorder({ active, color }: { active: boolean; color: string }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const animRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  useEffect(() => {
-    if (active) {
-      opacity.setValue(0);
-      animRef.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(opacity, {
-            toValue: 1,
-            duration: 1500,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacity, {
-            toValue: 0,
-            duration: 1500,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      );
-      animRef.current.start();
-    } else {
-      animRef.current?.stop();
-      animRef.current = null;
-      opacity.setValue(0);
-    }
-    return () => {
-      animRef.current?.stop();
-    };
-  }, [active, opacity]);
-
-  if (!active) return null;
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        opacity,
-        borderWidth: 2,
-        borderColor: color,
-        borderRadius: 16,
-      }}
-    />
-  );
-}
-
 export function TaskChatComposer({
   onSend,
   onStop,
@@ -181,9 +95,12 @@ export function TaskChatComposer({
   placeholder = "Ask a question",
   initialMessage,
   isUserTurn = false,
+  adapter,
   mode,
   model,
   reasoning,
+  onAdapterChange,
+  canChangeAdapter = true,
   onModeChange,
   onModelChange,
   onReasoningChange,
@@ -195,9 +112,14 @@ export function TaskChatComposer({
   onCancelEdit,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
-  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
+  const { configOptions: liveConfigOptions, hasLiveConfig } =
+    useCloudTaskConfigOptions(adapter);
+  const kimiEnabled = !!useFeatureFlag(KIMI_MODEL_FLAG);
+  const configOptions = useMemo(
+    () => filterKimiModelConfigOptions(liveConfigOptions, kimiEnabled),
+    [liveConfigOptions, kimiEnabled],
+  );
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
@@ -224,7 +146,7 @@ export function TaskChatComposer({
   useEffect(() => {
     if (!hasLiveConfig) return;
     const next = resolveCloudComposerModelChange({
-      adapter: "claude",
+      adapter,
       modelOption: modelConfigOption,
       requestedModel: model,
       reasoning,
@@ -232,6 +154,7 @@ export function TaskChatComposer({
     if (next.model !== model) onModelChange(next.model);
     if (next.reasoning !== reasoning) onReasoningChange(next.reasoning);
   }, [
+    adapter,
     hasLiveConfig,
     model,
     modelConfigOption,
@@ -249,13 +172,6 @@ export function TaskChatComposer({
 
   const isRecording = status === "recording";
   const isTranscribing = status === "transcribing";
-
-  const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [modelSheetOpen, setModelSheetOpen] = useState(false);
-  const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
-
-  const reasoningOptions = getReasoningEffortOptions("claude", model) ?? [];
-  const showReasoningPill = reasoningOptions.length > 0;
 
   const hasContent = !isComposerEmpty({ text: message, attachments });
   const primaryAction = resolveComposerPrimaryAction({
@@ -341,10 +257,9 @@ export function TaskChatComposer({
 
   return (
     <>
-      <View className="px-3">
-        <View className="relative">
-          <PulsingBorder active={isUserTurn} color={themeColors.accent[9]} />
-          <View className="overflow-hidden rounded-2xl border border-gray-6 bg-card">
+      <View className="px-4">
+        <View style={{ width: "100%", maxWidth: 600, alignSelf: "center" }}>
+          <View className="overflow-hidden rounded-lg border border-gray-6 bg-card">
             {editing ? (
               <View className="flex-row items-center gap-2 border-gray-6 border-b bg-accent-2 px-3 py-2">
                 <PencilIcon size={14} color={themeColors.accent[11]} />
@@ -370,7 +285,7 @@ export function TaskChatComposer({
             />
             <TextInput
               className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
-              style={{ minHeight: 56, maxHeight: 200 }}
+              style={{ minHeight: 64, maxHeight: 200 }}
               placeholder={
                 isRecording
                   ? "Recording..."
@@ -417,6 +332,19 @@ export function TaskChatComposer({
                   paddingRight: 4,
                 }}
               >
+                <AgentConfigControls
+                  adapter={adapter}
+                  mode={mode}
+                  model={model}
+                  reasoning={reasoning}
+                  configOptions={configOptions}
+                  onAdapterChange={onAdapterChange}
+                  onModeChange={onModeChange}
+                  onModelChange={onModelChange}
+                  onReasoningChange={onReasoningChange}
+                  canChangeAdapter={canChangeAdapter}
+                />
+
                 <Pill
                   icon={
                     isSteer ? (
@@ -433,42 +361,6 @@ export function TaskChatComposer({
                   accent={isSteer}
                   onPress={handleToggleMessagingMode}
                 />
-
-                <Pill
-                  icon={modeIcon(
-                    mode,
-                    mode === "plan"
-                      ? themeColors.accent[11]
-                      : themeColors.gray[11],
-                  )}
-                  label={
-                    EXECUTION_MODES.find((option) => option.id === mode)
-                      ?.name ?? mode
-                  }
-                  accent={mode === "plan"}
-                  onPress={() => setModeSheetOpen(true)}
-                />
-
-                <Pill
-                  icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={
-                    getConfigOptionLabel(modelConfigOption.options, model) ??
-                    model
-                  }
-                  onPress={() => setModelSheetOpen(true)}
-                />
-
-                {showReasoningPill ? (
-                  <Pill
-                    icon={<BrainIcon size={14} color={themeColors.gray[11]} />}
-                    label={
-                      reasoningOptions.find(
-                        (option) => option.value === reasoning,
-                      )?.name ?? reasoning
-                    }
-                    onPress={() => setReasoningSheetOpen(true)}
-                  />
-                ) : null}
               </ScrollView>
 
               <Pressable
@@ -506,63 +398,6 @@ export function TaskChatComposer({
           </View>
         </View>
       </View>
-
-      <SelectSheet
-        open={modeSheetOpen}
-        title="Execution mode"
-        value={mode}
-        onChange={(v) => onModeChange(v as ExecutionMode)}
-        onClose={() => setModeSheetOpen(false)}
-        options={EXECUTION_MODES.map((m) => ({
-          value: m.id,
-          label: m.name,
-          description: m.description,
-          icon: modeIcon(
-            m.id as ExecutionMode,
-            m.id === "plan" ? themeColors.accent[11] : themeColors.gray[11],
-            16,
-          ),
-        }))}
-      />
-
-      <SelectSheet
-        open={modelSheetOpen}
-        title="Model"
-        value={model}
-        onChange={(v) => {
-          const next = resolveCloudComposerModelChange({
-            adapter: "claude",
-            modelOption: modelConfigOption,
-            requestedModel: v,
-            reasoning,
-          });
-          onModelChange(next.model);
-          if (next.reasoning !== reasoning) {
-            onReasoningChange(next.reasoning);
-          }
-        }}
-        onClose={() => setModelSheetOpen(false)}
-        options={mobileModelOptions.map((m) => ({
-          value: m.value,
-          label: m.label,
-          description: m.description,
-          disabled: m.disabled,
-          icon: <Robot size={16} color={themeColors.gray[11]} />,
-        }))}
-      />
-
-      <SelectSheet
-        open={reasoningSheetOpen}
-        title="Reasoning"
-        value={reasoning}
-        onChange={(v) => onReasoningChange(v as SupportedReasoningEffort)}
-        onClose={() => setReasoningSheetOpen(false)}
-        options={reasoningOptions.map((r) => ({
-          value: r.value,
-          label: r.name,
-          icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
-        }))}
-      />
 
       <AttachmentSheet
         open={attachmentSheetOpen}

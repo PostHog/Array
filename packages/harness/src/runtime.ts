@@ -1,8 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type Credential,
+  type CredentialStore,
+  InMemoryCredentialStore,
+} from "@earendil-works/pi-ai";
 import type {
   AgentSessionRuntime,
-  AuthStorage,
   CreateAgentSessionFromServicesOptions,
   CreateAgentSessionRuntimeFactory,
   CreateAgentSessionServicesOptions,
@@ -16,19 +20,28 @@ import {
 import type { HarnessExtensionOptions } from "./extensions/registry";
 
 type PiRuntimeTarget = Parameters<CreateAgentSessionRuntimeFactory>[0];
-type AuthStorageSnapshot = Parameters<typeof AuthStorage.inMemory>[0];
+type CredentialSnapshot = Record<string, Credential>;
 
-function loadAuthStorageSnapshot(
-  authPath: string,
-): AuthStorageSnapshot | undefined {
+function loadCredentialSnapshot(authPath: string): CredentialSnapshot {
   try {
-    return JSON.parse(readFileSync(authPath, "utf8")) as AuthStorageSnapshot;
+    return JSON.parse(readFileSync(authPath, "utf8")) as CredentialSnapshot;
   } catch {
-    return undefined;
+    return {};
   }
 }
 
+async function createCredentialStore(
+  snapshot: CredentialSnapshot,
+): Promise<CredentialStore> {
+  const store = new InMemoryCredentialStore();
+  for (const [providerId, credential] of Object.entries(snapshot)) {
+    await store.modify(providerId, async () => credential);
+  }
+  return store;
+}
+
 export type HarnessRuntimeOptions = HarnessExtensionOptions & {
+  credentialStore?: CredentialStore;
   posthogOAuthCredentials?: PosthogOAuthCredentials;
 } & Partial<
     Pick<
@@ -54,7 +67,8 @@ export type HarnessRuntimeOptions = HarnessExtensionOptions & {
 export async function createHarnessRuntime(
   options: HarnessRuntimeOptions = {},
 ): Promise<AgentSessionRuntime> {
-  const { posthogOAuthCredentials, ...runtimeOptions } = options;
+  const { credentialStore, posthogOAuthCredentials, ...runtimeOptions } =
+    options;
   // Pi reads its application branding when the SDK is first evaluated. Keep
   // every runtime import below dynamic so this always happens first.
   installHogBrandEnv();
@@ -75,23 +89,26 @@ export async function createHarnessRuntime(
     sessionStartEvent,
   }) => {
     const authPath = join(runtimeAgentDir, "auth.json");
-    const authStorage =
-      runtimeOptions.authStorage ??
+    const credentials =
+      credentialStore ??
       (posthogOAuthCredentials
-        ? pi.AuthStorage.inMemory(loadAuthStorageSnapshot(authPath))
-        : pi.AuthStorage.create(authPath));
-    if (posthogOAuthCredentials) {
-      setPosthogOAuthCredentials(authStorage, posthogOAuthCredentials);
+        ? await createCredentialStore(loadCredentialSnapshot(authPath))
+        : undefined);
+    if (credentials && posthogOAuthCredentials) {
+      await setPosthogOAuthCredentials(credentials, posthogOAuthCredentials);
     }
-    if (options.apiKey) {
-      authStorage.setRuntimeApiKey(POSTHOG_PROVIDER_NAME, options.apiKey);
-    }
+    const modelRuntime =
+      runtimeOptions.modelRuntime ??
+      (await pi.ModelRuntime.create({
+        authPath,
+        credentials,
+      }));
 
     const services = await pi.createAgentSessionServices({
       ...runtimeOptions,
       cwd: runtimeCwd,
       agentDir: runtimeAgentDir,
-      authStorage,
+      modelRuntime,
       settingsManager:
         options.settingsManager ??
         pi.SettingsManager.create(runtimeCwd, runtimeAgentDir, {
@@ -106,20 +123,33 @@ export async function createHarnessRuntime(
       },
     });
 
-    const preferredModel = services.modelRegistry.find(
-      "posthog",
+    if (options.apiKey) {
+      await services.modelRuntime.setRuntimeApiKey(
+        POSTHOG_PROVIDER_NAME,
+        options.apiKey,
+      );
+    }
+
+    const preferredModel = services.modelRuntime.getModel(
+      POSTHOG_PROVIDER_NAME,
       DEFAULT_MODEL,
     );
-    const fallbackModel = services.modelRegistry
-      .getAll()
-      .find((model) => model.provider === "posthog");
+    const fallbackModel = services.modelRuntime
+      .getModels(POSTHOG_PROVIDER_NAME)
+      .at(0);
+    const existingSession = sessionManager.buildSessionContext();
+    const hasRestorableModel =
+      existingSession.messages.length > 0 && existingSession.model !== null;
+    const defaultModel = hasRestorableModel
+      ? undefined
+      : (preferredModel ?? fallbackModel);
 
     const created = await pi.createAgentSessionFromServices({
       ...runtimeOptions,
       services,
       sessionManager,
       sessionStartEvent,
-      model: runtimeOptions.model ?? preferredModel ?? fallbackModel,
+      model: runtimeOptions.model ?? defaultModel,
     });
 
     return {

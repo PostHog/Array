@@ -71,6 +71,29 @@ describe("promptContent", () => {
     ]);
   });
 
+  it("extracts inline Pi images as previewable attachments", () => {
+    const result = extractPromptDisplayContent([
+      { type: "text", text: "what is in this image?" },
+      {
+        type: "image",
+        data: "aW1hZ2U=",
+        mimeType: "image/png",
+        fileName: "screenshot.png",
+      } as Parameters<typeof extractPromptDisplayContent>[0][number],
+    ]);
+
+    expect(result).toEqual({
+      text: "what is in this image?",
+      attachments: [
+        {
+          id: expect.stringMatching(/^inline-image:/),
+          label: "screenshot.png",
+          previewUrl: "data:image/png;base64,aW1hZ2U=",
+        },
+      ],
+    });
+  });
+
   it("does not mark ordinary file URIs as cloud artifacts", () => {
     const fileUri = "file:///tmp/screenshot.png";
 

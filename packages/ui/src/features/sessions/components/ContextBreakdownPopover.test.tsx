@@ -54,6 +54,17 @@ describe("ContextBreakdownPopover", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not mention a breakdown when the runtime cannot provide one", () => {
+    render(
+      <Theme>
+        <ContextBreakdownPopover
+          usage={usageWith(null, { breakdownAvailable: false })}
+        />
+      </Theme>,
+    );
+    expect(screen.queryByText(/breakdown/i)).not.toBeInTheDocument();
+  });
+
   it("renders one row per non-zero category", () => {
     render(
       <Theme>

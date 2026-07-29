@@ -4,7 +4,9 @@ import {
   type CloudRunSource,
   type ExecutionMode,
   getConfigOptionByCategory,
+  isSupportedReasoningEffort,
   type PrAuthorshipMode,
+  type SupportedReasoningEffort,
 } from "@posthog/shared";
 import type { TaskRun } from "@posthog/shared/domain-types";
 
@@ -36,6 +38,53 @@ export interface CloudRuntimeOptions {
   model?: string;
   reasoningLevel?: string;
   initialPermissionMode?: ExecutionMode;
+}
+
+export interface StoredCloudComposerConfig {
+  adapter?: Adapter;
+  model?: string;
+  reasoning?: SupportedReasoningEffort;
+  mode?: ExecutionMode;
+}
+
+export function resolveCloudResumeOptions(
+  composerConfig: StoredCloudComposerConfig | undefined,
+  previousRun: TaskRun | undefined,
+): Required<Pick<CloudRuntimeOptions, "adapter">> &
+  Omit<CloudRuntimeOptions, "adapter"> {
+  const adapter =
+    composerConfig?.adapter ?? previousRun?.runtime_adapter ?? "claude";
+  const composerAdapter = composerConfig?.adapter ?? "claude";
+  const useComposerConfig =
+    composerConfig !== undefined && composerAdapter === adapter;
+  const previousAdapter = previousRun?.runtime_adapter ?? "claude";
+  const previousRunMatchesAdapter =
+    previousRun !== undefined && previousAdapter === adapter;
+  const model =
+    (useComposerConfig ? composerConfig.model : undefined) ??
+    (previousRunMatchesAdapter ? previousRun?.model : undefined) ??
+    undefined;
+  const requestedReasoning =
+    (useComposerConfig ? composerConfig.reasoning : undefined) ??
+    (previousRunMatchesAdapter ? previousRun?.reasoning_effort : undefined) ??
+    undefined;
+  const previousMode = previousRun?.state?.initial_permission_mode;
+
+  return {
+    adapter,
+    model,
+    reasoningLevel:
+      model &&
+      requestedReasoning &&
+      isSupportedReasoningEffort(adapter, model, requestedReasoning)
+        ? requestedReasoning
+        : undefined,
+    initialPermissionMode:
+      (useComposerConfig ? composerConfig.mode : undefined) ??
+      (previousRunMatchesAdapter && typeof previousMode === "string"
+        ? (previousMode as ExecutionMode)
+        : undefined),
+  };
 }
 
 export function getCloudRuntimeOptions(

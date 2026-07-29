@@ -1,15 +1,21 @@
 import { Text } from "@components/text";
-import { DEFAULT_CLAUDE_EXECUTION_MODE } from "@posthog/core/sessions/executionModes";
+import { getCloudReasoningConfigOptionId } from "@posthog/core/sessions/cloudSessionConfig";
+import { getDefaultExecutionModeForAdapter } from "@posthog/core/sessions/executionModes";
 import {
   countUserMessages,
   getSessionActivityPhase,
 } from "@posthog/core/sessions/sessionActivity";
+import type { CloudComposerSelection } from "@posthog/core/task-detail/composerModelPolicy";
 import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
 import {
+  type Adapter,
+  DEFAULT_CODEX_MODEL,
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
-  getReasoningEffortOptions,
+  isModalModelId,
+  isSupportedReasoningEffort,
+  KIMI_MODEL_FLAG,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
   type Task,
@@ -17,6 +23,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFeatureFlag } from "posthog-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -57,6 +64,7 @@ import {
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
 import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
+import { buildCloudTaskRunConfig } from "@/features/tasks/utils/cloudTaskRunConfig";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -167,11 +175,45 @@ export default function TaskDetailScreen() {
   const [initialComposerMessage, setInitialComposerMessage] = useState<
     string | undefined
   >();
+  const composerAdapter: Adapter =
+    task?.latest_run?.runtime_adapter &&
+    !session?.terminalStatus &&
+    composerConfig?.adapter !== task.latest_run.runtime_adapter
+      ? task.latest_run.runtime_adapter
+      : (composerConfig?.adapter ??
+        task?.latest_run?.runtime_adapter ??
+        "claude");
+  const composerConfigMatchesAdapter =
+    composerConfig?.adapter === undefined
+      ? composerAdapter === "claude"
+      : composerConfig.adapter === composerAdapter;
   const composerMode: ExecutionMode =
-    composerConfig?.mode ?? DEFAULT_CLAUDE_EXECUTION_MODE;
-  const composerModel = composerConfig?.model ?? DEFAULT_GATEWAY_MODEL;
+    (composerConfigMatchesAdapter ? composerConfig?.mode : undefined) ??
+    getDefaultExecutionModeForAdapter(composerAdapter);
+  const kimiEnabled = !!useFeatureFlag(KIMI_MODEL_FLAG);
+  const persistedComposerModel =
+    (composerConfigMatchesAdapter ? composerConfig?.model : undefined) ??
+    task?.latest_run?.model ??
+    (composerAdapter === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_GATEWAY_MODEL);
+  // Fall a persisted Kimi selection back to the default when the flag is off so
+  // a hidden model never gets sent on the retry-after-terminal path. The
+  // composer independently re-resolves against the live config once mounted.
+  const composerModel =
+    !kimiEnabled && isModalModelId(persistedComposerModel)
+      ? DEFAULT_GATEWAY_MODEL
+      : persistedComposerModel;
+  const requestedComposerReasoning = composerConfigMatchesAdapter
+    ? composerConfig?.reasoning
+    : undefined;
   const composerReasoning: SupportedReasoningEffort =
-    composerConfig?.reasoning ?? DEFAULT_REASONING_EFFORT;
+    requestedComposerReasoning &&
+    isSupportedReasoningEffort(
+      composerAdapter,
+      composerModel,
+      requestedComposerReasoning,
+    )
+      ? requestedComposerReasoning
+      : DEFAULT_REASONING_EFFORT;
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
@@ -314,18 +356,18 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning =
-          getReasoningEffortOptions("claude", composerModel) !== null;
         const updatedTask = await getPostHogApiClient().runTaskInCloud(
           taskId,
           undefined,
           {
             resumeFromRunId: task.latest_run?.id,
             pendingUserMessage,
-            adapter: "claude",
-            model: composerModel,
-            reasoningLevel: supportsReasoning ? composerReasoning : undefined,
-            initialPermissionMode: composerMode,
+            ...buildCloudTaskRunConfig({
+              adapter: composerAdapter,
+              mode: composerMode,
+              model: composerModel,
+              reasoning: composerReasoning,
+            }),
             rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
           },
         );
@@ -351,6 +393,7 @@ export default function TaskDetailScreen() {
       connectToTask,
       updateTaskInCache,
       composerMode,
+      composerAdapter,
       composerModel,
       composerReasoning,
     ],
@@ -507,6 +550,17 @@ export default function TaskDetailScreen() {
     [taskId, setComposerConfig, setConfigOption],
   );
 
+  const handleAdapterChange = useCallback(
+    (selection: CloudComposerSelection) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, selection);
+      const preferences = usePreferencesStore.getState();
+      preferences.setLastNewTaskMode(selection.mode);
+      preferences.setLastUsedReasoningEffort(selection.reasoning);
+    },
+    [taskId, setComposerConfig],
+  );
+
   const handleModelChange = useCallback(
     (value: string) => {
       if (!taskId) return;
@@ -520,10 +574,14 @@ export default function TaskDetailScreen() {
     (value: SupportedReasoningEffort) => {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
-      setConfigOption(taskId, "effort", value).catch(() => {});
+      setConfigOption(
+        taskId,
+        getCloudReasoningConfigOptionId(composerAdapter),
+        value,
+      ).catch(() => {});
       usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
-    [taskId, setComposerConfig, setConfigOption],
+    [taskId, composerAdapter, setComposerConfig, setConfigOption],
   );
 
   const handleStop = useCallback(() => {
@@ -575,6 +633,12 @@ export default function TaskDetailScreen() {
         undefined,
         {
           resumeFromRunId: task.latest_run?.id,
+          ...buildCloudTaskRunConfig({
+            adapter: composerAdapter,
+            mode: composerMode,
+            model: composerModel,
+            reasoning: composerReasoning,
+          }),
           rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         },
       );
@@ -591,7 +655,17 @@ export default function TaskDetailScreen() {
         "Could not restart the task. Please try again.",
       );
     }
-  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
+  }, [
+    taskId,
+    task,
+    disconnectFromTask,
+    connectToTask,
+    updateTaskInCache,
+    composerAdapter,
+    composerModel,
+    composerReasoning,
+    composerMode,
+  ]);
 
   // Clear retrying once the agent finishes a turn or the run terminates.
   useEffect(() => {
@@ -785,6 +859,9 @@ export default function TaskDetailScreen() {
             />
           ) : null}
           <TaskChatComposer
+            key={taskId}
+            adapter={composerAdapter}
+            canChangeAdapter={!!session?.terminalStatus}
             onSend={handleSendPrompt}
             restoredDraft={restoredDraft}
             editing={!!editingQueuedId}
@@ -798,6 +875,7 @@ export default function TaskDetailScreen() {
             mode={composerMode}
             model={composerModel}
             reasoning={composerReasoning}
+            onAdapterChange={handleAdapterChange}
             onModeChange={handleModeChange}
             onModelChange={handleModelChange}
             onReasoningChange={handleReasoningChange}

@@ -23,6 +23,7 @@ export function makeAttachmentUri(filePath: string): string {
 export interface AttachmentRef {
   id: string;
   label: string;
+  previewUrl?: string;
   cloudArtifact?: CloudArtifactRef;
 }
 
@@ -99,12 +100,35 @@ function getBlockAttachmentRef(block: ContentBlock): AttachmentRef | null {
   }
 
   if (block.type === "image") {
-    const uri = block.uri;
-    if (!uri) {
+    const image = block as typeof block & {
+      data?: string;
+      fileName?: string;
+      mimeType?: string;
+      uri?: string;
+    };
+    if (image.uri) {
+      return parseAttachmentUri(image.uri) ?? parseFileUri(image.uri);
+    }
+    if (!image.data || !image.mimeType) {
       return null;
     }
 
-    return parseAttachmentUri(uri) ?? parseFileUri(uri);
+    const extensionByMimeType: Record<string, string> = {
+      "image/gif": "gif",
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const extension = extensionByMimeType[image.mimeType];
+    if (!extension) {
+      return null;
+    }
+    const id = `inline-image:${hashAttachmentPath(`${image.mimeType}:${image.data}`)}`;
+    return {
+      id,
+      label: image.fileName || `image.${extension}`,
+      previewUrl: `data:${image.mimeType};base64,${image.data}`,
+    };
   }
 
   if (block.type === "resource_link") {

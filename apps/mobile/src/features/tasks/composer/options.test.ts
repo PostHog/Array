@@ -5,10 +5,27 @@ import {
 } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
+  filterKimiModelConfigOptions,
+  filterKimiModelOption,
   getComposerModelOptions,
   getMobileExecutionModes,
   resolveComposerPrimaryAction,
 } from "./options";
+
+const KIMI = "moonshotai/kimi-k3";
+
+const kimiModelOption: CloudTaskConfigOption = {
+  id: "model",
+  name: "Model",
+  type: "select",
+  currentValue: DEFAULT_GATEWAY_MODEL,
+  options: [
+    { value: DEFAULT_GATEWAY_MODEL, name: "Claude Opus 4.8" },
+    { value: KIMI, name: "Kimi K3" },
+  ],
+  category: "model",
+  description: "Choose a model",
+};
 
 const modelOption: CloudTaskConfigOption = {
   id: "model",
@@ -61,6 +78,64 @@ describe("mobile composer options", () => {
         disabled: true,
       },
     ]);
+  });
+
+  describe("filterKimiModelOption", () => {
+    it("keeps Kimi K3 when the flag is on", () => {
+      const filtered = filterKimiModelOption(kimiModelOption, true);
+      expect(filtered.options.map((o) => o.value)).toContain(KIMI);
+    });
+
+    it("drops Kimi K3 when the flag is off", () => {
+      const filtered = filterKimiModelOption(kimiModelOption, false);
+      expect(filtered.options.map((o) => o.value)).not.toContain(KIMI);
+      expect(filtered.options.map((o) => o.value)).toEqual([
+        DEFAULT_GATEWAY_MODEL,
+      ]);
+    });
+
+    it("rewrites a persisted Kimi selection to a visible model when the flag is off", () => {
+      const filtered = filterKimiModelOption(
+        { ...kimiModelOption, currentValue: KIMI },
+        false,
+      );
+      expect(filtered.currentValue).toBe(DEFAULT_GATEWAY_MODEL);
+    });
+
+    it("leaves an already-visible selection untouched when the flag is off", () => {
+      const filtered = filterKimiModelOption(kimiModelOption, false);
+      expect(filtered.currentValue).toBe(DEFAULT_GATEWAY_MODEL);
+    });
+  });
+
+  describe("filterKimiModelConfigOptions", () => {
+    const modeOption: CloudTaskConfigOption = {
+      id: "mode",
+      name: "Mode",
+      type: "select",
+      currentValue: "plan",
+      options: [{ value: "plan", name: "Plan" }],
+      category: "mode",
+      description: "Execution mode",
+    };
+
+    it("returns the config set untouched when the flag is on", () => {
+      const input = [modeOption, kimiModelOption];
+      expect(filterKimiModelConfigOptions(input, true)).toBe(input);
+    });
+
+    it("strips Kimi from only the model option when the flag is off", () => {
+      const filtered = filterKimiModelConfigOptions(
+        [modeOption, kimiModelOption],
+        false,
+      );
+      const model = filtered.find((option) => option.category === "model");
+      const mode = filtered.find((option) => option.category === "mode");
+      expect(model?.options.map((o) => o.value)).toEqual([
+        DEFAULT_GATEWAY_MODEL,
+      ]);
+      expect(mode).toBe(modeOption);
+    });
   });
 
   it.each([

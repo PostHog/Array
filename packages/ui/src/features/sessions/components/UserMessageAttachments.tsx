@@ -38,7 +38,8 @@ function ImageAttachment({
   const authIdentity = useAuthStateValue(getAuthIdentity);
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const cloudArtifact = attachment.cloudArtifact;
-  const { data: previewUrl } = useQuery({
+  const inlinePreviewUrl = attachment.previewUrl;
+  const { data: fetchedPreviewUrl } = useQuery({
     queryKey: cloudArtifact
       ? [
           "cloudArtifactPreview",
@@ -58,12 +59,15 @@ function ImageAttachment({
       }
       return readFileAsDataUrl({ filePath: filePath ?? "" });
     },
-    enabled: cloudArtifact
-      ? taskId !== null && authIdentity !== null
-      : filePath !== null,
+    enabled:
+      inlinePreviewUrl === undefined &&
+      (cloudArtifact
+        ? taskId !== null && authIdentity !== null
+        : filePath !== null),
     retry: false,
     staleTime: cloudArtifact ? 50 * 60 * 1000 : Infinity,
   });
+  const previewUrl = inlinePreviewUrl ?? fetchedPreviewUrl;
   const parsedImage = previewUrl?.startsWith("data:")
     ? parseImageDataUrl(previewUrl)
     : null;
