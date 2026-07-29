@@ -1,8 +1,7 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
-import { Archive, FileTextIcon, PushPin } from "@phosphor-icons/react";
+import { Archive, PushPin } from "@phosphor-icons/react";
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import {
-  isRunStatusActive,
   runStatusLabel,
   runStatusVariant,
 } from "@posthog/core/canvas/runStatus";
@@ -10,8 +9,15 @@ import { Avatar, AvatarFallback, Badge } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { useChannelTaskStatus } from "@posthog/ui/features/canvas/hooks/useChannelTaskStatus";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { InlineEditInput } from "@posthog/ui/features/sidebar/components/items/TaskItem";
+import {
+  TaskBadgeStack,
+  TaskStatusDot,
+  TaskStatusTooltips,
+} from "@posthog/ui/features/sidebar/components/items/TaskStatusDot";
+import { taskDot } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { Tooltip } from "@posthog/ui/primitives/Tooltip";
@@ -36,30 +42,18 @@ const HOVER_TOOLBAR_CLASS =
   "hidden shrink-0 items-center gap-0.5 group-hover:flex";
 const TIMESTAMP_CLASS =
   "shrink-0 text-[11px] text-muted-foreground group-hover:hidden";
+// Same hide-on-hover rule as the timestamp it replaces, so the pin/archive
+// toolbar has the slot to itself while the pointer is on the row.
+const TRAILING_CLASS = "flex shrink-0 items-center group-hover:hidden";
 
-function itemIcon(item: ChannelItemModel): ReactNode {
-  return item.kind === "canvas" ? (
-    // Matches the schema's own default for boards saved before templating.
-    iconForTemplate(item.templateId ?? "freeform", {
-      size: 15,
-      className: "text-violet-9",
-    })
-  ) : (
-    <FileTextIcon size={15} className="text-blue-9" />
-  );
-}
-
-/**
- * Marks a row whose run is still going. The glyph is kept and shimmered rather
- * than swapped for a spinner, so the list stays scannable by kind while it
- * moves — you can still tell a running task from a running canvas.
- */
-function RunningIcon({ children }: { children: ReactNode }) {
-  return (
-    <span aria-label="Running" className="ph-shimmer" role="img">
-      {children}
-    </span>
-  );
+// A canvas has no run to report, so it keeps its template glyph. Tasks moved to
+// the status dot, which is why only canvases still have an icon function.
+function canvasIcon(item: ChannelItemModel): ReactNode {
+  // Matches the schema's own default for boards saved before templating.
+  return iconForTemplate(item.templateId ?? "freeform", {
+    size: 15,
+    className: "text-violet-9",
+  });
 }
 
 function authorLabel(item: ChannelItemModel): string | null {
@@ -84,16 +78,14 @@ export function ChannelItemRow({
   onEditSubmit?: (newTitle: string) => void;
   onEditCancel?: () => void;
 }) {
-  const icon = itemIcon(item);
+  const status = useChannelTaskStatus(item);
   const statusLabel = runStatusLabel(item.rawStatus);
   const author = authorLabel(item);
-  // Only the row shimmers. The preview card spells the status out in a badge,
-  // so animating its copy of the icon would say the same thing twice.
-  const rowIcon = isRunStatusActive(item.rawStatus) ? (
-    <RunningIcon>{icon}</RunningIcon>
-  ) : (
-    icon
-  );
+  // A task's leading mark is its state (dot / working spinner); a canvas has no
+  // state, so it keeps the template glyph. The preview card always shows the
+  // glyph — it has room to say what the row is as well as how it's doing.
+  const icon = canvasIcon(item);
+  const rowIcon = status ? <TaskStatusDot dot={taskDot(status)} /> : icon;
 
   if (isEditing) {
     return (
@@ -108,7 +100,9 @@ export function ChannelItemRow({
     );
   }
 
-  return (
+  // One tooltip provider per task row, shared by its dot and badges so moving
+  // between them doesn't re-wait the open delay. Canvas rows have neither.
+  const row = (
     <PreviewCard.Root>
       <PreviewCard.Trigger
         delay={400}
@@ -125,9 +119,18 @@ export function ChannelItemRow({
               onContextMenu={onContextMenu}
               endContent={
                 <>
-                  <span className={TIMESTAMP_CLASS}>
-                    {formatRelativeTimeShort(item.ts)}
-                  </span>
+                  {/* Badges take the timestamp's slot on a task row: the row's
+                      identity (source, cloud, PR) is what you scan a task list
+                      for, and the relative age is still in the preview card. */}
+                  {status ? (
+                    <span className={TRAILING_CLASS}>
+                      <TaskBadgeStack status={status} />
+                    </span>
+                  ) : (
+                    <span className={TIMESTAMP_CLASS}>
+                      {formatRelativeTimeShort(item.ts)}
+                    </span>
+                  )}
                   <span className={HOVER_TOOLBAR_CLASS}>
                     <Tooltip content={item.pinned ? "Unpin" : "Pin"} side="top">
                       <NestedButton
@@ -215,4 +218,6 @@ export function ChannelItemRow({
       </PreviewCard.Portal>
     </PreviewCard.Root>
   );
+
+  return status ? <TaskStatusTooltips>{row}</TaskStatusTooltips> : row;
 }

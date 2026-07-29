@@ -1,0 +1,223 @@
+import {
+  ArrowSquareIn,
+  ChatCircle,
+  Cloud,
+  GitBranch,
+  GitMerge,
+  GitPullRequest,
+  type Icon,
+} from "@phosphor-icons/react";
+import {
+  getOriginProductMeta,
+  type TaskIconProps,
+} from "@posthog/ui/features/sidebar/components/items/TaskIcon";
+
+/** The task state a status dot / badge stack is drawn from. */
+export type TaskStatusInput = TaskIconProps;
+
+/**
+ * The status vocabulary for a task row. It splits what `TaskIcon` crams into one
+ * glyph, and each half only speaks when it has something to say:
+ *
+ *   - the **dot** on the left is attention and activity ONLY — is this blocked
+ *     on me, working, or waiting to be read? Everything settled shares one
+ *     quiet hollow dot;
+ *   - the **badges** on the right are identity — where it came from, whether
+ *     it's cloud, and what came out of it. The PR badge carries its own colour,
+ *     so PR state never needs to spend the dot.
+ *
+ * That split is the whole point: a merged PR from Slack reads as "nothing owed"
+ * (hollow dot) with a purple merge badge and a source badge, instead of
+ * `TaskIcon`'s single glyph where the winning state hides the other two.
+ */
+
+export type DotTone = "green" | "purple" | "yellow" | "red" | "blue" | "gray";
+
+/** Radix step 9 — the "solid" step, the only one meant to be a filled fill. */
+export const DOT_TONE_VAR: Record<DotTone, string> = {
+  green: "var(--green-9)",
+  purple: "var(--purple-9)",
+  yellow: "var(--amber-9)",
+  red: "var(--red-9)",
+  blue: "var(--blue-9)",
+  gray: "var(--gray-8)",
+};
+
+/**
+ * Step 11 — the readable step, for a glyph rather than a filled shape. Grey is
+ * the exception at step 10: it's there to read as *mid* grey, present but
+ * plainly not asking for anything, which step 11 is too emphatic for.
+ */
+export const TONE_ICON_VAR: Record<DotTone, string> = {
+  green: "var(--green-11)",
+  purple: "var(--purple-11)",
+  yellow: "var(--amber-11)",
+  red: "var(--red-11)",
+  blue: "var(--blue-11)",
+  gray: "var(--gray-10)",
+};
+
+export interface TaskDot {
+  tone: DotTone;
+  /** Filled = live signal; hollow = settled, nothing owed to you. */
+  style: "solid" | "hollow";
+  /** Flashing = happening now, or wanting you now. */
+  pulse: boolean;
+  /**
+   * Draw as the braille dots spinner instead of one dot — still dot-shaped, so
+   * it stays in the dot column's vocabulary, but the motion is a *cycle* rather
+   * than a blink, which is the honest shape for "output is arriving".
+   */
+  spinner?: boolean;
+  /**
+   * Draw the dot barely there. For states that are deliberately inert — the task
+   * isn't idle waiting for you, it's been *put down* — so the row should read as
+   * present but skippable rather than joining the quiet-but-live majority.
+   */
+  faint?: boolean;
+  label: string;
+}
+
+/**
+ * State → dot. Three things only: blue wants a decision from you, amber is
+ * working or unread, grey is quiet.
+ *
+ * Run mechanics are deliberately absent. A cloud run is magic from the outside —
+ * queued, claiming a sandbox, retrying, and erroring out are our problems, not
+ * the reader's, and a list that reports them turns every infrastructure hiccup
+ * into a red mark on the reader's work. So a failed run is not a state here: what
+ * the reader actually gets is output they haven't seen, which is `isUnread`, and
+ * the run's real story lives in the task detail where there's room to tell it.
+ *
+ * Queued is folded into working for the same reason. "Waiting on a sandbox" and
+ * "a sandbox is writing code" are one fact to the reader — it's happening — so
+ * they share the spinner rather than teaching a distinction only we care about.
+ */
+export function taskDot(props: TaskIconProps): TaskDot {
+  if (props.needsPermission) {
+    return {
+      tone: "blue",
+      style: "solid",
+      pulse: true,
+      label: "Needs permission — blocked on you",
+    };
+  }
+  if (
+    props.isGenerating ||
+    props.taskRunStatus === "in_progress" ||
+    props.taskRunStatus === "queued"
+  ) {
+    return {
+      tone: "yellow",
+      style: "solid",
+      pulse: false,
+      spinner: true,
+      label: "Working",
+    };
+  }
+  if (props.isUnread) {
+    // Solid, not flashing: fresh output is worth a look but isn't blocking the
+    // run the way a permission prompt is, and two moving states in one list
+    // cancel each other out.
+    return {
+      tone: "yellow",
+      style: "solid",
+      pulse: false,
+      label: "Unread — something to read",
+    };
+  }
+  if (props.isSuspended) {
+    return {
+      tone: "gray",
+      style: "hollow",
+      pulse: false,
+      faint: true,
+      label: "Suspended — parked",
+    };
+  }
+  return {
+    tone: "gray",
+    style: "hollow",
+    pulse: false,
+    label: "Nothing owed to you",
+  };
+}
+
+export interface TaskBadge {
+  key: string;
+  Icon: Icon;
+  label: string;
+  /** Set only where colour earns its keep — currently PR state. */
+  tone?: DotTone;
+}
+
+/**
+ * Identity → badges, widest context first so the stack reads left-to-right as
+ * "who asked, where it runs, what came out of it". Always returns at least one
+ * badge: an empty slot where every other row has an avatar reads as a bug.
+ *
+ * Origins deliberately share ONE glyph. Eight product marks at avatar size is a
+ * vocabulary nobody learns — and the badge's job in a nav row is "this didn't
+ * come from you", which is the same fact whether Slack or error tracking filed
+ * it. The tooltip names the actual product for anyone who needs it.
+ *
+ * The PR badge is the exception that gets colour: merged / ready / closed is the
+ * outcome people actually scan a task list for, and it's a three-value
+ * vocabulary on a glyph that already means "pull request".
+ */
+export function taskBadges(props: TaskIconProps): TaskBadge[] {
+  const badges: TaskBadge[] = [];
+  const origin = getOriginProductMeta(props.originProduct);
+  if (origin) {
+    badges.push({
+      key: "origin",
+      Icon: ArrowSquareIn,
+      label: `Source: ${origin.label}`,
+    });
+  }
+  if (props.workspaceMode === "cloud") {
+    badges.push({ key: "cloud", Icon: Cloud, label: "Cloud run" });
+  }
+  if (props.prState === "merged") {
+    badges.push({
+      key: "pr",
+      Icon: GitMerge,
+      label: "Merged",
+      tone: "purple",
+    });
+  } else if (props.prState === "open") {
+    badges.push({
+      key: "pr",
+      Icon: GitPullRequest,
+      label: "PR ready for review",
+      tone: "green",
+    });
+  } else if (props.prState === "closed") {
+    badges.push({
+      key: "pr",
+      Icon: GitPullRequest,
+      label: "PR closed unmerged",
+      tone: "red",
+    });
+  } else if (props.prState === "draft") {
+    // Mid grey: a draft is a real PR, so it earns a solid glyph, but it isn't
+    // asking for anything yet — grey is the "exists, no verdict" slot.
+    badges.push({
+      key: "pr",
+      Icon: GitPullRequest,
+      label: "Draft PR",
+      tone: "gray",
+    });
+  } else if (props.hasDiff) {
+    badges.push({
+      key: "branch",
+      Icon: GitBranch,
+      label: "Has changes",
+      tone: "yellow",
+    });
+  }
+  if (badges.length === 0) {
+    badges.push({ key: "local", Icon: ChatCircle, label: "Local task" });
+  }
+  return badges;
+}

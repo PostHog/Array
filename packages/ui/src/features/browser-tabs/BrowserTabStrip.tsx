@@ -1,5 +1,6 @@
 import {
   BrainIcon,
+  BugIcon,
   PlugsConnectedIcon,
   RobotIcon,
   SquaresFourIcon,
@@ -125,7 +126,13 @@ type TabRef = {
 // The top-level app pages that can be a tab. Keyed by useAppView's view.type;
 // each maps to its canonical route (a task/canvas/channel tab has its own
 // route, these don't) plus the strip's label + icon.
-type AppView = "inbox" | "agents" | "skills" | "mcp-servers" | "command-center";
+type AppView =
+  | "inbox"
+  | "agents"
+  | "skills"
+  | "mcp-servers"
+  | "command-center"
+  | "design-system";
 
 const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
   inbox: { label: "Inbox", icon: <TrayIcon size={14} /> },
@@ -139,6 +146,7 @@ const APP_VIEW_META: Record<AppView, { label: string; icon: ReactNode }> = {
     label: "Command center",
     icon: <SquaresFourIcon size={14} />,
   },
+  "design-system": { label: "Design system", icon: <BugIcon size={14} /> },
 };
 
 function isAppView(value: string): value is AppView {
@@ -165,9 +173,12 @@ export function BrowserTabStrip() {
   // plain task tab (no channel) belongs to the Code experience. The space
   // decides where a task/blank tab navigates.
   const inChannels = pathname.startsWith("/website");
-  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center)
-  // are tab targets too. useAppView normalizes both the /code routes and
-  // their /website mirrors to the same view.type, so a tab survives either space.
+  // Top-level app pages (Inbox, Agents, Skills, MCP servers, Command Center,
+  // the Design system debug page) are tab targets too. useAppView normalizes
+  // both the /code routes and their /website mirrors to the same view.type, so
+  // a tab survives either space. A top-level route that ISN'T here falls
+  // through to `task-input`, and the strip then reconciles the location against
+  // the wrong tab and navigates straight back off the page.
   const view = useAppView();
   const routeAppView: AppView | null = isAppView(view.type) ? view.type : null;
 
@@ -610,6 +621,9 @@ export function BrowserTabStrip() {
           break;
         case "command-center":
           navigate({ to: "/command-center", state });
+          break;
+        case "design-system":
+          navigate({ to: "/design-system", state });
           break;
         default: {
           // Exhaustiveness guard: a new AppView value fails to compile here

@@ -1,8 +1,18 @@
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
-import type { TaskRunStatus } from "@posthog/shared/domain-types";
+import { formatRelativeTimeShort } from "@posthog/shared";
+import type { TaskStatusInput } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 import { Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// The row's status comes from live session/workspace state and a per-task tRPC
+// query, none of which a unit test has. Stubbed at the module boundary, as
+// ChannelSidebar.test.tsx does for the same reason.
+const mocks = vi.hoisted(() => ({ status: null as TaskStatusInput | null }));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelTaskStatus", () => ({
+  useChannelTaskStatus: () => mocks.status,
+}));
+
 import { ChannelItemRow } from "./ChannelItemRow";
 
 const actions = {
@@ -24,6 +34,7 @@ function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
     authorName: null,
     authorUuid: "user-uuid",
     templateId: null,
+    task: null,
     ...overrides,
   };
 }
@@ -36,21 +47,59 @@ function renderRow(model: ChannelItemModel) {
   );
 }
 
-describe("ChannelItemRow", () => {
-  it.each([
-    ["queued" as const, true],
-    ["in_progress" as const, true],
-    ["not_started" as const, false],
-    ["completed" as const, false],
-    ["failed" as const, false],
-    ["cancelled" as const, false],
-  ])("marks %s as running: %s", (rawStatus: TaskRunStatus, running) => {
-    renderRow(item({ rawStatus }));
+beforeEach(() => {
+  mocks.status = null;
+});
 
-    expect(!!screen.queryByRole("img", { name: "Running" })).toBe(running);
+describe("ChannelItemRow", () => {
+  // The dot vocabulary in one table: what the row's leading mark says for each
+  // state a task can be in. Only the states a reader can act on get a voice —
+  // run mechanics (queued, failed) resolve to "working" or "something to read".
+  it.each([
+    [
+      "a permission prompt",
+      { needsPermission: true },
+      "Needs permission — blocked on you",
+    ],
+    ["a streaming agent", { isGenerating: true }, "Working"],
+    [
+      "a cloud run in flight",
+      { taskRunStatus: "in_progress" as const },
+      "Working",
+    ],
+    ["a queued cloud run", { taskRunStatus: "queued" as const }, "Working"],
+    [
+      "a broken run with unseen output",
+      { taskRunStatus: "failed" as const, isUnread: true },
+      "Unread — something to read",
+    ],
+    ["a suspended task", { isSuspended: true }, "Suspended — parked"],
+    [
+      "a merged PR",
+      { prState: "merged" as const },
+      // PR state lives on the badge, so the dot stays quiet.
+      "Nothing owed to you",
+    ],
+    ["an idle task", {}, "Nothing owed to you"],
+  ])("labels %s", (_case, status: TaskStatusInput, label) => {
+    mocks.status = status;
+
+    renderRow(item());
+
+    expect(screen.getByRole("img", { name: label })).not.toBeNull();
   });
 
-  it("leaves a canvas, which has no run to wait on, static", () => {
+  it("shows a task's badges instead of its timestamp", () => {
+    mocks.status = { workspaceMode: "cloud", prState: "merged" };
+
+    renderRow(item());
+
+    expect(screen.getByRole("img", { name: "Cloud run" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Merged" })).not.toBeNull();
+    expect(screen.queryByText(formatRelativeTimeShort(item().ts))).toBeNull();
+  });
+
+  it("leaves a canvas its template glyph and timestamp, having no run", () => {
     renderRow(
       item({
         key: "canvas:canvas-1",
@@ -61,18 +110,10 @@ describe("ChannelItemRow", () => {
       }),
     );
 
-    expect(screen.queryByRole("img", { name: "Running" })).toBeNull();
-  });
-
-  // The point of the shimmer over a spinner: a running task still looks like a
-  // task, so the list stays scannable by kind while work is in flight.
-  it("keeps the item's own glyph while running", () => {
-    renderRow(item({ rawStatus: "in_progress" }));
-
-    const running = screen.getByRole("img", { name: "Running" });
-    expect(running).toHaveClass("ph-shimmer");
-    // The glyph is wrapped, not replaced — no spinner swapped in its place.
-    expect(running.querySelector("svg")).not.toBeNull();
+    expect(
+      screen.queryByRole("img", { name: "Nothing owed to you" }),
+    ).toBeNull();
+    expect(screen.getByText(formatRelativeTimeShort(item().ts))).not.toBeNull();
   });
 
   it("opens the task context menu from the row", () => {

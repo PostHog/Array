@@ -52,6 +52,10 @@ vi.mock("@posthog/ui/features/tasks/useTaskMutations", () => ({
 vi.mock("@posthog/ui/features/tasks/useTasks", () => ({
   useTasks: () => ({ data: [] }),
 }));
+// A row's status dot reaches for live session state and a per-task PR query.
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelTaskStatus", () => ({
+  useChannelTaskStatus: () => null,
+}));
 
 import { ChannelSidebar } from "./ChannelSidebar";
 
@@ -69,6 +73,7 @@ function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
     // Not the viewer, so filtering to "Me" leaves nothing.
     authorUuid: "someone-else-uuid",
     templateId: null,
+    task: null,
     ...overrides,
   };
 }
