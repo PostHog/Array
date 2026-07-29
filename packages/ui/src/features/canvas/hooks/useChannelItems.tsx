@@ -10,6 +10,7 @@ import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import type { ChannelItemActions } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { useChannelFeed } from "@posthog/ui/features/canvas/hooks/useChannelFeed";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelTasks } from "@posthog/ui/features/canvas/hooks/useChannelTasks";
 import {
   useDashboardMutations,
   useDashboards,
@@ -19,6 +20,7 @@ import {
   useBackendChannel,
 } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { usePinnedTasks } from "@posthog/ui/features/sidebar/usePinnedTasks";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
@@ -58,6 +60,11 @@ export function useChannelItems(channelId: string): {
   const { tasks: feedTasks, isLoading: feedLoading } = useChannelFeed(
     backendChannel?.id,
   );
+  const { tasks: filedTaskRecords, isLoading: filedTasksLoading } =
+    useChannelTasks(channelId);
+  const { data: allTasks = [], isLoading: allTasksLoading } = useTasks({
+    showAllUsers: true,
+  });
   const archivedTaskIds = useArchivedTaskIds();
   const { pinnedTaskIds, togglePin } = usePinnedTasks();
   const { archiveTask } = useArchiveTask({ navigateSpace: "website" });
@@ -73,30 +80,41 @@ export function useChannelItems(channelId: string): {
   // resolved without one can't be matched against anything and reads as unknown.
   const viewerKnown = meUuid != null;
 
-  const items = useMemo<ChannelItemModel[]>(
-    () =>
-      identityKnown && (!isPersonal || viewerKnown)
-        ? buildChannelItems({
-            dashboards,
-            feedTasks,
-            archivedTaskIds,
-            pinnedTaskIds,
-            // The personal channel is yours — but don't filter until we know
-            // who you are, or #me flashes everyone's items on a cold load.
-            ownedBy: isPersonal && viewerKnown ? me : null,
-          })
-        : [],
-    [
-      identityKnown,
+  const items = useMemo<ChannelItemModel[]>(() => {
+    if (!identityKnown || (isPersonal && !viewerKnown)) return [];
+
+    const tasksById = new Map(allTasks.map((task) => [task.id, task]));
+    const mergedTasks = [...feedTasks];
+    const seenTaskIds = new Set(feedTasks.map((task) => task.id));
+    for (const record of filedTaskRecords) {
+      const task = tasksById.get(record.taskId);
+      if (task && !seenTaskIds.has(task.id)) {
+        mergedTasks.push(task);
+        seenTaskIds.add(task.id);
+      }
+    }
+
+    return buildChannelItems({
       dashboards,
-      feedTasks,
+      feedTasks: mergedTasks,
       archivedTaskIds,
       pinnedTaskIds,
-      isPersonal,
-      viewerKnown,
-      me,
-    ],
-  );
+      // The personal channel is yours — but don't filter until we know
+      // who you are, or #me flashes everyone's items on a cold load.
+      ownedBy: isPersonal && viewerKnown ? me : null,
+    });
+  }, [
+    identityKnown,
+    dashboards,
+    feedTasks,
+    filedTaskRecords,
+    allTasks,
+    archivedTaskIds,
+    pinnedTaskIds,
+    isPersonal,
+    viewerKnown,
+    me,
+  ]);
 
   const actions = useMemo<ChannelItemActions>(
     () => ({
@@ -144,6 +162,8 @@ export function useChannelItems(channelId: string): {
         dashboardsLoading ||
         channelLoading ||
         feedLoading ||
+        filedTasksLoading ||
+        allTasksLoading ||
         (isPersonal && viewerLoading)),
     channelMissing,
   };
