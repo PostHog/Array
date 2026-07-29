@@ -10,17 +10,9 @@ export type GatewayProduct =
 export function resolveGatewayProduct({
   isInternal,
   originProduct,
-  isWizardCloudRun,
 }: {
   isInternal?: boolean;
   originProduct?: string | null;
-  /**
-   * Whether the run carries the `wizard_config` state key that only the server-side
-   * wizard flow stamps. Required for `onboarding` because that product is unbilled:
-   * `origin_product` on its own is caller-supplied data we should not spend PostHog's
-   * money on, so a run that claims the origin without the marker stays on posthog_code.
-   */
-  isWizardCloudRun?: boolean;
 } = {}): GatewayProduct {
   if (originProduct === "slack") {
     return "slack_app";
@@ -37,8 +29,8 @@ export function resolveGatewayProduct({
   if (originProduct === "loop") {
     return "posthog_code";
   }
-  if (originProduct === "onboarding") {
-    return isWizardCloudRun ? "onboarding" : "posthog_code";
+  if (originProduct === "onboarding" && isInternal) {
+    return "onboarding";
   }
   if (isInternal) {
     return "background_agents";

@@ -1545,12 +1545,6 @@ export class AgentServer {
     const gatewayEnv = this.configureEnvironment({
       isInternal: preTask?.internal === true,
       originProduct: preTask?.origin_product,
-      // Only the server-side wizard flow can put `wizard_config` on a run: the run PATCH
-      // allowlist drops it and the run-create body has no state field at all. That makes it
-      // the trustworthy half of the onboarding check, unlike origin_product.
-      isWizardCloudRun:
-        (preTaskRun?.state as Record<string, unknown> | undefined)
-          ?.wizard_config !== undefined,
       signalReportId: preTask?.signal_report,
       aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
       taskId: payload.task_id,
@@ -3845,7 +3839,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   private configureEnvironment({
     isInternal = false,
     originProduct,
-    isWizardCloudRun = false,
     signalReportId,
     aiStage,
     taskId,
@@ -3855,7 +3848,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
   }: {
     isInternal?: boolean;
     originProduct?: Task["origin_product"] | null;
-    isWizardCloudRun?: boolean;
     signalReportId?: string | null;
     aiStage?: string | null;
     taskId?: string | null;
@@ -3867,7 +3859,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     const product = resolveGatewayProduct({
       isInternal,
       originProduct,
-      isWizardCloudRun,
     });
     const {
       baseUrl: gatewayUrl,
