@@ -108,9 +108,7 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       draggingTabPanelId={draggingTabPanelId}
       onAddTerminal={hideTerminal ? undefined : () => onAddTerminal(node.id)}
       onSplitPanel={
-        tabs.length > 1
-          ? (direction) => onSplitPanel(node.id, direction)
-          : undefined
+        isCloud ? undefined : (direction) => onSplitPanel(node.id, direction)
       }
       onClosePanel={
         tabs.length === 0 && hiddenTabIds.length > 0
