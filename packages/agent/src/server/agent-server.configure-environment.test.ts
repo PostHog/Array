@@ -166,6 +166,23 @@ describe("AgentServer.configureEnvironment", () => {
     },
   );
 
+  it.each([{ isInternal: true }, { isInternal: false }] as const)(
+    "tags as posthog_code when origin_product is 'loop' (isInternal=$isInternal)",
+    ({ isInternal }) => {
+      const env = buildServer("background").configureEnvironment({
+        isInternal,
+        originProduct: "loop",
+      });
+
+      expect(env.anthropicBaseUrl).toBe(
+        "https://gateway.us.posthog.com/posthog_code",
+      );
+      expect(env.openaiBaseUrl).toBe(
+        "https://gateway.us.posthog.com/posthog_code/v1",
+      );
+    },
+  );
+
   // The codex/OpenAI path sets provider http_headers rather than
   // ANTHROPIC_CUSTOM_HEADERS, so the same task metadata must be exposed as a
   // record — including team_id, which the Claude path adds separately in
