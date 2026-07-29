@@ -104,7 +104,7 @@ function makeOrchestrationDeps(
     getPinnedTaskIds: () => pinnedTasksApi.getPinnedTaskIds(),
     unpin: (taskId) => pinnedTasksApi.unpin(taskId),
     togglePin: async (taskId) => {
-      await pinnedTasksApi.togglePin(taskId);
+      await pinnedTasksApi.setPinned(taskId, true);
     },
     navigateAwayFromTaskIfActive: (taskId) => {
       if (options?.skipNavigate) return;

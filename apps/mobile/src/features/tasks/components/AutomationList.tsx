@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { TaskAutomation } from "@posthog/api-client/posthog-client";
 import { Plus } from "phosphor-react-native";
 import {
   ActivityIndicator,
@@ -10,7 +11,6 @@ import {
 import { useThemeColors } from "@/lib/theme";
 import { useAutomations } from "../hooks/useAutomations";
 import { useTasks } from "../hooks/useTasks";
-import type { TaskAutomation } from "../types";
 import { AutomationItem } from "./AutomationItem";
 
 interface AutomationListProps {

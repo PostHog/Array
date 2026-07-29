@@ -1,4 +1,18 @@
 import { Text } from "@components/text";
+import {
+  DEFAULT_CLAUDE_EXECUTION_MODE,
+  getAvailableModes,
+} from "@posthog/core/sessions/executionModes";
+import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
+import {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
+  getReasoningEffortOptions,
+  isSupportedReasoningEffort,
+  type SupportedReasoningEffort,
+  serializeCloudPrompt,
+} from "@posthog/shared";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -15,7 +29,7 @@ import {
   Sparkle,
   StopIcon,
 } from "phosphor-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -30,13 +44,11 @@ import {
 import Animated, { runOnJS, useAnimatedStyle } from "react-native-reanimated";
 import { useVoiceRecording } from "@/features/chat";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { createTask, runTaskInCloud } from "@/features/tasks/api";
 import { GitHubConnectionPrompt } from "@/features/tasks/components/GitHubConnectionPrompt";
 import { GitHubLoadNotice } from "@/features/tasks/components/GitHubLoadNotice";
 import { AttachmentSheet } from "@/features/tasks/composer/attachments/AttachmentSheet";
 import { AttachmentsBar } from "@/features/tasks/composer/attachments/AttachmentsBar";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
 import {
   captureFromCamera,
   pickDocument,
@@ -45,22 +57,15 @@ import {
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
-  DEFAULT_EXECUTION_MODE,
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  EXECUTION_MODES,
-  type ExecutionMode,
-  MODELS,
-  modeLabel,
-  modelLabel,
-  modelSupportsReasoning,
-  REASONING_LEVELS,
-  type ReasoningEffort,
-  reasoningLabel,
+  getComposerModelOptions,
+  getConfigOptionLabel,
+  getMobileExecutionModes,
+  getModelConfigOption,
 } from "@/features/tasks/composer/options";
 import { Pill } from "@/features/tasks/composer/Pill";
 import { RepositoryPickerInline } from "@/features/tasks/composer/RepositoryPickerInline";
 import { SelectSheet } from "@/features/tasks/composer/SelectSheet";
+import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
 import { useUserIntegrations } from "@/features/tasks/hooks/useUserIntegrations";
 import { useWarmTask } from "@/features/tasks/hooks/useWarmTask";
 import { pendingPromptRecoveryStoreApi } from "@/features/tasks/stores/pendingPromptRecoveryStore";
@@ -80,9 +85,11 @@ import {
 } from "@/features/tasks/utils/repositorySelection";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { toRgba, useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-create");
+const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
 
 const SUGGESTIONS = [
   "Create or update my CLAUDE.md file",
@@ -98,6 +105,11 @@ function modeIcon(mode: ExecutionMode, color: string, size = 14) {
       return <PencilIcon size={size} color={color} />;
     case "acceptEdits":
       return <ShieldCheck size={size} color={color} />;
+    case "bypassPermissions":
+    case "full-access":
+      return <ShieldCheck size={size} color={color} weight="fill" />;
+    case "read-only":
+      return <PauseIcon size={size} color={color} />;
     case "auto":
       return <Sparkle size={size} color={color} weight="fill" />;
   }
@@ -118,6 +130,10 @@ export default function NewTaskScreen() {
   const { insets, bottom } = useScreenInsets();
   const keyboard = useReanimatedKeyboardAnimation();
   const restingBottom = bottom("compact");
+  const { configOptions, hasLiveConfig, isConfigReady } =
+    useCloudTaskConfigOptions("claude");
+  const modelConfigOption = getModelConfigOption(configOptions);
+  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
   const {
     error,
     hasGithubIntegration,
@@ -181,22 +197,34 @@ export default function NewTaskScreen() {
     const prefs = usePreferencesStore.getState();
     if (prefs.defaultInitialTaskMode === "last_used") {
       const last = prefs.lastNewTaskMode;
-      const isValidMode = EXECUTION_MODES.some((m) => m.value === last);
+      const isValidMode = EXECUTION_MODES.some((mode) => mode.id === last);
       if (isValidMode) return last as ExecutionMode;
     }
-    return DEFAULT_EXECUTION_MODE;
+    return DEFAULT_CLAUDE_EXECUTION_MODE;
   });
-  const [model, setModel] = useState<string>(DEFAULT_MODEL);
-  const [reasoning, setReasoning] = useState<ReasoningEffort>(() => {
+  const [model, setModel] = useState<string>(DEFAULT_GATEWAY_MODEL);
+  const [reasoning, setReasoning] = useState<SupportedReasoningEffort>(() => {
     const prefs = usePreferencesStore.getState();
-    const isValidReasoning = (v: string): v is ReasoningEffort =>
-      REASONING_LEVELS.some((r) => r.value === v);
     const desired =
       prefs.defaultReasoningEffort === "last_used"
         ? prefs.lastUsedReasoningEffort
         : prefs.defaultReasoningEffort;
-    return isValidReasoning(desired) ? desired : DEFAULT_REASONING;
+    return isSupportedReasoningEffort("claude", DEFAULT_GATEWAY_MODEL, desired)
+      ? desired
+      : DEFAULT_REASONING_EFFORT;
   });
+
+  useEffect(() => {
+    if (!hasLiveConfig) return;
+    const next = resolveCloudComposerModelChange({
+      adapter: "claude",
+      modelOption: modelConfigOption,
+      requestedModel: model,
+      reasoning,
+    });
+    if (next.model !== model) setModel(next.model);
+    if (next.reasoning !== reasoning) setReasoning(next.reasoning);
+  }, [hasLiveConfig, model, modelConfigOption, reasoning]);
   const [creating, setCreating] = useState(false);
   const [repoSheetOpen, setRepoSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
@@ -308,7 +336,8 @@ export default function NewTaskScreen() {
           ? `Attached: ${attachments[0].fileName}`
           : `Attached ${attachments.length} files`);
 
-      const task = await createTask({
+      const client = getPostHogApiClient();
+      const task = await client.createTask({
         description: descriptionText,
         title: descriptionText.slice(0, 100),
         repository: selection.repository ?? undefined,
@@ -333,7 +362,7 @@ export default function NewTaskScreen() {
       // Seed the per-task composer config with the mode/model/reasoning the
       // user picked here, so the task detail screen reflects them and every
       // subsequent run (resume-after-terminal) reuses the selected mode rather
-      // than falling back to DEFAULT_EXECUTION_MODE ("plan").
+      // than falling back to the default plan mode.
       setComposerConfig(task.id, { mode, model, reasoning });
 
       const pendingUserMessage =
@@ -343,13 +372,14 @@ export default function NewTaskScreen() {
             )
           : trimmedPrompt;
 
-      const supportsReasoning = modelSupportsReasoning(model);
+      const supportsReasoning =
+        getReasoningEffortOptions("claude", model) !== null;
 
-      await runTaskInCloud(task.id, {
+      await client.runTaskInCloud(task.id, undefined, {
         pendingUserMessage,
-        runtimeAdapter: "claude",
+        adapter: "claude",
         model,
-        reasoningEffort: supportsReasoning ? reasoning : undefined,
+        reasoningLevel: supportsReasoning ? reasoning : undefined,
         initialPermissionMode: mode,
         autoPublish: usePreferencesStore.getState().autoPublishCloudRuns,
         rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
@@ -385,8 +415,12 @@ export default function NewTaskScreen() {
 
   const hasContent = !!prompt.trim() || attachments.length > 0;
   const canSubmit =
-    hasContent && isRepositorySelectionComplete(selection) && !creating;
-  const showReasoningPill = modelSupportsReasoning(model);
+    isConfigReady &&
+    hasContent &&
+    isRepositorySelectionComplete(selection) &&
+    !creating;
+  const reasoningOptions = getReasoningEffortOptions("claude", model) ?? [];
+  const showReasoningPill = reasoningOptions.length > 0;
 
   // Best-effort prewarm; failures are swallowed. `selection.integrationId` is
   // the GitHub installation id, not a PostHog integration id — the backend
@@ -394,7 +428,7 @@ export default function NewTaskScreen() {
   useWarmTask({
     repository: selection.repository,
     githubIntegrationId: selection.integrationId,
-    composerIsEmpty: !hasContent,
+    composerIsEmpty: !hasContent || !isConfigReady,
     runtimeAdapter: "claude",
     model,
     reasoningEffort: showReasoningPill ? reasoning : null,
@@ -609,14 +643,22 @@ export default function NewTaskScreen() {
                           ? themeColors.accent[11]
                           : themeColors.gray[11],
                       )}
-                      label={modeLabel(mode)}
+                      label={
+                        EXECUTION_MODES.find((option) => option.id === mode)
+                          ?.name ?? mode
+                      }
                       accent={mode === "plan"}
                       onPress={() => setModeSheetOpen(true)}
                     />
 
                     <Pill
                       icon={<Robot size={14} color={themeColors.gray[11]} />}
-                      label={modelLabel(model)}
+                      label={
+                        getConfigOptionLabel(
+                          modelConfigOption.options,
+                          model,
+                        ) ?? model
+                      }
                       onPress={() => setModelSheetOpen(true)}
                     />
 
@@ -625,7 +667,11 @@ export default function NewTaskScreen() {
                         icon={
                           <BrainIcon size={14} color={themeColors.gray[11]} />
                         }
-                        label={reasoningLabel(reasoning)}
+                        label={
+                          reasoningOptions.find(
+                            (option) => option.value === reasoning,
+                          )?.name ?? reasoning
+                        }
                         onPress={() => setReasoningSheetOpen(true)}
                       />
                     ) : null}
@@ -714,12 +760,12 @@ export default function NewTaskScreen() {
         }}
         onClose={() => setModeSheetOpen(false)}
         options={EXECUTION_MODES.map((executionMode) => ({
-          value: executionMode.value,
-          label: executionMode.label,
+          value: executionMode.id,
+          label: executionMode.name,
           description: executionMode.description,
           icon: modeIcon(
-            executionMode.value,
-            executionMode.value === "plan"
+            executionMode.id as ExecutionMode,
+            executionMode.id === "plan"
               ? themeColors.accent[11]
               : themeColors.gray[11],
             16,
@@ -732,16 +778,21 @@ export default function NewTaskScreen() {
         title="Model"
         value={model}
         onChange={(value) => {
-          setModel(value);
-          if (!modelSupportsReasoning(value)) {
-            setReasoning(DEFAULT_REASONING);
-          }
+          const next = resolveCloudComposerModelChange({
+            adapter: "claude",
+            modelOption: modelConfigOption,
+            requestedModel: value,
+            reasoning,
+          });
+          setModel(next.model);
+          setReasoning(next.reasoning);
         }}
         onClose={() => setModelSheetOpen(false)}
-        options={MODELS.map((modelOption) => ({
+        options={mobileModelOptions.map((modelOption) => ({
           value: modelOption.value,
           label: modelOption.label,
           description: modelOption.description,
+          disabled: modelOption.disabled,
           icon: <Robot size={16} color={themeColors.gray[11]} />,
         }))}
       />
@@ -751,14 +802,14 @@ export default function NewTaskScreen() {
         title="Reasoning"
         value={reasoning}
         onChange={(value) => {
-          const next = value as ReasoningEffort;
+          const next = value as SupportedReasoningEffort;
           setReasoning(next);
           usePreferencesStore.getState().setLastUsedReasoningEffort(next);
         }}
         onClose={() => setReasoningSheetOpen(false)}
-        options={REASONING_LEVELS.map((reasoningLevel) => ({
+        options={reasoningOptions.map((reasoningLevel) => ({
           value: reasoningLevel.value,
-          label: reasoningLevel.label,
+          label: reasoningLevel.name,
           icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
         }))}
       />

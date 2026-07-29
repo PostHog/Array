@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
 import {
   formatPosthogExecBody,
   getPostHogExecDisplay,
   isPostHogExecTool,
-} from "./posthogExecDisplay";
+} from "@posthog/core/sessions/posthogExecDisplay";
+import { describe, expect, it } from "vitest";
 
 describe("isPostHogExecTool", () => {
   it("matches the bare posthog exec tool", () => {

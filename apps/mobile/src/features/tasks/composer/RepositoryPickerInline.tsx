@@ -15,8 +15,8 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { RepositoryOption } from "@/features/tasks/types";
 import { useThemeColors } from "@/lib/theme";
+import type { RepositoryOption } from "../types";
 
 // Tuning for the nested (ScrollView) path's progressive mount. The first
 // chunk needs to cover the rows the user can actually see (~5 with the

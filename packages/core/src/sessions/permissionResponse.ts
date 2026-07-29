@@ -1,5 +1,72 @@
 import type { PermissionRequest } from "@posthog/shared";
 
+export type PermissionOption = PermissionRequest["options"][number];
+
+export function getPermissionOptionMeta(option: PermissionOption): {
+  customInput: boolean;
+  description?: string;
+} {
+  const meta = option._meta as
+    | { customInput?: boolean; description?: string }
+    | null
+    | undefined;
+  return {
+    customInput: meta?.customInput === true,
+    ...(meta?.description ? { description: meta.description } : {}),
+  };
+}
+
+export function isPermissionApproval(option: PermissionOption): boolean {
+  return option.kind === "allow_once" || option.kind === "allow_always";
+}
+
+export function isPermissionRejection(option: PermissionOption): boolean {
+  return (
+    option.kind === "reject_once" ||
+    option.kind === "reject_always" ||
+    option.optionId.includes("reject")
+  );
+}
+
+export function permissionOptionUsesCustomInput(
+  option: PermissionOption,
+): boolean {
+  return (
+    isOtherPermissionOption(option.optionId) ||
+    getPermissionOptionMeta(option).customInput
+  );
+}
+
+export function selectPlanPermissionOptions(options: PermissionOption[]): {
+  approvals: PermissionOption[];
+  rejection: PermissionOption | null;
+} {
+  const approvals = options.filter(isPermissionApproval);
+  const rejections = options.filter(isPermissionRejection);
+  return {
+    approvals,
+    rejection:
+      rejections.find(permissionOptionUsesCustomInput) ?? rejections[0] ?? null,
+  };
+}
+
+export function resolveInitialPlanApprovalOption(
+  approvals: PermissionOption[],
+  preferredOptionId?: string | null,
+): string | undefined {
+  const has = (optionId: string): boolean =>
+    approvals.some((option) => option.optionId === optionId);
+  return (
+    (preferredOptionId && has(preferredOptionId)
+      ? preferredOptionId
+      : undefined) ??
+    (has("auto") ? "auto" : undefined) ??
+    approvals.find((option) => option.optionId === "default")?.optionId ??
+    approvals.find((option) => option.kind === "allow_once")?.optionId ??
+    approvals[0]?.optionId
+  );
+}
+
 const OTHER_OPTION_ID = "_other";
 const OTHER_OPTION_ID_ALT = "other";
 

@@ -1,8 +1,11 @@
 import { Text } from "@components/text";
+import {
+  type ReviewerOption,
+  reviewerOptionLabel,
+} from "@posthog/core/inbox/artefacts";
 import { Check } from "phosphor-react-native";
 import { Image, Pressable, View } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import { type ReviewerOption, reviewerOptionLabel } from "../utils";
 
 interface ReviewerOptionRowProps {
   reviewer: ReviewerOption;

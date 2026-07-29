@@ -1,4 +1,13 @@
 import { Text } from "@components/text";
+import {
+  formatSignalReportSummaryMarkdown,
+  inboxStatusLabel,
+} from "@posthog/core/inbox/reportPresentation";
+import type {
+  SignalReport,
+  SignalReportPriority,
+  SignalReportStatus,
+} from "@posthog/shared/domain-types";
 import { formatDistanceToNow } from "date-fns";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -17,8 +26,8 @@ import {
 } from "react-native-safe-area-context";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { createTask, runTaskInCloud } from "@/features/tasks/api";
-import { DEFAULT_MODEL } from "@/features/tasks/composer/options";
+import { getModelConfigOption } from "@/features/tasks/composer/options";
+import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
 import type {
   CreateTaskOptions,
   RepositoryOption,
@@ -29,16 +38,11 @@ import {
   useAnalytics,
 } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 import { getReportRepository } from "../api";
 import { useDismissedReportsStore } from "../stores/dismissedReportsStore";
 import { useInboxStore } from "../stores/inboxStore";
-import type {
-  SignalReport,
-  SignalReportPriority,
-  SignalReportStatus,
-} from "../types";
-import { formatSignalReportSummaryMarkdown, inboxStatusLabel } from "../utils";
 import { SwipeableReportCard } from "./SwipeableReportCard";
 
 const log = logger.scope("tinder-view");
@@ -137,6 +141,8 @@ export function TinderView({
   const themeColors = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { configOptions, isConfigReady } = useCloudTaskConfigOptions("claude");
+  const model = getModelConfigOption(configOptions).currentValue;
 
   // Store state
   const currentIndex = useInboxStore((s) => s.currentIndex);
@@ -239,7 +245,8 @@ export function TinderView({
 
         // 3. Create the task
         const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
-        const task = await createTask({
+        const client = getPostHogApiClient();
+        const task = await client.createTask({
           description: prompt,
           title: prompt.slice(0, 255),
           repository: match?.repository ?? repo ?? undefined,
@@ -250,10 +257,10 @@ export function TinderView({
         } as CreateTaskOptions);
 
         // 4. Run it
-        await runTaskInCloud(task.id, {
+        await client.runTaskInCloud(task.id, undefined, {
           pendingUserMessage: prompt,
-          runtimeAdapter: "claude",
-          model: DEFAULT_MODEL,
+          adapter: "claude",
+          model,
           initialPermissionMode: "plan",
           runSource: "signal_report",
           signalReportId: report.id,
@@ -275,6 +282,7 @@ export function TinderView({
     },
     [
       repositoryOptions,
+      model,
       showToastPending,
       showToastDone,
       acceptReport,
@@ -488,7 +496,7 @@ export function TinderView({
                     setExpandedReport(null);
                   }}
                   className="h-16 w-16 items-center justify-center rounded-full border-2 border-status-success bg-status-success/10 active:bg-status-success/20"
-                  disabled={creating}
+                  disabled={creating || !isConfigReady}
                   hitSlop={8}
                 >
                   {creating ? (

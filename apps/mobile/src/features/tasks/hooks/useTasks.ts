@@ -1,16 +1,11 @@
+import { filterAndSortTasks } from "@posthog/core/tasks/taskActivity";
+import type { Task } from "@posthog/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { logger } from "@/lib/logger";
-import {
-  createTask,
-  deleteTask,
-  getTask,
-  getTasks,
-  runTaskInCloud,
-  updateTask,
-} from "../api";
-import { filterAndSortTasks, useTaskStore } from "../stores/taskStore";
-import type { CreateTaskOptions, Task } from "../types";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
+import { useTaskStore } from "../stores/taskStore";
+import type { CreateTaskOptions } from "../types";
 
 const log = logger.scope("tasks-mutations");
 const ACTIVE_TASK_POLLING_INTERVAL_MS = 5_000;
@@ -69,7 +64,7 @@ export function useTasks(filters?: {
 
   const query = useQuery({
     queryKey: taskKeys.list(queryFilters),
-    queryFn: () => getTasks(queryFilters),
+    queryFn: () => getPostHogApiClient().getTasks(queryFilters),
     enabled: !!projectId && !!oauthAccessToken && !!currentUser?.id,
     refetchInterval: (query) =>
       getTaskPollingInterval(query.state.data as Task[] | undefined),
@@ -102,7 +97,7 @@ export function useTask(taskId: string) {
 
   return useQuery({
     queryKey: taskKeys.detail(taskId),
-    queryFn: () => getTask(taskId),
+    queryFn: () => getPostHogApiClient().getTask(taskId),
     enabled: !!projectId && !!oauthAccessToken && !!taskId,
     refetchInterval: (query) =>
       getTaskPollingInterval(query.state.data as Task | undefined),
@@ -117,7 +112,8 @@ export function useCreateTask() {
   };
 
   const mutation = useMutation({
-    mutationFn: (options: CreateTaskOptions) => createTask(options),
+    mutationFn: (options: CreateTaskOptions) =>
+      getPostHogApiClient().createTask(options),
     onSuccess: () => {
       invalidateTasks();
     },
@@ -139,7 +135,13 @@ export function useUpdateTask() {
     }: {
       taskId: string;
       updates: Partial<Task>;
-    }) => updateTask(taskId, updates),
+    }) => {
+      const client = getPostHogApiClient();
+      return client.updateTask(
+        taskId,
+        updates as Parameters<typeof client.updateTask>[1],
+      );
+    },
     onSuccess: (updatedTask, { taskId }) => {
       // Update the detail cache immediately
       queryClient.setQueryData(taskKeys.detail(taskId), updatedTask);
@@ -155,7 +157,7 @@ export function useDeleteTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: string) => deleteTask(taskId),
+    mutationFn: (taskId: string) => getPostHogApiClient().deleteTask(taskId),
     onSuccess: (_, taskId) => {
       // Remove from detail cache
       queryClient.removeQueries({ queryKey: taskKeys.detail(taskId) });
@@ -171,7 +173,8 @@ export function useRunTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: string) => runTaskInCloud(taskId),
+    mutationFn: (taskId: string) =>
+      getPostHogApiClient().runTaskInCloud(taskId),
     onSuccess: (updatedTask, taskId) => {
       queryClient.setQueryData(taskKeys.detail(taskId), updatedTask);
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });

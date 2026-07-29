@@ -35,6 +35,10 @@ describe("isTaskRunning", () => {
     },
   );
 
+  it("returns true for the legacy started status", () => {
+    expect(isTaskRunning({ latest_run: { status: "started" } })).toBe(true);
+  });
+
   it.each(["completed", "failed", "cancelled"] as const)(
     "returns false for %s",
     (status) => {

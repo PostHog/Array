@@ -19,13 +19,15 @@ vi.mock("@/features/auth", () => ({
   useAuthStore: mockUseAuthStore,
 }));
 
-vi.mock("../api", () => ({
-  getTaskAutomations: mockGetTaskAutomations,
-  getTaskAutomation: vi.fn(),
-  createTaskAutomation: mockCreateTaskAutomation,
-  updateTaskAutomation: mockUpdateTaskAutomation,
-  deleteTaskAutomation: vi.fn(),
-  runTaskAutomation: vi.fn(),
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: vi.fn(() => ({
+    listTaskAutomations: mockGetTaskAutomations,
+    getTaskAutomation: vi.fn(),
+    createTaskAutomation: mockCreateTaskAutomation,
+    updateTaskAutomation: mockUpdateTaskAutomation,
+    deleteTaskAutomation: vi.fn(),
+    runTaskAutomation: vi.fn(),
+  })),
 }));
 
 import {

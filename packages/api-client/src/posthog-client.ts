@@ -794,7 +794,7 @@ function buildCloudRunRequestBody(
   if (options?.prAuthorshipMode) {
     body.pr_authorship_mode = options.prAuthorshipMode;
   }
-  if (options?.autoPublish) {
+  if (options?.autoPublish !== undefined) {
     body.auto_publish = options.autoPublish;
   }
   if (options?.rtkEnabled === false) {
@@ -2475,6 +2475,37 @@ export class PostHogAPIClient {
       path: { project_id: teamId.toString(), id: taskId },
     });
     return normalizeTaskResponse(data, { teamId });
+  }
+
+  async getPinnedTaskIds(): Promise<string[]> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/pinned/`;
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch pinned tasks: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { task_ids: string[] };
+    return data.task_ids;
+  }
+
+  async setTaskPinned(taskId: string, pinned: boolean): Promise<boolean> {
+    const teamId = await this.getTeamId();
+    const urlPath = `/api/projects/${teamId}/tasks/${taskId}/pin/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      url: new URL(`${this.api.baseUrl}${urlPath}`),
+      path: urlPath,
+      overrides: { body: JSON.stringify({ pinned }) },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update task pin: ${response.statusText}`);
+    }
+    const data = (await response.json()) as { pinned: boolean };
+    return data.pinned;
   }
 
   async listTaskAutomations(options?: {

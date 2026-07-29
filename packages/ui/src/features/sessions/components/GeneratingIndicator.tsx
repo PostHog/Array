@@ -1,109 +1,19 @@
 import { Brain, Circle } from "@phosphor-icons/react";
+import {
+  pickNextThinkingActivity,
+  pickThinkingActivity,
+} from "@posthog/core/sessions/thinkingActivities";
 import { Flex, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 
-const THINKING_MESSAGES = [
-  "Booping",
-  "Crunching",
-  "Digging",
-  "Fetching",
-  "Inferring",
-  "Indexing",
-  "Juggling",
-  "Noodling",
-  "Peeking",
-  "Percolating",
-  "Poking",
-  "Pondering",
-  "Scanning",
-  "Scrambling",
-  "Sifting",
-  "Sniffing",
-  "Spelunking",
-  "Tinkering",
-  "Unraveling",
-  "Decoding",
-  "Trekking",
-  "Sorting",
-  "Trimming",
-  "Mulling",
-  "Surfacing",
-  "Rummaging",
-  "Scouting",
-  "Scouring",
-  "Threading",
-  "Hunting",
-  "Swizzling",
-  "Grokking",
-  "Hedging",
-  "Scheming",
-  "Unfurling",
-  "Puzzling",
-  "Dissecting",
-  "Stacking",
-  "Snuffling",
-  "Hashing",
-  "Clustering",
-  "Teasing",
-  "Cranking",
-  "Merging",
-  "Snooping",
-  "Rewiring",
-  "Bundling",
-  "Linking",
-  "Mapping",
-  "Tickling",
-  "Flicking",
-  "Hopping",
-  "Rolling",
-  "Zipping",
-  "Twisting",
-  "Blooming",
-  "Sparking",
-  "Nesting",
-  "Wiring",
-  "Snipping",
-  "Zoning",
-  "Tracing",
-  "Warping",
-  "Twinkling",
-  "Flipping",
-  "Priming",
-  "Snagging",
-  "Scuttling",
-  "Framing",
-  "Sharpening",
-  "Flibbertigibbeting",
-  "Kerfuffling",
-  "Dithering",
-  "Discombobulating",
-  "Rambling",
-  "Befuddling",
-  "Waffling",
-  "Muckling",
-  "Hobnobbing",
-  "Galumphing",
-  "Puttering",
-  "Whiffling",
-  "Thinking",
-];
-
 function getRandomThinkingMessage(): string {
-  return THINKING_MESSAGES[
-    Math.floor(Math.random() * THINKING_MESSAGES.length)
-  ];
+  return pickThinkingActivity(Math.random());
 }
 
 /** Pick a new word that differs from the current one, so consecutive changes
  *  always read as a change. */
 function getNextThinkingMessage(current: string): string {
-  if (THINKING_MESSAGES.length <= 1) return THINKING_MESSAGES[0];
-  let next = current;
-  while (next === current) {
-    next =
-      THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
-  }
-  return next;
+  return pickNextThinkingActivity(current, Math.random());
 }
 
 export function formatDuration(ms: number, fractionDigits = 2): string {

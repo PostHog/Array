@@ -5,8 +5,9 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
-import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -18,7 +19,7 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import {
   useCreateLoop,
@@ -48,10 +49,12 @@ import { buildSkillInstructions, loopSkillBundles } from "../loopSkill";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
+import { LoopHeaderTitle } from "./LoopHeaderTitle";
 import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 import { LoopInstructionsFields } from "./LoopSkillFields";
+import { LoopSpaceBreadcrumb } from "./LoopSpaceBreadcrumb";
 import { LoopTriggerEditor } from "./LoopTriggerEditor";
 
 const VISIBILITY_OPTIONS: {
@@ -102,10 +105,7 @@ export function LoopForm({ loop }: LoopFormProps) {
   // Contexts are a channels surface; hide the attachment UI when channels are
   // off, unless this loop is already attached so the link stays visible and
   // detachable.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
+  const bluebirdEnabled = useBluebirdFlag();
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
   const showContextField = channelsEnabled || !!values.contextTarget;
@@ -133,10 +133,25 @@ export function LoopForm({ loop }: LoopFormProps) {
   ];
   const isLastStep = step === STEPS.length - 1;
 
+  // Building a loop for a space keeps a way back to it; without one the header
+  // still names the scene, it just has no parent to offer.
+  const spacesLayout = useChannelsLayout();
+  const contextTarget = values.contextTarget;
+  const headerLeaf = isEdit ? loop.name : "New loop";
   useSetHeaderContent(
-    <Text className="font-medium text-[13px]">
-      {isEdit ? `Edit ${loop.name}` : "New loop"}
-    </Text>,
+    useMemo(
+      () =>
+        spacesLayout && contextTarget ? (
+          <LoopSpaceBreadcrumb
+            folderId={contextTarget.folderId}
+            spaceName={contextTarget.name}
+            leafLabel={headerLeaf}
+          />
+        ) : (
+          <LoopHeaderTitle label={headerLeaf} />
+        ),
+      [spacesLayout, contextTarget, headerLeaf],
+    ),
   );
 
   const triggerEndpointPath =

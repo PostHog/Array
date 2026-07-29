@@ -108,4 +108,48 @@ describe("LoopsListViewPresentation", () => {
       expect(screen.queryByText("personal loop")).not.toBeInTheDocument(),
     );
   });
+
+  // With the shared page header the triggers sit in the header and the panels
+  // stay in the scrolling body — one Tabs root spanning both, so switching has
+  // to keep working across that split.
+  it("switches tabs when the trigger strip lives in the page header", async () => {
+    render(
+      <Theme>
+        <LoopsListViewPresentation
+          sharedPageHeader
+          loops={[
+            loop("personal", "personal"),
+            loop("teammate-team", "team", 2),
+          ]}
+          currentUserId={1}
+          onStartBlank={vi.fn()}
+          onStartFromTemplate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    const teamTab = screen.getByRole("tab", { name: "Team loops (1)" });
+    await userEvent.click(teamTab);
+
+    expect(teamTab).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(controlledPanel(teamTab)).getByText("team loop"),
+    ).toBeVisible();
+  });
+
+  it("hides the header trigger strip while loops are loading", () => {
+    render(
+      <Theme>
+        <LoopsListViewPresentation
+          sharedPageHeader
+          loops={[]}
+          isLoading
+          onStartBlank={vi.fn()}
+          onStartFromTemplate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+  });
 });

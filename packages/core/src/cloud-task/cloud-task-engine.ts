@@ -34,6 +34,7 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+const ARCHIVED_LOG_FETCH_TIMEOUT_MS = 15_000;
 const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
 const MCP_RELAY_METHODS_WITHOUT_APPROVAL = new Set([
   "initialize",
@@ -81,6 +82,7 @@ class BackendStreamError extends Error {
 
 interface TaskRunResponse {
   id: string;
+  log_url?: string | null;
   status: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
@@ -1117,7 +1119,10 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
     }
 
     if (isTerminalStatus(run.status)) {
-      const historicalEntries = await this.fetchAllSessionLogs(watcher);
+      let historicalEntries = await this.fetchAllSessionLogs(watcher);
+      if (historicalEntries?.length === 0 && run.log_url) {
+        historicalEntries = await this.fetchArchivedLogs(run.log_url);
+      }
       const terminalWatcher = this.watchers.get(key);
       if (!terminalWatcher || terminalWatcher !== watcher) return;
       if (watcher.failed) return;
@@ -2162,6 +2167,32 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       offset += page.entries.length;
+    }
+  }
+
+  private async fetchArchivedLogs(
+    logUrl: string,
+  ): Promise<StoredLogEntry[] | null> {
+    try {
+      const response = await this.streamFetch(logUrl, {
+        signal: AbortSignal.timeout(ARCHIVED_LOG_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      const content = await response.text();
+      if (!content.trim()) return [];
+      return content
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line) as StoredLogEntry];
+          } catch {
+            return [];
+          }
+        });
+    } catch (error) {
+      this.log.warn("Cloud task archived logs fetch error", { error });
+      return null;
     }
   }
 

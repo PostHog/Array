@@ -1,10 +1,11 @@
 import { Text } from "@components/text";
+import type { TaskAutomation } from "@posthog/api-client/posthog-client";
+import { formatAutomationScheduleSummary } from "@posthog/core/automations/automationSchedule";
+import { getAutomationTemplatePresentation } from "@posthog/core/automations/automationTemplatePresentation";
+import type { TaskRun } from "@posthog/shared";
 import { format, formatDistanceToNow } from "date-fns";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
-import type { TaskAutomation, TaskRun } from "../types";
-import { formatAutomationScheduleSummary } from "../utils/automationSchedule";
-import { getAutomationTemplatePresentation } from "../utils/automationTemplatePresentation";
 import { AutomationStatusBadge } from "./AutomationStatusBadge";
 
 interface AutomationItemProps {

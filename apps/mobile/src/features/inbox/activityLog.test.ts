@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
 import {
   attributionLabel,
+  taskRunLabel,
+} from "@posthog/core/inbox/activityLog";
+import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
+import { describe, expect, it } from "vitest";
+import {
   parseDiffLines,
   selectActivityArtefacts,
   shortSha,
-  taskRunLabel,
 } from "./activityLog";
-import type { ReportArtefact } from "./types";
 
-function commit(id: string, createdAt: string): ReportArtefact {
+function commit(id: string, createdAt: string): AnySignalReportArtefact {
   return {
     id,
     type: "commit",
@@ -22,7 +24,7 @@ function commit(id: string, createdAt: string): ReportArtefact {
   };
 }
 
-function taskRun(id: string, createdAt: string): ReportArtefact {
+function taskRun(id: string, createdAt: string): AnySignalReportArtefact {
   return {
     id,
     type: "task_run",
@@ -33,13 +35,13 @@ function taskRun(id: string, createdAt: string): ReportArtefact {
 
 describe("selectActivityArtefacts", () => {
   it("keeps only commit and task_run, sorted oldest-first", () => {
-    const artefacts: ReportArtefact[] = [
+    const artefacts: AnySignalReportArtefact[] = [
       taskRun("b", "2026-01-02T00:00:00Z"),
       {
         id: "x",
         type: "note",
         created_at: "2026-01-03T00:00:00Z",
-        content: {},
+        content: { note: "" },
       },
       commit("a", "2026-01-01T00:00:00Z"),
     ];
@@ -51,12 +53,12 @@ describe("selectActivityArtefacts", () => {
   });
 
   it("returns an empty list when there is no activity", () => {
-    const artefacts: ReportArtefact[] = [
+    const artefacts: AnySignalReportArtefact[] = [
       {
         id: "x",
         type: "note",
         created_at: "2026-01-01T00:00:00Z",
-        content: {},
+        content: { note: "" },
       },
     ];
     expect(selectActivityArtefacts(artefacts)).toEqual([]);

@@ -1,17 +1,25 @@
 import { isNotification, POSTHOG_NOTIFICATIONS } from "./acpNotifications";
 import type {
-  PortableSessionEvent,
   PortableSessionNotification,
   PortableSessionToolCallStatus,
+  PortableSessionUpdateEvent,
 } from "./portableSessionEvents";
 
 export type SessionActivityPhase = "idle" | "connecting" | "working";
+
+export type SessionActivityEvent =
+  | PortableSessionUpdateEvent
+  | {
+      type: "acp_message";
+      ts: number;
+      message: unknown;
+    };
 
 export interface SessionActivityState {
   isPromptPending?: boolean;
   awaitingAgentOutput?: boolean;
   terminalStatus?: "failed" | "completed";
-  events?: readonly PortableSessionEvent[];
+  events?: readonly SessionActivityEvent[];
 }
 
 function isQuestionNotification(
@@ -44,7 +52,7 @@ function isPendingQuestionStatus(
 }
 
 export function isSessionAwaitingUserInput(
-  events: readonly PortableSessionEvent[] = [],
+  events: readonly SessionActivityEvent[] = [],
 ): boolean {
   let awaitingUserInput = false;
   const questionStatuses = new Map<
@@ -87,7 +95,13 @@ export function isSessionAwaitingUserInput(
       continue;
     }
 
-    const method = "method" in event.message ? event.message.method : undefined;
+    const method =
+      typeof event.message === "object" &&
+      event.message !== null &&
+      "method" in event.message &&
+      typeof event.message.method === "string"
+        ? event.message.method
+        : undefined;
     if (method === "_posthog/awaiting_user_input") {
       awaitingUserInput = true;
       continue;
@@ -107,7 +121,7 @@ export function isSessionAwaitingUserInput(
 }
 
 export function countUserMessages(
-  events: readonly PortableSessionEvent[] = [],
+  events: readonly SessionActivityEvent[] = [],
 ): number {
   return events.filter(
     (event) =>

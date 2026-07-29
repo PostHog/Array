@@ -2252,6 +2252,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       settingsManager.getSettings().model,
       meta?.model,
     ]);
+    modelOptions.currentModelId = resolvedModelId;
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
       this.getContextWindowForModel(resolvedModelId);
