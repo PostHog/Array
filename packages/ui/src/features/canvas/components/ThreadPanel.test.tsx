@@ -72,8 +72,6 @@ describe("ThreadMessageRow", () => {
 
   const multiline = "First line\n\nSecond line with more detail";
 
-  // `preview` only adds a CSS clamp, so the full message is in the DOM either
-  // way. What's worth pinning is that no code path slices the text away.
   it("renders the whole message, so a comment is never cut short", () => {
     render(
       <ThreadMessageRow
@@ -95,6 +93,30 @@ describe("ThreadMessageRow", () => {
     expect(
       screen.getByText(/Second line with more detail/),
     ).toBeInTheDocument();
+  });
+
+  it("shows the full message in timeline previews", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: multiline,
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        preview
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    const body = screen.getByText(/Second line with more detail/).parentElement;
+    expect(body).toHaveClass("whitespace-pre-wrap", "break-words");
+    expect(body).not.toHaveClass("line-clamp-1");
   });
 });
 
