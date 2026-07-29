@@ -109,7 +109,7 @@ function UserMessageRow({
           <ThreadItemAuthor className="text-[13px]">{name}</ThreadItemAuthor>
           <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-normal text-[13px]">
+        <ThreadItemBody className="mt-1.5 whitespace-pre-wrap break-words text-[13px]">
           <MentionText content={content} />
         </ThreadItemBody>
       </ThreadItemContent>

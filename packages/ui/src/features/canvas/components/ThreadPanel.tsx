@@ -78,7 +78,7 @@ export function ThreadMessageRow({
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
   canForward: boolean;
-  /** Timeline rows show one truncated line; the Comments tab shows it all. */
+  /** Timeline rows preserve authored whitespace while showing the full message. */
   preview?: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
@@ -101,7 +101,7 @@ export function ThreadMessageRow({
         <ThreadItemBody
           className={cn(
             "mt-1.5 text-[13px]",
-            preview && "line-clamp-1 whitespace-normal",
+            preview && "whitespace-pre-wrap break-words",
           )}
         >
           <MentionText

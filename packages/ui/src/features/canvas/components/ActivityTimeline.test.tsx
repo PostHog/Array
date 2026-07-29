@@ -88,9 +88,9 @@ describe("ActivityTimeline", () => {
     renderTimeline();
 
     expect(screen.queryAllByRole("button")).toHaveLength(0);
-    expect(screen.getByText(/first thing/).closest("[data-slot]")).toHaveClass(
-      "whitespace-normal",
-    );
+    const body = screen.getByText(/first thing/).closest("[data-slot]");
+    expect(body).toHaveClass("whitespace-pre-wrap", "break-words");
+    expect(body).not.toHaveClass("line-clamp-1");
   });
 
   it("renders structured references natively in conversation previews", () => {
