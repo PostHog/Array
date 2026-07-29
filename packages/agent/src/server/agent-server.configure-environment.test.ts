@@ -183,6 +183,20 @@ describe("AgentServer.configureEnvironment", () => {
     },
   );
 
+  it("tags as onboarding when a wizard cloud run reaches the gateway", () => {
+    const env = buildServer("background").configureEnvironment({
+      isInternal: false,
+      originProduct: "onboarding",
+    });
+
+    expect(env.anthropicBaseUrl).toBe(
+      "https://gateway.us.posthog.com/onboarding",
+    );
+    expect(env.openaiBaseUrl).toBe(
+      "https://gateway.us.posthog.com/onboarding/v1",
+    );
+  });
+
   // The codex/OpenAI path sets provider http_headers rather than
   // ANTHROPIC_CUSTOM_HEADERS, so the same task metadata must be exposed as a
   // record — including team_id, which the Claude path adds separately in
