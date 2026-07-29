@@ -3,8 +3,6 @@ import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
-import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
-import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
@@ -79,22 +77,9 @@ export function LoopsListView() {
   // presentation — that renders bare in tests and Storybook, with no container
   // to resolve the flags service from.
   const bluebird = useBluebirdFlag();
-  const authenticatedClient = useOptionalAuthenticatedClient();
-  const {
-    data: currentUser,
-    isLoading: currentUserLoading,
-    isError: currentUserError,
-    error: currentUserQueryError,
-  } = useCurrentUser({ client: authenticatedClient });
   const limits = useLoopLimits();
   const limitReason =
     limits?.atLimit === true ? loopLimitReason(limits.max) : null;
-  let listError: unknown = null;
-  if (isError) {
-    listError = error;
-  } else if (currentUserError) {
-    listError = currentUserQueryError;
-  }
 
   // The page names itself (in-page header / title block), so it pushes no
   // breadcrumb row — only a space-attached loop scene has a parent to show.
@@ -148,9 +133,8 @@ export function LoopsListView() {
     <LoopsListViewPresentation
       sharedPageHeader={bluebird}
       loops={allLoops}
-      currentUserId={currentUser?.id ?? null}
-      isLoading={isLoading || currentUserLoading}
-      error={listError}
+      isLoading={isLoading}
+      error={isError ? error : null}
       limitReason={limitReason}
       members={members}
       membersLoading={membersLoading}
@@ -169,7 +153,6 @@ interface LoopsListViewPresentationProps {
   /** Bluebird: title/description/CTA move into the shared full-bleed header. */
   sharedPageHeader?: boolean;
   loops: LoopSchemas.Loop[];
-  currentUserId?: number | null;
   isLoading?: boolean;
   error?: unknown;
   limitReason?: string | null;
@@ -187,7 +170,6 @@ interface LoopsListViewPresentationProps {
 export function LoopsListViewPresentation({
   sharedPageHeader = false,
   loops,
-  currentUserId = null,
   isLoading = false,
   error = null,
   limitReason = null,
@@ -201,16 +183,8 @@ export function LoopsListViewPresentation({
   onResumeBuilderSession,
   onBuilderSessionStopped,
 }: LoopsListViewPresentationProps) {
-  const personalLoops = loops.filter(
-    (loop) =>
-      loop.visibility === "personal" ||
-      (currentUserId !== null && loop.created_by_id === currentUserId),
-  );
-  const teamLoops = loops.filter(
-    (loop) =>
-      loop.visibility === "team" &&
-      (currentUserId === null || loop.created_by_id !== currentUserId),
-  );
+  const personalLoops = loops.filter((loop) => loop.visibility === "personal");
+  const teamLoops = loops.filter((loop) => loop.visibility === "team");
 
   const createButton = (
     <Button
