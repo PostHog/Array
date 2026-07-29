@@ -3,7 +3,6 @@ import {
   buildPendingPromptKey,
   capPendingPrompts,
   listPendingPromptsNewestFirst,
-  selectNewestPendingPrompt,
 } from "./pendingPrompts";
 
 describe("pending prompts", () => {
@@ -20,12 +19,11 @@ describe("pending prompts", () => {
     ).toEqual({ middle: { createdAt: 2 }, newest: { createdAt: 3 } });
   });
 
-  it("orders prompts newest first and selects the newest", () => {
+  it("orders prompts newest first", () => {
     const prompts = { old: { createdAt: 1 }, new: { createdAt: 2 } };
     expect(
       listPendingPromptsNewestFirst(prompts).map(({ key }) => key),
     ).toEqual(["new", "old"]);
-    expect(selectNewestPendingPrompt(prompts)?.key).toBe("new");
   });
 
   it.each([

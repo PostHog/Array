@@ -141,7 +141,7 @@ export function TinderView({
   const themeColors = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
+  const { configOptions, isConfigReady } = useCloudTaskConfigOptions("claude");
   const model = getModelConfigOption(configOptions).currentValue;
 
   // Store state
@@ -496,7 +496,7 @@ export function TinderView({
                     setExpandedReport(null);
                   }}
                   className="h-16 w-16 items-center justify-center rounded-full border-2 border-status-success bg-status-success/10 active:bg-status-success/20"
-                  disabled={creating || !hasLiveConfig}
+                  disabled={creating || !isConfigReady}
                   hitSlop={8}
                 >
                   {creating ? (

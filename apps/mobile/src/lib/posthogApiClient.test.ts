@@ -97,11 +97,27 @@ describe("createPostHogApiClient", () => {
       teamId: 123,
       options: {
         appVersion: "1.2.3",
-        fetch: mocks.expoFetch,
         githubConnectFrom: "posthog_mobile",
         userAgent: "posthog/mobile.hog.dev; version: 1.2.3",
       },
     });
+  });
+
+  it("converts URL inputs before calling Expo fetch", async () => {
+    const { createPostHogApiClient } = await import("./posthogApiClient");
+    createPostHogApiClient();
+    const mobileFetch = mocks.instances[0]?.options.fetch as typeof fetch;
+    const init = { method: "GET" };
+
+    await mobileFetch(
+      new URL("https://us.posthog.com/api/projects/2/tasks/"),
+      init,
+    );
+
+    expect(mocks.expoFetch).toHaveBeenCalledWith(
+      "https://us.posthog.com/api/projects/2/tasks/",
+      init,
+    );
   });
 
   it("falls back to the Expo config version", async () => {

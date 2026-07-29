@@ -41,6 +41,7 @@ export function useTrackInboxViewed(): void {
         totalCount,
         tabCounts: counts,
         filters: {
+          surface: "desktop",
           sourceProductFilter,
           priorityFilter,
           searchQuery,

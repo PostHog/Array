@@ -3,6 +3,8 @@ import type {
   CloudTaskPermissionRequestUpdate,
 } from "@posthog/shared";
 
+export type TerminalStatus = "completed" | "failed" | "stopped";
+
 export interface SessionNotificationAttachment {
   kind: "image" | "document";
   uri: string;

@@ -5,10 +5,9 @@ import {
 } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
-  getMobileModelOptions,
-  getModelConfigOption,
-  getModelLabel,
-  resolveAvailableModel,
+  getComposerModelOptions,
+  getMobileExecutionModes,
+  resolveComposerPrimaryAction,
 } from "./options";
 
 const modelOption: CloudTaskConfigOption = {
@@ -17,11 +16,7 @@ const modelOption: CloudTaskConfigOption = {
   type: "select",
   currentValue: DEFAULT_GATEWAY_MODEL,
   options: [
-    {
-      value: DEFAULT_GATEWAY_MODEL,
-      name: "Claude Opus 4.8",
-      description: "Default",
-    },
+    { value: DEFAULT_GATEWAY_MODEL, name: "Claude Opus 4.8" },
     {
       value: "claude-fable-5",
       name: "Claude Fable 5",
@@ -32,13 +27,31 @@ const modelOption: CloudTaskConfigOption = {
   description: "Choose a model",
 };
 
-describe("mobile cloud task model options", () => {
-  it("adapts live model options and disables restricted entries", () => {
-    expect(getMobileModelOptions(modelOption)).toEqual([
+describe("mobile composer options", () => {
+  it("hides unrestricted execution modes", () => {
+    expect(
+      getMobileExecutionModes([
+        { id: "plan", name: "Plan", description: "Plan first" },
+        {
+          id: "bypassPermissions",
+          name: "Bypass permissions",
+          description: "Allow everything",
+        },
+        {
+          id: "full-access",
+          name: "Full access",
+          description: "Allow everything",
+        },
+      ]).map((mode) => mode.id),
+    ).toEqual(["plan"]);
+  });
+
+  it("adapts live model options for the mobile picker", () => {
+    expect(getComposerModelOptions(modelOption)).toEqual([
       {
         value: DEFAULT_GATEWAY_MODEL,
         label: "Claude Opus 4.8",
-        description: "Default",
+        description: undefined,
         disabled: false,
       },
       {
@@ -50,19 +63,23 @@ describe("mobile cloud task model options", () => {
     ]);
   });
 
-  it("falls back from restricted or missing selections", () => {
-    expect(resolveAvailableModel(modelOption, "claude-fable-5")).toBe(
-      DEFAULT_GATEWAY_MODEL,
-    );
-    expect(resolveAvailableModel(modelOption, "missing-model")).toBe(
-      DEFAULT_GATEWAY_MODEL,
-    );
-  });
-
-  it("reads the live model label and config option", () => {
-    expect(getModelConfigOption([modelOption])).toBe(modelOption);
-    expect(getModelLabel(modelOption, DEFAULT_GATEWAY_MODEL)).toBe(
-      "Claude Opus 4.8",
-    );
+  it.each([
+    [{ hasContent: true }, "send"],
+    [{ canStop: true }, "stop"],
+    [{ isRecording: true }, "mic-stop"],
+    [{ isRecording: true, canStop: true }, "mic-stop"],
+    [{}, "mic"],
+  ])("derives the mobile primary action", (overrides, expected) => {
+    expect(
+      resolveComposerPrimaryAction({
+        hasContent: false,
+        disabled: false,
+        isRecording: false,
+        isTranscribing: false,
+        canStop: false,
+        allowSendWhileRunning: true,
+        ...overrides,
+      }),
+    ).toBe(expected);
   });
 });

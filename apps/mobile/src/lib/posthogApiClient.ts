@@ -11,6 +11,16 @@ const MOBILE_GITHUB_CONNECT_FROM = "posthog_mobile";
 let posthogApiClient: PostHogAPIClient | null = null;
 let posthogApiHost: string | null = null;
 
+const mobileFetch: FetchImplementation = (input, init) =>
+  fetch(
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url,
+    init,
+  );
+
 function getAppVersion(): string {
   return (
     Application.nativeApplicationVersion ??
@@ -63,7 +73,7 @@ export function createPostHogApiClient(): PostHogAPIClient {
     projectId,
     {
       appVersion,
-      fetch: fetch as FetchImplementation,
+      fetch: mobileFetch,
       githubConnectFrom: MOBILE_GITHUB_CONNECT_FROM,
       userAgent: `posthog/mobile.hog.dev; version: ${appVersion}`,
     },

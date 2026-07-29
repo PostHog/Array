@@ -1,3 +1,4 @@
+import type { ModeInfo } from "@posthog/core/sessions/executionModes";
 import {
   type CloudTaskConfigOption,
   isRestrictedModelOption,
@@ -10,19 +11,23 @@ export interface MobileModelOption {
   disabled: boolean;
 }
 
+export function getMobileExecutionModes(
+  modes: readonly ModeInfo[],
+): ModeInfo[] {
+  return modes.filter(
+    (mode) => mode.id !== "bypassPermissions" && mode.id !== "full-access",
+  );
+}
+
 export function getModelConfigOption(
   configOptions: readonly CloudTaskConfigOption[],
 ): CloudTaskConfigOption {
-  const modelOption = configOptions.find(
-    (option) => option.category === "model",
-  );
-  if (!modelOption) {
-    throw new Error("Cloud task model configuration is unavailable");
-  }
-  return modelOption;
+  const option = configOptions.find((item) => item.category === "model");
+  if (!option) throw new Error("Cloud task model configuration is unavailable");
+  return option;
 }
 
-export function getMobileModelOptions(
+export function getComposerModelOptions(
   modelOption: CloudTaskConfigOption,
 ): MobileModelOption[] {
   return modelOption.options.map((option) => ({
@@ -33,24 +38,37 @@ export function getMobileModelOptions(
   }));
 }
 
-export function getModelLabel(
-  modelOption: CloudTaskConfigOption,
-  value: string,
-): string {
-  return (
-    modelOption.options.find((option) => option.value === value)?.name ?? value
-  );
+export function getConfigOptionLabel(
+  options: ReadonlyArray<{ value: string; name: string }>,
+  value: string | undefined,
+): string | undefined {
+  return options.find((option) => option.value === value)?.name ?? value;
 }
 
-export function resolveAvailableModel(
-  modelOption: CloudTaskConfigOption,
-  value: string,
-): string {
-  const selectedOption = modelOption.options.find(
-    (option) => option.value === value,
-  );
-  if (selectedOption && !isRestrictedModelOption(selectedOption._meta)) {
-    return value;
-  }
-  return modelOption.currentValue;
+export type ComposerPrimaryAction =
+  | "send"
+  | "stop"
+  | "mic"
+  | "mic-stop"
+  | "disabled";
+
+export function resolveComposerPrimaryAction({
+  hasContent,
+  disabled,
+  isRecording,
+  isTranscribing,
+  canStop,
+  allowSendWhileRunning,
+}: {
+  hasContent: boolean;
+  disabled: boolean;
+  isRecording: boolean;
+  isTranscribing: boolean;
+  canStop: boolean;
+  allowSendWhileRunning: boolean;
+}): ComposerPrimaryAction {
+  if (disabled || isTranscribing) return "disabled";
+  if (isRecording) return "mic-stop";
+  if (canStop && (!allowSendWhileRunning || !hasContent)) return "stop";
+  return hasContent ? "send" : "mic";
 }
