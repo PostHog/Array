@@ -216,12 +216,16 @@ export class TitleGeneratorService {
       );
 
       const text = result.content.trim();
-      const titleMatch = text.match(/^TITLE:\s*(.+?)(?:\n|$)/m);
       const summaryMatch = text.match(/^SUMMARY:\s*([\s\S]+)$/m);
 
-      const generatedTitle =
-        titleMatch?.[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
-      const title = githubPrTitle ?? generatedTitle.slice(0, 255);
+      const title =
+        githubPrTitle ??
+        text
+          .match(/^TITLE:\s*(.+?)(?:\n|$)/m)?.[1]
+          ?.trim()
+          .replace(/^["']|["']$/g, "")
+          .slice(0, 255) ??
+        "";
       const summary = summaryMatch?.[1]?.trim() ?? "";
 
       if (!title && !summary) return null;
