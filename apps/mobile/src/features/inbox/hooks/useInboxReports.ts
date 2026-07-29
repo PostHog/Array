@@ -7,6 +7,7 @@ import {
   INBOX_DISMISSED_STATUS_FILTER,
   INBOX_REFETCH_INTERVAL_MS,
 } from "@posthog/core/inbox/reportFiltering";
+import { isRestorableReport } from "@posthog/core/inbox/reportMembership";
 import type { DismissalReasonOptionValue } from "@posthog/shared";
 import type {
   AvailableSuggestedReviewersResponse,
@@ -31,7 +32,6 @@ import { useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useInboxFilterStore } from "../stores/inboxFilterStore";
-import { isRestorableReport } from "../utils";
 
 export const inboxKeys = {
   all: ["inbox", "signal-reports"] as const,

@@ -1,3 +1,4 @@
+import type { LlmSkillListItem } from "@posthog/api-client";
 import { CaretDown, CaretUp } from "phosphor-react-native";
 import { useState } from "react";
 import {
@@ -8,10 +9,9 @@ import {
 } from "react-native";
 import { Text } from "@/components/text";
 import { useThemeColors } from "@/lib/theme";
-import type { SkillStoreListEntry } from "../skills/types";
 
 interface AutomationSkillCardProps {
-  skill: SkillStoreListEntry;
+  skill: LlmSkillListItem;
   onPress: (skillName: string) => void;
 }
 

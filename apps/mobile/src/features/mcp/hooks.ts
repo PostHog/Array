@@ -1,22 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  authorizeMcpInstallation,
-  getMcpInstallationTools,
-  getMcpRecommendedServers,
-  getMcpServerInstallations,
-  installCustomMcpServer,
-  installMcpTemplate,
-  refreshMcpInstallationTools,
-  uninstallMcpServer,
-  updateMcpServerInstallation,
-  updateMcpToolApproval,
-} from "./api";
 import type {
   InstallCustomMcpServerOptions,
   InstallMcpTemplateOptions,
   McpApprovalState,
   UpdateMcpServerInstallationOptions,
-} from "./types";
+} from "@posthog/api-client/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 
 const mcpKeys = {
   all: ["mcp"] as const,
@@ -29,7 +18,7 @@ const mcpKeys = {
 export function useMcpMarketplace() {
   return useQuery({
     queryKey: mcpKeys.marketplace(),
-    queryFn: getMcpRecommendedServers,
+    queryFn: () => getPostHogApiClient().getMcpServers(),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -37,7 +26,7 @@ export function useMcpMarketplace() {
 export function useMcpInstallations() {
   return useQuery({
     queryKey: mcpKeys.installations(),
-    queryFn: getMcpServerInstallations,
+    queryFn: () => getPostHogApiClient().getMcpServerInstallations(),
     staleTime: 30 * 1000,
   });
 }
@@ -45,7 +34,8 @@ export function useMcpInstallations() {
 export function useMcpInstallationTools(installationId: string | null) {
   return useQuery({
     queryKey: mcpKeys.tools(installationId ?? ""),
-    queryFn: () => getMcpInstallationTools(installationId as string),
+    queryFn: () =>
+      getPostHogApiClient().getMcpInstallationTools(installationId as string),
     enabled: !!installationId,
     staleTime: 30 * 1000,
   });
@@ -61,7 +51,7 @@ export function useInstallCustomMcpServer() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (options: InstallCustomMcpServerOptions) =>
-      installCustomMcpServer(options),
+      getPostHogApiClient().installCustomMcpServer(options),
     onSuccess: () => invalidateInstallations(queryClient),
   });
 }
@@ -70,7 +60,7 @@ export function useInstallMcpTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (options: InstallMcpTemplateOptions) =>
-      installMcpTemplate(options),
+      getPostHogApiClient().installMcpTemplate(options),
     onSuccess: () => invalidateInstallations(queryClient),
   });
 }
@@ -84,7 +74,11 @@ export function useUpdateMcpServerInstallation() {
     }: {
       installationId: string;
       updates: UpdateMcpServerInstallationOptions;
-    }) => updateMcpServerInstallation(installationId, updates),
+    }) =>
+      getPostHogApiClient().updateMcpServerInstallation(
+        installationId,
+        updates,
+      ),
     onSuccess: () => invalidateInstallations(queryClient),
   });
 }
@@ -92,15 +86,19 @@ export function useUpdateMcpServerInstallation() {
 export function useUninstallMcpServer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (installationId: string) => uninstallMcpServer(installationId),
+    mutationFn: (installationId: string) =>
+      getPostHogApiClient().uninstallMcpServer(installationId),
     onSuccess: () => invalidateInstallations(queryClient),
   });
 }
 
 export function useAuthorizeMcpInstallation() {
   return useMutation({
-    mutationFn: (args: Parameters<typeof authorizeMcpInstallation>[0]) =>
-      authorizeMcpInstallation(args),
+    mutationFn: (args: {
+      installation_id: string;
+      install_source?: "posthog" | "posthog-code" | "posthog-mobile";
+      posthog_code_callback_url?: string;
+    }) => getPostHogApiClient().authorizeMcpInstallation(args),
   });
 }
 
@@ -108,7 +106,7 @@ export function useRefreshMcpInstallationTools() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (installationId: string) =>
-      refreshMcpInstallationTools(installationId),
+      getPostHogApiClient().refreshMcpInstallationTools(installationId),
     onSuccess: (_, installationId) => {
       queryClient.invalidateQueries({
         queryKey: mcpKeys.tools(installationId),
@@ -129,7 +127,12 @@ export function useUpdateMcpToolApproval() {
       installationId: string;
       toolName: string;
       approval_state: McpApprovalState;
-    }) => updateMcpToolApproval(installationId, toolName, approval_state),
+    }) =>
+      getPostHogApiClient().updateMcpToolApproval(
+        installationId,
+        toolName,
+        approval_state,
+      ),
     onSuccess: (_, { installationId }) => {
       queryClient.invalidateQueries({
         queryKey: mcpKeys.tools(installationId),

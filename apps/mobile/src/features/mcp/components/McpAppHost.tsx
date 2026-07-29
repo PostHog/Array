@@ -1,7 +1,7 @@
 import { Text } from "@components/text";
 import type { McpUiDisplayMode } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { isSafeExternalUrl } from "@posthog/shared";
+import { isSafeExternalUrl, parseMcpToolName } from "@posthog/shared";
 import * as WebBrowser from "expo-web-browser";
 import { ArrowsIn, ArrowsOut, Warning } from "phosphor-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -22,7 +22,6 @@ import { sandboxProxyHtml } from "../sandbox/sandboxProxyHtml";
 import { useMcpUiResource } from "../sandbox/useMcpUiResource";
 import { type Phase, useMobileAppBridge } from "../sandbox/useMobileAppBridge";
 import { getMcpConnectionManager } from "../service";
-import { parseMcpToolName } from "../utils/mcpToolName";
 
 interface McpAppHostProps {
   /** Raw tool name from the agent — `mcp__<server>__<tool>`. */
@@ -60,14 +59,12 @@ export function McpAppHost(props: McpAppHostProps) {
   const installations = useMcpInstallations();
   const installation = useMemo(() => {
     if (!parsed) return null;
-    return (
-      installations.data?.find((i) => i.name === parsed.serverName) ?? null
-    );
+    return installations.data?.find((i) => i.name === parsed.server) ?? null;
   }, [installations.data, parsed]);
 
   const uiResource = useMcpUiResource({
     installation,
-    toolName: parsed?.toolName ?? "",
+    toolName: parsed?.tool ?? "",
   });
 
   const webViewRef = useRef<WebView | null>(null);
@@ -122,7 +119,7 @@ export function McpAppHost(props: McpAppHostProps) {
   const { handleWebViewMessage } = useMobileAppBridge({
     webViewRef,
     uiResource: uiResource.data?.resource ?? null,
-    serverName: parsed?.serverName ?? "",
+    serverName: parsed?.server ?? "",
     toolDefinition: uiResource.data?.tool ?? null,
     toolInput: props.toolArgs ?? null,
     existingToolResult:

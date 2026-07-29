@@ -1,10 +1,13 @@
 import { Text } from "@components/text";
+import type {
+  McpRecommendedServer,
+  McpServerInstallation,
+} from "@posthog/api-client/types";
+import { isStdioMcpServer } from "@posthog/core/mcp-servers/presentation";
 import { CaretRight, Lock, Warning } from "phosphor-react-native";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import type { McpRecommendedServer, McpServerInstallation } from "../types";
-import { isStdioServer } from "../types";
 import { ServerIcon } from "./ServerIcon";
 
 interface McpServerRowProps {
@@ -121,7 +124,7 @@ export function recommendedToRowProps(
     title: template.name,
     description: template.description,
     authType: template.auth_type,
-    isStdio: isStdioServer(template),
+    isStdio: isStdioMcpServer(template),
     installed: installedNames.has(template.name),
     iconDomain: template.icon_domain,
     serverUrl: template.url,
@@ -137,7 +140,7 @@ export function installationToRowProps(
     title: installation.display_name || installation.name,
     subtitle: installation.url,
     authType: installation.auth_type,
-    isStdio: isStdioServer(installation),
+    isStdio: isStdioMcpServer(installation),
     needsReauth: installation.needs_reauth,
     installed: true,
     iconDomain: installation.icon_domain,

@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import { isRestorableReport } from "@posthog/core/inbox/reportMembership";
 import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
 import { dismissalReasonLabel } from "@posthog/shared";
 import type { SignalReport } from "@posthog/shared/domain-types";
@@ -14,7 +15,7 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import { useArchivedReports, useRestoreReport } from "../hooks/useInboxReports";
-import { formatReportTimestamp, isRestorableReport } from "../utils";
+import { formatReportTimestamp } from "../utils";
 
 interface ArchivedReportListProps {
   onReportPress?: (report: SignalReport) => void;
