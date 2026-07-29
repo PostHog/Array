@@ -17,6 +17,8 @@ import type {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
+  THREAD_GUTTER_CLASS,
+  THREAD_TEXT_CLASS,
   ThreadArtifactRow,
   ThreadMessageRow,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
@@ -42,11 +44,9 @@ function ActivityEventRow({
 }) {
   return (
     <div className="flex items-center gap-2 py-1.5 pr-2 pl-2">
-      <div className="flex w-10 shrink-0 justify-end">
-        <div className="flex w-[2.35rem] justify-center">{node}</div>
-      </div>
-      <span className="min-w-0 truncate text-[13px]">
-        <span className="font-medium text-gray-12">{title}</span>
+      <div className="flex w-10 shrink-0 justify-center">{node}</div>
+      <span className={`min-w-0 truncate ${THREAD_TEXT_CLASS}`}>
+        <span className="font-semibold text-gray-12">{title}</span>
         {action && <span className="text-muted-foreground"> {action}</span>}
       </span>
       <ThreadTimestamp dateTime={timestamp} />
@@ -73,18 +73,18 @@ function UserMessageRow({
 }) {
   return (
     <ThreadItem className="rounded-none">
-      <ThreadItemGutter>
-        <UserAvatar user={author} size="lg" className="sticky top-2" />
+      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+        <UserAvatar user={author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>
+          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
             {author ? userDisplayName(author) : "You"}
           </ThreadItemAuthor>
           <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        <ThreadItemBody>
-          <span className="line-clamp-4 whitespace-pre-wrap break-words text-[13px]">
+        <ThreadItemBody className={THREAD_TEXT_CLASS}>
+          <span className="line-clamp-4 whitespace-pre-wrap break-words">
             {content}
           </span>
         </ThreadItemBody>
@@ -177,6 +177,7 @@ export function ActivityTimeline({
             <ThreadArtifactRow
               artifact={row.artifact}
               createdAt={row.message.created_at}
+              taskId={task.id}
             />
           ),
       });
@@ -192,6 +193,7 @@ export function ActivityTimeline({
           <ThreadArtifactRow
             artifact={{ kind: "pr", url: outputPr }}
             createdAt={task.updated_at}
+            taskId={task.id}
           />
         ),
       });
@@ -246,9 +248,11 @@ export function ActivityTimeline({
 
   return (
     <div className="relative">
+      {/* Every row centers its node in a 2.5rem gutter inset by the row's
+          0.5rem padding, so the line runs through 0.5 + 2.5/2 = 1.75rem. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute top-4 bottom-4 left-[1.825rem] w-px bg-border"
+        className="pointer-events-none absolute top-4 bottom-4 left-[1.75rem] w-px bg-border"
       />
       <div className="relative z-10">
         <ThreadItemGroup>

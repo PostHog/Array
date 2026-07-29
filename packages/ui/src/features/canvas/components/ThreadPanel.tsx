@@ -17,6 +17,7 @@ import {
   AvatarFallback,
   Badge,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -52,6 +53,7 @@ import { MentionText } from "@posthog/ui/features/canvas/components/MentionText"
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useThreadConversation } from "@posthog/ui/features/canvas/hooks/useThreadConversation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
@@ -60,6 +62,14 @@ import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+
+/** One text size for the whole pane: an author's name reads at the same size as
+ *  the message under it, so no row looks like a heading over its own content. */
+export const THREAD_TEXT_CLASS = "text-[13px]";
+
+/** Timeline nodes are all `sm` avatars / `size-6` bubbles, centered in the
+ *  2.5rem gutter so every row's node sits on the timeline's vertical line. */
+export const THREAD_GUTTER_CLASS = "justify-center";
 
 export function ThreadMessageRow({
   message,
@@ -83,15 +93,17 @@ export function ThreadMessageRow({
 
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <UserAvatar user={message.author} size="lg" className="sticky top-2" />
+      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+        <UserAvatar user={message.author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
+            {userDisplayName(message.author)}
+          </ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody className={THREAD_TEXT_CLASS}>
           <MentionText
             content={message.content}
             currentUserEmail={currentUserEmail}
@@ -159,11 +171,17 @@ function ArtifactCardButton({
   title,
   detail,
   onOpen,
+  onOpenExternal,
+  externalLabel,
 }: {
   icon: React.ReactNode;
   title: string;
   detail?: string | null;
   onOpen?: () => void;
+  /** Renders a trailing button that leaves the app instead of opening the
+   *  artifact in place. Absent when there is nowhere safe to send the user. */
+  onOpenExternal?: () => void;
+  externalLabel?: string;
 }) {
   const body = (
     <>
@@ -174,19 +192,40 @@ function ArtifactCardButton({
       )}
     </>
   );
-  const cardClass =
-    "flex w-fit max-w-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px]";
-  if (!onOpen) {
-    return <span className={cardClass}>{body}</span>;
-  }
+  const innerClass = "flex min-w-0 items-center gap-2 px-2 py-1.5";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`${cardClass} text-left transition-colors hover:bg-gray-3`}
+    // overflow-hidden so each half's hover fill is clipped to the card's radius.
+    <div
+      className={cn(
+        "flex w-fit max-w-full items-center overflow-hidden rounded-md border border-border bg-muted",
+        THREAD_TEXT_CLASS,
+      )}
     >
-      {body}
-    </button>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            innerClass,
+            "text-left transition-colors hover:bg-gray-3",
+          )}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className={innerClass}>{body}</span>
+      )}
+      {onOpenExternal && (
+        <button
+          type="button"
+          onClick={onOpenExternal}
+          aria-label={externalLabel}
+          className="flex shrink-0 items-center self-stretch border-border border-l px-1.5 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
+        >
+          <ArrowSquareOutIcon size={12} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -222,7 +261,7 @@ function CanvasArtifactCard({
   );
 }
 
-function PrArtifactCard({ url }: { url: string }) {
+function PrArtifactCard({ url, taskId }: { url: string; taskId: string }) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   return (
     <ArtifactCardButton
@@ -236,7 +275,9 @@ function PrArtifactCard({ url }: { url: string }) {
       }
       title={title}
       detail={stateLabel}
-      onOpen={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
+      onOpen={safeUrl ? () => openPrInReview(taskId, safeUrl) : undefined}
+      onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
+      externalLabel={`Open ${title} on GitHub`}
     />
   );
 }
@@ -244,31 +285,33 @@ function PrArtifactCard({ url }: { url: string }) {
 export function ThreadArtifactRow({
   artifact,
   createdAt,
+  taskId,
 }: {
   artifact: ThreadArtifact;
   createdAt: string;
+  taskId: string;
 }) {
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
+      <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
+        <Avatar size="sm" className="sticky top-2">
           <AvatarFallback>
-            <RobotIcon size={14} />
+            <RobotIcon size={12} />
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>
+          <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
           <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody className={THREAD_TEXT_CLASS}>
           {artifact.kind === "canvas" ? (
             <CanvasArtifactCard name={artifact.name} url={artifact.url} />
           ) : (
-            <PrArtifactCard url={artifact.url} />
+            <PrArtifactCard url={artifact.url} taskId={taskId} />
           )}
         </ThreadItemBody>
       </ThreadItemContent>
@@ -343,6 +386,7 @@ function ThreadPanelHeader({
 
 export function ThreadTimeline({
   timeline,
+  taskId,
   isReady,
   currentUserUuid,
   currentUserEmail,
@@ -352,6 +396,7 @@ export function ThreadTimeline({
   onDelete,
 }: {
   timeline: ThreadTimelineRow<TaskThreadMessage>[];
+  taskId: string;
   isReady: boolean;
   currentUserUuid?: string;
   currentUserEmail?: string;
@@ -400,6 +445,7 @@ export function ThreadTimeline({
             key={row.message.id}
             artifact={row.artifact}
             createdAt={row.message.created_at}
+            taskId={taskId}
           />
         ),
       )}
@@ -513,6 +559,7 @@ function ThreadConversation({
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <ThreadTimeline
           timeline={timeline}
+          taskId={task.id}
           isReady={isReady}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}

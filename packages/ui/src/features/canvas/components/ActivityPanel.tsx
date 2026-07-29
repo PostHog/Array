@@ -189,6 +189,7 @@ function ActivityConversation({
       return (
         <ThreadTimeline
           timeline={commentRows}
+          taskId={taskId}
           isReady={isReady}
           currentUserUuid={currentUser?.uuid}
           currentUserEmail={currentUser?.email}
