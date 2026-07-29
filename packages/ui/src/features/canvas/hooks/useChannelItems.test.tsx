@@ -65,13 +65,14 @@ import { useChannelItems } from "./useChannelItems";
 
 const ME = { uuid: "me-uuid", first_name: "Ada", last_name: "Lovelace" };
 
-function canvas(id: string, createdBy?: string) {
+function canvas(id: string, createdBy?: string, createdByUuid?: string) {
   return {
     id,
     channelId: "c1",
     name: id,
     templateId: "freeform",
     createdBy,
+    createdByUuid,
     createdAt: 0,
     updatedAt: 1_000,
   };
@@ -126,8 +127,8 @@ describe("useChannelItems", () => {
     };
     mocks.dashboards = {
       dashboards: [
-        canvas("mine", "Ada Lovelace"),
-        canvas("theirs", "Grace Hopper"),
+        canvas("mine", "Ada Lovelace", ME.uuid),
+        canvas("theirs", "Grace Hopper", "other-uuid"),
       ],
       isLoading: false,
     };
