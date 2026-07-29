@@ -4,12 +4,16 @@ import {
   type LlmGatewayService,
 } from "@posthog/core/llm-gateway/llm-gateway";
 import { xmlToContent } from "@posthog/core/message-editor/content";
+import { isLoadingGithubRefTitle } from "@posthog/core/message-editor/githubIssueChip";
+import { parseGithubIssueUrl } from "@posthog/core/message-editor/githubIssueUrl";
 import { parseXmlAttrs } from "@posthog/core/message-editor/skillTags";
 import { getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   type FileReadClient,
+  type GithubPrTitleClient,
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
   type TitleGeneratorLogger,
 } from "./titleGeneratorIdentifiers";
@@ -25,14 +29,35 @@ const ATTACHED_FILES_REGEX =
   /^(?:(?:\d+\.\s*)?\[Attached files:[^\]]*\]|Attached files:.*)$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
-function getGithubPrTaskTitle(content: string): string | null {
+async function getGithubPrTaskTitle(
+  content: string,
+  githubPrTitleClient: GithubPrTitleClient,
+): Promise<string | null> {
   const match = content.match(/<github_pr\b([^>]*?)\s*\/>/);
   if (!match) return null;
 
-  const { number, title } = parseXmlAttrs(match[1]);
-  if (!/^\d+$/.test(number) || !title.trim()) return null;
+  const { number, title, url } = parseXmlAttrs(match[1]);
+  if (!/^\d+$/.test(number)) return null;
 
-  return `Review PR #${number}: ${title.trim()}`.slice(0, 255);
+  let resolvedTitle = title.trim();
+  if (!resolvedTitle || isLoadingGithubRefTitle(resolvedTitle)) {
+    const parsed = parseGithubIssueUrl(url);
+    if (parsed?.kind === "pr") {
+      try {
+        resolvedTitle =
+          (await githubPrTitleClient.getGithubPullRequestTitle({
+            owner: parsed.owner,
+            repo: parsed.repo,
+            number: parsed.number,
+          })) ?? "";
+      } catch {
+        resolvedTitle = "";
+      }
+    }
+  }
+
+  const suffix = resolvedTitle ? `: ${resolvedTitle}` : "";
+  return `Review PR #${number}${suffix}`.slice(0, 255);
 }
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:
@@ -148,6 +173,8 @@ export class TitleGeneratorService {
     private readonly llmGateway: LlmGatewayService,
     @inject(TITLE_GENERATOR_FILE_READ_CLIENT)
     private readonly fileReadClient: FileReadClient,
+    @inject(TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT)
+    private readonly githubPrTitleClient: GithubPrTitleClient,
     @inject(TITLE_GENERATOR_LOGGER)
     private readonly log: TitleGeneratorLogger,
   ) {}
@@ -200,7 +227,10 @@ export class TitleGeneratorService {
     content: string,
   ): Promise<TitleAndSummary | null> {
     try {
-      const githubPrTitle = getGithubPrTaskTitle(content);
+      const githubPrTitle = await getGithubPrTaskTitle(
+        content,
+        this.githubPrTitleClient,
+      );
       const prompt = getGenerationPrompt(content, !!githubPrTitle);
       const result = await this.llmGateway.prompt(
         [

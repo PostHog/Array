@@ -60,6 +60,7 @@ import {
 import { sessionsModule } from "@posthog/core/sessions/sessions.module";
 import {
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { SKILLS_WORKSPACE_CLIENT } from "@posthog/core/skills/identifiers";
@@ -450,6 +451,10 @@ container.bind(LLM_GATEWAY_SERVICE).toConstantValue({
 container.bind(TITLE_GENERATOR_FILE_READ_CLIENT).toConstantValue({
   readAbsoluteFile: (filePath: string) =>
     trpcClient.fs.readAbsoluteFile.query({ filePath }),
+});
+container.bind(TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT).toConstantValue({
+  getGithubPullRequestTitle: async (input) =>
+    (await hostTrpcClient.git.getGithubPullRequest.query(input))?.title ?? null,
 });
 container
   .bind(TITLE_GENERATOR_LOGGER)

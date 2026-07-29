@@ -241,6 +241,7 @@ describe("useChatTitleGenerator", () => {
     const generator = new TitleGeneratorService(
       { prompt } as unknown as LlmGatewayService,
       { readAbsoluteFile: vi.fn() },
+      { getGithubPullRequestTitle: vi.fn().mockResolvedValue(null) },
       { error: vi.fn() },
     );
     mockGenerateTitle.mockImplementation((content: string) =>

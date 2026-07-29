@@ -5,6 +5,7 @@ import type {
 } from "@posthog/core/sessions/cloudArtifactIdentifiers";
 import type {
   FileReadClient,
+  GithubPrTitleClient,
   TitleGeneratorLogger,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { TEAM_SKILLS_SERVICE } from "@posthog/core/skills/identifiers";
@@ -28,6 +29,26 @@ import { bundleExportedSkill } from "./web-skill-bundler";
 // is a synthetic key into the in-memory store (not a filesystem path).
 export const webReadFileAsBase64: ReadFileAsBase64 = (filePath: string) =>
   Promise.resolve(getWebAttachmentBase64(filePath));
+
+export const webGithubPrTitleClient: GithubPrTitleClient = {
+  getGithubPullRequestTitle: async ({ owner, repo, number }) => {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+      { headers: { Accept: "application/vnd.github+json" } },
+    );
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("title" in payload) ||
+      typeof payload.title !== "string"
+    ) {
+      return null;
+    }
+    return payload.title;
+  },
+};
 
 // A skill referenced in a cloud-task message is a TEAM skill (the web / menu
 // lists team skills). Fetch its content from the PostHog API and zip it in the

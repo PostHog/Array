@@ -4,19 +4,24 @@ import type { FileReadClient } from "./titleGeneratorIdentifiers";
 import { TitleGeneratorService } from "./titleGeneratorService";
 
 const readAbsoluteFile = vi.fn<FileReadClient["readAbsoluteFile"]>();
+const getGithubPullRequestTitle = vi.fn();
 const prompt = vi.fn();
 
 function makeService(): TitleGeneratorService {
   const gateway = { prompt } as unknown as LlmGatewayService;
   const fileReadClient: FileReadClient = { readAbsoluteFile };
-  return new TitleGeneratorService(gateway, fileReadClient, {
-    error: vi.fn(),
-  });
+  return new TitleGeneratorService(
+    gateway,
+    fileReadClient,
+    { getGithubPullRequestTitle },
+    { error: vi.fn() },
+  );
 }
 
 describe("enrichDescriptionWithFileContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getGithubPullRequestTitle.mockResolvedValue(null);
   });
 
   it("returns description unchanged when it contains real text", async () => {
@@ -197,6 +202,7 @@ describe("enrichDescriptionWithFileContent", () => {
 describe("generateTitleAndSummary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getGithubPullRequestTitle.mockResolvedValue(null);
   });
 
   it("truncates title to 255 chars", async () => {
@@ -283,6 +289,62 @@ describe("generateTitleAndSummary", () => {
 
     expect(result?.title).toBe('Review PR #123: Fix "login" & redirect');
   });
+
+  it.each(["Loading...", "Loading…"])(
+    "resolves the unresolved GitHub PR title %s",
+    async (title) => {
+      getGithubPullRequestTitle.mockResolvedValue(
+        "fix: enforce PR titles in task names",
+      );
+      prompt.mockResolvedValue({
+        content: "SUMMARY: Reviewing the existing pull request.",
+      });
+
+      const result = await makeService().generateTitleAndSummary(
+        `<github_pr number="123" title="${title}" url="https://github.com/org/repo/pull/123" />`,
+      );
+
+      expect(result?.title).toBe(
+        "Review PR #123: fix: enforce PR titles in task names",
+      );
+      expect(getGithubPullRequestTitle).toHaveBeenCalledWith({
+        owner: "org",
+        repo: "repo",
+        number: 123,
+      });
+      expect(prompt).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          system: expect.not.stringContaining("TITLE:"),
+        }),
+      );
+    },
+  );
+
+  it.each([
+    { name: "returns no title", resolve: () => Promise.resolve(null) },
+    {
+      name: "rejects",
+      resolve: () => Promise.reject(new Error("IPC disconnected")),
+    },
+  ])(
+    "uses a safe PR fallback when GitHub lookup $name",
+    async ({ resolve }) => {
+      getGithubPullRequestTitle.mockImplementation(resolve);
+      prompt.mockResolvedValue({
+        content: "SUMMARY: Reviewing the existing pull request.",
+      });
+
+      const result = await makeService().generateTitleAndSummary(
+        '<github_pr number="123" title="Loading..." url="https://github.com/org/repo/pull/123" />',
+      );
+
+      expect(result).toEqual({
+        title: "Review PR #123",
+        summary: "Reviewing the existing pull request.",
+      });
+    },
+  );
 
   it("returns null on error", async () => {
     prompt.mockRejectedValue(new Error("network error"));
