@@ -1,5 +1,7 @@
+import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import type { AcpMessage } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
+import type { BuildResult } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
@@ -16,6 +18,8 @@ interface ChatThreadFooterProps {
   promptStartedAt?: number | null;
   task?: Task;
   taskId?: string;
+  usage?: ContextUsage | null;
+  footerState?: Omit<BuildResult, "items">;
 }
 
 /**
@@ -34,11 +38,22 @@ export function ChatThreadFooter({
   promptStartedAt,
   task,
   taskId,
+  usage,
+  footerState,
 }: ChatThreadFooterProps) {
   const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
-  const contextUsage = useContextUsage(events);
-  const { lastTurnInfo, isCompacting, completedToolCallCount } =
-    useConversationItems(events, isPromptPending, { showDebugLogs });
+  const eventContextUsage = useContextUsage(events);
+  const contextUsage = usage === undefined ? eventContextUsage : usage;
+  const eventFooterState = useConversationItems(events, isPromptPending, {
+    showDebugLogs,
+  });
+  const lastTurnInfo =
+    footerState?.lastTurnInfo ?? eventFooterState.lastTurnInfo;
+  const isCompacting =
+    footerState?.isCompacting ?? eventFooterState.isCompacting;
+  const completedToolCallCount =
+    footerState?.completedToolCallCount ??
+    eventFooterState.completedToolCallCount;
   const pendingPermissions = usePendingPermissionsForTask(taskId ?? "");
   const queuedCount = useQueuedMessagesForTask(taskId).length;
   const session = useSessionForTask(taskId);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyGatewayLimitError,
+  classifyPromptFailure,
   getErrorMessage,
   isAuthError,
   isFatalSessionError,
@@ -138,6 +139,21 @@ describe("classifyGatewayLimitError", () => {
     "network down",
   ])("returns null for %j", (message) => {
     expect(classifyGatewayLimitError(message)).toBeNull();
+  });
+});
+
+describe("classifyPromptFailure", () => {
+  it.each([
+    ["Rate limit exceeded", undefined, "usage_limit", false],
+    ["API Error: 529 overloaded", undefined, "transient", true],
+    ["boom", "upstream_timeout", "transient", true],
+    ["Authentication required", undefined, "authentication", true],
+    ["process exited", undefined, "fatal_session", true],
+    ["invalid model", undefined, "unknown", false],
+  ] as const)("classifies %j as %s", (message, errorType, kind, retryable) => {
+    expect(
+      classifyPromptFailure(new Error(message), undefined, errorType),
+    ).toMatchObject({ kind, retryable });
   });
 });
 

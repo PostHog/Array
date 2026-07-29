@@ -18,6 +18,7 @@ export interface ContextUsage {
   /** Cumulative estimated session cost, summed across turns; `null` if none reported (e.g. codex). */
   cost: { amount: number; currency: string } | null;
   breakdown: ContextBreakdown | null;
+  breakdownAvailable?: boolean;
 }
 
 type ContextUsageAggregate = Omit<ContextUsage, "breakdown" | "cost">;

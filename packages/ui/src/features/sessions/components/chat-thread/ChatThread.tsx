@@ -6,6 +6,7 @@ import {
   Scroll,
 } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import { useService } from "@posthog/di/react";
 import {
   Button,
@@ -43,7 +44,10 @@ import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoothedText";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import type {
+  BuildResult,
+  ConversationItem,
+} from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import {
   ChatMarkdown,
@@ -1036,6 +1040,8 @@ interface SharedChatThreadProps {
   repoPath?: string | null;
   task?: Task;
   taskId?: string;
+  usage?: ContextUsage | null;
+  footerState?: Omit<BuildResult, "items">;
 }
 
 export interface ChatThreadProps extends SharedChatThreadProps {
@@ -1062,7 +1068,10 @@ export interface AcpChatThreadProps extends SharedChatThreadProps {
 }
 
 export function ChatThread({ events, ...props }: ChatThreadProps) {
-  const { items } = useAgentConversationItems(events, props.isPromptPending);
+  const { items, ...footerState } = useAgentConversationItems(
+    events,
+    props.isPromptPending,
+  );
 
   return (
     <ChatThreadRenderer
@@ -1070,6 +1079,7 @@ export function ChatThread({ events, ...props }: ChatThreadProps) {
       {...props}
       conversationItems={items}
       footerEvents={[]}
+      footerState={footerState}
     />
   );
 }
@@ -1103,6 +1113,8 @@ function ChatThreadRenderer({
   repoPath,
   task,
   taskId,
+  usage,
+  footerState,
   promptRecallRef,
 }: ChatThreadRendererProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
@@ -1228,6 +1240,8 @@ function ChatThreadRenderer({
         promptStartedAt={promptStartedAt}
         task={task}
         taskId={taskId}
+        usage={usage}
+        footerState={footerState}
       />
     </>
   );
