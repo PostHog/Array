@@ -25,6 +25,7 @@ import {
 import { CodeMirrorEditor } from "../../code-editor/components/CodeMirrorEditor";
 import { DocumentPreviewHeader } from "../../code-editor/components/DocumentPreviewHeader";
 import { MarkdownDocumentPreview } from "../../code-editor/components/MarkdownDocumentPreview";
+import { AnnotatedArtifactHtml } from "./AnnotatedArtifactHtml";
 import { AnnotatedArtifactImage } from "./AnnotatedArtifactImage";
 import { ArtifactCommentsSidebar } from "./ArtifactCommentsSidebar";
 import {
@@ -33,7 +34,6 @@ import {
   parseArtifactCommentContext,
 } from "./ArtifactTextAnnotations";
 import { artifactPreviewBlob } from "./artifactPreviewDocument";
-import { SanitizedArtifactHtml } from "./SanitizedArtifactHtml";
 import {
   useArtifactCommentsQuery,
   useCreateArtifactComment,
@@ -137,9 +137,6 @@ export function ArtifactPreview({
   );
   const markdownRootRef = useRef<HTMLDivElement>(null);
   const markdownContainerRef = useRef<HTMLDivElement>(null);
-  const htmlRootRef = useRef<HTMLElement>(null);
-  const htmlContainerRef = useRef<HTMLDivElement>(null);
-  const [htmlRootReady, setHtmlRootReady] = useState(false);
   const [imageError, setImageError] = useState(false);
   const authIdentity = useAuthStateValue(getAuthIdentity);
   const commentsQuery = useArtifactCommentsQuery(artifactId);
@@ -188,11 +185,6 @@ export function ArtifactPreview({
   }, [previewUrl]);
 
   useEffect(() => setImageError(false), []);
-
-  const setHtmlRoot = useCallback((root: HTMLElement | null) => {
-    htmlRootRef.current = root;
-    setHtmlRootReady(!!root);
-  }, []);
 
   const activateThread = useCallback((id: string) => {
     setSelectedThreadId(id);
@@ -315,24 +307,15 @@ export function ArtifactPreview({
       <div className="flex h-full flex-col overflow-hidden">
         <GenericArtifactHeader name={name} commentsAction={commentsAction} />
         <ContentAndSidebar sidebar={sidebar}>
-          <div ref={htmlContainerRef} className="relative h-full overflow-auto">
-            <SanitizedArtifactHtml
-              html={data.html}
-              onContentRoot={setHtmlRoot}
-            />
-            {htmlRootReady && (
-              <ArtifactTextAnnotations
-                artifactName={name}
-                rootRef={htmlRootRef}
-                containerRef={htmlContainerRef}
-                comments={comments}
-                activeThreadId={selectedThreadId}
-                onActivateThread={activateThread}
-                onCreate={createAnchoredComment}
-                onResolutionsChange={setResolutions}
-              />
-            )}
-          </div>
+          <AnnotatedArtifactHtml
+            html={data.html}
+            name={name}
+            comments={comments}
+            activeThreadId={selectedThreadId}
+            onActivateThread={activateThread}
+            onCreate={createAnchoredComment}
+            onResolutionsChange={setResolutions}
+          />
         </ContentAndSidebar>
       </div>
     );

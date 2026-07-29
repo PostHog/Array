@@ -1,12 +1,22 @@
 import { getImageMimeType, isAllowedImageMimeType } from "@posthog/shared";
 import { applyCspToHtml } from "../../mcp-apps/utils/mcp-app-csp";
+import { injectArtifactHtmlCommentBridge } from "./artifactHtmlCommentBridge";
 
 function extension(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
 
-export function artifactHtmlDocument(html: string): string {
-  return applyCspToHtml(html);
+export function artifactHtmlDocument(
+  html: string,
+  commentBridgeChannel?: string,
+): string {
+  const document = commentBridgeChannel
+    ? injectArtifactHtmlCommentBridge(html, commentBridgeChannel)
+    : html;
+  // HTML artifacts stay in an opaque-origin sandbox. Allow authored HTTPS
+  // resources so generated reports retain their CSS, fonts, images and static
+  // scripts, while denying API connections, forms, nested frames and objects.
+  return applyCspToHtml(document, { resourceDomains: ["https:"] });
 }
 export async function artifactPreviewBlob(
   blob: Blob,

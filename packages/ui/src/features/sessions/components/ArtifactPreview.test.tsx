@@ -103,16 +103,16 @@ describe("ArtifactPreview", () => {
     );
   });
 
-  it("renders static HTML in a sanitized shadow root", () => {
+  it("renders authored HTML in an opaque-origin annotation iframe", () => {
     useQuery.mockReturnValue({
       data: {
         kind: "html",
-        html: '<h1>Artifact content</h1><script>throw new Error("unsafe")</script>',
+        html: "<style>h1{color:red}</style><h1>Artifact content</h1>",
       },
       isLoading: false,
       isError: false,
     });
-    const { container } = render(
+    render(
       <ArtifactPreview
         taskId="task-1"
         runId="run-1"
@@ -121,12 +121,10 @@ describe("ArtifactPreview", () => {
       />,
     );
 
-    const host = container.querySelector("div[data-testid='artifact-html']");
-    expect(host?.shadowRoot?.textContent).toContain("Artifact content");
-    expect(host?.shadowRoot?.querySelector("script")).toBeNull();
-    expect(
-      screen.queryByTitle("Preview of report.html"),
-    ).not.toBeInTheDocument();
+    const frame = screen.getByTitle("Preview of report.html");
+    expect(frame).toHaveAttribute("src", "blob:preview");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
   });
 
   it("keeps opaque formats in a fully sandboxed iframe", () => {
@@ -287,9 +285,22 @@ describe("ArtifactPreview", () => {
     ).toBeInTheDocument();
   });
 
-  it("blocks network subresources in HTML artifacts", () => {
+  it("preserves authored styles and injects the inline-comment bridge", () => {
     const document = artifactHtmlDocument(
-      '<!doctype html><img src="https://internal.example/secret">',
+      '<!doctype html><html><head><style>.card{color:red}</style></head><body><div class="card" style="font-size:20px">Report</div></body></html>',
+      "test-channel",
+    );
+
+    expect(document).toContain("<style>.card{color:red}</style>");
+    expect(document).toContain('style="font-size:20px"');
+    expect(document).toContain("__POSTHOG_ARTIFACT_COMMENT_BRIDGE__");
+    expect(document).toContain("💬 Comment");
+    expect(document).toContain('var CHANNEL="test-channel"');
+  });
+
+  it("keeps sensitive capabilities blocked in HTML artifacts", () => {
+    const document = artifactHtmlDocument(
+      '<!doctype html><img src="https://images.example/report.png">',
     );
 
     expect(document.indexOf("Content-Security-Policy")).toBeLessThan(
@@ -297,5 +308,7 @@ describe("ArtifactPreview", () => {
     );
     expect(document).toContain("connect-src &#39;none&#39;");
     expect(document).toContain("frame-src &#39;none&#39;");
+    expect(document).toContain("form-action &#39;none&#39;");
+    expect(document).toContain("https:");
   });
 });

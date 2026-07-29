@@ -1,4 +1,4 @@
-import { Plus } from "@phosphor-icons/react";
+import { ChatCircle, Plus } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { CommentAnnotation } from "@posthog/ui/features/code-review/components/CommentAnnotation";
@@ -26,6 +26,7 @@ interface SelectionCommentOverlayProps {
   onDismiss: () => void;
   actionLabel?: string;
   placeholder?: string;
+  showActionText?: boolean;
 }
 
 /**
@@ -41,6 +42,7 @@ export function SelectionCommentOverlay({
   onDismiss,
   actionLabel = "Add to chat",
   placeholder,
+  showActionText = false,
 }: SelectionCommentOverlayProps) {
   if (!open || !selection?.anchor) return null;
   // Key by the range so a fresh selection remounts the card back to the "+".
@@ -55,6 +57,7 @@ export function SelectionCommentOverlay({
       onDismiss={onDismiss}
       actionLabel={actionLabel}
       placeholder={placeholder}
+      showActionText={showActionText}
     />
   );
 }
@@ -68,6 +71,7 @@ function SelectionComposerCard({
   onDismiss,
   actionLabel,
   placeholder,
+  showActionText,
 }: {
   anchor: { top: number; left: number };
   fromLine: number;
@@ -77,6 +81,7 @@ function SelectionComposerCard({
   onDismiss: () => void;
   actionLabel: string;
   placeholder?: string;
+  showActionText: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const style = { top: anchor.top + 4, left: anchor.left };
@@ -87,13 +92,20 @@ function SelectionComposerCard({
         <Button
           type="button"
           variant="primary"
-          size="icon-sm"
+          size={showActionText ? "sm" : "icon-sm"}
           aria-label={actionLabel}
           className="fixed z-50 shadow-sm"
           style={style}
           onClick={() => setExpanded(true)}
         >
-          <Plus size={14} weight="bold" />
+          {showActionText ? (
+            <>
+              <ChatCircle size={14} weight="bold" />
+              Comment
+            </>
+          ) : (
+            <Plus size={14} weight="bold" />
+          )}
         </Button>
       </Tooltip>,
       document.body,

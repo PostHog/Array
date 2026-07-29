@@ -245,6 +245,7 @@ export function ArtifactTextAnnotations({
         filePath={artifactName}
         actionLabel="Add comment"
         placeholder="Add a comment about this selection..."
+        showActionText
         onDismiss={dismiss}
         onSubmit={(_start, _end, content) => {
           if (pendingAnchor) onCreate(pendingAnchor, content);
