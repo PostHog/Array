@@ -65,6 +65,7 @@ import {
   useSessionViewActions,
 } from "@posthog/ui/features/sessions/sessionViewStore";
 import { SessionTaskIdProvider } from "@posthog/ui/features/sessions/useSessionTaskId";
+import { useThreadScrollRequest } from "@posthog/ui/features/sessions/useThreadScrollRequest";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
 import {
@@ -352,6 +353,10 @@ export function ConversationView({
     },
     [userMessages, scrollToUserMessage],
   );
+
+  // The Activity timeline lives in a sibling pane, so it asks for the jump
+  // through the store rather than reaching in here.
+  useThreadScrollRequest(taskId, handleJumpToMessage);
 
   const handleScrollStateChange = useCallback((isAtBottom: boolean) => {
     isAtBottomRef.current = isAtBottom;

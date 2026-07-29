@@ -33,15 +33,16 @@ import {
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import type { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import { Fragment, type ReactNode, useMemo } from "react";
+import { useThreadNavigationStore } from "@posthog/ui/features/sessions/threadNavigationStore";
+import { Fragment, type KeyboardEvent, type ReactNode, useMemo } from "react";
 
 type ConversationItem = ReturnType<
   typeof buildConversationItems
 >["items"][number];
 
 /** A lifecycle marker (task created, run finished): an icon bubble and a single
- *  muted line. Deliberately one typographic weight and colour, so events read as
- *  the timeline's punctuation rather than competing with authored rows. */
+ *  line, in the same size and colour as every other row's copy. Only the icon
+ *  distinguishes it, so the pane reads as one typographic system. */
 function ActivityEventRow({
   icon,
   label,
@@ -58,14 +59,7 @@ function ActivityEventRow({
           {icon}
         </span>
       </div>
-      <span
-        className={cn(
-          "min-w-0 truncate text-muted-foreground",
-          THREAD_TEXT_CLASS,
-        )}
-      >
-        {label}
-      </span>
+      <span className={cn("min-w-0 truncate", THREAD_TEXT_CLASS)}>{label}</span>
       <ThreadTimestamp
         dateTime={timestamp}
         className={THREAD_TIMESTAMP_CLASS}
@@ -78,20 +72,43 @@ function UserMessageRow({
   author,
   content,
   timestamp,
+  onSelect,
 }: {
   author?: UserBasic | null;
   content: string;
   timestamp: string;
+  /** Jumps the transcript to this message. Absent once the run is unavailable. */
+  onSelect?: () => void;
 }) {
+  const name = author ? userDisplayName(author) : "You";
+  // The row itself is the hit target. `ThreadItem` renders an <article>, which a
+  // <button> may not wrap and which can't become one (quill's primitive takes no
+  // `render`), so it carries the button role and its own key handling.
+  const activation = onSelect
+    ? ({
+        role: "button",
+        tabIndex: 0,
+        "aria-label": `Jump to message from ${name}`,
+        onClick: onSelect,
+        onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onSelect();
+        },
+      } as const)
+    : {};
   return (
-    <ThreadItem className="rounded-none">
+    <ThreadItem
+      className={cn("rounded-none", onSelect && "cursor-pointer")}
+      {...activation}
+    >
       <ThreadItemGutter className={THREAD_GUTTER_CLASS}>
         <UserAvatar user={author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
           <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
-            {author ? userDisplayName(author) : "You"}
+            {name}
           </ThreadItemAuthor>
           <ThreadTimestamp
             dateTime={timestamp}
@@ -133,6 +150,10 @@ export function ActivityTimeline({
   onSendToAgent: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }) {
+  const requestScrollToMessage = useThreadNavigationStore(
+    (state) => state.requestScrollToMessage,
+  );
+
   const nodes = useMemo(() => {
     const entries: { key: string; ts: number; node: ReactNode }[] = [];
     const createdTs = Date.parse(task.created_at) || 0;
@@ -160,6 +181,7 @@ export function ActivityTimeline({
             author={task.created_by}
             content={item.content}
             timestamp={new Date(item.timestamp).toISOString()}
+            onSelect={() => requestScrollToMessage(task.id, item.id)}
           />
         ),
       });
@@ -251,6 +273,7 @@ export function ActivityTimeline({
     currentUserEmail,
     onSendToAgent,
     onDelete,
+    requestScrollToMessage,
   ]);
 
   return (

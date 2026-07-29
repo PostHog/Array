@@ -72,9 +72,10 @@ export const THREAD_TEXT_CLASS = "text-[13px]";
 export const THREAD_GUTTER_CLASS = "justify-center";
 
 /** Timestamps sit at the row's right edge, so they form a column instead of
- *  trailing names of varying length. Applied per row rather than as an ancestor
- *  `[data-slot]` rule, which `TooltipTrigger` defeats — see `ThreadTimestamp`. */
-export const THREAD_TIMESTAMP_CLASS = "ml-auto shrink-0 pl-2";
+ *  trailing names of varying length, and read a step below the row's 13px copy.
+ *  Applied per row rather than as an ancestor `[data-slot]` rule, which
+ *  `TooltipTrigger` defeats — see `ThreadTimestamp`. */
+export const THREAD_TIMESTAMP_CLASS = "ml-auto shrink-0 pl-2 text-[11px]";
 
 /** Content sits a little below its author line, so a card or a message never
  *  looks jammed against the name above it. */
