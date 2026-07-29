@@ -3,6 +3,45 @@ import { ApiRequestError } from "./fetcher";
 import { PostHogAPIClient } from "./posthog-client";
 
 describe("PostHogAPIClient", () => {
+  it("routes signal report tasks through the dedicated endpoint", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    const fetch = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ id: "task-123" }),
+    });
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await client.createTask({
+      description: "Implement report",
+      origin_product: "signal_report",
+      signal_report: "report-123",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        path: "/api/projects/123/tasks/from_signal_report/",
+        overrides: {
+          body: JSON.stringify({
+            description: "Implement report",
+            signal_report: "report-123",
+          }),
+        },
+      }),
+    );
+  });
+
   it("sends supported reasoning effort for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",

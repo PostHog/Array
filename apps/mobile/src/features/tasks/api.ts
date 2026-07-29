@@ -359,15 +359,18 @@ export async function warmTask(options: {
 export async function createTask(options: CreateTaskOptions): Promise<Task> {
   const baseUrl = getBaseUrl();
   const projectId = getProjectId();
+  const { origin_product: originProduct, ...taskOptions } = options;
+  const path = options.signal_report ? "from_signal_report/" : "";
 
   const response = await authedFetch(
-    `${baseUrl}/api/projects/${projectId}/tasks/`,
+    `${baseUrl}/api/projects/${projectId}/tasks/${path}`,
     {
       method: "POST",
-      body: JSON.stringify({
-        origin_product: "user_created",
-        ...options,
-      }),
+      body: JSON.stringify(
+        options.signal_report
+          ? taskOptions
+          : { origin_product: originProduct ?? "user_created", ...taskOptions },
+      ),
     },
   );
 

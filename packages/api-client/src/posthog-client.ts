@@ -2361,6 +2361,19 @@ export class PostHogAPIClient {
     const teamId = await this.getTeamId();
     const { origin_product: originProduct, ...taskOptions } = options;
 
+    if (options.signal_report) {
+      const path = `/api/projects/${teamId}/tasks/from_signal_report/`;
+      const response = await this.api.fetcher.fetch({
+        method: "post",
+        url: new URL(path, this.api.baseUrl),
+        path,
+        overrides: {
+          body: JSON.stringify(taskOptions),
+        },
+      });
+      return (await response.json()) as Task;
+    }
+
     const data = await this.api.post(`/api/projects/{project_id}/tasks/`, {
       path: { project_id: teamId.toString() },
       body: {
@@ -2399,7 +2412,7 @@ export class PostHogAPIClient {
       title: task.title,
       repository: task.repository,
       json_schema: task.json_schema,
-      origin_product: task.origin_product,
+      origin_product: "user_created",
       github_integration: task.github_integration,
       github_user_integration: task.github_user_integration,
     });
