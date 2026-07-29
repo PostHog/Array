@@ -1,3 +1,4 @@
+import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -68,6 +69,33 @@ describe("ThreadMessageRow", () => {
       screen.getByRole("button", { name: "Message actions" }),
     ).toBeInTheDocument();
   });
+
+  const multiline = "First line\n\nSecond line with more detail";
+
+  // `preview` only adds a CSS clamp, so the full message is in the DOM either
+  // way. What's worth pinning is that no code path slices the text away.
+  it("renders the whole message, so a comment is never cut short", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: multiline,
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Second line with more detail/),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("ThreadArtifactRow", () => {
@@ -80,6 +108,7 @@ describe("ThreadArtifactRow", () => {
           url: "https://us.posthog.com/code/canvas/channel-1/dash-1",
         }}
         createdAt="2026-07-17T00:00:00Z"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -101,6 +130,7 @@ describe("ThreadArtifactRow", () => {
       <ThreadArtifactRow
         artifact={{ kind: "canvas", name: "Signups overview", url: null }}
         createdAt="2026-07-17T00:00:00Z"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -117,6 +147,7 @@ describe("ThreadArtifactRow", () => {
       <ThreadArtifactRow
         artifact={{ kind: "canvas", name: "Signups overview", url }}
         createdAt="2026-07-17T00:00:00Z"
+        openInPlaceTaskId="task-1"
       />,
     );
 
@@ -126,21 +157,32 @@ describe("ThreadArtifactRow", () => {
     expect(navigateToShareTarget).not.toHaveBeenCalled();
   });
 
-  it("renders a pull request artifact and opens it externally", () => {
+  it("opens a pull request in the review pane, and on GitHub from its own button", () => {
+    const url = "https://github.com/org/repo/pull/123";
+
     render(
       <ThreadArtifactRow
-        artifact={{ kind: "pr", url: "https://github.com/org/repo/pull/123" }}
+        artifact={{ kind: "pr", url }}
         createdAt="2026-07-17T00:00:00Z"
+        openInPlaceTaskId="task-1"
       />,
     );
 
     expect(screen.getByText("Pull request #123")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Pull request #123/ }));
+    // The card's own name leads with the title; the GitHub button's trails it.
+    fireEvent.click(screen.getByRole("button", { name: /^Pull request #123/ }));
 
-    expect(openExternalUrl).toHaveBeenCalledWith(
-      "https://github.com/org/repo/pull/123",
+    const review = useReviewNavigationStore.getState();
+    expect(review.selectedPrUrls["task-1"]).toBe(url);
+    expect(review.reviewModes["task-1"]).toBe("split");
+    expect(openExternalUrl).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Pull request #123 externally" }),
     );
+
+    expect(openExternalUrl).toHaveBeenCalledWith(url);
     expect(navigateToShareTarget).not.toHaveBeenCalled();
   });
 
@@ -162,6 +204,7 @@ describe("ThreadArtifactRow", () => {
         <ThreadArtifactRow
           artifact={artifact}
           createdAt="2026-07-17T00:00:00Z"
+          openInPlaceTaskId="task-1"
         />,
       );
 
@@ -197,6 +240,7 @@ describe("ThreadArtifactRow", () => {
         <ThreadArtifactRow
           artifact={artifact}
           createdAt="2026-07-17T00:00:00Z"
+          openInPlaceTaskId="task-1"
         />,
       );
 
