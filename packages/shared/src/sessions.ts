@@ -50,6 +50,7 @@ export interface AgentSession {
   taskRunId: string;
   taskId: string;
   taskTitle: string;
+  isTaskAuthor?: boolean;
   channel: string;
   events: AcpMessage[];
   startedAt: number;

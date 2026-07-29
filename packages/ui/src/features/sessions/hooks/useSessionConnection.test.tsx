@@ -34,6 +34,14 @@ vi.mock("@posthog/ui/features/auth/store", () => ({
     }),
 }));
 
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useOptionalAuthenticatedClient: () => ({}),
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: { uuid: "user-1" } }),
+}));
+
 vi.mock("./useChatTitleGenerator", () => ({
   useChatTitleGenerator: vi.fn(),
 }));

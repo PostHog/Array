@@ -424,6 +424,7 @@ export interface ReconcileTaskConnectionParams {
   session: ReconcileSessionState | undefined;
   repoPath: string | null;
   isCloud: boolean;
+  isTaskAuthor?: boolean;
   isSuspended?: boolean;
   isOnline: boolean;
   cloudAuth: CloudConnectionAuth;
@@ -2917,13 +2918,15 @@ export class SessionService {
               stopReason === "end_turn" &&
               session.messageQueue.length === 0
             ) {
-              this.d.notifyPromptComplete(
-                session.taskTitle,
-                stopReason,
-                session.taskId,
-                turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
-              );
-              this.speakDeterministic(taskRunId, session, "done");
+              if (session.isTaskAuthor !== false) {
+                this.d.notifyPromptComplete(
+                  session.taskTitle,
+                  stopReason,
+                  session.taskId,
+                  turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
+                );
+                this.speakDeterministic(taskRunId, session, "done");
+              }
             }
             this.d.taskViewedApi.markActivity(session.taskId);
             this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
@@ -3087,7 +3090,11 @@ export class SessionService {
           : this.drainQueuedMessages(taskRunId, session);
 
       // Only notify when nothing is sendable - queued messages start a new turn
-      if (stopReason && !hasSendableMessages) {
+      if (
+        stopReason &&
+        !hasSendableMessages &&
+        session.isTaskAuthor !== false
+      ) {
         this.d.notifyPromptComplete(
           session.taskTitle,
           stopReason,
@@ -3333,8 +3340,10 @@ export class SessionService {
 
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
-    this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
-    this.speakDeterministic(taskRunId, session, "needs_input");
+    if (session.isTaskAuthor !== false) {
+      this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+      this.speakDeterministic(taskRunId, session, "needs_input");
+    }
   }
 
   private handleCloudPermissionRequest(
@@ -3391,8 +3400,10 @@ export class SessionService {
 
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
-    this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
-    this.speakDeterministic(taskRunId, session, "needs_input");
+    if (session.isTaskAuthor !== false) {
+      this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+      this.speakDeterministic(taskRunId, session, "needs_input");
+    }
   }
 
   private surfacePersistedPendingPermissions(
@@ -5562,6 +5573,7 @@ export class SessionService {
     runStatus?: TaskRunStatus,
     initialReasoningEffort?: string,
     runState?: Record<string, unknown>,
+    isTaskAuthor = true,
   ): () => void {
     const taskRunId = runId;
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
@@ -5626,6 +5638,9 @@ export class SessionService {
       // Ensure configOptions is populated on revisit
       const existing = this.d.store.getSessionByTaskId(taskId);
       if (existing) {
+        if (existing.isTaskAuthor !== isTaskAuthor) {
+          this.d.store.updateSession(existing.taskRunId, { isTaskAuthor });
+        }
         const existingMode = getConfigOptionByCategory(
           existing.configOptions,
           "mode",
@@ -5752,6 +5767,7 @@ export class SessionService {
       const session = createBaseSession(taskRunId, taskId, taskTitle);
       session.status = "disconnected";
       session.isCloud = true;
+      session.isTaskAuthor = isTaskAuthor;
       session.adapter = adapter;
       session.configOptions = buildInitialConfigOptions(
         initialMode,
@@ -5765,6 +5781,9 @@ export class SessionService {
     } else {
       // Ensure cloud flag and configOptions are set on existing sessions
       const updates: Partial<AgentSession> = {};
+      if (existing.isTaskAuthor !== isTaskAuthor) {
+        updates.isTaskAuthor = isTaskAuthor;
+      }
       if (!existing.isCloud) updates.isCloud = true;
       if (existing.adapter !== adapter) updates.adapter = adapter;
       if (!existing.configOptions?.length || existing.adapter !== adapter) {
@@ -6795,6 +6814,7 @@ export class SessionService {
       session,
       repoPath,
       isCloud,
+      isTaskAuthor = true,
       isSuspended,
       isOnline,
       cloudAuth,
@@ -6810,6 +6830,7 @@ export class SessionService {
         task,
         cloudAuth,
         onCloudStatusChange,
+        isTaskAuthor,
       );
     }
 
@@ -6896,6 +6917,7 @@ export class SessionService {
     task: Task,
     cloudAuth: CloudConnectionAuth,
     onCloudStatusChange?: () => void,
+    isTaskAuthor = true,
   ): () => void {
     this.updateSessionTaskTitle(
       task.id,
@@ -6933,6 +6955,7 @@ export class SessionService {
       task.latest_run?.status,
       initialReasoningEffort,
       task.latest_run?.state,
+      isTaskAuthor,
     );
   }
 
