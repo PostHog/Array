@@ -54,6 +54,83 @@ function makeService(): TaskService {
   return new TaskService(host, sessionService, effects, piRunner, rootLogger);
 }
 
+describe("TaskService.openTask", () => {
+  it("opens a completed cloud Pi run without resuming it", async () => {
+    const completedRun = {
+      id: "run-1",
+      environment: "cloud",
+      status: "completed",
+    };
+    const api = {
+      getTask: vi.fn(async () => ({
+        id: "task-1",
+        runtime: "pi",
+        latest_run: completedRun,
+      })),
+      getTaskRun: vi.fn(async () => completedRun),
+      resumeRunInCloud: vi.fn(),
+    };
+    const workspace = { folderPath: "/repo" };
+    const host = {
+      getAuthenticatedClient: vi.fn(async () => api),
+      getWorkspace: vi.fn(async () => workspace),
+    } as unknown as ITaskCreationHost;
+    const piRunner = {
+      create: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+    } as unknown as PiRunner;
+    const service = new TaskService(
+      host,
+      {} as SessionService,
+      {} as TaskCreationEffects,
+      piRunner,
+      rootLogger,
+    );
+
+    const result = await service.openTask("task-1", "run-1");
+
+    expect(result.success).toBe(true);
+    expect(api.resumeRunInCloud).not.toHaveBeenCalled();
+    expect(piRunner.resume).not.toHaveBeenCalled();
+    if (result.success) {
+      expect(result.data.task.latest_run).toBe(completedRun);
+      expect(result.data.workspace).toBe(workspace);
+    }
+  });
+});
+
+describe("TaskService.resumeCloudPiRun", () => {
+  it("publishes the resumed run to host state", async () => {
+    const run = {
+      id: "run-2",
+      task_id: "task-1",
+      environment: "cloud",
+      status: "queued",
+    };
+    const api = {
+      resumeRunInCloud: vi.fn(async () => run),
+    };
+    const effects = {
+      onRunResumed: vi.fn(),
+    } as unknown as TaskCreationEffects;
+    const service = new TaskService(
+      {
+        getAuthenticatedClient: vi.fn(async () => api),
+      } as unknown as ITaskCreationHost,
+      {} as SessionService,
+      effects,
+      {} as PiRunner,
+      rootLogger,
+    );
+
+    await expect(service.resumeCloudPiRun("task-1", "run-1")).resolves.toBe(
+      run,
+    );
+    expect(effects.onRunResumed).toHaveBeenCalledWith("task-1", run);
+  });
+});
+
 describe("TaskService.createTask validation", () => {
   it("rejects an input with neither content nor a taskDescription", async () => {
     const result = await makeService().createTask({

@@ -1,4 +1,8 @@
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type {
+  AssistantMessage,
+  ToolResultMessage,
+  UserMessage,
+} from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { createPiMessageTranslator } from "./translatePiMessage";
 
@@ -49,7 +53,12 @@ describe("createPiMessageTranslator", () => {
       role: "user",
       content: [
         { type: "text", text: "first" },
-        { type: "image", data: "abc", mimeType: "image/png" },
+        {
+          type: "image",
+          data: "abc",
+          mimeType: "image/png",
+          fileName: "screenshot.png",
+        } as Exclude<UserMessage["content"], string>[number],
       ],
       timestamp: 0,
     };
@@ -61,7 +70,12 @@ describe("createPiMessageTranslator", () => {
         timestamp: 0,
         content: [
           { type: "text", text: "first" },
-          { type: "image", data: "abc", mimeType: "image/png" },
+          {
+            type: "image",
+            data: "abc",
+            mimeType: "image/png",
+            fileName: "screenshot.png",
+          },
         ],
       },
     ]);
@@ -107,6 +121,115 @@ describe("createPiMessageTranslator", () => {
         type: "assistant_thought_chunk",
         timestamp: 0,
         content: { type: "text", text: "hmm" },
+      },
+    ]);
+  });
+
+  it("provides generic rendered content for extension tool results", () => {
+    const translator = createPiMessageTranslator();
+    const content: ToolResultMessage["content"] = [
+      { type: "text", text: "Found " },
+      { type: "text", text: "three matches" },
+    ];
+    const message: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "extension-1",
+      toolName: "web_search",
+      content,
+      details: { resultCount: 3 },
+      isError: false,
+      timestamp: 12,
+    };
+
+    expect(translator.translate(message)).toEqual([
+      {
+        type: "tool_call_updated",
+        timestamp: 12,
+        toolCall: {
+          id: "extension-1",
+          status: "completed",
+          rawOutput: content,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "Found three matches" },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("preserves images in generic extension tool results", () => {
+    const translator = createPiMessageTranslator();
+    const content: ToolResultMessage["content"] = [
+      { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+    ];
+    const message: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "extension-image",
+      toolName: "screenshot",
+      content,
+      isError: false,
+      timestamp: 12,
+    };
+
+    expect(translator.translate(message)).toMatchObject([
+      {
+        type: "tool_call_updated",
+        toolCall: {
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "image",
+                data: "aW1hZ2U=",
+                mimeType: "image/png",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("keeps built-in tool translation and raw output", () => {
+    const translator = createPiMessageTranslator();
+    const content: ToolResultMessage["content"] = [
+      { type: "text", text: "file contents" },
+    ];
+
+    translator.translateToolExecutionStart(
+      "read-1",
+      "read",
+      { path: "src/file.ts" },
+      1,
+    );
+
+    expect(
+      translator.translateToolExecutionEnd(
+        "read-1",
+        "read",
+        { content },
+        false,
+        2,
+      ),
+    ).toEqual([
+      {
+        type: "tool_call_updated",
+        timestamp: 2,
+        toolCall: {
+          id: "read-1",
+          status: "completed",
+          rawOutput: content,
+          locations: [{ path: "src/file.ts" }],
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "file contents" },
+            },
+          ],
+        },
       },
     ]);
   });

@@ -52,15 +52,17 @@ export function QueuedMessageView({
           Steer button (fixed height) anchors it, but the editing state's ghost
           icon buttons are `fit-content` and would otherwise collapse shorter. */}
       <Flex align="center" gap="2" className="min-h-6">
-        <button
-          ref={dragHandleRef}
-          type="button"
-          aria-label="Drag to reorder"
-          title="Drag to reorder"
-          className="shrink-0 cursor-grab text-gray-9 hover:text-gray-11"
-        >
-          <DotsSixVertical size={14} aria-hidden />
-        </button>
+        {dragHandleRef && (
+          <button
+            ref={dragHandleRef}
+            type="button"
+            aria-label="Drag to reorder"
+            title="Drag to reorder"
+            className="shrink-0 cursor-grab text-gray-9 hover:text-gray-11"
+          >
+            <DotsSixVertical size={14} aria-hidden />
+          </button>
+        )}
         <CollapsibleMessageContent
           className="min-w-0 flex-1"
           contentClassName="font-medium text-[13px] text-gray-12"

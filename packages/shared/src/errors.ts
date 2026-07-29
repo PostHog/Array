@@ -155,6 +155,70 @@ export function isTransientUpstreamError(
   );
 }
 
+export type PromptFailureKind =
+  | "usage_limit"
+  | "transient"
+  | "authentication"
+  | "fatal_session"
+  | "unknown";
+
+export interface PromptFailure {
+  kind: PromptFailureKind;
+  message: string;
+  retryable: boolean;
+  limitCause: GatewayLimitCause | null;
+}
+
+export function classifyPromptFailure(
+  error: unknown,
+  errorDetails?: string,
+  errorType?: string,
+): PromptFailure {
+  const message = getErrorMessage(error) || String(error);
+  const limitCause = classifyGatewayLimitError(message, errorDetails);
+  if (limitCause !== null || isRateLimitError(message, errorDetails)) {
+    return {
+      kind: "usage_limit",
+      message,
+      retryable: false,
+      limitCause,
+    };
+  }
+  if (
+    errorType?.startsWith("upstream_") ||
+    isTransientUpstreamError(message, errorDetails)
+  ) {
+    return {
+      kind: "transient",
+      message,
+      retryable: true,
+      limitCause: null,
+    };
+  }
+  if (isNotAuthenticatedError(error) || isAuthError(error)) {
+    return {
+      kind: "authentication",
+      message,
+      retryable: true,
+      limitCause: null,
+    };
+  }
+  if (isFatalSessionError(message, errorDetails)) {
+    return {
+      kind: "fatal_session",
+      message,
+      retryable: true,
+      limitCause: null,
+    };
+  }
+  return {
+    kind: "unknown",
+    message,
+    retryable: false,
+    limitCause: null,
+  };
+}
+
 export function isFatalSessionError(
   errorMessage: string,
   errorDetails?: string,

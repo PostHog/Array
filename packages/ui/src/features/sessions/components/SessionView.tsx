@@ -19,6 +19,10 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
+import {
+  CloudStreamDisconnectedBanner,
+  ConnectingToAgent,
+} from "@posthog/ui/features/sessions/components/CloudSessionLifecycle";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import {
   copyFromContextMenu,
@@ -102,17 +106,6 @@ interface SessionViewProps {
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
 
-function ConnectingToAgent() {
-  return (
-    <>
-      <Spinner size={28} className="animate-spin text-gray-9" />
-      <Text color="gray" className="text-base">
-        Connecting to agent...
-      </Text>
-    </>
-  );
-}
-
 /** Centers composer-slot content at the chat width (or compact padding). */
 function ComposerWidth({
   compact,
@@ -153,48 +146,6 @@ function ComposerSlot({
     >
       <ComposerWidth compact={compact}>{children}</ComposerWidth>
     </Box>
-  );
-}
-
-interface CloudStreamDisconnectedBannerProps {
-  errorTitle?: string;
-  errorMessage?: string;
-  onRetry?: () => void;
-}
-
-function CloudStreamDisconnectedBanner({
-  errorTitle,
-  errorMessage,
-  onRetry,
-}: CloudStreamDisconnectedBannerProps) {
-  return (
-    <Flex
-      align="center"
-      justify="between"
-      gap="3"
-      py="2"
-      px="3"
-      className="shrink-0 border-(--red-5) border-b bg-(--red-2)"
-    >
-      <Flex align="center" gap="2" className="min-w-0">
-        <Warning size={14} weight="duotone" color="var(--red-9)" />
-        {errorTitle && (
-          <Text className="shrink-0 font-medium text-(--red-12) text-[13px]">
-            {errorTitle}
-          </Text>
-        )}
-        {errorMessage && (
-          <Text color="gray" className="truncate text-[13px]">
-            {errorMessage}
-          </Text>
-        )}
-      </Flex>
-      {onRetry && (
-        <Button variant="soft" size="1" color="red" onClick={onRetry}>
-          Retry
-        </Button>
-      )}
-    </Flex>
   );
 }
 
