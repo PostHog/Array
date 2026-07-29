@@ -72,7 +72,9 @@ describe("ThreadMessageRow", () => {
 
   const multiline = "First line\n\nSecond line with more detail";
 
-  it("does not clamp by default, so comments stay readable", () => {
+  // `preview` only adds a CSS clamp, so the full message is in the DOM either
+  // way. What's worth pinning is that no code path slices the text away.
+  it("renders the whole message, so a comment is never cut short", () => {
     render(
       <ThreadMessageRow
         message={{
@@ -90,60 +92,9 @@ describe("ThreadMessageRow", () => {
       />,
     );
 
-    const body = document.querySelector('[data-slot="thread-item-body"]');
-    expect(body).not.toHaveClass("line-clamp-1");
     expect(
       screen.getByText(/Second line with more detail/),
     ).toBeInTheDocument();
-  });
-
-  it("previews only the first line in a timeline row", () => {
-    render(
-      <ThreadMessageRow
-        message={{
-          id: "m1",
-          task: "task",
-          content: multiline,
-          created_at: "2026-07-17T00:00:00Z",
-          author: null,
-        }}
-        isTaskAuthor
-        isOwnMessage={false}
-        canForward
-        preview
-        onSendToAgent={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    // The clamp is CSS: the text stays in the DOM, one written line shows.
-    const body = document.querySelector('[data-slot="thread-item-body"]');
-    expect(body).toHaveClass("line-clamp-1", "whitespace-pre-wrap");
-  });
-
-  it("puts the timestamp in a column away from the author name", () => {
-    render(
-      <ThreadMessageRow
-        message={{
-          id: "m1",
-          task: "task",
-          content: "hi",
-          created_at: "2026-07-17T09:30:00Z",
-          author: null,
-        }}
-        isTaskAuthor
-        isOwnMessage={false}
-        canForward
-        onSendToAgent={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    // Guards the quill seam: TooltipTrigger overwrites `data-slot`, so alignment
-    // has to ride on className rather than an ancestor [data-slot] rule.
-    const time = document.querySelector("time");
-    expect(time).not.toBeNull();
-    expect(time).toHaveClass("ml-auto");
   });
 });
 

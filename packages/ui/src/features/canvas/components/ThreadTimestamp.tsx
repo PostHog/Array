@@ -24,10 +24,10 @@ function formatTooltip(date: Date): string {
   return `${month} ${ordinal(date.getDate())} at ${formatClock(date)}`;
 }
 
-// Right-edge aligned so timestamps form a column instead of trailing names of
-// varying length, a step below the 13px row copy. Set here rather than by an
-// ancestor `[data-slot=thread-item-timestamp]` rule: `TooltipTrigger` replaces the
-// wrapped element's `data-slot` with its own, so such a rule never matches.
+// Sits next to the actor rather than out at the row's right edge, a step below the
+// 13px row copy. Sized here rather than by an ancestor
+// `[data-slot=thread-item-timestamp]` rule: `TooltipTrigger` replaces the wrapped
+// element's `data-slot` with its own, so such a rule never matches.
 export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
   const date = new Date(dateTime);
   if (Number.isNaN(date.getTime())) return null;
@@ -39,7 +39,7 @@ export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
           render={
             <ThreadItemTimestamp
               dateTime={dateTime}
-              className="ml-auto shrink-0 pl-2 text-[11px]"
+              className="shrink-0 text-[11px]"
             >
               {formatClock(date)}
             </ThreadItemTimestamp>
