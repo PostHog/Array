@@ -10,7 +10,7 @@ export function MarkdownDocumentPreview({
   components?: Components;
 }) {
   return (
-    <div className="plan-markdown max-w-[750px] p-5">
+    <div className="plan-markdown mx-auto max-w-[750px] p-5">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
