@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "PostHog",
+    "name": "PostHog Code",
     "slug": "posthog",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.posthog.code.mobile",
       "associatedDomains": ["applinks:code.posthog.com"],
       "infoPlist": {
+        "CFBundleDisplayName": "PostHog",
         "NSMicrophoneUsageDescription": "Allow PostHog to use your microphone for voice-to-text input",
         "NSSpeechRecognitionUsageDescription": "Allow PostHog to transcribe your voice input on-device",
         "NSPhotoLibraryUsageDescription": "Allow PostHog to access your photos for attaching images to tasks",
@@ -101,6 +102,7 @@
       "expo-localization",
       "expo-notifications",
       "./plugins/with-adi-registration",
+      "./plugins/with-android-app-name",
       [
         "expo-speech-recognition",
         {
