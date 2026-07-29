@@ -264,6 +264,60 @@ describe("generateTitleAndSummary", () => {
     );
   });
 
+  it("keeps a numbered standalone PR deterministic", async () => {
+    prompt.mockResolvedValue({ content: "SUMMARY: Reviewing the PR." });
+
+    const result = await makeService().generateTitleAndSummary(
+      '1. <github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(result?.title).toBe("Review PR #123: Fix login redirect");
+  });
+
+  it("uses the model for a broader task containing one PR", async () => {
+    prompt.mockResolvedValue({
+      content:
+        "TITLE: Audit auth changes in PR #123\nSUMMARY: Auditing authentication changes.",
+    });
+
+    const result = await makeService().generateTitleAndSummary(
+      'Audit the auth changes in <github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(result?.title).toBe("Audit auth changes in PR #123");
+    expect(prompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ system: expect.stringContaining("TITLE:") }),
+    );
+  });
+
+  it("resolves all PR placeholders before modeling a multi-PR task", async () => {
+    getGithubPullRequestTitle
+      .mockResolvedValueOnce("Fix login redirect")
+      .mockResolvedValueOnce("Add session expiry");
+    prompt.mockResolvedValue({
+      content:
+        "TITLE: Compare PR #123 and #456\nSUMMARY: Comparing two authentication pull requests.",
+    });
+
+    const result = await makeService().generateTitleAndSummary(
+      'Compare <github_pr number="123" title="Loading..." url="https://github.com/org/repo/pull/123" /> with <github_pr number="456" title="Loading..." url="https://github.com/org/repo/pull/456" />',
+    );
+
+    expect(result?.title).toBe("Compare PR #123 and #456");
+    expect(getGithubPullRequestTitle).toHaveBeenCalledTimes(2);
+    expect(prompt).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          content: expect.stringMatching(
+            /title="Fix login redirect"[\s\S]*title="Add session expiry"/,
+          ),
+        }),
+      ],
+      expect.objectContaining({ system: expect.stringContaining("TITLE:") }),
+    );
+  });
+
   it("uses the existing GitHub PR title when the model omits it", async () => {
     prompt.mockResolvedValue({
       content:

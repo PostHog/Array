@@ -7,7 +7,7 @@ import { xmlToContent } from "@posthog/core/message-editor/content";
 import { isLoadingGithubRefTitle } from "@posthog/core/message-editor/githubIssueChip";
 import { parseGithubIssueUrl } from "@posthog/core/message-editor/githubIssueUrl";
 import { parseXmlAttrs } from "@posthog/core/message-editor/skillTags";
-import { getFileName, isBinaryFile } from "@posthog/shared";
+import { escapeXmlAttr, getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   type FileReadClient,
@@ -29,35 +29,73 @@ const ATTACHED_FILES_REGEX =
   /^(?:(?:\d+\.\s*)?\[Attached files:[^\]]*\]|Attached files:.*)$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
-async function getGithubPrTaskTitle(
+interface GithubPrGenerationContext {
+  content: string;
+  deterministicTitle: string | null;
+}
+
+async function prepareGithubPrGenerationContext(
   content: string,
   githubPrTitleClient: GithubPrTitleClient,
-): Promise<string | null> {
-  const match = content.match(/<github_pr\b([^>]*?)\s*\/>/);
-  if (!match) return null;
-
-  const { number, title, url } = parseXmlAttrs(match[1]);
-  if (!/^\d+$/.test(number)) return null;
-
-  let resolvedTitle = title.trim();
-  if (!resolvedTitle || isLoadingGithubRefTitle(resolvedTitle)) {
-    const parsed = parseGithubIssueUrl(url);
-    if (parsed?.kind === "pr") {
-      try {
-        resolvedTitle =
-          (await githubPrTitleClient.getGithubPullRequestTitle({
-            owner: parsed.owner,
-            repo: parsed.repo,
-            number: parsed.number,
-          })) ?? "";
-      } catch {
-        resolvedTitle = "";
-      }
-    }
+): Promise<GithubPrGenerationContext> {
+  const tagRegex = /<github_pr\b([^>]*?)\s*\/>/g;
+  const matches = [...content.matchAll(tagRegex)];
+  if (matches.length === 0) {
+    return { content, deterministicTitle: null };
   }
 
-  const suffix = resolvedTitle ? `: ${resolvedTitle}` : "";
-  return `Review PR #${number}${suffix}`.slice(0, 255);
+  const resolved = await Promise.all(
+    matches.map(async (match) => {
+      const attrs = parseXmlAttrs(match[1]);
+      let title = (attrs.title ?? "").trim();
+      if (!title || isLoadingGithubRefTitle(title)) {
+        const parsed = parseGithubIssueUrl(attrs.url);
+        if (parsed?.kind === "pr") {
+          try {
+            title =
+              (await githubPrTitleClient.getGithubPullRequestTitle({
+                owner: parsed.owner,
+                repo: parsed.repo,
+                number: parsed.number,
+              })) ?? "";
+          } catch {
+            title = "";
+          }
+        }
+      }
+
+      const tag = match[0].replace(
+        /\btitle="[^"]*"/,
+        `title="${escapeXmlAttr(title)}"`,
+      );
+      return { number: attrs.number, tag, title };
+    }),
+  );
+
+  let matchIndex = 0;
+  const resolvedContent = content.replaceAll(
+    tagRegex,
+    () => resolved[matchIndex++].tag,
+  );
+  const remainingContent = content
+    .replaceAll(tagRegex, "")
+    .replace(/^\s*\d+\.\s*$/gm, "")
+    .trim();
+  const standalonePr =
+    resolved.length === 1 &&
+    remainingContent.length === 0 &&
+    /^\d+$/.test(resolved[0].number);
+
+  if (!standalonePr) {
+    return { content: resolvedContent, deterministicTitle: null };
+  }
+
+  const { number, title } = resolved[0];
+  const suffix = title ? `: ${title}` : "";
+  return {
+    content: resolvedContent,
+    deterministicTitle: `Review PR #${number}${suffix}`.slice(0, 255),
+  };
 }
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:
@@ -76,7 +114,7 @@ Title rules:
 - Remove: the, this, my, a, an
 - If possible, start with action verbs (Fix, Implement, Analyze, Debug, Update, Research, Review)
 - Keep exact: technical terms, numbers, filenames, HTTP codes, PR numbers
-- GitHub PR rule: If the content contains a <github_pr> with a non-empty title, the generated TITLE MUST include both the PR number and the PR title verbatim. This rule overrides the 6-word title limit. Never replace the PR title with a generic phrase. Before responding, verify that both values appear in TITLE.
+- GitHub PR context: When PR metadata is part of a broader task or multiple PRs are present, title the overall task rather than letting the first PR define its scope. Include relevant PR numbers when useful; full PR titles do not need to be copied verbatim.
 - Never assume tech stack
 - Only output "Untitled" if the input is completely null/missing, not just unclear
 - If the input is a URL (e.g. a GitHub issue link, PR link, or any web URL), generate a title based on what you can infer from the URL structure (repo name, issue/PR number, etc.). Never say you cannot access URLs or ask the user for more information.
@@ -227,11 +265,15 @@ export class TitleGeneratorService {
     content: string,
   ): Promise<TitleAndSummary | null> {
     try {
-      const githubPrTitle = await getGithubPrTaskTitle(
+      const githubPrContext = await prepareGithubPrGenerationContext(
         content,
         this.githubPrTitleClient,
       );
-      const prompt = getGenerationPrompt(content, !!githubPrTitle);
+      const githubPrTitle = githubPrContext.deterministicTitle;
+      const prompt = getGenerationPrompt(
+        githubPrContext.content,
+        !!githubPrTitle,
+      );
       const result = await this.llmGateway.prompt(
         [
           {
