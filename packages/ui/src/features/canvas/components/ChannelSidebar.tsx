@@ -33,8 +33,14 @@ import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBa
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
+import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
+import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
+import { useTasks } from "@posthog/ui/features/tasks/useTasks";
+import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
+import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useState } from "react";
 
@@ -52,6 +58,7 @@ const cnHeaderButton = (active: boolean) =>
   cn(HEADER_ICON_BUTTON_CLASS, active && "bg-fill-selected text-foreground");
 
 const RECENTS_CAP = 30;
+const log = logger.scope("channel-sidebar");
 
 function RecentSectionHeader({
   searchOpen,
@@ -199,6 +206,18 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
   const { items, actions, me, isLoading, channelMissing } =
     useChannelItems(channelId);
+  const { showContextMenu, editingTaskId, setEditingTaskId } =
+    useTaskContextMenu();
+  const { renameTask } = useRenameTask();
+  const commandCenterCells = useCommandCenterStore((state) => state.cells);
+  const assignTaskToCommandCenter = useCommandCenterStore(
+    (state) => state.assignTask,
+  );
+  const { data: allTasks = [] } = useTasks({ showAllUsers: true });
+  const allTaskIds = useMemo(
+    () => new Set(allTasks.map((task) => task.id)),
+    [allTasks],
+  );
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -225,6 +244,56 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
         { query, createdBy: createdByFilter, status: statusFilter, me },
       ).slice(0, RECENTS_CAP),
     [items, query, createdByFilter, statusFilter, me],
+  );
+
+  const taskRow = (item: (typeof items)[number]) => (
+    <ChannelItemRow
+      key={item.key}
+      item={item}
+      isActive={item.key === activeKey}
+      actions={actions}
+      isEditing={item.kind === "task" && editingTaskId === item.id}
+      onContextMenu={
+        item.kind === "task"
+          ? (event) =>
+              void showContextMenu(item, event, {
+                isPinned: item.pinned,
+                isInCommandCenter: commandCenterCells.includes(item.id),
+                hasEmptyCommandCenterCell: commandCenterCells.some(
+                  (taskId) => taskId == null || !allTaskIds.has(taskId),
+                ),
+                showArchivePrior: false,
+                onTogglePin: () => actions.togglePin(item),
+                onArchive: () => actions.archive(item),
+                onAddToCommandCenter: () => {
+                  const cellIndex = commandCenterCells.findIndex(
+                    (taskId) => taskId == null || !allTaskIds.has(taskId),
+                  );
+                  if (cellIndex === -1) return;
+                  assignTaskToCommandCenter(cellIndex, item.id);
+                  navigateToCommandCenter();
+                },
+              })
+          : undefined
+      }
+      onEditSubmit={
+        item.kind === "task"
+          ? async (newTitle) => {
+              setEditingTaskId(null);
+              try {
+                await renameTask({
+                  taskId: item.id,
+                  currentTitle: item.title,
+                  newTitle,
+                });
+              } catch (error) {
+                log.error("Failed to rename task", error);
+              }
+            }
+          : undefined
+      }
+      onEditCancel={() => setEditingTaskId(null)}
+    />
   );
 
   const sectionRow = (
@@ -313,14 +382,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             <>
               <MenuLabel>Pinned</MenuLabel>
               <div className="flex flex-col gap-px">
-                {pinnedItems.map((item) => (
-                  <ChannelItemRow
-                    key={item.key}
-                    item={item}
-                    isActive={item.key === activeKey}
-                    actions={actions}
-                  />
-                ))}
+                {pinnedItems.map(taskRow)}
               </div>
             </>
           )}
@@ -343,14 +405,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               />
               {recentItems.length > 0 ? (
                 <div className="flex flex-col gap-px">
-                  {recentItems.map((item) => (
-                    <ChannelItemRow
-                      key={item.key}
-                      item={item}
-                      isActive={item.key === activeKey}
-                      actions={actions}
-                    />
-                  ))}
+                  {recentItems.map(taskRow)}
                 </div>
               ) : (
                 <Empty className="border-0 py-6">
