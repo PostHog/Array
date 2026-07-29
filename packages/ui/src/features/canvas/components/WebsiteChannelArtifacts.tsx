@@ -188,15 +188,10 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* Left-aligned, like the page header above it — a centred column
-            drifts away from the title as the window widens. The list keeps a
-            readable measure; the card layouts spread. */}
-        <div
-          className={cn(
-            "w-full px-6 py-6",
-            view === "list" ? "max-w-[680px]" : "max-w-[1400px]",
-          )}
-        >
+        {/* Full width, flush with the page header above it — every layout
+            here (rows and cards alike) is a scannable list, not prose, so a
+            measure cap just strands whitespace on wide windows. */}
+        <div className="w-full px-6 py-6">
           {!spacesLayout && (
             <div className="mb-3 flex items-center justify-between gap-3">
               <Text size="sm" variant="muted">
@@ -235,7 +230,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
             // items-stretch + a full-height card: a PR tile (no preview to
             // show) matches the canvas cards in its row instead of ending
             // short.
-            <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {items.map((item) => (
                 <ArtifactCard
                   key={item.key}
@@ -252,7 +247,7 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
             // never reflow into each other, so break-inside-avoid is enough. The
             // trade-off is column-major order — newest runs down column one, not
             // across the row — which is fine for a browse-y wall of previews.
-            <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
+            <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 2xl:columns-4">
               {items.map((item) => (
                 <div key={item.key} className="mb-4 break-inside-avoid">
                   <ArtifactCard
@@ -429,7 +424,7 @@ function ArtifactRow({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors enabled:hover:bg-gray-3"
+      className="group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors enabled:hover:bg-fill-hover"
     >
       <span
         className="flex size-7 shrink-0 items-center justify-center rounded-md"
@@ -441,13 +436,13 @@ function ArtifactRow({
         <span className="truncate font-medium text-[13px] text-gray-12 leading-tight">
           {title}
         </span>
-        <span className="truncate text-[11px] text-gray-10 leading-tight">
+        <span className="truncate text-[11px] text-muted-foreground leading-tight">
           {subtitle}
         </span>
       </span>
       <CaretRightIcon
         size={14}
-        className="shrink-0 text-gray-8 opacity-0 transition-opacity group-hover:opacity-100"
+        className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
       />
     </button>
   );
