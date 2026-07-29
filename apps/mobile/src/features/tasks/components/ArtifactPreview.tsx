@@ -125,10 +125,12 @@ export function ArtifactPreview({
             <WebView
               originWhitelist={["*"]}
               source={{ html: applyCspToHtml(text ?? "") }}
-              // Untrusted agent output: no scripts, and any attempt to navigate
-              // out (links, redirects) is handed to the system browser rather
-              // than loaded inside the sandbox. The injected CSP blocks remote
-              // resource loads on top of that.
+              // Untrusted agent output: no scripts, and the sandbox never
+              // navigates to a remote page. Only a genuine tap ("click") opens
+              // externally — automatic redirects (e.g. a <meta http-equiv=
+              // "refresh">) are dropped so previewing a file can't silently
+              // launch an attacker URL. The injected CSP blocks remote resource
+              // loads on top of that.
               javaScriptEnabled={false}
               setSupportMultipleWindows={false}
               onShouldStartLoadWithRequest={(req) => {
@@ -136,7 +138,7 @@ export function ArtifactPreview({
                   req.url.startsWith("http://") ||
                   req.url.startsWith("https://")
                 ) {
-                  openExternalUrl(req.url);
+                  if (req.navigationType === "click") openExternalUrl(req.url);
                   return false;
                 }
                 return true;
