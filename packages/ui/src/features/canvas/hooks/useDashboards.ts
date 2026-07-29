@@ -4,6 +4,7 @@ import type {
 } from "@posthog/core/canvas/dashboardSchemas";
 import type { FreeformVersion } from "@posthog/core/canvas/freeformSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useDashboardEditStore } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { toast } from "@posthog/ui/primitives/toast";
 import { logger } from "@posthog/ui/shell/logger";
@@ -44,6 +45,7 @@ export function useDashboards(
       {
         enabled: !!channelId,
         gcTime: SPACE_QUERY_GC_TIME_MS,
+        meta: AUTH_SCOPED_QUERY_META,
         refetchInterval:
           options?.poll === false ? false : SPACE_QUERY_REFETCH_INTERVAL_MS,
         staleTime: SPACE_QUERY_STALE_TIME_MS,
@@ -68,6 +70,7 @@ export function usePrefetchDashboards(): (channelId: string) => void {
           { channelId },
           {
             gcTime: SPACE_QUERY_GC_TIME_MS,
+            meta: AUTH_SCOPED_QUERY_META,
             staleTime: SPACE_QUERY_STALE_TIME_MS,
           },
         ),

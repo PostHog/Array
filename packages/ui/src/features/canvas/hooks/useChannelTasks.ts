@@ -1,5 +1,6 @@
 import type { ChannelTaskRecord } from "@posthog/core/canvas/channelTaskSchemas";
 import { useHostTRPC } from "@posthog/host-router/react";
+import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import {
@@ -20,6 +21,7 @@ export function useChannelTasks(channelId: string | undefined): {
       {
         enabled: !!channelId,
         gcTime: SPACE_QUERY_GC_TIME_MS,
+        meta: AUTH_SCOPED_QUERY_META,
         refetchInterval: SPACE_QUERY_REFETCH_INTERVAL_MS,
         staleTime: SPACE_QUERY_STALE_TIME_MS,
       },
@@ -43,6 +45,7 @@ export function usePrefetchChannelTasks(): (channelId: string) => void {
           { channelId },
           {
             gcTime: SPACE_QUERY_GC_TIME_MS,
+            meta: AUTH_SCOPED_QUERY_META,
             staleTime: SPACE_QUERY_STALE_TIME_MS,
           },
         ),
