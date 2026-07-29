@@ -16,6 +16,15 @@ export interface SessionViewState {
   isPromptPending: boolean;
   promptStartedAt: number | null | undefined;
   isInitializing: boolean;
+  /**
+   * Set when `isInitializing` reflects a resume-from-terminal in flight on a
+   * task that already has conversation content (prior transcript events
+   * and/or a just-sent optimistic/user message). The UI should keep the
+   * thread visible (with a restore status row) instead of replacing it with
+   * the full-screen initializing overlay, so the user's message never
+   * disappears behind the restore lifecycle.
+   */
+  hasRestorableContent: boolean;
   cloudBranch: string | null;
   errorTitle: string | undefined;
   errorMessage: string | undefined;
@@ -51,6 +60,12 @@ export function deriveSessionViewState(
   const isNewSessionWithInitialPrompt =
     !task.latest_run?.id && !!task.description;
   const isResumingExistingSession = !!task.latest_run?.id;
+  const hasRestorableContent = isCloud
+    ? events.length > 0 ||
+      (session?.optimisticItems ?? []).some(
+        (item) => item.type === "user_message",
+      )
+    : false;
   const isInitializing = isCloud
     ? !hasError && (!session || (events.length === 0 && isCloudRunNotTerminal))
     : !session ||
@@ -75,6 +90,7 @@ export function deriveSessionViewState(
     isPromptPending,
     promptStartedAt,
     isInitializing,
+    hasRestorableContent,
     cloudBranch,
     errorTitle: session?.errorTitle,
     errorMessage:
