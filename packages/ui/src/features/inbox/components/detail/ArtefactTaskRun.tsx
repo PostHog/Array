@@ -1,25 +1,14 @@
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
+import {
+  humanizeIdentifier,
+  taskRunLabel,
+} from "@posthog/core/inbox/activityLog";
 import type { Task, TaskRunArtefactContent } from "@posthog/shared/types";
 import { TaskLogsPanel } from "@posthog/ui/features/task-detail/components/TaskLogsPanel";
 import { taskKeys } from "@posthog/ui/features/tasks/taskKeys";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { Badge, Box, Text } from "@radix-ui/themes";
 import { useState } from "react";
-
-const SIGNALS_PRODUCT = "signals";
-
-// Friendlier labels for the built-in signals-pipeline task types; custom-agent types fall back
-// to a humanized form of their identifier.
-const SIGNALS_TYPE_LABELS: Record<string, string> = {
-  research: "Research",
-  implementation: "Implementation",
-  repo_selection: "Repo selection",
-};
-
-function humanizeIdentifier(value: string): string {
-  const spaced = value.replace(/[_-]+/g, " ").trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 /**
  * Renders a `task_run` artefact: loads the referenced task and lets the user
@@ -39,10 +28,8 @@ export function ArtefactTaskRun({
   );
 
   const task = taskQuery.data;
-  const isSignals = content.product === SIGNALS_PRODUCT;
-  const label = isSignals
-    ? (SIGNALS_TYPE_LABELS[content.type] ?? humanizeIdentifier(content.type))
-    : humanizeIdentifier(content.type);
+  const isSignals = content.product === "signals";
+  const label = taskRunLabel(content);
   const status = task?.latest_run?.status;
 
   return (

@@ -35,6 +35,23 @@ export function isDismissedReport(report: SignalReport): boolean {
   return report.status === "suppressed" || report.status === "resolved";
 }
 
+export function isRestorableReport(
+  report: Pick<SignalReport, "status">,
+): boolean {
+  return report.status === "suppressed";
+}
+
+export function getImmediatelyActionableReports(
+  reports: SignalReport[],
+): SignalReport[] {
+  return reports.filter(
+    (report) =>
+      report.status === "ready" &&
+      report.actionability === "immediately_actionable" &&
+      !report.already_addressed,
+  );
+}
+
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
 
 export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";
