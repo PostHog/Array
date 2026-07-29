@@ -105,7 +105,7 @@ const {
   };
 });
 
-import { UpdatesService } from "./updates";
+import { isVersionNewer, UpdatesService } from "./updates";
 
 function injectPorts(service: UpdatesService): void {
   const s = service as unknown as Record<string, unknown>;
@@ -1379,27 +1379,29 @@ describe("UpdatesService", () => {
       expect(mockUpdater.download).toHaveBeenCalledTimes(2);
     });
 
-    it("re-stages an older build when the feed rolls back below the staged version", async () => {
+    it("ignores a feed rollback below the staged version", async () => {
       await initializeService(service);
       service.setAutoDownloadEnabled(true);
 
       updaterHandlers.updateDownloaded?.("v3.0.0");
 
+      const statusHandler = vi.fn();
+      service.on(UpdatesEvent.Status, statusHandler);
       mockUpdater.download.mockClear();
+
       service.checkForUpdates("periodic");
       updaterHandlers.updateAvailable?.({
         version: "v2.0.0",
         releaseNotes: null,
       });
 
-      expect(mockUpdater.download).toHaveBeenCalled();
-
-      updaterHandlers.updateDownloaded?.("v2.0.0");
+      expect(mockUpdater.download).not.toHaveBeenCalled();
+      expect(statusHandler).not.toHaveBeenCalled();
       expect(service.getStatus()).toEqual({
         checking: false,
         updateReady: true,
         installing: false,
-        version: "v2.0.0",
+        version: "v3.0.0",
       });
     });
 
@@ -1574,6 +1576,21 @@ describe("UpdatesService", () => {
           skippedBecauseUpdateStaged: true,
         }),
       );
+    });
+  });
+
+  describe("isVersionNewer", () => {
+    it.each([
+      ["3.0.0", "2.0.0", true],
+      ["2.1.0", "2.0.9", true],
+      ["2.0.10", "2.0.9", true],
+      ["2.0.0", "2.0.0", false],
+      ["2.0.0", "3.0.0", false],
+      ["2.9.0", "2.10.0", false],
+      ["v3.0.0", "v2.0.0", true],
+      ["v2.0.0", "3.0.0", false],
+    ])("isVersionNewer(%s, %s) is %s", (candidate, current, expected) => {
+      expect(isVersionNewer(candidate, current)).toBe(expected);
     });
   });
 

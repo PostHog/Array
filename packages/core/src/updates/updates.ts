@@ -30,6 +30,24 @@ import {
 } from "./schemas";
 
 type CheckSource = "user" | "periodic";
+
+function versionTriple(version: string): number[] {
+  return version
+    .replace(/^v/, "")
+    .split(".", 3)
+    .map((segment) => Number.parseInt(segment, 10) || 0);
+}
+
+export function isVersionNewer(candidate: string, current: string): boolean {
+  const a = versionTriple(candidate);
+  const b = versionTriple(current);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) {
+      return (a[i] ?? 0) > (b[i] ?? 0);
+    }
+  }
+  return false;
+}
 type UpdateState =
   | "idle"
   | "checking"
@@ -421,12 +439,19 @@ export class UpdatesService extends TypedEventEmitter<UpdatesEvents> {
       return;
     }
 
-    // Only the exact staged version is skipped so a feed rollback still re-stages.
-    if (this.state === "ready" && info.version === this.downloadedVersion) {
+    // Strictly newer only: a manifest rollback must not downgrade what is
+    // already staged. A pulled release is recovered by fix-forward or the
+    // no-update fallback, never by re-staging an older signed build.
+    if (
+      this.state === "ready" &&
+      this.downloadedVersion !== null &&
+      !isVersionNewer(info.version, this.downloadedVersion)
+    ) {
       this.log.info(
-        "Ignoring update-available because that version is already staged",
+        "Ignoring update-available because it is not newer than the staged version",
         {
           downloadedVersion: this.downloadedVersion,
+          incomingVersion: info.version,
         },
       );
       return;
