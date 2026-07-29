@@ -65,11 +65,9 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set) => {
         [threadId]: fn(s.threads[threadId] ?? EMPTY_FREEFORM_THREAD),
       };
       const mounted = new Set(s.mountedThreadIds);
+      let evictable = threadOrder.filter((id) => !mounted.has(id)).length;
       let index = 0;
-      while (
-        threadOrder.length - mountedCount(threadOrder, mounted) > MAX_THREADS &&
-        index < threadOrder.length
-      ) {
+      while (evictable > MAX_THREADS && index < threadOrder.length) {
         const candidate = threadOrder[index];
         if (mounted.has(candidate)) {
           index++;
@@ -77,6 +75,7 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set) => {
         }
         threadOrder.splice(index, 1);
         delete threads[candidate];
+        evictable--;
       }
       return { threads, threadOrder };
     });
@@ -98,16 +97,14 @@ export const useFreeformChatStore = create<FreeformChatStore>()((set) => {
     setThreadMounted: (threadId, mounted) => {
       set((s) => ({
         mountedThreadIds: mounted
-          ? [...new Set([...s.mountedThreadIds, threadId])]
+          ? s.mountedThreadIds.includes(threadId)
+            ? s.mountedThreadIds
+            : [...s.mountedThreadIds, threadId]
           : s.mountedThreadIds.filter((id) => id !== threadId),
       }));
     },
   };
 });
-
-function mountedCount(order: string[], mounted: ReadonlySet<string>): number {
-  return order.reduce((count, id) => (mounted.has(id) ? count + 1 : count), 0);
-}
 
 export function useFreeformThread(threadId: string): FreeformThreadState {
   return useFreeformChatStore(

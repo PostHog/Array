@@ -386,9 +386,8 @@ export class DashboardsService {
       // POST. On the 409 version conflict, re-read the head and retry once
       // against the fresh version id rather than failing the channel open.
       if (apiErrorStatus(error) !== 409) throw error;
-      const fresh = await this.get(record.id);
-      await publish(fresh?.currentVersionId ?? null);
-      return fresh ?? record;
+      const conflicted = await this.get(record.id);
+      await publish(conflicted?.currentVersionId ?? null);
     }
     const fresh = await this.get(record.id);
     return fresh ?? record;

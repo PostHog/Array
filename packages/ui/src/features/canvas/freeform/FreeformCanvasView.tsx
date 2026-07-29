@@ -9,6 +9,7 @@ import {
   WarningIcon,
 } from "@phosphor-icons/react";
 import {
+  currentHeadBuildFailure,
   hasActiveCanvasBuild,
   latestFinishedCanvasBuild,
   publishedCanvasBuild,
@@ -89,6 +90,10 @@ interface PinnedArtifact {
   url: string;
   /** Epoch ms the pinned URL was minted (the builds fetch that produced it). */
   mintedAt: number;
+  /** The refresh nonce the pin was adopted under, so a remount also re-stamps
+   * the pin's mint time (otherwise the expiry timer would keep firing on a URL
+   * that's already been recovered). */
+  refreshKey: number;
 }
 
 // A freeform (React-in-iframe) canvas. The rendered output is, in priority
@@ -258,22 +263,18 @@ export function FreeformCanvasView({
   // what guarantees a wedged iframe actually retries: the token endpoint is the
   // authority, and a new URL for the same bucket would be byte-identical.
   const [artifactRefreshKey, setArtifactRefreshKey] = useState(0);
-  // Track the refresh key the current pin was adopted under, so a remount also
-  // re-stamps the pin's mint time (otherwise the expiry timer would keep firing
-  // on a URL that's already been recovered).
-  const [pinnedForRefreshKey, setPinnedForRefreshKey] = useState(-1);
   if (publishedBuild?.artifactUrl) {
     const adoptFresh =
       !pinnedArtifact ||
       pinnedArtifact.buildId !== publishedBuild.id ||
-      pinnedForRefreshKey !== artifactRefreshKey;
+      pinnedArtifact.refreshKey !== artifactRefreshKey;
     if (adoptFresh) {
       setPinnedArtifact({
         buildId: publishedBuild.id,
         url: publishedBuild.artifactUrl,
         mintedAt: buildsUpdatedAt || Date.now(),
+        refreshKey: artifactRefreshKey,
       });
-      setPinnedForRefreshKey(artifactRefreshKey);
     }
   } else if (lifecycle && pinnedArtifact) {
     // The lifecycle says there's no published build anymore — drop the pin.
@@ -502,6 +503,7 @@ export function FreeformCanvasView({
     !!lifecycle &&
     lifecycle.builds.length > 0 &&
     (hasActiveCanvasBuild(lifecycle) ||
+      !!currentHeadBuildFailure(lifecycle) ||
       latestFinishedCanvasBuild(lifecycle)?.buildStatus === "failed");
   const showToolbar = interactive || hasBuildSignal;
 
