@@ -10,6 +10,9 @@ const mockEnrichDescription = vi.hoisted(() =>
 const mockGenerateTitle = vi.hoisted(() => vi.fn());
 const mockGetQueriesData = vi.hoisted(() => vi.fn(() => [] as unknown[]));
 const mockIsAuthenticated = vi.hoisted(() => ({ value: true }));
+const mockCurrentUser = vi.hoisted(() => ({
+  value: { id: 1 } as { id: number } | undefined,
+}));
 const mockUpdateTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockSetQueriesData = vi.hoisted(() => vi.fn());
 const mockSetQueryData = vi.hoisted(() => vi.fn());
@@ -46,6 +49,10 @@ vi.mock("@posthog/ui/features/auth/store", () => ({
         ? { status: "authenticated", cloudRegion: "us-east-1" }
         : { status: "anonymous", cloudRegion: null },
     ),
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: mockCurrentUser.value }),
 }));
 
 vi.mock("@posthog/core/sessions/sessionEvents", () => ({
@@ -116,6 +123,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
     created_at: "2026-05-28T00:00:00.000Z",
     updated_at: "2026-05-28T00:00:00.000Z",
     origin_product: "user_created",
+    created_by: {
+      id: 1,
+      uuid: "user-1",
+      email: "user@example.com",
+    },
     ...overrides,
   } as Task;
 }
@@ -136,6 +148,7 @@ describe("useChatTitleGenerator", () => {
     vi.clearAllMocks();
     useTitleGenerationStore.setState({ byTaskId: {} });
     mockIsAuthenticated.value = true;
+    mockCurrentUser.value = { id: 1 };
     mockPrompts.value = [];
     mockSessionSummary.value = undefined;
     mockTitleAttachmentPaths.value = [];
@@ -149,6 +162,14 @@ describe("useChatTitleGenerator", () => {
     renderHook(() =>
       useChatTitleGenerator(createTask({ title: "Custom task title" })),
     );
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("waits for task creator identity before generating", () => {
+    mockCurrentUser.value = undefined;
+
+    renderHook(() => useChatTitleGenerator(createTask()));
+
     expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
@@ -169,6 +190,34 @@ describe("useChatTitleGenerator", () => {
     await waitFor(() => {
       expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
         title: "Fix login bug",
+      });
+    });
+    expect(mockGenerateTitle).toHaveBeenCalledWith("Fix the login bug", {
+      resolveGithubPrTitles: true,
+    });
+  });
+
+  it("does not resolve GitHub metadata from a teammate's description", async () => {
+    mockGenerateTitle.mockResolvedValue({
+      title: "Review PR #123",
+      summary: "Reviewing a pull request",
+    });
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          created_by: {
+            id: 2,
+            uuid: "user-2",
+            email: "teammate@example.com",
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledWith("Fix the login bug", {
+        resolveGithubPrTitles: false,
       });
     });
   });

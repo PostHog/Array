@@ -32,10 +32,18 @@ export const webReadFileAsBase64: ReadFileAsBase64 = (filePath: string) =>
 
 export const webGithubPrTitleClient: GithubPrTitleClient = {
   getGithubPullRequestTitle: async ({ owner, repo, number }) => {
-    const response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
-      { headers: { Accept: "application/vnd.github+json" } },
-    );
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+        {
+          headers: { Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(5_000),
+        },
+      );
+    } catch {
+      return null;
+    }
     if (!response.ok) return null;
     const payload: unknown = await response.json();
     if (
