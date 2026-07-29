@@ -287,8 +287,11 @@ export function ActivityView() {
     () => createChannelIdByName(folderChannels),
     [folderChannels],
   );
-  const folderChannelIdFor = (channelName: string | null): string | null =>
-    channelIdForName(folderIdByName, channelName);
+  const folderChannelIdFor = useCallback(
+    (channelName: string | null): string | null =>
+      channelIdForName(folderIdByName, channelName),
+    [folderIdByName],
+  );
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -296,65 +299,81 @@ export function ActivityView() {
     });
   }, []);
 
-  const markAllReadButton =
-    unreadCount > 0 ? (
-      <Button
-        variant="default"
-        size="sm"
-        loading={isMarkingRead}
-        disabled={isMarkingRead}
-        onClick={markAllRead}
-      >
-        <ChecksIcon size={14} />
-        {markLoadedReadLabel(unreadItems.length, unreadCount)}
-      </Button>
-    ) : null;
+  const markAllReadButton = useMemo(
+    () =>
+      unreadCount > 0 ? (
+        <Button
+          variant="default"
+          size="sm"
+          loading={isMarkingRead}
+          disabled={isMarkingRead}
+          onClick={markAllRead}
+        >
+          <ChecksIcon size={14} />
+          {markLoadedReadLabel(unreadItems.length, unreadCount)}
+        </Button>
+      ) : null,
+    [unreadCount, unreadItems.length, isMarkingRead, markAllRead],
+  );
 
-  const feed = (
-    <>
-      {isLoading && items.length === 0 ? (
-        <div className="flex justify-center py-16">
-          <Spinner />
-        </div>
-      ) : items.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <BellIcon size={20} />
-            </EmptyMedia>
-            <EmptyTitle>No activity yet</EmptyTitle>
-            <EmptyDescription>
-              Tasks you create, get tagged in, or reply to across{" "}
-              {spacesLayout ? "spaces" : "channels"} land here.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          {items.map((item) => (
-            <ActivityRow
-              key={item.taskId}
-              item={item}
-              folderChannelId={folderChannelIdFor(item.channelName)}
-              onOpen={markRead}
-              onMarkRead={markRead}
-              currentUser={currentUser}
-            />
-          ))}
-          {hasNextPage && (
-            <Button
-              variant="outline"
-              className="mt-3 self-center"
-              loading={isFetchingNextPage}
-              disabled={isFetchingNextPage}
-              onClick={() => void fetchNextPage()}
-            >
-              Load more
-            </Button>
-          )}
-        </div>
-      )}
-    </>
+  const feed = useMemo(
+    () => (
+      <>
+        {isLoading && items.length === 0 ? (
+          <div className="flex justify-center py-16">
+            <Spinner />
+          </div>
+        ) : items.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <BellIcon size={20} />
+              </EmptyMedia>
+              <EmptyTitle>No activity yet</EmptyTitle>
+              <EmptyDescription>
+                Tasks you create, get tagged in, or reply to across{" "}
+                {spacesLayout ? "spaces" : "channels"} land here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            {items.map((item) => (
+              <ActivityRow
+                key={item.taskId}
+                item={item}
+                folderChannelId={folderChannelIdFor(item.channelName)}
+                onOpen={markRead}
+                onMarkRead={markRead}
+                currentUser={currentUser}
+              />
+            ))}
+            {hasNextPage && (
+              <Button
+                variant="outline"
+                className="mt-3 self-center"
+                loading={isFetchingNextPage}
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+              >
+                Load more
+              </Button>
+            )}
+          </div>
+        )}
+      </>
+    ),
+    [
+      isLoading,
+      items,
+      spacesLayout,
+      folderChannelIdFor,
+      markRead,
+      currentUser,
+      hasNextPage,
+      isFetchingNextPage,
+      fetchNextPage,
+    ],
   );
 
   // The shared page header ships with the spaces layout; without it the page

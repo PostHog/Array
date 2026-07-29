@@ -1,6 +1,5 @@
 import type { InboxTabCounts } from "@posthog/core/inbox/reportMembership";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { InboxScopeSelect } from "@posthog/ui/features/inbox/components/InboxScopeSelect";
 import {
   activeTabFromPath,
@@ -28,7 +27,7 @@ export function InboxPageHeader({ counts }: InboxPageHeaderProps) {
   // The shared page header ships behind bluebird; everyone else keeps the
   // header this page has always had. Delete the legacy branch when the flag
   // graduates.
-  const bluebird = useFeatureFlag(PROJECT_BLUEBIRD_FLAG, import.meta.env.DEV);
+  const bluebird = useBluebirdFlag();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   if (!bluebird) return <LegacyInboxPageHeader counts={counts} />;

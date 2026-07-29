@@ -1,13 +1,12 @@
 import { ChatCircleDotsIcon, CloudIcon, PlusIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
-import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -79,7 +78,7 @@ export function LoopsListView() {
   // The shared page header ships behind bluebird. Read here, not in the
   // presentation — that renders bare in tests and Storybook, with no container
   // to resolve the flags service from.
-  const bluebird = useFeatureFlag(PROJECT_BLUEBIRD_FLAG, import.meta.env.DEV);
+  const bluebird = useBluebirdFlag();
   const authenticatedClient = useOptionalAuthenticatedClient();
   const {
     data: currentUser,

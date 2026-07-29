@@ -5,9 +5,9 @@ import {
   Check,
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
-import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { ANALYTICS_EVENTS } from "@posthog/shared";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
-import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
+import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -104,10 +104,7 @@ export function LoopForm({ loop }: LoopFormProps) {
   // Contexts are a channels surface; hide the attachment UI when channels are
   // off, unless this loop is already attached so the link stays visible and
   // detachable.
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
+  const bluebirdEnabled = useBluebirdFlag();
   const channelsEnabled =
     useSidebarStore((s) => s.channelsEnabled) && bluebirdEnabled;
   const showContextField = channelsEnabled || !!values.contextTarget;
