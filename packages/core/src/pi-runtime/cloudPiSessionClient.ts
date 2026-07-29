@@ -3,7 +3,10 @@ import {
   RemotePiRpcClient,
 } from "@posthog/agent/pi/remote-rpc-client";
 import type { RpcCommand } from "@posthog/agent/pi/rpc-transport";
-import type { PiQueueSnapshot } from "@posthog/agent/pi/types";
+import type {
+  PiPersistedSessionConfig,
+  PiQueueSnapshot,
+} from "@posthog/agent/pi/types";
 import type {
   AgentConversationEvent,
   PiRuntimeHealth,
@@ -21,6 +24,7 @@ import type { PiSession } from "./piSessionController";
 function createTerminalPiRpcClient(
   runId: string,
   getRunStatus: () => TaskRunStatus,
+  persistedConfig?: PiPersistedSessionConfig | null,
 ): PiRemoteRpcClient {
   const rejectCommand = async (): Promise<never> => {
     throw new Error(`Cloud task run ${runId} is ${getRunStatus()}`);
@@ -34,7 +38,7 @@ function createTerminalPiRpcClient(
     getState: async () => ({
       isStreaming: false,
       isCompacting: false,
-      thinkingLevel: "off",
+      thinkingLevel: persistedConfig?.thinkingLevel ?? "off",
       steeringMode: "all",
       followUpMode: "all",
       sessionId: runId,
@@ -61,6 +65,7 @@ export interface CloudPiSessionContext {
   runStatus: TaskRunStatus;
   apiHost: string;
   teamId: number;
+  persistedConfig?: PiPersistedSessionConfig | null;
 }
 
 export class CloudPiSessionClient implements PiSession {
@@ -106,6 +111,7 @@ export class CloudPiSessionClient implements PiSession {
     this.terminalClient = createTerminalPiRpcClient(
       context.runId,
       () => this.runStatus,
+      context.persistedConfig,
     );
   }
 
@@ -121,6 +127,10 @@ export class CloudPiSessionClient implements PiSession {
 
   get taskRunId(): string {
     return this.context.runId;
+  }
+
+  get persistedConfig(): PiPersistedSessionConfig | null | undefined {
+    return this.context.persistedConfig;
   }
 
   get cloudStatus(): TaskRunStatus {
@@ -470,7 +480,7 @@ export class CloudPiSessionClient implements PiSession {
         data: {
           isStreaming: false,
           isCompacting: false,
-          thinkingLevel: "off",
+          thinkingLevel: this.context.persistedConfig?.thinkingLevel ?? "off",
           steeringMode: "all",
           followUpMode: "all",
           sessionId: this.context.runId,

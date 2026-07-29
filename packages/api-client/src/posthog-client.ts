@@ -145,6 +145,12 @@ export interface TaskRunSessionLogsResult {
   complete: boolean;
 }
 
+export interface TaskSessionStorageAccess {
+  id: string;
+  download_url: string | null;
+  content_sha256: string | null;
+}
+
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
@@ -2985,6 +2991,29 @@ export class PostHogAPIClient {
 
     const data = (await response.json()) as { url: string };
     return data.url;
+  }
+
+  async getTaskSessionStorageAccess(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskSessionStorageAccess | null> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    });
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to load task session: ${response.statusText}`);
+    }
+
+    return (await response.json()) as TaskSessionStorageAccess;
   }
 
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {

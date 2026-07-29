@@ -1,7 +1,18 @@
+import {
+  buildSessionContext,
+  type FileEntry,
+  migrateSessionEntries,
+  parseSessionEntries,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
 import type { RpcCommand, RpcResponse } from "@posthog/agent/pi/rpc-transport";
 import type { PiRuntime } from "@posthog/agent/pi/runtime";
-import type { PiQueueSnapshot } from "@posthog/agent/pi/types";
+import {
+  PI_THINKING_LEVELS,
+  type PiPersistedSessionConfig,
+  type PiQueueSnapshot,
+} from "@posthog/agent/pi/types";
 import { ROOT_LOGGER, type RootLogger } from "@posthog/di/logger";
 import {
   type AgentConversationEvent,
@@ -199,6 +210,41 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
       session.runtime.clearPendingQueuedUserMessages();
       return queue;
     });
+  }
+
+  async readSessionConfig(
+    downloadUrl: string,
+  ): Promise<PiPersistedSessionConfig | null> {
+    const response = await fetch(downloadUrl, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download Pi task session: ${response.statusText}`,
+      );
+    }
+
+    const fileEntries = parseSessionEntries(
+      await response.text(),
+    ) as FileEntry[];
+    migrateSessionEntries(fileEntries);
+    const entries = fileEntries.filter(
+      (entry): entry is SessionEntry => entry.type !== "session",
+    );
+    const context = buildSessionContext(entries);
+    const thinkingLevel = PI_THINKING_LEVELS.find(
+      (level) => level === context.thinkingLevel,
+    );
+
+    return {
+      model: context.model
+        ? { provider: context.model.provider, id: context.model.modelId }
+        : null,
+      thinkingLevel: thinkingLevel ?? "off",
+    };
   }
 
   async stop(taskId: string): Promise<void> {

@@ -36,6 +36,28 @@ export const resumePiSessionInput = z.object({
 
 export const piSessionTaskInput = z.object({ taskId: z.string() });
 
+export const piSessionConfigInput = z.object({ downloadUrl: z.url() });
+
+export const piSessionConfigOutput = z
+  .object({
+    model: z
+      .object({
+        provider: z.string(),
+        id: z.string(),
+      })
+      .nullable(),
+    thinkingLevel: z.enum([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]),
+  })
+  .nullable();
+
 export const piQueueSnapshotOutput = z.object({
   steering: z.array(z.string()),
   followUp: z.array(z.string()),

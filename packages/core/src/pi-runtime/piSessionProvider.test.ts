@@ -71,6 +71,7 @@ function cloudTaskClient(): CloudTaskClient {
 
 function taskService(environment: "local" | "cloud"): TaskService {
   return {
+    getCloudPiTaskSessionStorage: vi.fn(async () => null),
     getTask: vi.fn(async () => ({
       id: "task-1",
       runtime: "pi",
@@ -112,6 +113,39 @@ describe("RoutingPiSessionProvider", () => {
     expect(local.client.steer).not.toHaveBeenCalled();
   });
 
+  it("reads persisted configuration through Pi's session reader", async () => {
+    const local = localSession();
+    const localSessions = {
+      ...localFactory(local),
+      readSessionConfig: vi.fn(async () => ({
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high" as const,
+      })),
+    };
+    const provider = new RoutingPiSessionProvider(
+      localSessions,
+      cloudTaskClient(),
+      {
+        ...taskService("cloud"),
+        getCloudPiTaskSessionStorage: vi.fn(async () => ({
+          id: "session-1",
+          download_url: "https://storage.example/session.jsonl",
+          content_sha256: "hash",
+        })),
+      } as unknown as TaskService,
+    );
+
+    const session = await provider.get("task-1");
+
+    expect(localSessions.readSessionConfig).toHaveBeenCalledWith(
+      "https://storage.example/session.jsonl",
+    );
+    expect(session.persistedConfig).toEqual({
+      model: { provider: "posthog", id: "claude-opus-4-8" },
+      thinkingLevel: "high",
+    });
+  });
+
   it("binds explicit historical runs and invalidates changed run context", async () => {
     const local = localSession();
     const cloudTasks = cloudTaskClient();
@@ -127,7 +161,10 @@ describe("RoutingPiSessionProvider", () => {
     const provider = new RoutingPiSessionProvider(
       localFactory(local),
       cloudTasks,
-      { getTask } as unknown as TaskService,
+      {
+        getTask,
+        getCloudPiTaskSessionStorage: vi.fn(async () => null),
+      } as unknown as TaskService,
     );
 
     const historical = await provider.get("task-1", "run-old");

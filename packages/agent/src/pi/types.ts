@@ -26,6 +26,11 @@ export type PiNativeModelInfo = Awaited<
   ReturnType<RpcClient["getAvailableModels"]>
 >[number];
 
+export interface PiPersistedSessionConfig {
+  model: { provider: string; id: string } | null;
+  thinkingLevel: PiThinkingLevel;
+}
+
 export type PiCommand = Awaited<ReturnType<RpcClient["getCommands"]>>[number];
 
 export type PiSessionStatus = Omit<RpcSessionState, "model"> & {

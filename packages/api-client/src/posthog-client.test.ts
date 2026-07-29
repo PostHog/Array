@@ -278,6 +278,42 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("loads native task session storage access", async () => {
+    const storage = {
+      id: "session-1",
+      download_url: "https://storage.example/session.jsonl",
+      content_sha256: "hash",
+    };
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => storage,
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.getTaskSessionStorageAccess("task-123", "run-123"),
+    ).resolves.toEqual(storage);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/projects/123/tasks/task-123/runs/run-123/task_session/",
+      }),
+    );
+  });
+
   it("maps the permission mode per adapter when creating task runs", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,

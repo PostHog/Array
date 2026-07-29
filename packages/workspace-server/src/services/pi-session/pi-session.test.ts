@@ -29,6 +29,7 @@ function successfulResponse(command: string): RpcResponse {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -121,6 +122,54 @@ describe("selectPiPoolEvictionCandidate", () => {
         },
       ]),
     ).toBeNull();
+  });
+});
+
+describe("PiSessionService task session config", () => {
+  it("uses Pi session context resolution for model and thinking", async () => {
+    const content = [
+      {
+        type: "session",
+        version: 3,
+        id: "session-1",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        cwd: "/repo",
+      },
+      {
+        type: "model_change",
+        id: "model-1",
+        parentId: null,
+        timestamp: "2026-01-01T00:00:01.000Z",
+        provider: "posthog",
+        modelId: "claude-opus-4-8",
+      },
+      {
+        type: "thinking_level_change",
+        id: "thinking-1",
+        parentId: "model-1",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        thinkingLevel: "high",
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join("\n");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(content)),
+    );
+    const service = new PiSessionService(
+      {} as PiRuntimeFactory,
+      {} as ITaskMetadataRepository,
+      {} as ProcessTrackingService,
+      rootLogger,
+    );
+
+    await expect(
+      service.readSessionConfig("https://storage.example/session.jsonl"),
+    ).resolves.toEqual({
+      model: { provider: "posthog", id: "claude-opus-4-8" },
+      thinkingLevel: "high",
+    });
   });
 });
 

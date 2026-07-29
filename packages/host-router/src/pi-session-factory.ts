@@ -66,4 +66,8 @@ export class TrpcPiSessionFactory implements PiSessionFactory {
   get(taskId: string): Promise<PiSession> {
     return Promise.resolve(new TrpcPiSession(this.client, taskId));
   }
+
+  readSessionConfig(downloadUrl: string) {
+    return this.client.piSession.readSessionConfig.query({ downloadUrl });
+  }
 }

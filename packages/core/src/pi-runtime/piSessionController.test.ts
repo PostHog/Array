@@ -727,6 +727,71 @@ describe("PiSessionController", () => {
     ).toBe(false);
   });
 
+  it("hydrates cold model controls from persisted native config", async () => {
+    const session = {
+      ...createSession(),
+      persistedConfig: {
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high" as const,
+      },
+    };
+    vi.mocked(session.client.getState).mockResolvedValue({
+      thinkingLevel: "high",
+      isStreaming: false,
+      isCompacting: false,
+      steeringMode: "all",
+      followUpMode: "all",
+      sessionId: "session-1",
+      autoCompactionEnabled: true,
+      messageCount: 0,
+      pendingMessageCount: 0,
+    });
+    vi.mocked(session.client.getAvailableModels).mockResolvedValue([]);
+    vi.mocked(session.client.getAvailableThinkingLevels).mockResolvedValue([]);
+    const controller = createController(session);
+
+    await controller.connect("task-1", "run-1");
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      status: {
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high",
+      },
+      models: [{ provider: "posthog", id: "claude-opus-4-8" }],
+      thinkingLevels: ["high"],
+      modelsLoaded: true,
+      thinkingLevelsLoaded: true,
+    });
+  });
+
+  it("keeps persisted controls when the old sandbox is unavailable", async () => {
+    const session = {
+      ...createSession(),
+      taskRunId: "run-1",
+      persistedConfig: {
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high" as const,
+      },
+    };
+    vi.mocked(session.client.getState).mockRejectedValue(
+      new Error("No active sandbox for this task run"),
+    );
+    const controller = createController(session);
+
+    await expect(controller.connect("task-1", "run-1")).rejects.toThrow(
+      "No active sandbox",
+    );
+
+    expect(controller.store.getState().sessions["task-1"]).toMatchObject({
+      status: {
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high",
+      },
+      models: [{ provider: "posthog", id: "claude-opus-4-8" }],
+      thinkingLevels: ["high"],
+    });
+  });
+
   it("resumes a terminal cloud run only when a message is submitted", async () => {
     const terminalSession = {
       ...createSession(),

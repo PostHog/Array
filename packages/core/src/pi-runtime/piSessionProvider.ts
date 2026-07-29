@@ -47,10 +47,21 @@ export class RoutingPiSessionProvider implements PiSessionProvider {
       return null;
     }
 
+    const storage = await this.taskService
+      .getCloudPiTaskSessionStorage(taskId, run.id)
+      .catch(() => null);
+    const persistedConfig =
+      storage?.download_url && this.localFactory.readSessionConfig
+        ? await this.localFactory
+            .readSessionConfig(storage.download_url)
+            .catch(() => null)
+        : null;
+
     return {
       taskId,
       runId: run.id,
       runStatus: run.status,
+      persistedConfig,
       ...context,
     };
   }

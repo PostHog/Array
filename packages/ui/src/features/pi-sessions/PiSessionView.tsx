@@ -22,6 +22,7 @@ import {
   Skeleton,
 } from "@posthog/quill";
 import type { AgentConversationEvent } from "@posthog/shared";
+import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
@@ -353,6 +354,12 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   }
 
   const controlsPending = status ? isStreaming || isBashRunning : false;
+  const controlsDisabled =
+    controlsPending ||
+    isCompacting ||
+    session.connectionState !== "connected" ||
+    (session.cloudStatus !== undefined &&
+      isTerminalStatus(session.cloudStatus));
   const hasQueuedMessage =
     session.queue.steering.length + session.queue.followUp.length > 0;
   let modelSelector: ReactElement = (
@@ -370,7 +377,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       <PiModelSelector
         models={session.models}
         currentModel={status.model}
-        disabled={controlsPending || isCompacting}
+        disabled={controlsDisabled}
         onChange={setModel}
       />
     );
@@ -384,7 +391,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
       <PiThinkingLevelSelector
         level={status.thinkingLevel}
         levels={session.thinkingLevels}
-        disabled={controlsPending || isCompacting}
+        disabled={controlsDisabled}
         onChange={setThinkingLevel}
       />
     ) : null;

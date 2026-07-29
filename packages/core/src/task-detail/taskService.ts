@@ -1,4 +1,7 @@
-import { CLOUD_USAGE_LIMIT_ERROR_MESSAGE } from "@posthog/api-client/posthog-client";
+import {
+  CLOUD_USAGE_LIMIT_ERROR_MESSAGE,
+  type TaskSessionStorageAccess,
+} from "@posthog/api-client/posthog-client";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -180,6 +183,18 @@ export class TaskService {
     }
 
     return task;
+  }
+
+  public async getCloudPiTaskSessionStorage(
+    taskId: string,
+    taskRunId: string,
+  ): Promise<TaskSessionStorageAccess | null> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    return posthogClient.getTaskSessionStorageAccess(taskId, taskRunId);
   }
 
   public async resumeCloudPiRun(

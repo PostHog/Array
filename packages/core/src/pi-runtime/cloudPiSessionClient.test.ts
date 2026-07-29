@@ -293,6 +293,25 @@ describe("CloudPiSessionClient", () => {
     ]);
   });
 
+  it("serves persisted native config while the cloud runtime is cold", async () => {
+    const cloud = createCloudTaskClient();
+    const session = new CloudPiSessionClient(cloud.client, {
+      ...context("completed"),
+      persistedConfig: {
+        model: { provider: "posthog", id: "claude-opus-4-8" },
+        thinkingLevel: "high",
+      },
+    });
+
+    await expect(session.client.getState()).resolves.toMatchObject({
+      thinkingLevel: "high",
+    });
+    expect(session.persistedConfig).toEqual({
+      model: { provider: "posthog", id: "claude-opus-4-8" },
+      thinkingLevel: "high",
+    });
+  });
+
   it("loads terminal history from the cloud snapshot without sandbox RPC", async () => {
     const cloud = createCloudTaskClient();
     const session = new CloudPiSessionClient(

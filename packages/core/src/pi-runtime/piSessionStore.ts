@@ -29,7 +29,7 @@ export interface PiSessionError {
 export interface PiControllerSessionState {
   connectionState: SessionStatus;
   events: AgentConversationEvent[];
-  models: PiNativeModelInfo[];
+  models: Array<Pick<PiNativeModelInfo, "provider" | "id">>;
   modelsLoaded: boolean;
   thinkingLevels: PiThinkingLevel[];
   thinkingLevelsLoaded: boolean;

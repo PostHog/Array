@@ -4,6 +4,8 @@ import type { PiSessionService } from "@posthog/workspace-server/services/pi-ses
 import {
   piQueueSnapshotOutput,
   piRpcResponseSchema,
+  piSessionConfigInput,
+  piSessionConfigOutput,
   piSessionHealthOutput,
   piSessionRpcInput,
   piSessionStartOutput,
@@ -40,6 +42,13 @@ export const piSessionRouter = router({
     .input(piSessionTaskInput)
     .output(piSessionHealthOutput)
     .query(({ ctx, input }) => getService(ctx.container).health(input.taskId)),
+
+  readSessionConfig: publicProcedure
+    .input(piSessionConfigInput)
+    .output(piSessionConfigOutput)
+    .query(({ ctx, input }) =>
+      getService(ctx.container).readSessionConfig(input.downloadUrl),
+    ),
 
   getQueue: publicProcedure
     .input(piSessionTaskInput)

@@ -1,3 +1,4 @@
+import type { TaskSessionStorageAccess } from "@posthog/api-client/posthog-client";
 import type {
   Adapter,
   CloudMcpServerImport,
@@ -46,5 +47,9 @@ export interface TaskCreationApiClient {
     runId: string,
     options?: StartTaskRunClientOptions,
   ): Promise<Task>;
+  getTaskSessionStorageAccess(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskSessionStorageAccess | null>;
   resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun>;
 }

@@ -1,6 +1,7 @@
 import type { PiRemoteRpcClient } from "@posthog/agent/pi/remote-rpc-client";
 import type {
   PiNativeModelInfo,
+  PiPersistedSessionConfig,
   PiQueueSnapshot,
   PiThinkingLevel,
 } from "@posthog/agent/pi/types";
@@ -44,6 +45,7 @@ export interface PiSession {
   readonly resumeRequired?: boolean;
   readonly cloudStatus?: TaskRunStatus;
   readonly taskRunId?: string;
+  readonly persistedConfig?: PiPersistedSessionConfig | null;
   retry?(): Promise<void>;
   getQueue(): Promise<PiQueueSnapshot>;
   clearQueue(): Promise<PiQueueSnapshot>;
@@ -64,6 +66,9 @@ export interface PiSession {
 
 export interface PiSessionFactory {
   get(taskId: string, taskRunId?: string): Promise<PiSession>;
+  readSessionConfig?(
+    downloadUrl: string,
+  ): Promise<PiPersistedSessionConfig | null>;
 }
 
 export type PiSessionProvider = PiSessionFactory;
@@ -519,6 +524,7 @@ export class PiSessionController {
         if (disposed) {
           return;
         }
+        this.applyPersistedConfig(taskId, session);
         this.updateSession(taskId, { cloudStatus: session.cloudStatus });
         unsubscribe = session.onConversationEvent(
           (event) => this.handleEvent(taskId, event),
@@ -530,6 +536,40 @@ export class PiSessionController {
     this.subscriptions.set(taskId, () => {
       disposed = true;
       unsubscribe?.();
+    });
+  }
+
+  private applyPersistedConfig(taskId: string, session: PiSession): void {
+    const config = session.persistedConfig;
+    if (!config) {
+      return;
+    }
+
+    const current = this.getSession(taskId);
+    const status = current.status
+      ? {
+          ...current.status,
+          model: config.model ?? undefined,
+          thinkingLevel: config.thinkingLevel,
+        }
+      : {
+          isStreaming: false,
+          isCompacting: false,
+          thinkingLevel: config.thinkingLevel,
+          model: config.model ?? undefined,
+          steeringMode: "all" as const,
+          followUpMode: "all" as const,
+          sessionId: session.taskRunId ?? taskId,
+          autoCompactionEnabled: true,
+          messageCount: current.events.length,
+          pendingMessageCount: 0,
+        };
+    this.updateSession(taskId, {
+      status,
+      models: config.model ? [config.model] : [],
+      modelsLoaded: true,
+      thinkingLevels: [config.thinkingLevel],
+      thinkingLevelsLoaded: true,
     });
   }
 
@@ -581,6 +621,9 @@ export class PiSessionController {
           : currentSession.queue;
       const resolvedStatus = {
         ...status,
+        model: status.model
+          ? { provider: status.model.provider, id: status.model.id }
+          : (session.persistedConfig?.model ?? undefined),
         pendingMessageCount:
           resolvedQueue.steering.length + resolvedQueue.followUp.length,
       };
@@ -609,13 +652,29 @@ export class PiSessionController {
       await Promise.all([
         session.client.getAvailableModels().then((models) => {
           if (this.getSessionVersion(taskId) === connectedSessionVersion) {
-            this.updateSession(taskId, { models, modelsLoaded: true });
+            const persistedModel = session.persistedConfig?.model;
+            this.updateSession(taskId, {
+              models:
+                models.length > 0
+                  ? models
+                  : persistedModel
+                    ? [persistedModel]
+                    : [],
+              modelsLoaded: true,
+            });
           }
         }),
         session.client.getAvailableThinkingLevels().then((thinkingLevels) => {
           if (this.getSessionVersion(taskId) === connectedSessionVersion) {
+            const persistedThinkingLevel =
+              session.persistedConfig?.thinkingLevel;
             this.updateSession(taskId, {
-              thinkingLevels,
+              thinkingLevels:
+                thinkingLevels.length > 0
+                  ? thinkingLevels
+                  : persistedThinkingLevel
+                    ? [persistedThinkingLevel]
+                    : [],
               thinkingLevelsLoaded: true,
             });
           }
