@@ -10,10 +10,17 @@ import { Flex } from "@radix-ui/themes";
 // review-panel toggle, cloud/local handoff, skill buttons and task actions that
 // used to live in the Code header bar.
 //
-// This breadcrumb row is now scoped to the task-detail view only: every other
-// page drops it (the title bar search carries wayfinding instead). The /website
-// (Channels) space keeps its own header (WebsiteLayout), so it's unaffected —
-// this is mounted only outside it.
+// This breadcrumb row is scoped to views that have somewhere to walk back to:
+// task detail, and the loop scenes (list / detail / form), which live outside
+// the space routes but can belong to a space. Every other page drops it (the
+// title bar search carries wayfinding instead). The /website (Channels) space
+// keeps its own header (WebsiteLayout), so it's unaffected — this is mounted
+// only outside it.
+//
+// A loop with no space pushes null, so the row collapses for it too: what a
+// view puts in the header store decides, this only says who may.
+const BREADCRUMB_VIEWS = new Set(["task-detail", "loops"]);
+
 export function ContentHeader() {
   const content = useHeaderStore((state) => state.content);
   const view = useAppView();
@@ -25,8 +32,7 @@ export function ContentHeader() {
     : undefined;
   const showTaskSection = view.type === "task-detail" && Boolean(activeTask);
 
-  // Only the task-detail view keeps the breadcrumb row.
-  if (view.type !== "task-detail") return null;
+  if (!BREADCRUMB_VIEWS.has(view.type)) return null;
 
   if (!content && !showTaskSection) return null;
 
