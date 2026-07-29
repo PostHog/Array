@@ -19,6 +19,7 @@ export type {
   AgentToolKind,
 } from "./agent-conversation";
 export * from "./agent-runtime";
+export { AGENT_SLUG_PATTERN, isValidAgentSlug } from "./agent-slug";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
