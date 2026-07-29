@@ -3,6 +3,7 @@ import type {
   RequestPermissionRequest,
   ToolCallContent,
 } from "@agentclientprotocol/sdk";
+import { getPermissionOptionMeta } from "@posthog/core/sessions/permissionResponse";
 import type { CodeToolKind } from "@posthog/ui/features/sessions/types";
 import type { SelectorOption } from "@posthog/ui/primitives/ActionSelector";
 
@@ -26,14 +27,12 @@ export function toSelectorOptions(
   options: PermissionOption[],
 ): SelectorOption[] {
   return options.map((opt) => {
-    const meta = opt._meta as
-      | { description?: string; customInput?: boolean }
-      | undefined;
+    const meta = getPermissionOptionMeta(opt);
     return {
       id: opt.optionId,
       label: opt.name,
-      description: meta?.description,
-      customInput: meta?.customInput,
+      description: meta.description,
+      customInput: meta.customInput,
     };
   });
 }
