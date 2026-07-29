@@ -22,14 +22,15 @@ import { SettingsDialog } from "@posthog/ui/features/settings/SettingsDialog";
 import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import { PendingPromptRecovery } from "@posthog/ui/features/task-detail/components/PendingPromptRecovery";
 import { router } from "@posthog/ui/router/router";
-import {
-  rememberStartupLocation,
-  resolveStartupLocation,
-} from "@posthog/ui/router/startupLocation";
 import { AppLoadingScreen } from "@posthog/ui/shell/AppLoadingScreen";
 import { track } from "@posthog/ui/shell/analytics";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
+import { logger } from "@posthog/ui/shell/logger";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
+import {
+  rememberStartupLocation,
+  resolveStartupLocation,
+} from "@posthog/ui/shell/startupLocation";
 import { useAppVisibilityWatchdog } from "@posthog/ui/shell/useAppVisibilityWatchdog";
 import { RouterProvider } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
@@ -39,6 +40,8 @@ interface AppProps {
   /** Host-provided dev diagnostics toolbar, docked below the app content. */
   devToolbar?: ReactNode;
 }
+
+const log = logger.scope("app");
 
 function App({ devToolbar }: AppProps) {
   const { isBootstrapped } = useAuthSession();
@@ -95,29 +98,35 @@ function App({ devToolbar }: AppProps) {
     !needsAiApproval;
   const startupIdentity = getAuthIdentity(authState);
 
-  // Run the initial route's loaders before the router ever mounts, so the boot
-  // loading screen holds until the route is ready. The router turns loader
-  // errors into route error UI itself; the catch is only unhandled-rejection
-  // hygiene. Resets when the user leaves the main app (logout, gates) so
-  // re-entry loads fresh.
+  // Resolve and load the initial route before mounting the router. Reset when
+  // the user leaves the main app so a later re-entry starts fresh.
   const [initialRouteLoaded, setInitialRouteLoaded] = useState(false);
   useEffect(() => {
     if (!readyForMainApp) {
       setInitialRouteLoaded(false);
       return;
     }
-    if (initialRouteLoaded || !startupIdentity || !authenticatedClient) return;
+    if (initialRouteLoaded) return;
+    if (!startupIdentity || !authenticatedClient) return;
+
     let cancelled = false;
-    void resolveStartupLocation(startupIdentity, authenticatedClient)
-      .then(async (href) => {
+    const loadInitialRoute = async (): Promise<void> => {
+      try {
+        const href = await resolveStartupLocation(
+          startupIdentity,
+          authenticatedClient,
+        );
         router.history.replace(href);
         rememberStartupLocation(startupIdentity, href);
         await router.load();
-      })
-      .catch(() => undefined)
-      .finally(() => {
+      } catch (error) {
+        log.error("Failed to load initial route", { error });
+      } finally {
         if (!cancelled) setInitialRouteLoaded(true);
-      });
+      }
+    };
+    void loadInitialRoute();
+
     return () => {
       cancelled = true;
     };

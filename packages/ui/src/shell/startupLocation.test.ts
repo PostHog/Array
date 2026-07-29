@@ -5,7 +5,7 @@ import {
   resolveStartupLocation,
 } from "./startupLocation";
 
-describe("startupLocation", () => {
+describe("startup location", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("restores the exact last location", async () => {

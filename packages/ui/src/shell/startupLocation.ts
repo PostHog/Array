@@ -3,7 +3,7 @@ import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersona
 import { toChannel } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { rendererStateStorage } from "@posthog/ui/shell/rendererStorage";
 
-type ChannelClient = Pick<
+type StartupLocationClient = Pick<
   PostHogAPIClient,
   "createDesktopFileSystemChannel" | "getDesktopFileSystemChannels"
 >;
@@ -11,7 +11,7 @@ const storageKey = (identity: string): string => `startup-location:${identity}`;
 
 export async function resolveStartupLocation(
   identity: string,
-  client: ChannelClient,
+  client: StartupLocationClient,
 ): Promise<string> {
   const saved = await rendererStateStorage.getItem(storageKey(identity));
   return saved ?? (await personalNewTaskLocation(client));
@@ -22,7 +22,7 @@ export function rememberStartupLocation(identity: string, href: string): void {
 }
 
 export async function personalNewTaskLocation(
-  client: ChannelClient,
+  client: StartupLocationClient,
 ): Promise<string> {
   const channels = (await client.getDesktopFileSystemChannels())
     .filter((channel) => channel.type === "folder")
