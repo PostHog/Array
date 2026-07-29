@@ -44,9 +44,12 @@ export function ChatThreadFooter({
   const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
   const eventContextUsage = useContextUsage(events);
   const contextUsage = usage === undefined ? eventContextUsage : usage;
-  const eventFooterState = useConversationItems(events, isPromptPending, {
-    showDebugLogs,
-  });
+  const eventFooterState = useConversationItems(
+    events,
+    isPromptPending,
+    { showDebugLogs },
+    taskId ? { scope: "chat-thread-footer", taskId } : undefined,
+  );
   const lastTurnInfo =
     footerState?.lastTurnInfo ?? eventFooterState.lastTurnInfo;
   const isCompacting =

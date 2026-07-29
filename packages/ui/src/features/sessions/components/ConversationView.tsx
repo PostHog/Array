@@ -51,6 +51,7 @@ import {
 } from "@posthog/ui/features/sessions/components/VirtualizedList";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
+import { getPersistentThreadGrouper } from "@posthog/ui/features/sessions/hooks/conversationDerivedCache";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@posthog/ui/features/sessions/hooks/useConversationSearch";
@@ -163,9 +164,12 @@ export function ConversationView({
     lastTurnInfo,
     isCompacting,
     completedToolCallCount,
-  } = useConversationItems(events, isPromptPending, {
-    showDebugLogs,
-  });
+  } = useConversationItems(
+    events,
+    isPromptPending,
+    { showDebugLogs },
+    taskId ? { scope: "conversation-view", taskId } : undefined,
+  );
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
   if (firstUserMessageIdRef.current === undefined) {
@@ -209,8 +213,16 @@ export function ConversationView({
   const threadGrouperRef = useRef<ReturnType<
     typeof createIncrementalThreadGrouper
   > | null>(null);
-  threadGrouperRef.current ??= createIncrementalThreadGrouper();
-  const threadGrouper = threadGrouperRef.current;
+  let threadGrouper: ReturnType<typeof createIncrementalThreadGrouper>;
+  if (taskId) {
+    threadGrouper = getPersistentThreadGrouper({
+      scope: "conversation-view",
+      taskId,
+    });
+  } else {
+    threadGrouperRef.current ??= createIncrementalThreadGrouper();
+    threadGrouper = threadGrouperRef.current;
+  }
   const grouping = useMemo<ThreadGrouping>(
     () => threadGrouper.update(items, collapseMode, groupOverrides),
     [items, collapseMode, groupOverrides, threadGrouper],
