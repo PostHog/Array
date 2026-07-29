@@ -70,7 +70,7 @@ export function ScoutConfigForm({
         <Flex direction="column" className="min-w-0">
           <Text className="text-[12px] text-gray-12">Mode</Text>
           <Text className="text-[11.5px] text-gray-10">
-            Dry run executes the scout but holds back its findings
+            Dry run executes the scout but holds back its signals
           </Text>
         </Flex>
         <SettingsOptionSelect
