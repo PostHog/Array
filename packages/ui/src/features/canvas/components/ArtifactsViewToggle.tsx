@@ -1,4 +1,4 @@
-import { LayoutIcon, ListIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import { Kanban, ListIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -21,7 +21,7 @@ const OPTIONS: {
 }[] = [
   { mode: "list", label: "List", Icon: ListIcon },
   { mode: "grid", label: "Grid", Icon: SquaresFourIcon },
-  { mode: "masonry", label: "Masonry", Icon: LayoutIcon },
+  { mode: "masonry", label: "Masonry", Icon: Kanban },
 ];
 
 function isViewMode(value: string | undefined): value is ArtifactsViewMode {
