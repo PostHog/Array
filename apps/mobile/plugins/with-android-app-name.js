@@ -7,8 +7,8 @@
 // "PostHog", xcodebuild archives fine but cannot enumerate distribution
 // methods, and the .ipa export dies with "Unknown Distribution Error".
 //
-// So `expo.name` is "PostHog Code" and the user-facing label is pinned back to
-// "PostHog" per platform -- here for Android, and via
+// So `expo.name` is "PostHogMobile" and the user-facing label is pinned back
+// to "PostHog" per platform -- here for Android, and via
 // `ios.infoPlist.CFBundleDisplayName` for iOS.
 
 const { withStringsXml, AndroidConfig } = require("@expo/config-plugins");
