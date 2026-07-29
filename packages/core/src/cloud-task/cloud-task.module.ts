@@ -1,5 +1,5 @@
 import { ContainerModule } from "inversify";
-import { CloudTaskService } from "./cloud-task";
+import { CloudTaskService } from "./cloud-task-engine";
 import { CLOUD_TASK_SERVICE } from "./identifiers";
 
 export const cloudTaskModule = new ContainerModule(({ bind }) => {
