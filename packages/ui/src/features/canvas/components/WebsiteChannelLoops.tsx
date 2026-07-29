@@ -1,4 +1,6 @@
 import { CloudIcon, PlusIcon } from "@phosphor-icons/react";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -12,6 +14,10 @@ import {
 } from "../../loops/components/LoopFallbacks";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
+import {
+  LoopListTabs,
+  splitLoopsByOwnership,
+} from "../../loops/components/LoopsListView";
 import { LoopTemplatesSection } from "../../loops/components/LoopTemplatesSection";
 import { useLoopLimits, useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
@@ -56,11 +62,16 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const channel = channels.find((c) => c.id === channelId);
   const contextName = channel?.name ?? channelId;
   const isPersonal = contextName === PERSONAL_CHANNEL_NAME;
+  const authenticatedClient = useOptionalAuthenticatedClient();
+  const { data: currentUser, isLoading: currentUserLoading } = useCurrentUser({
+    client: authenticatedClient,
+  });
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
   );
 
+  const allLoops = loops ?? [];
   const attachedLoops = useMemo(
     () =>
       (loops ?? []).filter(
@@ -68,12 +79,18 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
       ),
     [loops, channelId],
   );
+  const { personalLoops, teamLoops } = splitLoopsByOwnership(
+    allLoops,
+    currentUser?.id ?? null,
+  );
   const {
     members,
     isLoading: membersLoading,
     isError: membersError,
     isComplete: membersComplete,
-  } = useOrgMembers({ enabled: attachedLoops.length > 0 });
+  } = useOrgMembers({
+    enabled: isPersonal ? allLoops.length > 0 : attachedLoops.length > 0,
+  });
 
   const startBlank = () => {
     useLoopDraftStore.getState().setPrefill({
@@ -150,13 +167,26 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
             </Button>
           </div>
 
-          {isLoading ? (
+          {isLoading || (isPersonal && currentUserLoading) ? (
             <LoopsSkeleton />
           ) : isError ? (
             <LoopsEmptyNotice
               title="Couldn't load loops"
               hint="The loops API returned an error. Try again in a moment."
             />
+          ) : isPersonal ? (
+            allLoops.length > 0 ? (
+              <LoopListTabs
+                personalLoops={personalLoops}
+                teamLoops={teamLoops}
+                members={members}
+                membersLoading={membersLoading}
+                membersError={membersError}
+                membersComplete={membersComplete}
+              />
+            ) : (
+              <LoopsEmptyState />
+            )
           ) : attachedLoops.length > 0 ? (
             <Flex direction="column" gap="3">
               <Text className="font-medium text-[12px] text-gray-10 uppercase tracking-wide">
@@ -178,9 +208,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Flex>
             </Flex>
           ) : (
-            <LoopsEmptyState
-              contextName={isPersonal ? undefined : contextName}
-            />
+            <LoopsEmptyState contextName={contextName} />
           )}
 
           <LoopTemplatesSection onSelect={startFromTemplate} />
