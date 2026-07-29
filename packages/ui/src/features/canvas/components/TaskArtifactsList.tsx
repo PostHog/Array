@@ -1,5 +1,6 @@
 import {
   ArrowSquareOutIcon,
+  ChatCircleIcon,
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
@@ -10,6 +11,7 @@ import {
 } from "@posthog/core/canvas/runArtifactSchemas";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
+  Badge,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -29,9 +31,9 @@ import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifac
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
+import { useArtifactCommentsQuery } from "@posthog/ui/features/sessions/components/useArtifactComments";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { formatFileSize } from "@posthog/ui/utils/formatFileSize";
 import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
 import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
@@ -46,7 +48,6 @@ type ArtifactRow =
       artifactId: string | null;
       name: string;
       runId: string | null;
-      size: number | undefined;
     }
   | { kind: "slack"; key: string; url: string };
 
@@ -112,7 +113,6 @@ function buildRows(
       artifactId: file.id ?? null,
       name,
       runId,
-      size: file.size,
     });
   }
 
@@ -135,7 +135,7 @@ function ArtifactListRow({
 }: {
   icon: ReactNode;
   title: string;
-  detail?: string | null;
+  detail?: ReactNode;
   external?: boolean;
   onOpen?: () => void;
   /** Renders a trailing button that leaves the app instead of opening the
@@ -261,15 +261,16 @@ function FileRow({
   runId,
   artifactId,
   name,
-  size,
 }: {
   taskId: string;
   runId: string | null;
   artifactId: string | null;
   name: string;
-  size: number | undefined;
 }) {
   const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
+  const comments = useArtifactCommentsQuery(artifactId, { live: false });
+  const commentCount =
+    comments.data?.filter((comment) => !comment.source_comment).length ?? 0;
   const canOpen = !!runId && !!artifactId;
   const onOpen = canOpen
     ? () => {
@@ -284,7 +285,12 @@ function FileRow({
     <ArtifactListRow
       icon={<FileIcon filename={name} size={14} />}
       title={name}
-      detail={["File", formatFileSize(size)].filter(Boolean).join(" · ")}
+      detail={
+        <Badge>
+          <ChatCircleIcon />
+          {commentCount}
+        </Badge>
+      }
       onOpen={onOpen}
     />
   );
@@ -342,7 +348,6 @@ export function TaskArtifactsList({
             runId={row.runId}
             artifactId={row.artifactId}
             name={row.name}
-            size={row.size}
           />
         ) : (
           <ArtifactListRow

@@ -3372,37 +3372,15 @@ export class PostHogAPIClient {
           item_id: request.artifactId,
           item_context: request.context,
           source_comment: request.sourceCommentId ?? null,
-          // Root comments are actionable so the existing complete/reopen
-          // actions provide Google-Docs-style resolve semantics.
-          is_task: !request.sourceCommentId,
+          // Resolution is represented by a thread-state reply. This keeps the
+          // write path compatible with personal API key authentication.
+          is_task: false,
         }),
       },
     });
     if (!response.ok) {
       throw new Error(
         `Failed to create artifact comment: ${response.statusText}`,
-      );
-    }
-    return (await response.json()) as ArtifactComment;
-  }
-
-  async setArtifactCommentResolved(
-    commentId: string,
-    resolved: boolean,
-  ): Promise<ArtifactComment> {
-    const teamId = await this.getTeamId();
-    const action = resolved ? "complete" : "reopen";
-    const path = `/api/projects/${teamId}/comments/${commentId}/${action}/`;
-    const url = new URL(`${this.api.baseUrl}${path}`);
-    const response = await this.api.fetcher.fetch({
-      method: "post",
-      url,
-      path,
-      overrides: { body: "{}" },
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to ${action} artifact comment: ${response.statusText}`,
       );
     }
     return (await response.json()) as ArtifactComment;

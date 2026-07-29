@@ -1,5 +1,5 @@
 import type { Task, TaskRun, TaskRunArtifact } from "@posthog/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +32,15 @@ vi.mock("@posthog/ui/features/pr-review/usePrComments", () => ({
 }));
 vi.mock("@posthog/ui/features/pr-review/usePrReviewThreads", () => ({
   usePrReviewThreads: () => ({ data: undefined }),
+}));
+vi.mock("@posthog/ui/features/sessions/components/useArtifactComments", () => ({
+  useArtifactCommentsQuery: () => ({
+    data: [
+      { id: "comment-1", source_comment: null },
+      { id: "reply-1", source_comment: "comment-1" },
+      { id: "comment-2", source_comment: null },
+    ],
+  }),
 }));
 
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
@@ -123,15 +132,17 @@ describe("TaskArtifactsList", () => {
     expect(screen.getByText("Pull request #2")).toBeTruthy();
   });
 
-  it("lists the files the agent uploaded, with their size", () => {
+  it("lists uploaded files with their comment count", () => {
     mocks.runs = [
       run("run-1", { artifacts: [outputFile({ id: "a", size: 16861 })] }),
     ];
 
     render(<TaskArtifactsList task={task} timeline={[]} />);
 
-    expect(screen.getByText("report.md")).toBeTruthy();
-    expect(screen.getByText("File · 17 KB")).toBeTruthy();
+    const row = screen.getByText("report.md").closest("button");
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("2")).toBeTruthy();
+    expect(within(row as HTMLElement).queryByText(/File|KB/)).toBeNull();
   });
 
   // The row should read like the chat's file list: markdown looks like
@@ -196,7 +207,7 @@ describe("TaskArtifactsList", () => {
     render(<TaskArtifactsList task={task} timeline={[]} />);
 
     expect(screen.getAllByText("report.md")).toHaveLength(1);
-    expect(screen.getByText("File · 2 KB")).toBeTruthy();
+    expect(screen.queryByText(/File ·|KB/)).toBeNull();
   });
 
   it.each([

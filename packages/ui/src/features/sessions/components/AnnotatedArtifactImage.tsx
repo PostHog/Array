@@ -1,4 +1,4 @@
-import { ChatCircle, X } from "@phosphor-icons/react";
+import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import type { RegionArtifactAnchor } from "@posthog/core/artifact-comments/anchors";
 import { Button } from "@posthog/quill";
@@ -19,6 +19,8 @@ export function AnnotatedArtifactImage({
   comments,
   activeThreadId,
   locateRequest,
+  commenting,
+  onCommentingChange,
   onActivateThread,
   onCreate,
   onError,
@@ -28,13 +30,14 @@ export function AnnotatedArtifactImage({
   comments: ArtifactComment[];
   activeThreadId: string | null;
   locateRequest: ArtifactLocateRequest | null;
+  commenting: boolean;
+  onCommentingChange: (commenting: boolean) => void;
   onActivateThread: (id: string) => void;
   onCreate: (anchor: RegionArtifactAnchor, content: string) => void;
   onError: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [imageBox, setImageBox] = useState<Box | null>(null);
-  const [commenting, setCommenting] = useState(false);
   const [pendingAnchor, setPendingAnchor] =
     useState<RegionArtifactAnchor | null>(null);
   const [selection, setSelection] = useState<EditorSelection | null>(null);
@@ -101,10 +104,16 @@ export function AnnotatedArtifactImage({
     [comments],
   );
 
+  useEffect(() => {
+    if (commenting) return;
+    setPendingAnchor(null);
+    setSelection(null);
+  }, [commenting]);
+
   const dismiss = () => {
     setPendingAnchor(null);
     setSelection(null);
-    setCommenting(false);
+    onCommentingChange(false);
   };
 
   const openComposer = (
@@ -144,15 +153,6 @@ export function AnnotatedArtifactImage({
         className="size-full"
         onError={onError}
       />
-      <Button
-        size="sm"
-        variant={commenting ? "primary" : "outline"}
-        className="absolute top-3 right-3 z-30 shadow-sm"
-        onClick={() => setCommenting((value) => !value)}
-      >
-        {commenting ? <X /> : <ChatCircle />}
-        {commenting ? "Cancel" : "Comment on image"}
-      </Button>
       {imageBox && (
         <section
           aria-label="Image annotation canvas"
@@ -183,27 +183,29 @@ export function AnnotatedArtifactImage({
           }}
         >
           {regionComments.map(({ comment, anchor }) => (
-            <button
+            <Button
               key={comment.id}
-              type="button"
+              size="sm"
+              variant={comment.id === activeThreadId ? "primary" : "outline"}
               aria-label="Open image comment thread"
               data-image-comment-id={comment.id}
-              className={`pointer-events-auto absolute rounded-sm border-2 ${
-                comment.id === activeThreadId
-                  ? "border-yellow-600 bg-yellow-300/45"
-                  : "border-yellow-500 bg-yellow-200/30 hover:bg-yellow-200/50"
-              }`}
+              className="pointer-events-auto absolute z-10 max-w-48 shadow-md"
               style={{
                 left: `${anchor.x * 100}%`,
                 top: `${anchor.y * 100}%`,
-                width: `${anchor.width * 100}%`,
-                height: `${anchor.height * 100}%`,
+                transform:
+                  anchor.y < 0.15
+                    ? "translate(-50%, 8px)"
+                    : "translate(-50%, calc(-100% - 8px))",
               }}
               onClick={(event) => {
                 event.stopPropagation();
                 onActivateThread(comment.id);
               }}
-            />
+            >
+              <ChatCircleIcon />
+              <span className="truncate">{comment.content || "Comment"}</span>
+            </Button>
           ))}
         </section>
       )}
@@ -213,6 +215,7 @@ export function AnnotatedArtifactImage({
         filePath={name}
         actionLabel="Add image comment"
         placeholder="Add a comment about this part of the image..."
+        initiallyExpanded
         onDismiss={dismiss}
         onSubmit={(_start, _end, content) => {
           if (pendingAnchor) onCreate(pendingAnchor, content);

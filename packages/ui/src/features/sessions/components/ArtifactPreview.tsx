@@ -1,4 +1,4 @@
-import { ChatCircle } from "@phosphor-icons/react";
+import { ChatCircle, CrosshairSimpleIcon, XIcon } from "@phosphor-icons/react";
 import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import type { ArtifactAnchor } from "@posthog/core/artifact-comments/anchors";
 import {
@@ -133,6 +133,8 @@ export function ArtifactPreview({
   const [showRendered, setShowRendered] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [pulseThreadId, setPulseThreadId] = useState<string | null>(null);
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locateRequest, setLocateRequest] =
     useState<ArtifactLocateRequest | null>(null);
   const locateNonceRef = useRef(0);
@@ -142,6 +144,7 @@ export function ArtifactPreview({
   const markdownRootRef = useRef<HTMLDivElement>(null);
   const markdownContainerRef = useRef<HTMLDivElement>(null);
   const [imageError, setImageError] = useState(false);
+  const [imageCommenting, setImageCommenting] = useState(false);
   const authIdentity = useAuthStateValue(getAuthIdentity);
   const commentsQuery = useArtifactCommentsQuery(artifactId);
   const createComment = useCreateArtifactComment(artifactId);
@@ -188,14 +191,33 @@ export function ArtifactPreview({
     };
   }, [previewUrl]);
 
-  useEffect(() => setImageError(false), []);
+  useEffect(() => {
+    setImageError(false);
+    setImageCommenting(false);
+  }, []);
 
-  const activateThread = useCallback((id: string) => {
+  const activateThread = useCallback((id: string, pulse = false) => {
     setSelectedThreadId(id);
     setCommentsOpen(true);
     locateNonceRef.current += 1;
     setLocateRequest({ id, nonce: locateNonceRef.current });
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-comment-thread-id="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    if (!pulse) return;
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    setPulseThreadId(id);
+    pulseTimerRef.current = setTimeout(() => setPulseThreadId(null), 1_200);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    },
+    [],
+  );
 
   const contextFor = useCallback(
     (anchor: ArtifactAnchor) => ({
@@ -229,6 +251,7 @@ export function ArtifactPreview({
       comments={comments}
       currentVersion={currentVersion}
       selectedThreadId={selectedThreadId}
+      pulseThreadId={pulseThreadId}
       resolutions={resolutions}
       loading={commentsQuery.isLoading}
       busy={createComment.isPending || setResolved.isPending}
@@ -245,9 +268,7 @@ export function ArtifactPreview({
           context: rootContext ?? contextFor({ kind: "document" }),
         });
       }}
-      onResolve={(root, resolved) =>
-        setResolved.mutate({ id: root.id, resolved })
-      }
+      onResolve={(root, resolved) => setResolved.mutate({ root, resolved })}
     />
   ) : null;
 
@@ -289,7 +310,7 @@ export function ArtifactPreview({
                 comments={comments}
                 activeThreadId={selectedThreadId}
                 locateRequest={locateRequest}
-                onActivateThread={activateThread}
+                onActivateThread={(id) => activateThread(id, true)}
                 onCreate={createAnchoredComment}
                 onResolutionsChange={setResolutions}
               />
@@ -315,7 +336,7 @@ export function ArtifactPreview({
             comments={comments}
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
-            onActivateThread={activateThread}
+            onActivateThread={(id) => activateThread(id, true)}
             onCreate={createAnchoredComment}
             onResolutionsChange={setResolutions}
           />
@@ -327,9 +348,22 @@ export function ArtifactPreview({
   if (!previewUrl || !data) return <ArtifactPreviewError />;
 
   if (data instanceof Blob && isAllowedImageMimeType(data.type)) {
+    const imageActions = (
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant={imageCommenting ? "primary" : "outline"}
+          onClick={() => setImageCommenting((commenting) => !commenting)}
+        >
+          {imageCommenting ? <XIcon /> : <CrosshairSimpleIcon />}
+          {imageCommenting ? "Cancel" : "Add comment"}
+        </Button>
+        {commentsAction}
+      </div>
+    );
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <GenericArtifactHeader name={name} commentsAction={commentsAction} />
+        <GenericArtifactHeader name={name} commentsAction={imageActions} />
         <ContentAndSidebar sidebar={sidebar}>
           <AnnotatedArtifactImage
             src={previewUrl}
@@ -337,7 +371,9 @@ export function ArtifactPreview({
             comments={comments}
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
-            onActivateThread={activateThread}
+            commenting={imageCommenting}
+            onCommentingChange={setImageCommenting}
+            onActivateThread={(id) => activateThread(id, true)}
             onCreate={createAnchoredComment}
             onError={() => setImageError(true)}
           />

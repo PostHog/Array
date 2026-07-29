@@ -71,6 +71,7 @@ function Thread({
   root,
   replies,
   selected,
+  pulsing,
   currentVersion,
   resolution,
   busy,
@@ -81,6 +82,7 @@ function Thread({
   root: ArtifactComment;
   replies: ArtifactComment[];
   selected: boolean;
+  pulsing: boolean;
   currentVersion: string;
   resolution?: HighlightResolution;
   busy: boolean;
@@ -90,16 +92,36 @@ function Thread({
 }) {
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
-  const resolved = !!root.completed_at;
+  const stateEvents = replies
+    .map((comment) => ({
+      comment,
+      state: parseArtifactCommentContext(comment)?.threadState,
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        comment: ArtifactComment;
+        state: "resolved" | "open";
+      } => !!entry.state,
+    )
+    .sort((a, b) => a.comment.created_at.localeCompare(b.comment.created_at));
+  const latestState = stateEvents.at(-1)?.state;
+  const resolved = latestState
+    ? latestState === "resolved"
+    : !!root.completed_at;
+  const visibleReplies = replies.filter(
+    (comment) => !parseArtifactCommentContext(comment)?.threadState,
+  );
   const context = parseArtifactCommentContext(root);
   const anotherVersion =
     context?.artifactVersion && context.artifactVersion !== currentVersion;
 
   return (
     <Card
-      className={`gap-0 p-0 transition-colors ${
+      className={`gap-0 p-0 transition-all duration-300 ${
         selected ? "border-accent bg-accent/5" : ""
-      } ${resolved ? "opacity-70" : ""}`}
+      } ${pulsing ? "ring-2 ring-accent ring-offset-2 ring-offset-background" : ""} ${resolved ? "opacity-70" : ""}`}
       data-comment-thread-id={root.id}
     >
       <CardContent className="p-3">
@@ -114,9 +136,9 @@ function Thread({
           )}
           <CommentBody comment={root} />
         </button>
-        {replies.length > 0 && (
+        {visibleReplies.length > 0 && (
           <div className="ml-3 border-border border-l pl-3">
-            {replies.map((comment) => (
+            {visibleReplies.map((comment) => (
               <CommentBody key={comment.id} comment={comment} />
             ))}
           </div>
@@ -181,6 +203,7 @@ export function ArtifactCommentsSidebar({
   comments,
   currentVersion,
   selectedThreadId,
+  pulseThreadId,
   resolutions,
   loading,
   busy,
@@ -193,6 +216,7 @@ export function ArtifactCommentsSidebar({
   comments: ArtifactComment[];
   currentVersion: string;
   selectedThreadId: string | null;
+  pulseThreadId: string | null;
   resolutions: Map<string, HighlightResolution>;
   loading: boolean;
   busy: boolean;
@@ -258,6 +282,7 @@ export function ArtifactCommentsSidebar({
               root={root}
               replies={repliesByRoot.get(root.id) ?? []}
               selected={root.id === selectedThreadId}
+              pulsing={root.id === pulseThreadId}
               currentVersion={currentVersion}
               resolution={resolutions.get(root.id)}
               busy={busy}

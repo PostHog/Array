@@ -41,6 +41,7 @@ describe("ArtifactCommentsSidebar", () => {
         comments={[comment]}
         currentVersion="artifact-1"
         selectedThreadId={null}
+        pulseThreadId={null}
         resolutions={new Map()}
         loading={false}
         busy={false}
@@ -62,6 +63,61 @@ describe("ArtifactCommentsSidebar", () => {
     );
   });
 
+  it("derives resolved state from PAT-compatible thread events", () => {
+    const stateEvent: ArtifactComment = {
+      ...comment,
+      id: "state-1",
+      content: "Resolved this thread",
+      source_comment: comment.id,
+      item_context: {
+        ...(comment.item_context as Record<string, unknown>),
+        threadState: "resolved",
+      },
+    };
+    render(
+      <ArtifactCommentsSidebar
+        comments={[comment, stateEvent]}
+        currentVersion="artifact-1"
+        selectedThreadId={null}
+        pulseThreadId={null}
+        resolutions={new Map()}
+        loading={false}
+        busy={false}
+        onClose={vi.fn()}
+        onSelectThread={vi.fn()}
+        onCreateDocumentComment={vi.fn()}
+        onReply={vi.fn()}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
+    expect(screen.queryByText("Resolved this thread")).toBeNull();
+  });
+
+  it("pulses a thread selected from highlighted artifact content", () => {
+    const { container } = render(
+      <ArtifactCommentsSidebar
+        comments={[comment]}
+        currentVersion="artifact-1"
+        selectedThreadId="comment-1"
+        pulseThreadId="comment-1"
+        resolutions={new Map()}
+        loading={false}
+        busy={false}
+        onClose={vi.fn()}
+        onSelectThread={vi.fn()}
+        onCreateDocumentComment={vi.fn()}
+        onReply={vi.fn()}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-comment-thread-id="comment-1"]'),
+    ).toHaveClass("ring-2", "ring-accent");
+  });
+
   it("selects a thread when its comment body is clicked", () => {
     const onSelectThread = vi.fn();
     render(
@@ -69,6 +125,7 @@ describe("ArtifactCommentsSidebar", () => {
         comments={[comment]}
         currentVersion="artifact-1"
         selectedThreadId={null}
+        pulseThreadId={null}
         resolutions={new Map()}
         loading={false}
         busy={false}

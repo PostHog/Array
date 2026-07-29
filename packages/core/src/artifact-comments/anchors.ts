@@ -39,6 +39,7 @@ export const artifactCommentContextSchema = z.object({
   artifactId: z.string(),
   artifactVersion: z.string(),
   anchor: artifactAnchorSchema,
+  threadState: z.enum(["resolved", "open"]).optional(),
 });
 
 export type ArtifactCommentContext = z.infer<
