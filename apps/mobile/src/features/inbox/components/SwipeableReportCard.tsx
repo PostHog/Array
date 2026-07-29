@@ -1,4 +1,10 @@
 import { Text } from "@components/text";
+import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
+import type {
+  SignalReport,
+  SignalReportPriority,
+  SignalReportStatus,
+} from "@posthog/shared/domain-types";
 import { formatDistanceToNow } from "date-fns";
 import * as Haptics from "expo-haptics";
 import { GithubLogo, Lightning } from "phosphor-react-native";
@@ -7,12 +13,6 @@ import { Animated, PanResponder, Pressable, View } from "react-native";
 import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { useThemeColors } from "@/lib/theme";
-import type {
-  SignalReport,
-  SignalReportPriority,
-  SignalReportStatus,
-} from "../types";
-import { inboxStatusLabel } from "../utils";
 
 const SWIPE_THRESHOLD = 120;
 const TAP_THRESHOLD = 10;

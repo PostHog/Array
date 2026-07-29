@@ -3,6 +3,10 @@ import {
   buildReviewerOptions,
   reviewerMatchesAvailable,
 } from "@posthog/core/inbox/artefacts";
+import type {
+  AvailableSuggestedReviewer,
+  SuggestedReviewer,
+} from "@posthog/shared/domain-types";
 import { MagnifyingGlass } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -17,7 +21,6 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
 import { useAvailableSuggestedReviewers } from "../hooks/useInboxReports";
-import type { AvailableSuggestedReviewer, SuggestedReviewer } from "../types";
 import { ReviewerOptionRow } from "./ReviewerOptionRow";
 
 interface EditReviewersSheetProps {

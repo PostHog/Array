@@ -4,6 +4,11 @@ import {
   reviewerMatchesAvailable,
   toSuggestedReviewerWriteContent,
 } from "@posthog/core/inbox/artefacts";
+import type {
+  AvailableSuggestedReviewer,
+  SuggestedReviewer,
+  SuggestedReviewersArtefact,
+} from "@posthog/shared/domain-types";
 import { Eye, Plus, X } from "phosphor-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -20,11 +25,6 @@ import type {
 import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import { useUpdateSuggestedReviewers } from "../hooks/useInboxReports";
-import type {
-  AvailableSuggestedReviewer,
-  SuggestedReviewer,
-  SuggestedReviewersArtefact,
-} from "../types";
 import { EditReviewersSheet } from "./EditReviewersSheet";
 
 export type ReviewerActionExtra = Pick<

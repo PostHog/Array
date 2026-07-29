@@ -1,34 +1,14 @@
+import { combineGithubRepositories } from "@posthog/core/integrations/repositories";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/features/auth";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";
-import type { Integration, RepositoryOption } from "../types";
-import { buildRepositoryOptions } from "../utils/repositorySelection";
-
-/** Cheap content-equality check for repository option lists. Lets the cache
- *  write effect skip no-op updates, which is what kept retriggering renders
- *  before — `buildRepositoryOptions` always returns a fresh array, so the
- *  effect's dep array churned every render. */
-function repositoryOptionsEqual(
-  a: RepositoryOption[],
-  b: RepositoryOption[],
-): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const left = a[i];
-    const right = b[i];
-    if (
-      left.integrationId !== right.integrationId ||
-      left.repository !== right.repository ||
-      left.integrationLabel !== right.integrationLabel
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
+import {
+  buildRepositoryOptions,
+  repositoryLoadWarning,
+  repositoryOptionsEqual,
+} from "../utils/repositorySelection";
 
 export const integrationKeys = {
   all: ["integrations"] as const,
@@ -60,26 +40,7 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
     queryKey: integrationKeys.github(),
     queryFn: async () => {
       const data = await getPostHogApiClient().getIntegrations();
-      return data.flatMap((integration): Integration[] => {
-        if (
-          integration.kind !== "github" ||
-          typeof integration.id !== "number"
-        ) {
-          return [];
-        }
-
-        return [
-          {
-            id: integration.id,
-            kind: integration.kind,
-            display_name:
-              typeof integration.display_name === "string"
-                ? integration.display_name
-                : undefined,
-            config: integration.config as Integration["config"],
-          },
-        ];
-      });
+      return data.filter((i) => i.kind === "github");
     },
     enabled: enabled && !!projectId && !!oauthAccessToken,
   });
@@ -97,9 +58,11 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
       const results = await Promise.allSettled(
         githubIntegrations.map(async (integration) => ({
           integrationId: integration.id,
-          repositories: await getPostHogApiClient().getGithubRepositories(
-            integration.id,
-          ),
+          repositories: (
+            await getPostHogApiClient().getGithubRepositories(integration.id)
+          )
+            .map((repository) => repository.toLowerCase())
+            .filter(Boolean),
         })),
       );
 
@@ -117,12 +80,10 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
 
       return {
         repositoriesByIntegration,
-        partialError:
-          failedCount === 0
-            ? null
-            : failedCount === githubIntegrations.length
-              ? "Could not load GitHub repositories. Pull to retry."
-              : "Some GitHub repositories could not be loaded. Pull to retry.",
+        partialError: repositoryLoadWarning(
+          failedCount,
+          githubIntegrations.length,
+        ),
       };
     },
     enabled: enabled && githubIntegrations.length > 0,
@@ -130,7 +91,19 @@ export function useIntegrations(options: UseIntegrationsOptions = {}) {
 
   const repositoriesByIntegration =
     repositoriesQuery.data?.repositoriesByIntegration ?? {};
-  const repositories = Object.values(repositoriesByIntegration).flat().sort();
+  const repositories = Object.keys(
+    combineGithubRepositories(
+      githubIntegrations.map((integration) => ({
+        data: {
+          integrationId: integration.id,
+          repos: repositoriesByIntegration[integration.id] ?? [],
+        },
+        isPending: repositoriesQuery.isPending,
+        isError: false,
+        isRefetching: repositoriesQuery.isRefetching,
+      })),
+    ).repositoryMap,
+  ).sort();
 
   // Memoize the derived options list keyed on the underlying query data so
   // its reference is stable across renders when the data hasn't actually

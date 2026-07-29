@@ -1,4 +1,8 @@
 import { Text } from "@components/text";
+import {
+  DISMISSAL_REASON_OPTIONS,
+  type DismissalReasonOptionValue,
+} from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { Check } from "phosphor-react-native";
 import { useEffect, useState } from "react";
@@ -14,10 +18,6 @@ import {
 } from "react-native";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
-import {
-  DISMISSAL_REASON_OPTIONS,
-  type DismissalReasonOptionValue,
-} from "../constants";
 import { useDismissReport } from "../hooks/useInboxReports";
 
 export interface DismissReportResult {

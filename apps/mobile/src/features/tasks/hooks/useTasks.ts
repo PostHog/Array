@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore, useUserQuery } from "@/features/auth";
 import { logger } from "@/lib/logger";
 import { getPostHogApiClient } from "@/lib/posthogApiClient";
-import { runTaskInCloud } from "../api";
 import { useTaskStore } from "../stores/taskStore";
 import type { CreateTaskOptions } from "../types";
 
@@ -136,13 +135,13 @@ export function useUpdateTask() {
     }: {
       taskId: string;
       updates: Partial<Task>;
-    }) =>
-      getPostHogApiClient().updateTask(
+    }) => {
+      const client = getPostHogApiClient();
+      return client.updateTask(
         taskId,
-        updates as Parameters<
-          ReturnType<typeof getPostHogApiClient>["updateTask"]
-        >[1],
-      ),
+        updates as Parameters<typeof client.updateTask>[1],
+      );
+    },
     onSuccess: (updatedTask, { taskId }) => {
       // Update the detail cache immediately
       queryClient.setQueryData(taskKeys.detail(taskId), updatedTask);
@@ -174,7 +173,8 @@ export function useRunTask() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (taskId: string) => runTaskInCloud(taskId),
+    mutationFn: (taskId: string) =>
+      getPostHogApiClient().runTaskInCloud(taskId),
     onSuccess: (updatedTask, taskId) => {
       queryClient.setQueryData(taskKeys.detail(taskId), updatedTask);
       queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
