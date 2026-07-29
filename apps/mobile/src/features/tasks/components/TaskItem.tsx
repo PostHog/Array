@@ -1,5 +1,5 @@
 import { Text } from "@components/text";
-import type { Task } from "@posthog/shared";
+import { type Task, readPrUrls } from "@posthog/shared";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { Check, GitPullRequest } from "phosphor-react-native";
 import { memo } from "react";
@@ -46,8 +46,8 @@ function TaskItemComponent({
     hoursSinceCreated < 24
       ? formatDistanceToNow(createdAt, { addSuffix: true })
       : format(createdAt, "MMM d");
-  const prUrl = task.latest_run?.output?.pr_url;
-  const prRef = typeof prUrl === "string" ? parseGithubIssueUrl(prUrl) : null;
+  const prUrl = readPrUrls(task.latest_run?.output)[0];
+  const prRef = prUrl ? parseGithubIssueUrl(prUrl) : null;
 
   return (
     <Pressable
