@@ -113,7 +113,7 @@ function TaskDiffStatsBadge({ task }: { task: Task }) {
     useDiffStatsToggle(task, "split");
   return (
     <Tooltip
-      content={isOpen ? "Close review panel" : "Open review panel"}
+      content={isOpen ? "Close diff view" : "Open diff view"}
       shortcut={formatHotkey(SHORTCUTS.TOGGLE_REVIEW_PANEL)}
       side="bottom"
     >
