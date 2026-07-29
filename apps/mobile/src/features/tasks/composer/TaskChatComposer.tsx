@@ -7,6 +7,7 @@ import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
+  KIMI_MODEL_FLAG,
   type SupportedReasoningEffort,
 } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
@@ -19,7 +20,8 @@ import {
   Stack,
   Stop,
 } from "phosphor-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useFeatureFlag } from "posthog-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -42,7 +44,11 @@ import {
   pickPhotoFromLibrary,
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
-import { getModelConfigOption, resolveComposerPrimaryAction } from "./options";
+import {
+  filterKimiModelConfigOptions,
+  getModelConfigOption,
+  resolveComposerPrimaryAction,
+} from "./options";
 import { Pill } from "./Pill";
 import {
   type ComposerContent,
@@ -106,7 +112,13 @@ export function TaskChatComposer({
   onCancelEdit,
 }: TaskChatComposerProps) {
   const themeColors = useThemeColors();
-  const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions(adapter);
+  const { configOptions: liveConfigOptions, hasLiveConfig } =
+    useCloudTaskConfigOptions(adapter);
+  const kimiEnabled = !!useFeatureFlag(KIMI_MODEL_FLAG);
+  const configOptions = useMemo(
+    () => filterKimiModelConfigOptions(liveConfigOptions, kimiEnabled),
+    [liveConfigOptions, kimiEnabled],
+  );
   const modelConfigOption = getModelConfigOption(configOptions);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
