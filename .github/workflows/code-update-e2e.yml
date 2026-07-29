@@ -17,14 +17,13 @@ name: Code Update E2E (macOS)
 #      Squirrel.Mac client to the electron-builder build we ship now.
 
 on:
-  # Temporary: also run on these branches so the harness can be exercised on the
-  # PR. Remove this push trigger once merged; nightly + dispatch is the steady
-  # state. Docs and the local-only run-from-ci helper do not affect CI, so skip
-  # rebuilds for those and use workflow_dispatch / the nightly schedule instead.
+  # Temporary: also run on this branch so the harness can be exercised on the PR.
+  # Remove this push trigger once merged; nightly + dispatch is the steady state.
+  # Docs and the local-only run-from-ci helper do not affect CI, so skip rebuilds
+  # for those and use workflow_dispatch / the nightly schedule on demand instead.
   push:
     branches:
       - test/macos-auto-update-e2e
-      - fix/update-repolling
     paths-ignore:
       - "docs/**"
       - "**/*.md"
