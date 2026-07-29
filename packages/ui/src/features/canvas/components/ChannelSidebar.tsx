@@ -198,6 +198,34 @@ function ChannelItemsSkeleton() {
   );
 }
 
+/** `ready` is the list itself, whether or not the filters leave any rows in it. */
+type ListState = "unavailable" | "loading" | "empty" | "ready";
+
+/**
+ * What the list shows, decided in one place. These were four conditions spread
+ * across the render tree, which let a cold load draw the skeleton and the "No
+ * matches" empty state at the same time.
+ *
+ * `narrowed` — a filter, or an open search box — is what makes no items mean
+ * "nothing matches" rather than "nothing here".
+ */
+function listStateOf({
+  channelMissing,
+  isLoading,
+  itemCount,
+  narrowed,
+}: {
+  channelMissing: boolean;
+  isLoading: boolean;
+  itemCount: number;
+  narrowed: boolean;
+}): ListState {
+  if (channelMissing) return "unavailable";
+  if (isLoading && itemCount === 0) return "loading";
+  if (itemCount === 0 && !narrowed) return "empty";
+  return "ready";
+}
+
 /**
  * The channel pane of the sidebar slider: the way back to the channel list,
  * the channel's sections, then its pinned and recent tasks & canvases.
@@ -248,6 +276,20 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
       ).slice(0, RECENTS_CAP),
     [items, query, createdByFilter, statusFilter, me],
   );
+
+  const narrowed = filtersActive || searchOpen;
+  const listState = listStateOf({
+    channelMissing,
+    isLoading,
+    itemCount: items.length,
+    narrowed,
+  });
+  // The list's two sections, which only exist once there are items. With
+  // everything pinned there's nothing left to list — but keep the header while
+  // it's narrowed, so you can undo whatever emptied it.
+  const showPinned = listState === "ready" && pinnedItems.length > 0;
+  const showRecent =
+    listState === "ready" && (items.some((i) => !i.pinned) || narrowed);
 
   const taskRow = (item: (typeof items)[number]) => (
     <ChannelItemRow
@@ -362,9 +404,9 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
           aria-busy={isLoading}
           className="scroll-mask-4 h-full overflow-y-auto px-2 pb-2"
         >
-          {isLoading && items.length === 0 && <ChannelItemsSkeleton />}
+          {listState === "loading" && <ChannelItemsSkeleton />}
 
-          {channelMissing && (
+          {listState === "unavailable" && (
             <Empty className="border-0 py-6">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -378,7 +420,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </Empty>
           )}
 
-          {pinnedItems.length > 0 && (
+          {showPinned && (
             <>
               <MenuLabel>Pinned</MenuLabel>
               <div className="flex flex-col gap-px">
@@ -387,7 +429,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </>
           )}
 
-          {(items.some((i) => !i.pinned) || filtersActive || searchOpen) && (
+          {showRecent && (
             <>
               <RecentSectionHeader
                 searchOpen={searchOpen}
@@ -423,7 +465,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </>
           )}
 
-          {!isLoading && !channelMissing && items.length === 0 && (
+          {listState === "empty" && (
             <Empty className="border-0 py-6">
               <EmptyHeader>
                 <EmptyMedia variant="icon">

@@ -53,6 +53,45 @@ describe("buildApiFetcher", () => {
     expect(mockFetch.mock.calls[0][1].headers.get("Authorization")).toBe(
       "Bearer my-token",
     );
+    expect(mockFetch.mock.calls[0][1].headers.get("User-Agent")).toBe(
+      "posthog/desktop.hog.dev; version: test",
+    );
+  });
+
+  it("uses an injected fetch implementation and custom user agent", async () => {
+    const injectedFetch = vi.fn().mockResolvedValueOnce(ok());
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken: vi.fn().mockResolvedValue("new-token"),
+      appVersion: "1.2.3",
+      fetch: injectedFetch,
+      userAgent: "posthog/mobile; version: 1.2.3",
+    });
+
+    await fetcher.fetch(mockInput);
+
+    expect(injectedFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(injectedFetch.mock.calls[0][1].headers.get("User-Agent")).toBe(
+      "posthog/mobile; version: 1.2.3",
+    );
+  });
+
+  it("omits the user agent when explicitly disabled", async () => {
+    const injectedFetch = vi.fn().mockResolvedValueOnce(ok());
+    const fetcher = buildApiFetcher({
+      getAccessToken: vi.fn().mockResolvedValue("token"),
+      refreshAccessToken: vi.fn().mockResolvedValue("new-token"),
+      appVersion: "1.2.3",
+      fetch: injectedFetch,
+      userAgent: null,
+    });
+
+    await fetcher.fetch(mockInput);
+
+    expect(injectedFetch.mock.calls[0][1].headers.has("User-Agent")).toBe(
+      false,
+    );
   });
 
   it("retries once with a freshly fetched token on 401", async () => {

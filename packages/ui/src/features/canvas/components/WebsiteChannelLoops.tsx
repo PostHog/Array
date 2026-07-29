@@ -22,11 +22,14 @@ import {
 } from "../../loops/components/LoopFallbacks";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
+import { LoopTemplatesSection } from "../../loops/components/LoopTemplatesSection";
 import { useLoopLimits, useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
 import { defaultLoopContextOutputs } from "../../loops/loopFormTypes";
+import type { LoopTemplate } from "../../loops/loopTemplates";
 import { useChannels } from "../hooks/useChannels";
 import { useOrgMembers } from "../hooks/useOrgMembers";
+import { PERSONAL_CHANNEL_NAME } from "../hooks/useTaskChannels";
 
 function contextQuickStarts(name: string): { label: string; prompt: string }[] {
   return [
@@ -63,6 +66,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const { channels } = useChannels();
   const channel = channels.find((c) => c.id === channelId);
   const contextName = channel?.name ?? channelId;
+  const isPersonal = contextName === PERSONAL_CHANNEL_NAME;
 
   useSetHeaderContent(
     useMemo(
@@ -96,6 +100,22 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
     navigateToNewLoop();
   };
 
+  const startFromTemplate = (template: LoopTemplate) => {
+    useLoopDraftStore.getState().setPrefill({
+      description: template.description,
+      ...template.build(),
+      contextTarget: {
+        folderId: channelId,
+        name: contextName,
+        outputs: defaultLoopContextOutputs(),
+      },
+    });
+    navigateToNewLoop();
+  };
+
+  const title = isPersonal ? "Loops" : `Automate #${contextName}`;
+  const description =
+    "Put your work on autopilot. Loops run on a schedule, on an API call, or when something happens on GitHub. You can finally close the laptop!";
   const createButton = (
     <Button
       variant="soft"
@@ -119,16 +139,13 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         <PageHeader>
           <PageHeaderHeading>
             <PageHeaderTitleRow>
-              <PageHeaderTitle>Automate #{contextName}</PageHeaderTitle>
+              <PageHeaderTitle>{title}</PageHeaderTitle>
               <PageHeaderChip icon={<CloudIcon size={12} weight="fill" />}>
                 Runs entirely in the cloud
               </PageHeaderChip>
               <PageHeaderActions>{createButton}</PageHeaderActions>
             </PageHeaderTitleRow>
-            <PageHeaderDescription>
-              Build a loop that posts its runs to this context's feed, or keeps
-              its context.md or a canvas up to date.
-            </PageHeaderDescription>
+            <PageHeaderDescription>{description}</PageHeaderDescription>
           </PageHeaderHeading>
         </PageHeader>
       )}
@@ -136,7 +153,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         <Flex
           direction="column"
           gap="6"
-          className="@container mx-auto w-full max-w-3xl px-8 py-8"
+          className="@container mx-auto w-full max-w-5xl px-8 py-8"
         >
           {!spacesLayout && (
             <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
@@ -146,9 +163,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
                 className="w-full min-w-0 @min-[640px]:max-w-[70%]"
               >
                 <Flex align="center" gap="2" wrap="wrap">
-                  <Heading className="font-bold text-2xl">
-                    Automate #{contextName}
-                  </Heading>
+                  <Heading className="font-bold text-2xl">{title}</Heading>
                   <Flex
                     align="center"
                     className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
@@ -164,8 +179,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
                   </Flex>
                 </Flex>
                 <Text color="gray" className="text-sm">
-                  Build a loop that posts its runs to this context's feed, or
-                  keeps its context.md or a canvas up to date.
+                  {description}
                 </Text>
               </Flex>
               {createButton}
@@ -200,8 +214,12 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Flex>
             </Flex>
           ) : (
-            <LoopsEmptyState contextName={contextName} />
+            <LoopsEmptyState
+              contextName={isPersonal ? undefined : contextName}
+            />
           )}
+
+          <LoopTemplatesSection onSelect={startFromTemplate} />
         </Flex>
       </div>
 
@@ -209,7 +227,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
         <Flex
           direction="column"
           gap="2"
-          className="mx-auto w-full max-w-3xl px-8 pt-3 pb-6"
+          className="mx-auto w-full max-w-5xl px-8 pt-3 pb-6"
         >
           <LoopBuilderComposer
             context={{ folderId: channelId, name: contextName }}

@@ -17,6 +17,7 @@ import {
   AvatarFallback,
   Badge,
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -52,6 +53,7 @@ import { MentionText } from "@posthog/ui/features/canvas/components/MentionText"
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { useThreadConversation } from "@posthog/ui/features/canvas/hooks/useThreadConversation";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
+import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
@@ -67,6 +69,7 @@ export function ThreadMessageRow({
   isOwnMessage,
   currentUserEmail,
   canForward,
+  preview,
   onSendToAgent,
   onDelete,
 }: {
@@ -75,6 +78,8 @@ export function ThreadMessageRow({
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
   canForward: boolean;
+  /** Timeline rows show one truncated line; the Comments tab shows it all. */
+  preview?: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
 }) {
@@ -83,15 +88,24 @@ export function ThreadMessageRow({
 
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <UserAvatar user={message.author} size="lg" className="sticky top-2" />
+      <ThreadItemGutter className="justify-center">
+        <UserAvatar user={message.author} size="sm" className="sticky top-2" />
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>{userDisplayName(message.author)}</ThreadItemAuthor>
+          <ThreadItemAuthor className="text-[13px]">
+            {userDisplayName(message.author)}
+          </ThreadItemAuthor>
           <ThreadTimestamp dateTime={message.created_at} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody
+          className={cn(
+            "mt-1.5 text-[13px]",
+            // `whitespace-pre-wrap` makes the clamp land on the first *written*
+            // line rather than the first wrapped one.
+            preview && "line-clamp-1 whitespace-pre-wrap",
+          )}
+        >
           <MentionText
             content={message.content}
             currentUserEmail={currentUserEmail}
@@ -159,11 +173,15 @@ function ArtifactCardButton({
   title,
   detail,
   onOpen,
+  onOpenExternal,
 }: {
   icon: React.ReactNode;
   title: string;
   detail?: string | null;
   onOpen?: () => void;
+  /** Renders a trailing button that leaves the app instead of opening the
+   *  artifact in place. Absent when there is nowhere safe to send the user. */
+  onOpenExternal?: () => void;
 }) {
   const body = (
     <>
@@ -174,19 +192,35 @@ function ArtifactCardButton({
       )}
     </>
   );
-  const cardClass =
-    "flex w-fit max-w-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 text-[13px]";
-  if (!onOpen) {
-    return <span className={cardClass}>{body}</span>;
-  }
+  const innerClass = "flex min-w-0 items-center gap-2 px-2 py-1.5";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={`${cardClass} text-left transition-colors hover:bg-gray-3`}
-    >
-      {body}
-    </button>
+    // overflow-hidden so each half's hover fill is clipped to the card's radius.
+    <div className="flex w-fit max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-[13px]">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className={cn(
+            innerClass,
+            "text-left transition-colors hover:bg-gray-3",
+          )}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className={innerClass}>{body}</span>
+      )}
+      {onOpenExternal && (
+        <button
+          type="button"
+          onClick={onOpenExternal}
+          aria-label={`Open ${title} externally`}
+          className="flex shrink-0 items-center self-stretch border-border border-l px-1.5 text-muted-foreground transition-colors hover:bg-gray-3 hover:text-foreground"
+        >
+          <ArrowSquareOutIcon size={12} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -222,7 +256,13 @@ function CanvasArtifactCard({
   );
 }
 
-function PrArtifactCard({ url }: { url: string }) {
+function PrArtifactCard({
+  url,
+  openInPlaceTaskId,
+}: {
+  url: string;
+  openInPlaceTaskId?: string;
+}) {
   const { safeUrl, title, stateLabel, Icon, iconColor } = usePrArtifact(url);
   return (
     <ArtifactCardButton
@@ -236,7 +276,15 @@ function PrArtifactCard({ url }: { url: string }) {
       }
       title={title}
       detail={stateLabel}
-      onOpen={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
+      onOpen={
+        safeUrl
+          ? () =>
+              openInPlaceTaskId
+                ? openPrInReview(openInPlaceTaskId, safeUrl)
+                : openExternalUrl(safeUrl)
+          : undefined
+      }
+      onOpenExternal={safeUrl ? () => openExternalUrl(safeUrl) : undefined}
     />
   );
 }
@@ -244,31 +292,37 @@ function PrArtifactCard({ url }: { url: string }) {
 export function ThreadArtifactRow({
   artifact,
   createdAt,
+  openInPlaceTaskId,
 }: {
   artifact: ThreadArtifact;
   createdAt: string;
+  /** Task whose review pane is mounted alongside; absent means open externally. */
+  openInPlaceTaskId?: string;
 }) {
   return (
     <ThreadItem>
-      <ThreadItemGutter>
-        <Avatar size="lg" className="sticky top-2">
+      <ThreadItemGutter className="justify-center">
+        <Avatar size="sm" className="sticky top-2">
           <AvatarFallback>
-            <RobotIcon size={14} />
+            <RobotIcon size={12} />
           </AvatarFallback>
         </Avatar>
       </ThreadItemGutter>
       <ThreadItemContent>
         <ThreadItemHeader>
-          <ThreadItemAuthor>
+          <ThreadItemAuthor className="text-[13px]">
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
           <ThreadTimestamp dateTime={createdAt} />
         </ThreadItemHeader>
-        <ThreadItemBody>
+        <ThreadItemBody className="mt-1.5 text-[13px]">
           {artifact.kind === "canvas" ? (
             <CanvasArtifactCard name={artifact.name} url={artifact.url} />
           ) : (
-            <PrArtifactCard url={artifact.url} />
+            <PrArtifactCard
+              url={artifact.url}
+              openInPlaceTaskId={openInPlaceTaskId}
+            />
           )}
         </ThreadItemBody>
       </ThreadItemContent>

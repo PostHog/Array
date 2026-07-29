@@ -2,8 +2,12 @@ import type { ToolCall } from "@posthog/ui/features/sessions/types";
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PlanApprovalView } from "./PlanApprovalView";
+
+vi.mock("../../../permissions/PlanContent", () => ({
+  PlanContent: ({ plan }: { plan: string }) => <div>{plan}</div>,
+}));
 
 const PLAN_MARKER = "Sentinel plan body for testing";
 
@@ -110,7 +114,7 @@ describe("PlanApprovalView", () => {
     ).toBeInTheDocument();
   });
 
-  it("uses updated content instead of stale raw input while streaming", () => {
+  it("uses updated content instead of stale raw input while streaming", async () => {
     renderView({
       toolCall: makeToolCall({
         status: "in_progress",

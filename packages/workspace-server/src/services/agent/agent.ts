@@ -20,25 +20,16 @@ import {
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
-import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
   getAvailableCodexModes,
   getAvailableModes,
 } from "@posthog/agent/execution-mode";
 import {
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_GATEWAY_MODEL,
   fetchGatewayModels,
   formatGatewayModelName,
-  type GatewayModel,
   getClaudeModelRecency,
   getProviderName,
-  isAnthropicModel,
-  isCloudflareModel,
-  isModalModel,
-  isOpenAIModel,
-  pickAllowedModel,
 } from "@posthog/agent/gateway-models";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
@@ -73,10 +64,10 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  buildCloudTaskConfigOptions,
   type ExecutionMode,
   isAuthError,
   resolveCloudInitialPermissionMode,
-  restrictedModelMeta,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -2396,112 +2387,14 @@ For git operations while detached:
     adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    // Authenticated so the gateway can mark plan-restricted models; falls
-    // back to an anonymous fetch (everything allowed) without auth.
     const gatewayModels = await fetchGatewayModels({
       gatewayUrl,
       authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
     });
-
-    // The Claude adapter can drive non-Anthropic models that the gateway exposes through its
-    // Anthropic-Messages surface, so preview filtering must match the session adapter.
-    const modelFilter =
-      adapter === "codex"
-        ? isOpenAIModel
-        : (model: GatewayModel) =>
-            isAnthropicModel(model) ||
-            isCloudflareModel(model) ||
-            isModalModel(model);
-
-    const adapterModels = gatewayModels.filter((model) => modelFilter(model));
-    const modelOptions = adapterModels.map((model) => ({
-      value: model.id,
-      name: formatGatewayModelName(model),
-      description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      // Locked models stay listed so the picker can gate them instead of
-      // silently dropping them.
-      ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
-    }));
-
-    // The gateway returns models in an arbitrary order. Sort Claude models
-    // oldest-to-newest so the picker is deterministic and the newest model
-    // lands at the end of the list, closest to the trigger.
-    if (adapter === "claude") {
-      modelOptions.sort(
-        (a, b) =>
-          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
-      );
-    }
-
-    const defaultModel =
-      adapter === "codex"
-        ? (modelOptions.find((o) => o.value === DEFAULT_CODEX_MODEL)?.value ??
-          modelOptions[0]?.value ??
-          "")
-        : DEFAULT_GATEWAY_MODEL;
-
-    const preferredModelId = modelOptions.some((o) => o.value === defaultModel)
-      ? defaultModel
-      : (modelOptions[0]?.value ?? defaultModel);
-    // Never preselect a model the org's plan can't use — it would 403 on the
-    // first message.
-    const resolvedModelId = pickAllowedModel(adapterModels, preferredModelId);
-
-    if (!modelOptions.some((o) => o.value === resolvedModelId)) {
-      modelOptions.unshift({
-        value: resolvedModelId,
-        name: resolvedModelId,
-        description: "Custom model",
-      });
-    }
-
-    const modes =
-      adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-    const modeOptions = modes.map((mode) => ({
-      value: mode.id,
-      name: mode.name,
-      description: mode.description ?? undefined,
-    }));
-    const defaultMode = adapter === "codex" ? "auto" : "plan";
-
-    const configOptions: SessionConfigOption[] = [
-      {
-        id: "mode",
-        name: "Approval Preset",
-        type: "select",
-        currentValue: defaultMode,
-        options: modeOptions,
-        category: "mode",
-        description:
-          "Choose an approval and sandboxing preset for your session",
-      },
-      {
-        id: "model",
-        name: "Model",
-        type: "select",
-        currentValue: resolvedModelId,
-        options: modelOptions,
-        category: "model",
-        description: "Choose which model Claude should use",
-      },
-    ];
-
-    const effortOpts = getReasoningEffortOptions(adapter, resolvedModelId);
-    if (effortOpts) {
-      configOptions.push({
-        id: adapter === "codex" ? "reasoning_effort" : "effort",
-        name: adapter === "codex" ? "Reasoning Level" : "Effort",
-        type: "select",
-        currentValue: "high",
-        options: effortOpts,
-        category: "thought_level",
-        description:
-          adapter === "codex"
-            ? "Controls how much reasoning effort the model uses"
-            : "Controls how much effort Claude puts into its response",
-      });
-    }
-
-    return configOptions;
+    return buildCloudTaskConfigOptions(
+      gatewayModels,
+      adapter,
+      adapter === "codex" ? getAvailableCodexModes() : getAvailableModes(),
+    ) as SessionConfigOption[];
   }
 }

@@ -17,6 +17,7 @@ export function ThreadSidebar({
   onClose,
   onOpenFull,
   showTaskSummary,
+  canOpenInPlace,
 }: {
   taskId: string;
   channelId: string;
@@ -25,6 +26,9 @@ export function ThreadSidebar({
   onClose?: () => void;
   onOpenFull?: () => void;
   showTaskSummary?: boolean;
+  /** Set where the task's own view (transcript, review pane) is mounted beside
+   *  this dock, so activity rows can drive it instead of going nowhere. */
+  canOpenInPlace?: boolean;
 }) {
   const collapsed = useThreadPanelStore((s) => s.collapsed);
   const width = useThreadPanelStore((s) => s.width);
@@ -41,6 +45,15 @@ export function ThreadSidebar({
       surface: channelsLayout ? "activity_panel" : "thread_panel",
       task_id: taskId,
     });
+  };
+  const panelProps = {
+    taskId,
+    channelId,
+    task,
+    onClose,
+    onToggleCollapsed: () => toggleCollapsed(true),
+    onOpenFull,
+    showTaskSummary,
   };
 
   if (collapsed) {
@@ -64,15 +77,11 @@ export function ThreadSidebar({
       setIsResizing={setIsResizing}
       side="right"
     >
-      <Panel
-        taskId={taskId}
-        channelId={channelId}
-        task={task}
-        onClose={onClose}
-        onToggleCollapsed={() => toggleCollapsed(true)}
-        onOpenFull={onOpenFull}
-        showTaskSummary={showTaskSummary}
-      />
+      {channelsLayout ? (
+        <ActivityPanel {...panelProps} canOpenInPlace={canOpenInPlace} />
+      ) : (
+        <ThreadPanel {...panelProps} />
+      )}
     </ResizableSidebar>
   );
 }

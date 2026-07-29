@@ -5,12 +5,20 @@ import type {
   SignalReportStatus,
 } from "@posthog/shared/types";
 
+export const INBOX_PIPELINE_STATUSES = [
+  "ready",
+  "pending_input",
+  "in_progress",
+  "failed",
+  "candidate",
+  "potential",
+] as const satisfies readonly SignalReportStatus[];
+
 /**
  * Comma-separated statuses for the inbox query. We pull `failed` so the Runs
  * tab can surface failed runs in its Recently finished section.
  */
-export const INBOX_PIPELINE_STATUS_FILTER =
-  "potential,candidate,in_progress,ready,pending_input,failed";
+export const INBOX_PIPELINE_STATUS_FILTER = INBOX_PIPELINE_STATUSES.join(",");
 
 /**
  * Status filter for the Archive tab — the two terminal, not-in-inbox states:
