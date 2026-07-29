@@ -13,7 +13,6 @@ import {
   AgentStatusLine,
   ThreadLoadingState,
   ThreadReplyComposer,
-  ThreadTimeline,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
 import { useThreadConversation } from "@posthog/ui/features/canvas/hooks/useThreadConversation";
 import { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
@@ -22,18 +21,12 @@ import { track } from "@posthog/ui/shell/analytics";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type ActivityTab = "timeline" | "artifacts" | "comments";
+type ActivityTab = "timeline" | "artifacts";
 
 const ACTIVITY_TABS: readonly { key: ActivityTab; label: string }[] = [
   { key: "timeline", label: "Timeline" },
   { key: "artifacts", label: "Artifacts" },
-  { key: "comments", label: "Comments" },
 ] as const;
-
-const TABS_WITH_COMPOSER: ReadonlySet<ActivityTab> = new Set([
-  "timeline",
-  "comments",
-]);
 
 /** The 32px row this panel leads with: the tabs are the header, so the strip
  *  lines up with the tab bar of the pane on its left (TabbedPanel) and the
@@ -160,10 +153,6 @@ function ActivityConversation({
     [taskId],
   );
 
-  const commentRows = useMemo(
-    () => timeline.filter((row) => row.kind === "human"),
-    [timeline],
-  );
   const conversationItems = useMemo(
     () =>
       tab === "timeline"
@@ -178,7 +167,7 @@ function ActivityConversation({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline, events.length, agentStatus?.phase, tab]);
 
-  const showComposer = TABS_WITH_COMPOSER.has(tab);
+  const showComposer = tab === "timeline";
 
   const body = () => {
     if (tab === "artifacts") {
@@ -187,20 +176,6 @@ function ActivityConversation({
           task={task}
           timeline={timeline}
           canOpenInPlace={canOpenInPlace}
-        />
-      );
-    }
-    if (tab === "comments") {
-      return (
-        <ThreadTimeline
-          timeline={commentRows}
-          isReady={isReady}
-          currentUserUuid={currentUser?.uuid}
-          currentUserEmail={currentUser?.email}
-          isTaskAuthor={isTaskAuthor}
-          canForward={canForward}
-          onSendToAgent={sendMessageToAgent}
-          onDelete={deleteMessage}
         />
       );
     }
