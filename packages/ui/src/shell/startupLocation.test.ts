@@ -1,4 +1,4 @@
-import { rendererStateStorage } from "@posthog/ui/shell/rendererStorage";
+import { stateStorage } from "@posthog/ui/shell/rendererStorage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveStartupLocation } from "./startupLocation";
 
@@ -6,7 +6,7 @@ describe("startup location", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("restores the exact last location", async () => {
-    vi.spyOn(rendererStateStorage, "getItem").mockResolvedValue("/code");
+    vi.spyOn(stateStorage, "getItem").mockResolvedValue("/code");
     const client = {
       getDesktopFileSystemChannels: vi.fn(),
       createDesktopFileSystemChannel: vi.fn(),
@@ -19,7 +19,7 @@ describe("startup location", () => {
   });
 
   it("opens a new task in me when there is no saved location", async () => {
-    vi.spyOn(rendererStateStorage, "getItem").mockResolvedValue(null);
+    vi.spyOn(stateStorage, "getItem").mockResolvedValue(null);
     const client = {
       getDesktopFileSystemChannels: vi
         .fn()
