@@ -63,9 +63,11 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const contextName = channel?.name ?? channelId;
   const isPersonal = contextName === PERSONAL_CHANNEL_NAME;
   const authenticatedClient = useOptionalAuthenticatedClient();
-  const { data: currentUser, isLoading: currentUserLoading } = useCurrentUser({
-    client: authenticatedClient,
-  });
+  const {
+    data: currentUser,
+    isLoading: currentUserLoading,
+    isError: currentUserError,
+  } = useCurrentUser({ client: authenticatedClient });
 
   useSetHeaderContent(
     useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
@@ -169,7 +171,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
 
           {isLoading || (isPersonal && currentUserLoading) ? (
             <LoopsSkeleton />
-          ) : isError ? (
+          ) : isError || (isPersonal && currentUserError) ? (
             <LoopsEmptyNotice
               title="Couldn't load loops"
               hint="The loops API returned an error. Try again in a moment."
