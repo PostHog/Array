@@ -183,24 +183,6 @@ interface LoopsListViewPresentationProps {
   onBuilderSessionStopped?: (taskId: string) => void;
 }
 
-export function splitLoopsByOwnership(
-  loops: LoopSchemas.Loop[],
-  currentUserId: number | null,
-): { personalLoops: LoopSchemas.Loop[]; teamLoops: LoopSchemas.Loop[] } {
-  return {
-    personalLoops: loops.filter(
-      (loop) =>
-        loop.visibility === "personal" ||
-        (currentUserId !== null && loop.created_by_id === currentUserId),
-    ),
-    teamLoops: loops.filter(
-      (loop) =>
-        loop.visibility === "team" &&
-        (currentUserId === null || loop.created_by_id !== currentUserId),
-    ),
-  };
-}
-
 export function LoopsListViewPresentation({
   loops,
   currentUserId = null,
@@ -217,9 +199,15 @@ export function LoopsListViewPresentation({
   onResumeBuilderSession,
   onBuilderSessionStopped,
 }: LoopsListViewPresentationProps) {
-  const { personalLoops, teamLoops } = splitLoopsByOwnership(
-    loops,
-    currentUserId,
+  const personalLoops = loops.filter(
+    (loop) =>
+      loop.visibility === "personal" ||
+      (currentUserId !== null && loop.created_by_id === currentUserId),
+  );
+  const teamLoops = loops.filter(
+    (loop) =>
+      loop.visibility === "team" &&
+      (currentUserId === null || loop.created_by_id !== currentUserId),
   );
 
   return (
@@ -318,7 +306,7 @@ export function LoopsListViewPresentation({
   );
 }
 
-export function LoopListTabs({
+function LoopListTabs({
   personalLoops,
   teamLoops,
   members,
