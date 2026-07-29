@@ -1,3 +1,9 @@
+import {
+  formatPosthogExecBody,
+  getPostHogExecDisplay,
+  isPostHogExecTool,
+} from "@posthog/core/sessions/posthogExecDisplay";
+import { parseMcpToolName } from "@posthog/shared";
 import { useRouter } from "expo-router";
 import {
   ArrowsClockwise,
@@ -22,13 +28,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  formatPosthogExecBody,
-  getPostHogExecDisplay,
-  isPostHogExecTool,
-} from "@/features/chat/utils/posthogExecDisplay";
 import { McpAppHost } from "@/features/mcp/components/McpAppHost";
-import { isMcpToolName } from "@/features/mcp/utils/mcpToolName";
 import {
   getColorForClass,
   highlightCode,
@@ -942,7 +942,8 @@ export function ToolMessage({
   // MCP App tools render via the WebView host — skip PostHog exec (which has
   // its own renderer above) and only kick in once the tool finished or while
   // it's running so we don't show empty WebView shells for pending tools.
-  const isMcpAppTool = !isPostHogExec && isMcpToolName(effectiveToolName);
+  const isMcpAppTool =
+    !isPostHogExec && parseMcpToolName(effectiveToolName) !== undefined;
 
   if (isMcpAppTool && !isPending) {
     return (

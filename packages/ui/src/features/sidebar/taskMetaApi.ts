@@ -7,6 +7,7 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
+import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
 import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
@@ -43,21 +44,24 @@ export const taskViewedApi = {
 
 export const pinnedTasksApi = {
   async getPinnedTaskIds(): Promise<string[]> {
-    return workspace().getPinnedTaskIds.query();
+    const client = await getAuthenticatedClient();
+    if (!client) return [];
+    return client.getPinnedTaskIds();
   },
 
-  async togglePin(
+  async setPinned(
     taskId: string,
+    pinned: boolean,
   ): Promise<{ taskId: string; isPinned: boolean }> {
-    const result = await workspace().togglePin.mutate({ taskId });
-    return { taskId, isPinned: result.isPinned };
+    const client = await getAuthenticatedClient();
+    if (!client) return { taskId, isPinned: false };
+    const isPinned = await client.setTaskPinned(taskId, pinned);
+    return { taskId, isPinned };
   },
 
   async unpin(taskId: string): Promise<void> {
-    const result = await workspace().togglePin.mutate({ taskId });
-    if (result.isPinned) {
-      await workspace().togglePin.mutate({ taskId });
-    }
+    const client = await getAuthenticatedClient();
+    if (client) await client.setTaskPinned(taskId, false);
   },
 
   isPinned(pinnedTaskIds: Set<string>, taskId: string): boolean {

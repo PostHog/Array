@@ -1,31 +1,33 @@
-import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
+import { useAuthenticatedQuery } from "../../hooks/useAuthenticatedQuery";
+import { pinnedTasksApi } from "./taskMetaApi";
+
+const PINNED_TASKS_QUERY_KEY = ["task-pins"] as const;
 
 export function usePinnedTasks() {
-  const trpc = useHostTRPC();
-  const hostClient = useHostTRPCClient();
   const queryClient = useQueryClient();
-  const pinnedQueryKey = trpc.workspace.getPinnedTaskIds.queryKey();
+  const pinnedQueryKey = PINNED_TASKS_QUERY_KEY;
 
-  const { data: pinnedTaskIds = [], isLoading } = useQuery(
-    trpc.workspace.getPinnedTaskIds.queryOptions(undefined, {
-      staleTime: 30_000,
-    }),
+  const { data: pinnedTaskIds = [], isLoading } = useAuthenticatedQuery(
+    pinnedQueryKey,
+    (client) => client.getPinnedTaskIds(),
+    { staleTime: 30_000 },
   );
 
   const pinnedSet = useMemo(() => new Set(pinnedTaskIds), [pinnedTaskIds]);
 
   const togglePinMutation = useMutation({
-    mutationFn: ({ taskId }: { taskId: string }) =>
-      hostClient.workspace.togglePin.mutate({ taskId }),
-    onMutate: async ({ taskId }) => {
+    scope: { id: "task-pins" },
+    mutationFn: ({ taskId, pinned }: { taskId: string; pinned: boolean }) =>
+      pinnedTasksApi.setPinned(taskId, pinned),
+    onMutate: async ({ taskId, pinned }) => {
       await queryClient.cancelQueries({ queryKey: pinnedQueryKey });
       const previous = queryClient.getQueryData<string[]>(pinnedQueryKey);
       const wasPinned = previous?.includes(taskId);
       queryClient.setQueryData<string[]>(pinnedQueryKey, (old) => {
-        if (!old) return wasPinned ? [] : [taskId];
-        return wasPinned ? old.filter((id) => id !== taskId) : [...old, taskId];
+        const filtered = old?.filter((id) => id !== taskId) ?? [];
+        return pinned ? [...filtered, taskId] : filtered;
       });
       return { previous, wasPinned, taskId };
     },
@@ -52,16 +54,27 @@ export function usePinnedTasks() {
   pinnedSetRef.current = pinnedSet;
 
   const togglePin = useCallback(async (taskId: string) => {
-    await togglePinMutationRef.current.mutateAsync({ taskId });
+    const pinned = !pinnedSetRef.current.has(taskId);
+    const nextPinnedSet = new Set(pinnedSetRef.current);
+    if (pinned) nextPinnedSet.add(taskId);
+    else nextPinnedSet.delete(taskId);
+    pinnedSetRef.current = nextPinnedSet;
+    await togglePinMutationRef.current.mutateAsync({
+      taskId,
+      pinned,
+    });
   }, []);
 
-  const unpin = useCallback(async (taskId: string) => {
-    if (!pinnedSetRef.current.has(taskId)) return;
-    const result = await togglePinMutationRef.current.mutateAsync({ taskId });
-    if (result.isPinned) {
-      await togglePinMutationRef.current.mutateAsync({ taskId });
-    }
-  }, []);
+  const unpin = useCallback(
+    async (taskId: string) => {
+      if (!pinnedSetRef.current.has(taskId)) return;
+      await pinnedTasksApi.unpin(taskId);
+      queryClient.setQueryData<string[]>(pinnedQueryKey, (old) =>
+        old?.filter((id) => id !== taskId),
+      );
+    },
+    [queryClient, pinnedQueryKey],
+  );
 
   const isPinned = useCallback(
     (taskId: string) => pinnedSet.has(taskId),

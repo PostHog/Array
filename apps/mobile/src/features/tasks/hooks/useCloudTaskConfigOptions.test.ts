@@ -106,6 +106,32 @@ describe("useCloudTaskConfigOptions", () => {
     expect(mockGetCloudTaskConfigOptions).toHaveBeenCalledWith("claude");
   });
 
+  it("replaces a hidden GLM current model with a visible model", async () => {
+    mockGetCloudTaskConfigOptions.mockResolvedValue([
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        currentValue: "@cf/zai-org/glm-5.2",
+        options: [
+          { value: "@cf/zai-org/glm-5.2", name: "GLM-5.2" },
+          { value: "claude-sonnet-5", name: "Claude Sonnet 5" },
+        ],
+        category: "model",
+        description: "Choose a model",
+      },
+    ] satisfies CloudTaskConfigOption[]);
+
+    const result = await renderHook();
+    await waitForAssertion(() => {
+      const modelOption = getModelConfigOption(result.current.configOptions);
+      expect(modelOption.currentValue).toBe("claude-sonnet-5");
+      expect(modelOption.options.map((option) => option.value)).toEqual([
+        "claude-sonnet-5",
+      ]);
+    });
+  });
+
   it("keeps the shared fallback when unauthenticated", async () => {
     mockUseAuthStore.mockImplementation((selector) =>
       selector({ oauthAccessToken: null }),
@@ -117,5 +143,19 @@ describe("useCloudTaskConfigOptions", () => {
       getModelConfigOption(result.current.configOptions).currentValue,
     ).toBe(DEFAULT_GATEWAY_MODEL);
     expect(mockGetCloudTaskConfigOptions).not.toHaveBeenCalled();
+    expect(result.current.isConfigReady).toBe(true);
+  });
+
+  it("makes the shared fallback usable after the live catalog fails", async () => {
+    mockGetCloudTaskConfigOptions.mockRejectedValue(new Error("offline"));
+
+    const result = await renderHook();
+    await waitForAssertion(() => {
+      expect(result.current.isConfigReady).toBe(true);
+    });
+
+    expect(
+      getModelConfigOption(result.current.configOptions).currentValue,
+    ).toBe(DEFAULT_GATEWAY_MODEL);
   });
 });

@@ -1250,6 +1250,59 @@ describe("PostHogAPIClient", () => {
     });
   });
 
+  describe("task pins", () => {
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("loads pinned task ids", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_ids: ["task-1", "task-2"] }),
+      });
+
+      await expect(buildClient(fetch).getPinnedTaskIds()).resolves.toEqual([
+        "task-1",
+        "task-2",
+      ]);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "get",
+          path: "/api/projects/123/tasks/pinned/",
+        }),
+      );
+    });
+
+    it("sets pin state idempotently", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_id: "task-1", pinned: true }),
+      });
+
+      await expect(
+        buildClient(fetch).setTaskPinned("task-1", true),
+      ).resolves.toBe(true);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "post",
+          path: "/api/projects/123/tasks/task-1/pin/",
+          overrides: { body: JSON.stringify({ pinned: true }) },
+        }),
+      );
+    });
+  });
+
   describe("getSignalReportArtefacts", () => {
     function makeClient(fetch: ReturnType<typeof vi.fn>) {
       const client = new PostHogAPIClient(

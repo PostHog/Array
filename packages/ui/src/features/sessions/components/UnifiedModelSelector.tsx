@@ -9,7 +9,6 @@ import {
   Robot,
   Spinner,
 } from "@phosphor-icons/react";
-import { getConfigOptionLabel } from "@posthog/core/task-detail/composerControls";
 import {
   Button,
   DropdownMenu,
@@ -79,7 +78,9 @@ export function UnifiedModelSelector({
   }, [selectOption]);
 
   const currentValue = selectOption?.currentValue;
-  const currentLabel = getConfigOptionLabel(options, currentValue);
+  const currentLabel =
+    options.find((option) => option.value === currentValue)?.name ??
+    currentValue;
 
   const otherAdapter = getOtherAdapter(adapter);
 

@@ -32,7 +32,7 @@ pnpm --filter @posthog/mobile start
 
 ### Feature Folders
 
-Code is organized by feature in `src/features/`. Each feature is self-contained with its own components, hooks, stores, and API logic.
+Code is organized by feature in `src/features/`. Features own native components, one-source hooks, and view state. They do not own copies of cloud contracts, transport, orchestration, or presentation rules.
 
 ```
 src/features/
@@ -46,17 +46,30 @@ src/features/
 │   ├── hooks/
 │   ├── stores/
 │   └── types.ts
-├── conversations/  # PostHog AI conversation list & management
-│   ├── api.ts
+├── inbox/          # Native inbox rendering and query hooks
 │   ├── components/
 │   ├── hooks/
 │   └── stores/
-└── tasks/          # Task management
-    ├── api.ts
+└── tasks/          # Native cloud-task rendering and host adapters
     ├── components/
     ├── hooks/
+    ├── services/
     └── stores/
 ```
+
+### Portability boundary
+
+Mobile and desktop use the same cloud-task architecture. New work must preserve these ownership rules:
+
+- `@posthog/shared` owns runtime contracts and Zod schemas.
+- `@posthog/api-client` owns authenticated PostHog HTTPS transport and its request/response types.
+- `@posthog/core` owns cloud-task orchestration and headless presentation decisions, including sessions, queues, permissions, models, repositories, inbox rules, and automation semantics.
+- `apps/mobile` owns Expo lifecycle, React Native rendering, gestures, sheets, notifications, audio, secure storage, and small persisted view-state stores.
+- `@posthog/ui` owns the DOM/Quill renderer and web view state.
+
+Do not add a mobile API facade, duplicate a shared type, or re-export a core helper through a mobile file. Import the owning package directly. If desktop and mobile need different visuals, add a headless descriptor or decision function to core and keep two thin renderers.
+
+Intentional host differences are limited to platform capabilities and view state. Mobile may persist native navigation state, cached picker snapshots, optimistic attachment echoes, and notification preferences; it must not implement retries, reconnection, transport parsing, task lifecycle, or cross-store decisions in those stores.
 
 ### File-Based Routing
 

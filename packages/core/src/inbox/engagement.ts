@@ -171,22 +171,36 @@ export function buildBulkActionEvents(
   }));
 }
 
-export interface InboxViewedFilterState {
+interface InboxViewedFilterStateBase {
   sourceProductFilter: string[];
   priorityFilter: string[];
-  searchQuery?: string;
-  statusFilter?: readonly string[];
-  defaultStatusFilter?: readonly string[];
-  suggestedReviewerFilter?: string[];
+}
+
+export interface DesktopInboxViewedFilterState
+  extends InboxViewedFilterStateBase {
+  surface: "desktop";
+  searchQuery: string;
   /**
    * True when the reviewer scope is the default ("For you"). False when the
    * user has narrowed to a teammate or the whole project — treated as an
    * active filter for `has_active_filters`.
    */
-  isDefaultScope?: boolean;
+  isDefaultScope: boolean;
 }
 
-export interface BuildInboxViewedInput {
+export interface MobileInboxViewedFilterState
+  extends InboxViewedFilterStateBase {
+  surface: "mobile";
+  statusFilter: readonly string[];
+  defaultStatusFilter: readonly string[];
+  suggestedReviewerFilter: string[];
+}
+
+export type InboxViewedFilterState =
+  | DesktopInboxViewedFilterState
+  | MobileInboxViewedFilterState;
+
+interface BuildInboxViewedInputBase {
   /**
    * Reports currently visible to the user (after reviewer scope + search), used
    * for `report_count`, `ready_count`, and the priority/actionability breakdown.
@@ -194,10 +208,18 @@ export interface BuildInboxViewedInput {
   visibleReports: SignalReport[];
   /** Server-reported total of reports matching the active query — the headline inbox number. */
   totalCount: number;
-  /** Tab badge counts shown in the v2 header (the numbers the user actually sees). */
-  tabCounts?: { pulls: number; reports: number };
-  filters: InboxViewedFilterState;
 }
+
+export type BuildInboxViewedInput =
+  | (BuildInboxViewedInputBase & {
+      filters: DesktopInboxViewedFilterState;
+      /** Tab badge counts shown in the desktop header. */
+      tabCounts: { pulls: number; reports: number };
+    })
+  | (BuildInboxViewedInputBase & {
+      filters: MobileInboxViewedFilterState;
+      tabCounts?: never;
+    });
 
 /**
  * Build the property payload for the `Inbox viewed` analytics event from the
@@ -242,19 +264,19 @@ export function buildInboxViewedProperties(
   }
 
   const statusFiltered =
-    filters.statusFilter !== undefined &&
-    filters.defaultStatusFilter !== undefined &&
+    filters.surface === "mobile" &&
     (filters.statusFilter.length !== filters.defaultStatusFilter.length ||
       filters.statusFilter.some(
-        (status) => !filters.defaultStatusFilter?.includes(status),
+        (status) => !filters.defaultStatusFilter.includes(status),
       ));
   const hasActiveFilters =
     filters.sourceProductFilter.length > 0 ||
     filters.priorityFilter.length > 0 ||
-    (filters.searchQuery?.trim().length ?? 0) > 0 ||
+    (filters.surface === "desktop" && filters.searchQuery.trim().length > 0) ||
     statusFiltered ||
-    (filters.suggestedReviewerFilter?.length ?? 0) > 0 ||
-    filters.isDefaultScope === false;
+    (filters.surface === "mobile" &&
+      filters.suggestedReviewerFilter.length > 0) ||
+    (filters.surface === "desktop" && !filters.isDefaultScope);
 
   return {
     report_count: visibleReports.length,
@@ -262,7 +284,8 @@ export function buildInboxViewedProperties(
     ready_count: readyCount,
     has_active_filters: hasActiveFilters,
     source_product_filter: filters.sourceProductFilter,
-    status_filter_count: filters.statusFilter?.length ?? 0,
+    status_filter_count:
+      filters.surface === "mobile" ? filters.statusFilter.length : 0,
     is_empty: totalCount === 0,
     priority_p0_count: priorityCounts.P0,
     priority_p1_count: priorityCounts.P1,

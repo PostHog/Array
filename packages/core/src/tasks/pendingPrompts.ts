@@ -32,12 +32,6 @@ export function listPendingPromptsNewestFirst<
     .sort((left, right) => right.prompt.createdAt - left.prompt.createdAt);
 }
 
-export function selectNewestPendingPrompt<
-  TPrompt extends TimestampedPendingPrompt,
->(byKey: Record<string, TPrompt>): RecoverablePendingPrompt<TPrompt> | null {
-  return listPendingPromptsNewestFirst(byKey)[0] ?? null;
-}
-
 export function buildPendingPromptKey(
   randomUuid: string | null,
   timestamp: number,
