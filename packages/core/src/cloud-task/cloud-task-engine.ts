@@ -1103,7 +1103,9 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
       watcher.totalEntryCount = watcher.resumeFromEntryCount;
       watcher.hasEmittedSnapshot = true;
       watcher.isBootstrapping = false;
-      void this.connectSse(key, { startLatest: true });
+      // The renderer dedupes this leaf replay against its hydrated resume chain; starting at latest
+      // can lose entries persisted between that hydration request and the stream connection.
+      void this.connectSse(key);
       return;
     }
 

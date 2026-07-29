@@ -352,6 +352,62 @@ describe("CloudTaskEngine", () => {
     );
   });
 
+  it("replays a resumed run stream so hydration cannot miss its live tail", async () => {
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    mockNetFetch.mockResolvedValueOnce(
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: "build",
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+    mockStreamFetch.mockResolvedValueOnce(
+      createOpenSseResponse(
+        'id: 1\ndata: {"type":"notification","timestamp":"2026-01-01T00:00:01Z","notification":{"jsonrpc":"2.0","method":"_posthog/progress","params":{"id":"sandbox","status":"completed","title":"Restored sandbox"}}}\n\n',
+      ),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+      resumeFromEntryCount: 3,
+    });
+
+    await waitFor(() =>
+      updates.some((update) => {
+        const payload = update as {
+          kind?: string;
+          totalEntryCount?: number;
+        };
+        return payload.kind === "logs" && payload.totalEntryCount === 4;
+      }),
+    );
+
+    expect(mockStreamFetch).toHaveBeenCalledWith(
+      "https://app.example.com/api/projects/2/tasks/task-1/runs/run-1/stream/",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer token",
+          Accept: "text/event-stream",
+        }),
+      }),
+    );
+    expect(
+      mockNetFetch.mock.calls.some(([input]) => {
+        const url = typeof input === "string" ? input : input.toString();
+        return url.includes("/session_logs/");
+      }),
+    ).toBe(false);
+  });
+
   it("drops a re-delivered log entry with a duplicate stream id", async () => {
     const updates: unknown[] = [];
     service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
