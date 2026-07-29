@@ -1,4 +1,7 @@
 import { Text } from "@components/text";
+import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
+import { dismissalReasonLabel } from "@posthog/shared";
+import type { SignalReport } from "@posthog/shared/domain-types";
 import * as Haptics from "expo-haptics";
 import { ArrowCounterClockwise, Tray } from "phosphor-react-native";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -11,13 +14,7 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import { useArchivedReports, useRestoreReport } from "../hooks/useInboxReports";
-import type { SignalReport } from "../types";
-import {
-  dismissalReasonLabel,
-  formatReportTimestamp,
-  inboxStatusLabel,
-  isRestorableReport,
-} from "../utils";
+import { formatReportTimestamp, isRestorableReport } from "../utils";
 
 interface ArchivedReportListProps {
   onReportPress?: (report: SignalReport) => void;

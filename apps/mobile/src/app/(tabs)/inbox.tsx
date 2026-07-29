@@ -1,3 +1,5 @@
+import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
+import type { SignalReport } from "@posthog/shared/domain-types";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
@@ -20,12 +22,8 @@ import {
   decidedIds,
   useDismissedReportsStore,
 } from "@/features/inbox/stores/dismissedReportsStore";
-import {
-  DEFAULT_STATUS_FILTER,
-  useInboxFilterStore,
-} from "@/features/inbox/stores/inboxFilterStore";
+import { useInboxFilterStore } from "@/features/inbox/stores/inboxFilterStore";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
-import type { SignalReport } from "@/features/inbox/types";
 import { buildInboxViewedProperties } from "@/features/inbox/utils";
 import { useIntegrations } from "@/features/tasks/hooks/useIntegrations";
 import { ANALYTICS_EVENTS, useAnalytics } from "@/lib/analytics";
@@ -74,7 +72,7 @@ export default function InboxScreen() {
         statusFilter,
         suggestedReviewerFilter,
         priorityFilter,
-        defaultStatusFilter: DEFAULT_STATUS_FILTER,
+        defaultStatusFilter: INBOX_PIPELINE_STATUSES,
       }),
     );
   }, [

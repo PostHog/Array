@@ -1,27 +1,68 @@
+import {
+  type CloudTaskConfigOption,
+  DEFAULT_GATEWAY_MODEL,
+  restrictedModelMeta,
+} from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  modelSupportsReasoning,
-  REASONING_LEVELS,
+  getMobileModelOptions,
+  getModelConfigOption,
+  getModelLabel,
+  resolveAvailableModel,
 } from "./options";
 
-describe("task composer options", () => {
-  it("uses an eligible non-premium default model", () => {
-    expect(DEFAULT_MODEL).toBe("claude-opus-4-8");
-    expect(DEFAULT_MODEL).not.toContain("fable");
+const modelOption: CloudTaskConfigOption = {
+  id: "model",
+  name: "Model",
+  type: "select",
+  currentValue: DEFAULT_GATEWAY_MODEL,
+  options: [
+    {
+      value: DEFAULT_GATEWAY_MODEL,
+      name: "Claude Opus 4.8",
+      description: "Default",
+    },
+    {
+      value: "claude-fable-5",
+      name: "Claude Fable 5",
+      _meta: restrictedModelMeta(),
+    },
+  ],
+  category: "model",
+  description: "Choose a model",
+};
+
+describe("mobile cloud task model options", () => {
+  it("adapts live model options and disables restricted entries", () => {
+    expect(getMobileModelOptions(modelOption)).toEqual([
+      {
+        value: DEFAULT_GATEWAY_MODEL,
+        label: "Claude Opus 4.8",
+        description: "Default",
+        disabled: false,
+      },
+      {
+        value: "claude-fable-5",
+        label: "Claude Fable 5",
+        description: undefined,
+        disabled: true,
+      },
+    ]);
   });
 
-  it("derives reasoning defaults and options from shared policy", () => {
-    expect(DEFAULT_REASONING).toBe("high");
-    expect(REASONING_LEVELS.map((option) => option.value)).toEqual([
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
-    expect(modelSupportsReasoning("claude-opus-4-8")).toBe(true);
-    expect(modelSupportsReasoning("claude-haiku-4-5")).toBe(false);
+  it("falls back from restricted or missing selections", () => {
+    expect(resolveAvailableModel(modelOption, "claude-fable-5")).toBe(
+      DEFAULT_GATEWAY_MODEL,
+    );
+    expect(resolveAvailableModel(modelOption, "missing-model")).toBe(
+      DEFAULT_GATEWAY_MODEL,
+    );
+  });
+
+  it("reads the live model label and config option", () => {
+    expect(getModelConfigOption([modelOption])).toBe(modelOption);
+    expect(getModelLabel(modelOption, DEFAULT_GATEWAY_MODEL)).toBe(
+      "Claude Opus 4.8",
+    );
   });
 });

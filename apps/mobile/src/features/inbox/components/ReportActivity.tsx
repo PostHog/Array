@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
 import { ClockCounterClockwise } from "phosphor-react-native";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -9,7 +10,6 @@ import {
   attributionLabel,
   selectActivityArtefacts,
 } from "../activityLog";
-import type { ReportArtefact } from "../types";
 import { ArtefactCommit } from "./ArtefactCommit";
 import { ArtefactTaskRun } from "./ArtefactTaskRun";
 
@@ -57,7 +57,7 @@ export function ReportActivity({
   artefacts,
 }: {
   reportId: string;
-  artefacts: ReportArtefact[];
+  artefacts: AnySignalReportArtefact[];
 }) {
   const themeColors = useThemeColors();
   const activity = useMemo(
