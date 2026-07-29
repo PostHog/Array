@@ -39,6 +39,7 @@ import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelIte
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { useHoldSidebarPeek } from "@posthog/ui/features/sidebar/useHoldSidebarPeek";
 import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -84,6 +85,10 @@ function RecentSectionHeader({
   onStatusChange: (value: TaskRunStatus | null) => void;
   filtersActive: boolean;
 }) {
+  // Hold the sidebar's hover-peek open while the Filter menu is open, so a
+  // pointer moving toward the menu can't collapse the peeked panel and strand
+  // the dropdown's portal anchor (matches TasksHeader/ProjectSwitcher).
+  const handleFilterOpenChange = useHoldSidebarPeek();
   return (
     <>
       <div className="flex items-center gap-0.5 pr-1">
@@ -99,7 +104,7 @@ function RecentSectionHeader({
         >
           <MagnifyingGlass size={12} />
         </button>
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={handleFilterOpenChange}>
           <DropdownMenuTrigger
             render={
               <button
