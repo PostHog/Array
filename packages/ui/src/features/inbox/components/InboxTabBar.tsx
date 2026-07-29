@@ -14,62 +14,72 @@ interface InboxTabBarProps {
   counts: InboxTabCounts;
 }
 
-function activeTabFromPath(pathname: string): InboxTabKey {
+export function activeTabFromPath(pathname: string): InboxTabKey {
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
   if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
   return "pulls";
 }
 
+/** The legacy header's row: tabs with the reviewer-scope select alongside. */
 export function InboxTabBar({ counts }: InboxTabBarProps) {
-  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const activeKey = activeTabFromPath(pathname);
 
   return (
     <Flex align="center" justify="between" className="min-w-0">
-      <Tabs
-        value={activeKey}
-        onValueChange={(value: string) => {
-          const key = value as InboxTabKey;
-          navigate({ to: INBOX_TAB_LIST_ROUTE[key] });
-        }}
-      >
-        <TabsList
-          variant="line"
-          className="h-auto gap-0.5 [&_.quill-tabs__indicator]:transition-[transform,width]! [&_.quill-tabs__indicator]:duration-100! [&_.quill-tabs__indicator]:ease-out!"
-        >
-          {INBOX_TAB_KEYS.map((key) => {
-            const isActive = key === activeKey;
-            return (
-              <TabsTrigger
-                key={key}
-                value={key}
-                className="gap-1.5 px-2.5 py-2"
-              >
-                <span className="font-medium text-[13px]">
-                  {INBOX_TAB_LABEL[key]}
-                </span>
-                {/* Runs and the open-ended Archive don't get a running total — it adds no signal. */}
-                {key !== "runs" && key !== "dismissed" && counts[key] > 0 && (
-                  <span
-                    className={
-                      isActive
-                        ? "text-[12px] text-gray-11 tabular-nums"
-                        : "text-[12px] text-gray-10 tabular-nums"
-                    }
-                  >
-                    {counts[key]}
-                  </span>
-                )}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </Tabs>
-      {activeKey !== "runs" && activeKey !== "dismissed" && (
-        <InboxScopeSelect />
-      )}
+      <InboxTabs counts={counts} />
+      {inboxScopeApplies(activeKey) && <InboxScopeSelect />}
     </Flex>
+  );
+}
+
+/** Whether the reviewer-scope control means anything on this tab. */
+export function inboxScopeApplies(tab: InboxTabKey): boolean {
+  return tab !== "runs" && tab !== "dismissed";
+}
+
+/** Just the tab strip — the header slots its own filters beside it. */
+export function InboxTabs({ counts }: InboxTabBarProps) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const activeKey = activeTabFromPath(pathname);
+
+  return (
+    <Tabs
+      value={activeKey}
+      onValueChange={(value: string) => {
+        const key = value as InboxTabKey;
+        navigate({ to: INBOX_TAB_LIST_ROUTE[key] });
+      }}
+    >
+      <TabsList
+        variant="line"
+        className="h-auto gap-0.5 [&_.quill-tabs__indicator]:transition-[transform,width]! [&_.quill-tabs__indicator]:duration-100! [&_.quill-tabs__indicator]:ease-out!"
+      >
+        {INBOX_TAB_KEYS.map((key) => {
+          const isActive = key === activeKey;
+          return (
+            <TabsTrigger key={key} value={key} className="gap-1.5 px-2.5 py-2">
+              <span className="font-medium text-[13px]">
+                {INBOX_TAB_LABEL[key]}
+              </span>
+              {/* Runs and the open-ended Archive don't get a running total — it adds no signal. */}
+              {key !== "runs" && key !== "dismissed" && counts[key] > 0 && (
+                <span
+                  className={
+                    isActive
+                      ? "text-[12px] text-gray-11 tabular-nums"
+                      : "text-[12px] text-gray-10 tabular-nums"
+                  }
+                >
+                  {counts[key]}
+                </span>
+              )}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }

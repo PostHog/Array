@@ -29,6 +29,15 @@ import { masonryPreviewHeight } from "@posthog/ui/features/canvas/utils/masonryP
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderChip,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderTitle,
+  PageHeaderTitleRow,
+} from "@posthog/ui/primitives/PageHeader";
 import { track } from "@posthog/ui/shell/analytics";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useNavigate } from "@tanstack/react-router";
@@ -74,7 +83,10 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
   }, [channelId]);
 
   useSetHeaderContent(
-    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+    useMemo(
+      () => <ChannelHeader channelId={channelId} page="artifacts" />,
+      [channelId],
+    ),
   );
 
   const { dashboards } = useDashboards(channelId);
@@ -145,77 +157,105 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
   );
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-1">
-      {/* The list reads best narrow; card layouts want the full width. */}
-      <div
-        className={cn(
-          "mx-auto w-full px-4 py-6",
-          view === "list" ? "max-w-[680px]" : "max-w-[1200px]",
-        )}
-      >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <Text size="sm" variant="muted">
-            {items.length === 0
-              ? "Artifacts"
-              : `${items.length} artifact${items.length === 1 ? "" : "s"}`}
-          </Text>
-          <ArtifactsViewToggle channelId={channelId} />
-        </div>
+    <div className="flex h-full min-h-0 flex-col bg-gray-1">
+      {/* Full-bleed header over a container-width body — the Inbox shape. Ships
+          behind the spaces layout like every other space page header; off,
+          the view switcher rides above the list instead. */}
+      {spacesLayout ? (
+        <PageHeader>
+          <PageHeaderHeading>
+            <PageHeaderTitleRow>
+              <PageHeaderTitle>Artifacts</PageHeaderTitle>
+              {items.length > 0 && (
+                <PageHeaderChip icon={<FilesIcon size={12} weight="fill" />}>
+                  {items.length} item{items.length === 1 ? "" : "s"}
+                </PageHeaderChip>
+              )}
+              <PageHeaderActions>
+                <ArtifactsViewToggle channelId={channelId} />
+              </PageHeaderActions>
+            </PageHeaderTitleRow>
+            <PageHeaderDescription>
+              Canvases and pull requests from this{" "}
+              {spacesLayout ? "space's" : "channel's"} tasks.
+            </PageHeaderDescription>
+          </PageHeaderHeading>
+        </PageHeader>
+      ) : null}
 
-        {items.length === 0 ? (
-          <Empty className="mx-auto max-w-md py-20">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <FilesIcon size={24} />
-              </EmptyMedia>
-              <EmptyTitle>No artifacts yet</EmptyTitle>
-              <EmptyDescription>
-                Canvases and pull requests from this{" "}
-                {spacesLayout ? "space's" : "channel's"} tasks show up here.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : view === "list" ? (
-          <div className="flex flex-col gap-0.5">
-            {items.map((item) => (
-              <ArtifactListItem
-                key={item.key}
-                item={item}
-                onOpenCanvas={openCanvas}
-                onOpenPr={openPr}
-              />
-            ))}
-          </div>
-        ) : view === "grid" ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((item) => (
-              <ArtifactCard
-                key={item.key}
-                item={item}
-                previewHeight={176}
-                onOpenCanvas={openCanvas}
-                onOpenPr={openPr}
-              />
-            ))}
-          </div>
-        ) : (
-          // CSS columns rather than a JS masonry: cards are self-contained and
-          // never reflow into each other, so break-inside-avoid is enough. The
-          // trade-off is column-major order — newest runs down column one, not
-          // across the row — which is fine for a browse-y wall of previews.
-          <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
-            {items.map((item) => (
-              <div key={item.key} className="mb-4 break-inside-avoid">
-                <ArtifactCard
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* The list reads best narrow; card layouts want the full width. */}
+        <div
+          className={cn(
+            "mx-auto w-full px-4 py-6",
+            view === "list" ? "max-w-[680px]" : "max-w-[1200px]",
+          )}
+        >
+          {!spacesLayout && (
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <Text size="sm" variant="muted">
+                {items.length === 0
+                  ? "Artifacts"
+                  : `${items.length} artifact${items.length === 1 ? "" : "s"}`}
+              </Text>
+              <ArtifactsViewToggle channelId={channelId} />
+            </div>
+          )}
+          {items.length === 0 ? (
+            <Empty className="mx-auto max-w-md py-20">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FilesIcon size={24} />
+                </EmptyMedia>
+                <EmptyTitle>No artifacts yet</EmptyTitle>
+                <EmptyDescription>
+                  Canvases and pull requests from this{" "}
+                  {spacesLayout ? "space's" : "channel's"} tasks show up here.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : view === "list" ? (
+            <div className="flex flex-col gap-0.5">
+              {items.map((item) => (
+                <ArtifactListItem
+                  key={item.key}
                   item={item}
-                  previewHeight={masonryPreviewHeight(item.key)}
                   onOpenCanvas={openCanvas}
                   onOpenPr={openPr}
                 />
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          ) : view === "grid" ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map((item) => (
+                <ArtifactCard
+                  key={item.key}
+                  item={item}
+                  previewHeight={176}
+                  onOpenCanvas={openCanvas}
+                  onOpenPr={openPr}
+                />
+              ))}
+            </div>
+          ) : (
+            // CSS columns rather than a JS masonry: cards are self-contained and
+            // never reflow into each other, so break-inside-avoid is enough. The
+            // trade-off is column-major order — newest runs down column one, not
+            // across the row — which is fine for a browse-y wall of previews.
+            <div className="columns-1 gap-4 sm:columns-2 lg:columns-3">
+              {items.map((item) => (
+                <div key={item.key} className="mb-4 break-inside-avoid">
+                  <ArtifactCard
+                    item={item}
+                    previewHeight={masonryPreviewHeight(item.key)}
+                    onOpenCanvas={openCanvas}
+                    onOpenPr={openPr}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

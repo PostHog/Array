@@ -32,6 +32,15 @@ import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivi
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderChip,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderTitle,
+  PageHeaderTitleRow,
+} from "@posthog/ui/primitives/PageHeader";
+import {
   navigateToChannelTask,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
@@ -287,76 +296,115 @@ export function ActivityView() {
     });
   }, []);
 
-  return (
-    <div className="h-full overflow-y-auto bg-gray-1">
-      <div className="mx-auto w-full max-w-[680px] px-4 py-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Text size="5" weight="bold" className="block">
-              Activity
-            </Text>
-            <Text size="2" className="block text-muted-foreground">
-              Tasks you're involved in across{" "}
-              {spacesLayout ? "spaces" : "channels"}.
-            </Text>
-          </div>
-          {unreadCount > 0 && (
+  const markAllReadButton =
+    unreadCount > 0 ? (
+      <Button
+        variant="default"
+        size="sm"
+        loading={isMarkingRead}
+        disabled={isMarkingRead}
+        onClick={markAllRead}
+      >
+        <ChecksIcon size={14} />
+        {markLoadedReadLabel(unreadItems.length, unreadCount)}
+      </Button>
+    ) : null;
+
+  const feed = (
+    <>
+      {isLoading && items.length === 0 ? (
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
+      ) : items.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BellIcon size={20} />
+            </EmptyMedia>
+            <EmptyTitle>No activity yet</EmptyTitle>
+            <EmptyDescription>
+              Tasks you create, get tagged in, or reply to across{" "}
+              {spacesLayout ? "spaces" : "channels"} land here.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {items.map((item) => (
+            <ActivityRow
+              key={item.taskId}
+              item={item}
+              folderChannelId={folderChannelIdFor(item.channelName)}
+              onOpen={markRead}
+              onMarkRead={markRead}
+              currentUser={currentUser}
+            />
+          ))}
+          {hasNextPage && (
             <Button
-              variant="default"
-              size="sm"
-              loading={isMarkingRead}
-              disabled={isMarkingRead}
-              onClick={markAllRead}
+              variant="outline"
+              className="mt-3 self-center"
+              loading={isFetchingNextPage}
+              disabled={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
             >
-              <ChecksIcon size={14} />
-              {markLoadedReadLabel(unreadItems.length, unreadCount)}
+              Load more
             </Button>
           )}
         </div>
-        <div className="mt-4">
-          {isLoading && items.length === 0 ? (
-            <div className="flex justify-center py-16">
-              <Spinner />
+      )}
+    </>
+  );
+
+  // The shared page header ships with the spaces layout; without it the page
+  // keeps the in-container title it has always had. Delete the legacy branch
+  // when the layout flag graduates.
+  if (!spacesLayout) {
+    return (
+      <div className="h-full overflow-y-auto bg-gray-1">
+        <div className="mx-auto w-full max-w-[680px] px-4 py-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Text size="5" weight="bold" className="block">
+                Activity
+              </Text>
+              <Text size="2" className="block text-muted-foreground">
+                Tasks you're involved in across{" "}
+                {spacesLayout ? "spaces" : "channels"}.
+              </Text>
             </div>
-          ) : items.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <BellIcon size={20} />
-                </EmptyMedia>
-                <EmptyTitle>No activity yet</EmptyTitle>
-                <EmptyDescription>
-                  Tasks you create, get tagged in, or reply to across{" "}
-                  {spacesLayout ? "spaces" : "channels"} land here.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              {items.map((item) => (
-                <ActivityRow
-                  key={item.taskId}
-                  item={item}
-                  folderChannelId={folderChannelIdFor(item.channelName)}
-                  onOpen={markRead}
-                  onMarkRead={markRead}
-                  currentUser={currentUser}
-                />
-              ))}
-              {hasNextPage && (
-                <Button
-                  variant="outline"
-                  className="mt-3 self-center"
-                  loading={isFetchingNextPage}
-                  disabled={isFetchingNextPage}
-                  onClick={() => void fetchNextPage()}
-                >
-                  Load more
-                </Button>
-              )}
-            </div>
-          )}
+            {markAllReadButton}
+          </div>
+          <div className="mt-4">{feed}</div>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-gray-1">
+      <PageHeader>
+        <PageHeaderHeading>
+          <PageHeaderTitleRow>
+            <PageHeaderTitle>Activity</PageHeaderTitle>
+            {unreadCount > 0 && (
+              <PageHeaderChip icon={<BellIcon size={12} weight="fill" />}>
+                {unreadCount} unread
+              </PageHeaderChip>
+            )}
+            {markAllReadButton && (
+              <PageHeaderActions>{markAllReadButton}</PageHeaderActions>
+            )}
+          </PageHeaderTitleRow>
+          <PageHeaderDescription>
+            Tasks you're involved in across{" "}
+            {spacesLayout ? "spaces" : "channels"}.
+          </PageHeaderDescription>
+        </PageHeaderHeading>
+      </PageHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[680px] px-4 py-6">{feed}</div>
       </div>
     </div>
   );

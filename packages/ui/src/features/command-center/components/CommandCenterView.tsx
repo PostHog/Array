@@ -1,6 +1,5 @@
-import { Lightning } from "@phosphor-icons/react";
-import { Box, Flex, Text } from "@radix-ui/themes";
-import { useEffect, useMemo } from "react";
+import { Box, Flex } from "@radix-ui/themes";
+import { useEffect } from "react";
 import { useSetHeaderContent } from "../../../hooks/useSetHeaderContent";
 import { useTaskViewed } from "../../sidebar/useTaskViewed";
 import { useCommandCenterStore } from "../commandCenterStore";
@@ -28,22 +27,11 @@ export function CommandCenterView() {
     }
   }, [visibleTaskIdsKey, markAsViewed]);
 
-  const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <Lightning size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="Command Center"
-        >
-          Command Center
-        </Text>
-      </Flex>
-    ),
-    [],
-  );
-
-  useSetHeaderContent(headerContent);
+  // Root-level page: no breadcrumb row. Its own toolbar names the view, and
+  // there's no parent space to walk back to, so the bar was an empty frame.
+  // (Pushing null also collapses the row inside the Channels space, where
+  // WebsiteLayout renders whatever the active view puts in the header store.)
+  useSetHeaderContent(null);
 
   return (
     <Flex direction="column" height="100%">

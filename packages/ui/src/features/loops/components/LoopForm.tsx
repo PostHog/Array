@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { type LoopSchemas, LoopsApiError } from "@posthog/api-client/loops";
 import { ANALYTICS_EVENTS, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SettingsOptionSelect } from "@posthog/ui/features/settings/SettingsOptionSelect";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
@@ -18,7 +19,7 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, TextField } from "@radix-ui/themes";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useAuthStateValue } from "../../auth/store";
 import {
   useCreateLoop,
@@ -52,6 +53,7 @@ import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
 import { LoopInstructionsFields } from "./LoopSkillFields";
+import { LoopSpaceBreadcrumb } from "./LoopSpaceBreadcrumb";
 import { LoopTriggerEditor } from "./LoopTriggerEditor";
 
 const VISIBILITY_OPTIONS: {
@@ -133,10 +135,23 @@ export function LoopForm({ loop }: LoopFormProps) {
   ];
   const isLastStep = step === STEPS.length - 1;
 
+  // Building a loop for a space keeps a way back to it; a project-level loop
+  // has no parent to breadcrumb to, so the row collapses.
+  const spacesLayout = useChannelsLayout();
+  const contextTarget = values.contextTarget;
+  const headerLeaf = isEdit ? loop.name : "New loop";
   useSetHeaderContent(
-    <Text className="font-medium text-[13px]">
-      {isEdit ? `Edit ${loop.name}` : "New loop"}
-    </Text>,
+    useMemo(
+      () =>
+        spacesLayout && contextTarget ? (
+          <LoopSpaceBreadcrumb
+            folderId={contextTarget.folderId}
+            spaceName={contextTarget.name}
+            leafLabel={headerLeaf}
+          />
+        ) : null,
+      [spacesLayout, contextTarget, headerLeaf],
+    ),
   );
 
   const triggerEndpointPath =

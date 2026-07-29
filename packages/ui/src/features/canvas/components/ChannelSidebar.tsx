@@ -1,10 +1,8 @@
 import {
-  BookOpenTextIcon,
   ChatsCircleIcon,
   FunnelSimple as FunnelSimpleIcon,
   MagnifyingGlass,
   PackageIcon,
-  RepeatIcon,
 } from "@phosphor-icons/react";
 import type { CreatedByFilter } from "@posthog/core/canvas/channelItems";
 import { filterChannelItems } from "@posthog/core/canvas/channelItems";
@@ -32,6 +30,11 @@ import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
+import {
+  type ChannelPageKey,
+  channelPageIcon,
+  channelPageLabel,
+} from "@posthog/ui/features/canvas/components/channelPages";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -42,7 +45,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   [
@@ -296,16 +299,17 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     />
   );
 
+  // Label and icon come from the shared space-page table, so a sidebar row and
+  // the header breadcrumb for the same page can never disagree.
   const sectionRow = (
-    label: string,
-    icon: ReactNode,
+    page: ChannelPageKey,
     to: string,
     onClick: () => void,
   ) => (
     <SidebarItem
       depth={0}
-      icon={icon}
-      label={label}
+      icon={channelPageIcon(page, { size: 16 })}
+      label={channelPageLabel(page)}
       isActive={pathname === to}
       onClick={onClick}
     />
@@ -317,15 +321,13 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
       <div className="flex flex-col gap-px px-2 pt-2">
         {sectionRow(
-          "Feed",
-          <ChatsCircleIcon size={16} />,
+          "home",
           base,
           () =>
             void navigate({ to: "/website/$channelId", params: { channelId } }),
         )}
         {sectionRow(
-          "Context",
-          <BookOpenTextIcon size={16} />,
+          "context",
           `${base}/context`,
           () =>
             void navigate({
@@ -335,8 +337,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
         )}
         {loopsEnabled &&
           sectionRow(
-            "Loops",
-            <RepeatIcon size={16} />,
+            "loops",
             `${base}/loops`,
             () =>
               void navigate({
@@ -345,8 +346,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               }),
           )}
         {sectionRow(
-          "Artifacts",
-          <PackageIcon size={16} />,
+          "artifacts",
           `${base}/artifacts`,
           () =>
             void navigate({

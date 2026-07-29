@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, RepeatIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { isUploadableSkillSource } from "@posthog/core/message-editor/skillTags";
 import { useHostTRPC } from "@posthog/host-router/react";
@@ -19,6 +19,7 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { assertCloudUsageAvailable } from "@posthog/ui/features/billing/preflightCloudUsage";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
@@ -37,7 +38,7 @@ import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Flex, Text } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLoop } from "../hooks/useLoop";
 import {
   useDeleteLoop,
@@ -63,6 +64,7 @@ import { formatLoopModel } from "../loopModels";
 import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
 import { LoopLoadError } from "./LoopFallbacks";
 import { LoopRunRow } from "./LoopRunRow";
+import { LoopSpaceBreadcrumb } from "./LoopSpaceBreadcrumb";
 
 export function LoopDetailView({ loopId }: { loopId: string }) {
   const hasLoopListOrigin = useLocation({
@@ -89,16 +91,22 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
     );
   }, [isLoading, runsQuery.isLoading, runsQuery.isError, loop, runs.length]);
 
+  // A loop attached to a space gets a breadcrumb back to it; a project-level
+  // loop has nowhere to walk back to, so it drops the row entirely.
+  const spacesLayout = useChannelsLayout();
+  const contextTarget = loop?.context_target ?? null;
   useSetHeaderContent(
-    <Flex align="center" gap="2" className="w-full min-w-0">
-      <RepeatIcon size={12} className="shrink-0 text-gray-10" />
-      <Text
-        className="truncate whitespace-nowrap font-medium text-[13px]"
-        title={loop?.name ?? "Loop"}
-      >
-        {loop?.name ?? "Loop"}
-      </Text>
-    </Flex>,
+    useMemo(
+      () =>
+        spacesLayout && contextTarget ? (
+          <LoopSpaceBreadcrumb
+            folderId={contextTarget.folder_id}
+            spaceName={contextTarget.name}
+            leafLabel={loop?.name ?? "Loop"}
+          />
+        ) : null,
+      [spacesLayout, contextTarget, loop?.name],
+    ),
   );
 
   const handleToggleEnabled = (enabled: boolean) => {

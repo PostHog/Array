@@ -155,6 +155,11 @@ type Story = StoryObj<typeof LoopsListViewPresentation>;
 
 export const Comprehensive: Story = {};
 
+/** Bluebird: title, cloud chip and CTA move into the shared full-bleed header. */
+export const SharedPageHeader: Story = {
+  args: { sharedPageHeader: true },
+};
+
 export const LongMixedList: Story = {
   args: {
     loops: Array.from({ length: 18 }, (_, index) => {

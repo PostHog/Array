@@ -1,7 +1,17 @@
 import { CloudIcon, PlusIcon } from "@phosphor-icons/react";
 import { ChannelHeader } from "@posthog/ui/features/canvas/components/ChannelHeader";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderChip,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderTitle,
+  PageHeaderTitleRow,
+} from "@posthog/ui/primitives/PageHeader";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
 import { useMemo } from "react";
@@ -44,6 +54,7 @@ function contextQuickStarts(name: string): { label: string; prompt: string }[] {
  * this context. `channelId` is the desktop folder id, matching `context_target.folder_id`. */
 export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const { data: loops, isLoading, isError } = useLoops();
+  const spacesLayout = useChannelsLayout();
   const limits = useLoopLimits();
   const limitReason =
     limits?.atLimit === true
@@ -54,7 +65,10 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
   const contextName = channel?.name ?? channelId;
 
   useSetHeaderContent(
-    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+    useMemo(
+      () => <ChannelHeader channelId={channelId} page="loops" />,
+      [channelId],
+    ),
   );
 
   const attachedLoops = useMemo(
@@ -82,55 +96,81 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
     navigateToNewLoop();
   };
 
+  const createButton = (
+    <Button
+      variant="soft"
+      color="gray"
+      size="2"
+      onClick={startBlank}
+      disabled={limitReason != null}
+      disabledReason={limitReason}
+    >
+      <PlusIcon size={14} />
+      Create manually
+    </Button>
+  );
+
   return (
     <Flex direction="column" className="h-full min-h-0">
+      {/* The shared page header ships with the spaces layout; without it the
+          in-container title block below is used. Delete that branch when the
+          layout flag graduates. */}
+      {spacesLayout && (
+        <PageHeader>
+          <PageHeaderHeading>
+            <PageHeaderTitleRow>
+              <PageHeaderTitle>Automate #{contextName}</PageHeaderTitle>
+              <PageHeaderChip icon={<CloudIcon size={12} weight="fill" />}>
+                Runs entirely in the cloud
+              </PageHeaderChip>
+              <PageHeaderActions>{createButton}</PageHeaderActions>
+            </PageHeaderTitleRow>
+            <PageHeaderDescription>
+              Build a loop that posts its runs to this context's feed, or keeps
+              its context.md or a canvas up to date.
+            </PageHeaderDescription>
+          </PageHeaderHeading>
+        </PageHeader>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         <Flex
           direction="column"
           gap="6"
           className="@container mx-auto w-full max-w-3xl px-8 py-8"
         >
-          <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
-            <Flex
-              direction="column"
-              gap="1"
-              className="w-full min-w-0 @min-[640px]:max-w-[70%]"
-            >
-              <Flex align="center" gap="2" wrap="wrap">
-                <Heading className="font-bold text-2xl">
-                  Automate #{contextName}
-                </Heading>
-                <Flex
-                  align="center"
-                  className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
-                >
-                  <CloudIcon
-                    size={12}
-                    weight="fill"
-                    className="text-(--accent-11)"
-                  />
-                  <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
-                    Runs entirely in the cloud
-                  </Text>
+          {!spacesLayout && (
+            <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
+              <Flex
+                direction="column"
+                gap="1"
+                className="w-full min-w-0 @min-[640px]:max-w-[70%]"
+              >
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Heading className="font-bold text-2xl">
+                    Automate #{contextName}
+                  </Heading>
+                  <Flex
+                    align="center"
+                    className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
+                  >
+                    <CloudIcon
+                      size={12}
+                      weight="fill"
+                      className="text-(--accent-11)"
+                    />
+                    <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
+                      Runs entirely in the cloud
+                    </Text>
+                  </Flex>
                 </Flex>
+                <Text color="gray" className="text-sm">
+                  Build a loop that posts its runs to this context's feed, or
+                  keeps its context.md or a canvas up to date.
+                </Text>
               </Flex>
-              <Text color="gray" className="text-sm">
-                Build a loop that posts its runs to this context's feed, or
-                keeps its context.md or a canvas up to date.
-              </Text>
-            </Flex>
-            <Button
-              variant="soft"
-              color="gray"
-              size="2"
-              onClick={startBlank}
-              disabled={limitReason != null}
-              disabledReason={limitReason}
-            >
-              <PlusIcon size={14} />
-              Create manually
-            </Button>
-          </div>
+              {createButton}
+            </div>
+          )}
 
           {isLoading ? (
             <LoopsSkeleton />

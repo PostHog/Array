@@ -25,6 +25,10 @@ import {
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import { ChannelBreadcrumb } from "@posthog/ui/features/canvas/components/ChannelBreadcrumb";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import {
+  channelPageIcon,
+  channelPageLabel,
+} from "@posthog/ui/features/canvas/components/channelPages";
 import { NewCanvasMenu } from "@posthog/ui/features/canvas/components/NewCanvasMenu";
 import { deleteCanvasWithUndo } from "@posthog/ui/features/canvas/deleteCanvasWithUndo";
 import { CanvasFrameHost } from "@posthog/ui/features/canvas/freeform/CanvasFrameHost";
@@ -469,7 +473,8 @@ export function WebsiteLayout() {
             <ChannelBreadcrumb
               channelName={channelName}
               channelId={channelId}
-              leafLabel="Canvases"
+              leafIcon={channelPageIcon("canvases", { size: 12 })}
+              leafLabel={channelPageLabel("canvases")}
               trailing={<NewCanvasMenu channelId={channelId} />}
             />
           )}
