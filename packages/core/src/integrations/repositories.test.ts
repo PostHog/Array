@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTeamRepositoryOptions,
+  buildUserRepositoryOptions,
   combineGithubRepositories,
   combineRepositoryPicker,
   combineUserGithubRepositories,
@@ -7,8 +9,11 @@ import {
   isEmptyRepositoryMap,
   isRepoInIntegration,
   normalizeRepoKey,
+  normalizeRepositoryNames,
   type RepositoryCacheAction,
   type RepositoryQueryResult,
+  repositoryLoadWarning,
+  repositoryOptionsEqual,
   resolveEffectiveUserRepositoryMap,
   resolveUserRepositoryCacheAction,
   sameUserRepositoryMap,
@@ -17,6 +22,67 @@ import {
   type UserRepositoryCacheInputs,
   type UserRepositoryIntegrationRef,
 } from "./repositories";
+
+describe("repository options", () => {
+  it("normalizes repository names", () => {
+    expect(normalizeRepositoryNames(["PostHog/Code", ""])).toEqual([
+      "posthog/code",
+    ]);
+  });
+
+  it("builds sorted team options with integration labels", () => {
+    expect(
+      buildTeamRepositoryOptions(
+        [
+          { id: 2, display_name: "Work" },
+          { id: 1, config: { account: { login: "personal" } } },
+        ],
+        { 1: ["z/repo"], 2: ["a/repo"] },
+      ),
+    ).toEqual([
+      { integrationId: 2, integrationLabel: "Work", repository: "a/repo" },
+      {
+        integrationId: 1,
+        integrationLabel: "personal",
+        repository: "z/repo",
+      },
+    ]);
+  });
+
+  it("builds user options with the same shape", () => {
+    expect(
+      buildUserRepositoryOptions(
+        [{ id: "user-1", installation_id: "42", account: { name: "Me" } }],
+        { 42: ["posthog/code"] },
+      ),
+    ).toEqual([
+      { integrationId: 42, integrationLabel: "Me", repository: "posthog/code" },
+    ]);
+  });
+
+  it.each([
+    [0, 2, null],
+    [1, 2, "Some GitHub repositories could not be loaded. Pull to retry."],
+    [2, 2, "Could not load GitHub repositories. Pull to retry."],
+  ])(
+    "describes %i of %i failed repository loads",
+    (failed, total, expected) => {
+      expect(repositoryLoadWarning(failed, total)).toBe(expected);
+    },
+  );
+
+  it("compares option lists by content", () => {
+    const options = [
+      { integrationId: 1, integrationLabel: "Me", repository: "a/repo" },
+    ];
+    expect(
+      repositoryOptionsEqual(
+        options,
+        options.map((option) => ({ ...option })),
+      ),
+    ).toBe(true);
+  });
+});
 
 function result<T>(
   data: T | undefined,

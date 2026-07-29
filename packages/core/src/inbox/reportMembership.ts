@@ -41,6 +41,17 @@ export function isRestorableReport(
   return report.status === "suppressed";
 }
 
+export function getImmediatelyActionableReports(
+  reports: SignalReport[],
+): SignalReport[] {
+  return reports.filter(
+    (report) =>
+      report.status === "ready" &&
+      report.actionability === "immediately_actionable" &&
+      !report.already_addressed,
+  );
+}
+
 export type InboxScope = "for-you" | "entire-project" | `teammate:${string}`;
 
 export const INBOX_SCOPE_FOR_YOU: InboxScope = "for-you";
@@ -128,6 +139,22 @@ const INBOX_DETAIL_PATH_RE = new RegExp(
 
 export function isInboxDetailPath(pathname: string): boolean {
   return INBOX_DETAIL_PATH_RE.test(pathname);
+}
+
+/** Which tab a list pathname belongs to; anything unrecognised reads as Pulls. */
+export function inboxTabFromPath(pathname: string): InboxTabKey {
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.reports)) return "reports";
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.runs)) return "runs";
+  if (pathname.startsWith(INBOX_TAB_LIST_ROUTE.dismissed)) return "dismissed";
+  return "pulls";
+}
+
+/**
+ * Whether the reviewer-scope control means anything on this tab: Runs is
+ * unscoped and the Archive is a terminal list, so neither filters by reviewer.
+ */
+export function inboxScopeApplies(tab: InboxTabKey): boolean {
+  return tab !== "runs" && tab !== "dismissed";
 }
 
 /**
