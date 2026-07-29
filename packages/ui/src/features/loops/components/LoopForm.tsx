@@ -49,6 +49,7 @@ import { buildSkillInstructions, loopSkillBundles } from "../loopSkill";
 import { LoopBehaviorFields } from "./LoopBehaviorFields";
 import { LoopContextFields } from "./LoopContextFields";
 import { Field } from "./LoopFormPrimitives";
+import { LoopHeaderTitle } from "./LoopHeaderTitle";
 import { LoopModelFields } from "./LoopModelFields";
 import { LoopNotificationsFields } from "./LoopNotificationsFields";
 import { LoopRepositoryPicker } from "./LoopRepositoryPicker";
@@ -132,8 +133,8 @@ export function LoopForm({ loop }: LoopFormProps) {
   ];
   const isLastStep = step === STEPS.length - 1;
 
-  // Building a loop for a space keeps a way back to it; a project-level loop
-  // has no parent to breadcrumb to, so the row collapses.
+  // Building a loop for a space keeps a way back to it; without one the header
+  // still names the scene, it just has no parent to offer.
   const spacesLayout = useChannelsLayout();
   const contextTarget = values.contextTarget;
   const headerLeaf = isEdit ? loop.name : "New loop";
@@ -146,7 +147,9 @@ export function LoopForm({ loop }: LoopFormProps) {
             spaceName={contextTarget.name}
             leafLabel={headerLeaf}
           />
-        ) : null,
+        ) : (
+          <LoopHeaderTitle label={headerLeaf} />
+        ),
       [spacesLayout, contextTarget, headerLeaf],
     ),
   );

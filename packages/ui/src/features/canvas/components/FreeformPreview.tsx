@@ -1,11 +1,12 @@
-import { cn, Text } from "@posthog/quill";
+import { ShapesIcon, WarningIcon } from "@phosphor-icons/react";
+import { cn, Skeleton, Text } from "@posthog/quill";
 import { FreeformCanvas } from "@posthog/ui/features/canvas/freeform/FreeformCanvas";
 import { handleFreeformDataRequest } from "@posthog/ui/features/canvas/freeform/freeformDataBridge";
 import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { ErrorBoundary } from "@posthog/ui/shell/ErrorBoundary";
 import { Box, Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { type ReactNode, useCallback } from "react";
 
 // Render each canvas's live app at 1/SCALE of the card width, then shrink so it
 // fits inside the preview frame as a thumbnail.
@@ -68,7 +69,12 @@ export function FreeformPreview({
             <ErrorBoundary
               name="freeform-preview"
               resetKey={code}
-              fallback={<PreviewPlaceholder label="Preview unavailable" />}
+              fallback={
+                <PreviewPlaceholder
+                  icon={<WarningIcon size={18} />}
+                  label="Preview unavailable"
+                />
+              }
             >
               <FreeformCanvas
                 code={code}
@@ -78,25 +84,54 @@ export function FreeformPreview({
             </ErrorBoundary>
           </Box>
         ) : (
-          <PreviewPlaceholder label="Loading preview…" />
+          // Deferred, not broken: a shimmer reads as "coming", where a line of
+          // text reads as the final state.
+          <PreviewSkeleton />
         )
       ) : (
-        <PreviewPlaceholder label="Empty canvas" />
+        <PreviewPlaceholder
+          icon={<ShapesIcon size={18} />}
+          label="Nothing built yet"
+        />
       )}
     </Box>
   );
 }
 
-function PreviewPlaceholder({ label }: { label: string }) {
+function PreviewPlaceholder({
+  icon,
+  label,
+}: {
+  icon?: ReactNode;
+  label: string;
+}) {
   return (
     <Flex
+      direction="column"
       align="center"
       justify="center"
-      className="absolute inset-0 text-center"
+      gap="2"
+      className="absolute inset-0 px-4 text-center text-muted-foreground/70"
     >
+      {icon}
       <Text size="xs" variant="muted">
         {label}
       </Text>
     </Flex>
+  );
+}
+
+/** Stand-in for a preview that hasn't mounted yet — the shape of a small app:
+ * a title bar, a chart block, a couple of rows. */
+function PreviewSkeleton() {
+  return (
+    <div aria-hidden className="absolute inset-0 flex flex-col gap-2 p-3">
+      <Skeleton className="h-3 w-24 rounded" />
+      <Skeleton className="min-h-0 flex-1 rounded" />
+      <div className="flex gap-2">
+        <Skeleton className="h-2.5 flex-1 rounded" />
+        <Skeleton className="h-2.5 w-10 rounded" />
+      </div>
+    </div>
   );
 }

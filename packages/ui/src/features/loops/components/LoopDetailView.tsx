@@ -63,6 +63,7 @@ import {
 import { formatLoopModel } from "../loopModels";
 import { loopSkillBundles, primaryLoopSkillBundle } from "../loopSkill";
 import { LoopLoadError } from "./LoopFallbacks";
+import { LoopHeaderTitle } from "./LoopHeaderTitle";
 import { LoopRunRow } from "./LoopRunRow";
 import { LoopSpaceBreadcrumb } from "./LoopSpaceBreadcrumb";
 
@@ -91,10 +92,12 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
     );
   }, [isLoading, runsQuery.isLoading, runsQuery.isError, loop, runs.length]);
 
-  // A loop attached to a space gets a breadcrumb back to it; a project-level
-  // loop has nowhere to walk back to, so it drops the row entirely.
+  // A loop attached to a space gets a breadcrumb back to it; one that belongs
+  // to the project (or any loop while the spaces layout is off) still names
+  // itself, it just has no parent to offer.
   const spacesLayout = useChannelsLayout();
   const contextTarget = loop?.context_target ?? null;
+  const loopName = loop?.name ?? "Loop";
   useSetHeaderContent(
     useMemo(
       () =>
@@ -102,10 +105,12 @@ export function LoopDetailView({ loopId }: { loopId: string }) {
           <LoopSpaceBreadcrumb
             folderId={contextTarget.folder_id}
             spaceName={contextTarget.name}
-            leafLabel={loop?.name ?? "Loop"}
+            leafLabel={loopName}
           />
-        ) : null,
-      [spacesLayout, contextTarget, loop?.name],
+        ) : (
+          <LoopHeaderTitle label={loopName} />
+        ),
+      [spacesLayout, contextTarget, loopName],
     ),
   );
 

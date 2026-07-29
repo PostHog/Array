@@ -43,6 +43,10 @@ import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 
+// Uniform media height for the grid: cards line up row to row, and a PR tile
+// (which has nothing to preview) fills the same band as a canvas thumbnail.
+const GRID_PREVIEW_HEIGHT = 176;
+
 // Artifacts are the durable outputs of a channel's work. Canvases for now; PRs
 // are surfaced from each filed task's latest run output. More kinds (reports,
 // files, …) slot into this union later.
@@ -184,11 +188,13 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* The list reads best narrow; card layouts want the full width. */}
+        {/* Left-aligned, like the page header above it — a centred column
+            drifts away from the title as the window widens. The list keeps a
+            readable measure; the card layouts spread. */}
         <div
           className={cn(
-            "mx-auto w-full px-4 py-6",
-            view === "list" ? "max-w-[680px]" : "max-w-[1200px]",
+            "w-full px-6 py-6",
+            view === "list" ? "max-w-[680px]" : "max-w-[1400px]",
           )}
         >
           {!spacesLayout && (
@@ -226,12 +232,16 @@ export function WebsiteChannelArtifacts({ channelId }: { channelId: string }) {
               ))}
             </div>
           ) : view === "grid" ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            // items-stretch + a full-height card: a PR tile (no preview to
+            // show) matches the canvas cards in its row instead of ending
+            // short.
+            <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {items.map((item) => (
                 <ArtifactCard
                   key={item.key}
                   item={item}
-                  previewHeight={176}
+                  previewHeight={GRID_PREVIEW_HEIGHT}
+                  fillHeight
                   onOpenCanvas={openCanvas}
                   onOpenPr={openPr}
                 />
@@ -291,11 +301,14 @@ function ArtifactListItem({
 function ArtifactCard({
   item,
   previewHeight,
+  fillHeight,
   onOpenCanvas,
   onOpenPr,
 }: {
   item: ArtifactItem;
   previewHeight: number;
+  /** Grid only: stretch to the tallest card in the row. */
+  fillHeight?: boolean;
   onOpenCanvas: (dashboardId: string) => void;
   onOpenPr: (safeUrl: string) => void;
 }) {
@@ -307,6 +320,7 @@ function ArtifactCard({
       ts={item.ts}
       code={item.code}
       previewHeight={previewHeight}
+      fillHeight={fillHeight}
       onClick={onOpenCanvas}
     />
   ) : (
@@ -314,6 +328,8 @@ function ArtifactCard({
       title={item.title}
       prUrl={item.prUrl}
       ts={item.ts}
+      mediaHeight={fillHeight ? previewHeight : undefined}
+      fillHeight={fillHeight}
       onClick={onOpenPr}
     />
   );
@@ -447,6 +463,7 @@ function CanvasArtifactCard({
   ts,
   code,
   previewHeight,
+  fillHeight,
   onClick,
 }: {
   dashboardId: string;
@@ -455,6 +472,7 @@ function CanvasArtifactCard({
   ts: number;
   code?: string;
   previewHeight: number;
+  fillHeight?: boolean;
   onClick: (dashboardId: string) => void;
 }) {
   const deleting = useIsCanvasPendingDelete(dashboardId);
@@ -488,6 +506,7 @@ function CanvasArtifactCard({
         deleting ? "Deleting…" : `Updated ${formatRelativeTimeShort(ts)}`
       }
       dimmed={deleting}
+      fillHeight={fillHeight}
       onClick={deleting ? undefined : () => onClick(dashboardId)}
     />
   );
@@ -500,11 +519,16 @@ function PrArtifactCard({
   title,
   prUrl,
   ts,
+  mediaHeight,
+  fillHeight,
   onClick,
 }: {
   title: string;
   prUrl: string;
   ts: number;
+  /** Grid only: match the canvas thumbnails' band instead of a short strip. */
+  mediaHeight?: number;
+  fillHeight?: boolean;
   onClick: (safeUrl: string) => void;
 }) {
   const {
@@ -524,8 +548,11 @@ function PrArtifactCard({
     <ArtifactCardShell
       media={
         <div
-          className="flex h-20 items-center justify-center border-border border-b"
-          style={{ backgroundColor: `var(--${accentColor}-3)` }}
+          className="flex items-center justify-center border-border border-b"
+          style={{
+            backgroundColor: `var(--${accentColor}-3)`,
+            height: mediaHeight ?? 80,
+          }}
         >
           <Icon size={28} weight="bold" style={{ color: iconColor }} />
         </div>
@@ -534,6 +561,7 @@ function PrArtifactCard({
       title={title}
       badge={stateLabel || "Pull request"}
       subtitle={subtitle}
+      fillHeight={fillHeight}
       onClick={safeUrl ? () => onClick(safeUrl) : undefined}
     />
   );
@@ -546,6 +574,7 @@ function ArtifactCardShell({
   badge,
   subtitle,
   dimmed,
+  fillHeight,
   onClick,
 }: {
   media: ReactNode;
@@ -554,6 +583,8 @@ function ArtifactCardShell({
   badge: string;
   subtitle: string;
   dimmed?: boolean;
+  /** Grid only: fill the row so neighbouring cards end at the same line. */
+  fillHeight?: boolean;
   /** Absent for a card with nowhere safe to go — a non-github PR link. */
   onClick?: () => void;
 }) {
@@ -566,12 +597,18 @@ function ArtifactCardShell({
         // A card with nowhere to go (or mid-delete) takes no pointer events, so
         // the hover treatment below can key off plain group-hover.
         "group w-full text-left disabled:pointer-events-none",
+        fillHeight && "h-full",
         dimmed && "pointer-events-none opacity-60",
       )}
     >
-      <Card className="gap-0 overflow-hidden p-0 transition-colors group-hover:border-accent">
-        <div className="relative">{media}</div>
-        <CardContent className="flex flex-col gap-0.5 p-3">
+      <Card
+        className={cn(
+          "gap-0 overflow-hidden p-0 transition-colors group-hover:border-accent",
+          fillHeight && "flex h-full flex-col",
+        )}
+      >
+        <div className="relative shrink-0">{media}</div>
+        <CardContent className="flex flex-1 flex-col gap-0.5 p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="shrink-0">{icon}</span>
