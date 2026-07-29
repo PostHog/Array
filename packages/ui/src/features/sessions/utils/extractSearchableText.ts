@@ -41,7 +41,6 @@ export function extractSearchableText(item: ConversationItem): string {
     case "turn_cancelled":
       return item.interruptReason ?? "Interrupted by user";
     case "git_action":
-    case "skill_button_action":
     case "git_action_result":
       return "";
   }

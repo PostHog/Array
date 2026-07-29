@@ -15,11 +15,8 @@ function cancelled(id: string): ConversationItem {
   return { type: "turn_cancelled", id } as ConversationItem;
 }
 
-function userAction(
-  id: string,
-  type: "git_action" | "skill_button_action",
-): ConversationItem {
-  return { type, id } as ConversationItem;
+function gitAction(id: string): ConversationItem {
+  return { type: "git_action", id, actionType: "commit-push" };
 }
 
 describe("groupRowsIntoTurns", () => {
@@ -49,22 +46,19 @@ describe("groupRowsIntoTurns", () => {
     expect(result.rowToTurnIndex).toEqual([0, 0, 1]);
   });
 
-  it.each(["git_action", "skill_button_action"] as const)(
-    "starts a turn for %s",
-    (type) => {
-      const result = groupRowsIntoTurns([
-        row(userMessage("user-1")),
-        row(cancelled("reply-1")),
-        row(userAction("action-1", type)),
-        row(cancelled("reply-2")),
-      ]);
+  it("starts a turn for a git action", () => {
+    const result = groupRowsIntoTurns([
+      row(userMessage("user-1")),
+      row(cancelled("reply-1")),
+      row(gitAction("action-1")),
+      row(cancelled("reply-2")),
+    ]);
 
-      expect(
-        result.turns.map((turn) => turn.rows.map((item) => item.id)),
-      ).toEqual([
-        ["user-1", "reply-1"],
-        ["action-1", "reply-2"],
-      ]);
-    },
-  );
+    expect(
+      result.turns.map((turn) => turn.rows.map((item) => item.id)),
+    ).toEqual([
+      ["user-1", "reply-1"],
+      ["action-1", "reply-2"],
+    ]);
+  });
 });

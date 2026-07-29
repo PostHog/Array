@@ -116,7 +116,6 @@ import {
   useSessionTaskId,
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useCopy } from "@posthog/ui/primitives/useCopy";
 import {
@@ -233,10 +232,9 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     }
   };
   for (const row of rows) {
-    // git_action and skill_button_action stand in for the user's message when the prompt was a
-    // git operation or a skill button click (see handlePromptRequest) — they open a turn just
-    // like a user message, so they break the agent card too rather than render inside it as if
-    // they were agent output. Same boundary set as the legacy view's buildThreadGroups.
+    // git_action stands in for the user's message when the prompt was a git
+    // operation, so it opens a turn and breaks the agent card rather than
+    // rendering inside it as if it were agent output.
     if (isUserInitiatedConversationItem(row)) {
       flush();
       out.push(row);
@@ -1177,8 +1175,6 @@ function ChatThreadRenderer({
           return null;
         case "git_action":
           return <GitActionMessage actionType={item.actionType} />;
-        case "skill_button_action":
-          return <SkillButtonActionMessage buttonId={item.buttonId} />;
         case "session_update": {
           const update = item.update;
           // Assistant prose → start-aligned ghost bubble. Everything else (tool calls, thoughts,

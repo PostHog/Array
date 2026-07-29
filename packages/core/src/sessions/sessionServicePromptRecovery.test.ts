@@ -46,7 +46,7 @@ function createHarness() {
   const usageLimitShow = vi.fn();
   const deps = {
     store,
-    h: { extractSkillButtonId: () => undefined },
+    h: {},
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     toast: { error: vi.fn(), info: vi.fn() },
     track: vi.fn(),

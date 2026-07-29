@@ -18,7 +18,6 @@ import { StopCloudRunButton } from "@posthog/ui/features/sessions/components/Sto
 import { useHandoffDialogStore } from "@posthog/ui/features/sessions/handoffDialogStore";
 import { useSessionCallbacks } from "@posthog/ui/features/sessions/hooks/useSessionCallbacks";
 import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
-import { SkillButtonsMenu } from "@posthog/ui/features/skill-buttons/components/SkillButtonsMenu";
 import {
   useWorkspace,
   useWorkspaceLoaded,
@@ -142,9 +141,6 @@ export function TaskHeaderActions({ task }: { task: Task }) {
       pl="1"
       className="h-full max-w-[50%] shrink-0 overflow-hidden"
     >
-      <div className="no-drag">
-        <SkillButtonsMenu taskId={task.id} />
-      </div>
       <div className="no-drag">
         <AutoresearchHeaderButton taskId={task.id} />
       </div>

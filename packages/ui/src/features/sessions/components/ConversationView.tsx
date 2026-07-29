@@ -67,7 +67,6 @@ import {
 import { useThreadScrollRequest } from "@posthog/ui/features/sessions/threadNavigationStore";
 import { SessionTaskIdProvider } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
@@ -402,8 +401,6 @@ export function ConversationView({
           );
         case "git_action":
           return <GitActionMessage actionType={item.actionType} />;
-        case "skill_button_action":
-          return <SkillButtonActionMessage buttonId={item.buttonId} />;
         case "session_update":
           return (
             <SessionUpdateRow

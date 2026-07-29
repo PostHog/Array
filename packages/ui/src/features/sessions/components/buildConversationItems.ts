@@ -27,10 +27,6 @@ import type {
   ToolCall,
 } from "@posthog/ui/features/sessions/types";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
-import {
-  extractSkillButtonId,
-  type SkillButtonId,
-} from "@posthog/ui/features/skill-buttons/prompts";
 import type { Step, StepStatus } from "@posthog/ui/primitives/StepList";
 import type { RenderItem } from "./session-update/SessionUpdateView";
 
@@ -51,7 +47,6 @@ export type ConversationItem =
       pinToTop?: boolean;
     }
   | { type: "git_action"; id: string; actionType: GitActionType }
-  | { type: "skill_button_action"; id: string; buttonId: SkillButtonId }
   | {
       type: "session_update";
       id: string;
@@ -474,7 +469,6 @@ function handlePromptRequest(
   const turnId = `turn-${ts}-${msg.id}`;
   const toolCalls = new Map<string, ToolCall>();
   const gitAction = parseGitActionMessage(userContent);
-  const skillButtonId = extractSkillButtonId(userPrompt.blocks);
 
   const childItems = new Map<string, ConversationItem[]>();
   const context: TurnContext = {
@@ -530,12 +524,6 @@ function handlePromptRequest(
       type: "git_action",
       id: `${turnId}-git-action`,
       actionType: gitAction.actionType,
-    });
-  } else if (skillButtonId) {
-    b.items.splice(insertIndex, 0, {
-      type: "skill_button_action",
-      id: `${turnId}-skill-action`,
-      buttonId: skillButtonId,
     });
   } else {
     b.items.splice(insertIndex, 0, {

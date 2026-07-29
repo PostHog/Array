@@ -9,7 +9,6 @@ import {
   SessionService,
   type SessionServiceDeps,
 } from "@posthog/core/sessions/sessionService";
-import { extractSkillButtonId } from "@posthog/core/skill-buttons/prompts";
 import { resolveService } from "@posthog/di/container";
 import {
   HOST_TRPC_CLIENT,
@@ -152,7 +151,6 @@ function buildSessionServiceDeps(): SessionServiceDeps {
     DEFAULT_GATEWAY_MODEL,
     WORKSPACE_QUERY_KEY,
     h: {
-      extractSkillButtonId,
       combineQueuedCloudPrompts,
       getCloudPromptTransport,
       resolveLocalSkillCommandPrompt: (prompt) =>

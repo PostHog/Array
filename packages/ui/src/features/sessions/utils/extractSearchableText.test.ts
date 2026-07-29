@@ -205,7 +205,7 @@ describe("extractSearchableText", () => {
     expect(extractSearchableText(item)).toBe("moving_to_worktree");
   });
 
-  it.each(["git_action", "skill_button_action", "git_action_result"] as const)(
+  it.each(["git_action", "git_action_result"] as const)(
     "returns empty string for %s items",
     (type) => {
       const item = {

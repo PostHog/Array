@@ -7,7 +7,6 @@ import type {
   SessionConfigSelectOptions,
 } from "@agentclientprotocol/sdk";
 import type { Adapter } from "./adapter";
-import type { SkillButtonId } from "./analytics-events";
 import type { TaskRunArtifact, TaskRunStatus } from "./domain-types";
 import type { ExecutionMode } from "./exec-types";
 import type { AcpMessage } from "./session-events";
@@ -26,19 +25,13 @@ export interface QueuedMessage {
   queuedAt: number;
 }
 
-export type OptimisticItem =
-  | {
-      type: "user_message";
-      id: string;
-      content: string;
-      timestamp: number;
-      pinToTop?: boolean;
-    }
-  | {
-      type: "skill_button_action";
-      id: string;
-      buttonId: SkillButtonId;
-    };
+export type OptimisticItem = {
+  type: "user_message";
+  id: string;
+  content: string;
+  timestamp: number;
+  pinToTop?: boolean;
+};
 
 export type SessionStatus =
   | "connecting"

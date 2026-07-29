@@ -1,9 +1,11 @@
 import type { DiscoveredTask } from "@posthog/core/setup/types";
-import { SKILL_BUTTON_CATALOG } from "@posthog/core/skill-buttons/catalog";
+
+const EXPERIMENT_TASK_PROMPT =
+  "Set up a PostHog experiment for the feature in this task. Use the PostHog MCP to create the feature flag with control and test variants, then create the experiment in draft with a clear hypothesis and primary metric tied to the feature's success. Wire the variant into the code via posthog.getFeatureFlag. Only launch the experiment if the feature is already live in production — otherwise leave it in draft and tell me to launch it after this is merged and deployed.";
 
 function buildExperimentTaskPrompt(task: DiscoveredTask): string {
   const sections: string[] = [
-    SKILL_BUTTON_CATALOG["run-experiment"].prompt,
+    EXPERIMENT_TASK_PROMPT,
     "",
     "Use the analysis below as the starting point.",
     "",

@@ -672,34 +672,6 @@ snapshots:
         hash: v1.k4693efd2.e01a8a548c694761b9f2a575268f420f653ad7eb9d26c2e33dc245ab03415fcf.Z5Ut_gF62xXnxkDgBXxE3yk6UDIAEVX5Sw_rKBPsqps
     settings-personalizationsettings--synced-truncated--light:
         hash: v1.k4693efd2.3c9f0dfa759b8c174abd8754593f0db9fd1518ff5225cccdcf0c3e83d4cdbe77.BqdmyuIiYJuGmHCQiRVAaBMk-xgycYOgVfwuMqma4LY
-    skill-buttons-skillbuttonactionmessage--add-analytics--dark:
-        hash: v1.k4693efd2.6d4ce4fac8e23a50efbbfaf24c2e11f8981f6778af2bfb2ca559749d7bda0eca.OnypKY5jyJSbQUZtTVcUy-eXC2euU-xQ2wFBYJOsKwI
-    skill-buttons-skillbuttonactionmessage--add-analytics--light:
-        hash: v1.k4693efd2.f9611d356ec29fdbeaa559fd1fad74ef5240edf099ca6b0c98bb000c8ecebb99.kLrb06q55BNiaXt5IiOa5GMJnSBLEE2XpPlzFclgkyc
-    skill-buttons-skillbuttonactionmessage--add-error-tracking--dark:
-        hash: v1.k4693efd2.4d3fb8903585f88035fe7f11bd131fb5469b1bcfa56e850fc872a90965b9a9a8.8wlRUb95tyzSof7imJ7zs_y03dvbRmH4WFjX541w5HE
-    skill-buttons-skillbuttonactionmessage--add-error-tracking--light:
-        hash: v1.k4693efd2.cfebda50da261d92f05d65771b89733969966491eae709a7ad0985af7d92b2af.cJib8NTQeUDwiCFGyKZZrzOkYB6wZpzj2lQTKoCoX2M
-    skill-buttons-skillbuttonactionmessage--add-logging--dark:
-        hash: v1.k4693efd2.0683c4cb4d3758ccfb3070a73e3f388624949cf359ff5e236e7f644bf8149ebd.nbHO3MGaY0eezUGvbSffJ2mWnwYGcv_Ls5Ftd7TamFc
-    skill-buttons-skillbuttonactionmessage--add-logging--light:
-        hash: v1.k4693efd2.089572e8d90c2ce17d03eb0d1f4028f28b0b106c262ffb5aa176efc67aac6961.aE-7mciin1bJeXhS3NO9MIdbA7p1V2yv7I9_av5qiuk
-    skill-buttons-skillbuttonactionmessage--create-feature-flag--dark:
-        hash: v1.k4693efd2.9e76cce0670827af38126d82091a1ddbff6fa46851eb5282307562828f33fffe.dLGLJgQ0h7Qbea4TkB_10bM1S7YhP7MtLWly5a8w8pI
-    skill-buttons-skillbuttonactionmessage--create-feature-flag--light:
-        hash: v1.k4693efd2.1816aed1a5153e40d66db8ded2823492fb2c6a2119e9dafc2e3e28b78efc0cd3.pWhUy7sCTfgQ-9SOY7Otzb21YPkdPalRmF1LpFaCE7o
-    skill-buttons-skillbuttonactionmessage--instrument-llm-calls--dark:
-        hash: v1.k4693efd2.45cd285f3dde88ec3a42d6124267f8b4927d6241ec5e6a32531d6c4d25f62fe4.6KVWQAustG4YSrWUwC8fT6PTTf8s6cRLqOicWuSD61g
-    skill-buttons-skillbuttonactionmessage--instrument-llm-calls--light:
-        hash: v1.k4693efd2.7c401e13f085e5fda6fe8b175bea7aba836e35d72ace33fa425893ad703ba874.uKLTlUu1eQrQQ_AroVKlbzvm7W10tJ1O_RqyxSg1aTQ
-    skill-buttons-skillbuttonactionmessage--run-experiment--dark:
-        hash: v1.k4693efd2.e747a3b5d0983a7a125335f1d95cc7735dafda73abdb3f63ccfadde0482c5ce9.tjc4lMKeaOJjLLxd9tivmgKLshzHZwuSAa_MbqwN_20
-    skill-buttons-skillbuttonactionmessage--run-experiment--light:
-        hash: v1.k4693efd2.c18264887c67224ea1196646ff27f31ef9d79add87b5e9dfead377fcaf0dc941.MwzR7Yyd4le31Qm7RB2yk-qLk5ujgLkN-cMAB2WQ9_k
-    skill-buttons-skillbuttonsmenu--default--dark:
-        hash: v1.k4693efd2.cfff4c6bbb0acef1c9941b21d2f69c24b234c2c206282acf6fcada0cb2bd2386.xILjVPp8ecQmGbPjGDdhbRyi9KFPpA_1nfYF3bfjwuc
-    skill-buttons-skillbuttonsmenu--default--light:
-        hash: v1.k4693efd2.eb9bd49b9700641f6f3c90653447c9767c52e997afec9843e8649b90752faad3.VdxEtBwtkU3ioy2evcNbrEKxPjQ1GDUpZAQzFe-Uho4
     spaces-taskfeedrow--agent-origin--dark:
         hash: v1.k4693efd2.82f8c70a399c9ea768201933e202fcc2fde74332c5153aeabf6835ace79beee6.yEZq_qnKxItv5u0Ydcqa1B4VCwv8lwXUvcaFScE2XO0
     spaces-taskfeedrow--agent-origin--light:

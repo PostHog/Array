@@ -293,7 +293,6 @@ export interface ISessionStore {
 }
 
 export interface SessionServiceHelpers {
-  extractSkillButtonId: (...args: any[]) => any;
   combineQueuedCloudPrompts: (...args: any[]) => any;
   getCloudPromptTransport: (...args: any[]) => any;
   resolveLocalSkillCommandPrompt?: (prompt: string) => Promise<string | null>;
@@ -3555,7 +3554,7 @@ export class SessionService {
     });
 
     // Show the user's message in the chat immediately, before any respawn
-    this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
+    this.applyOptimisticPrompt(session.taskRunId, promptText);
 
     if (promptReferencesAbsoluteFolder(prompt)) {
       const repoPath = this.localRepoPaths.get(taskId);
@@ -3681,30 +3680,18 @@ export class SessionService {
     }
   }
 
-  private applyOptimisticPrompt(
-    taskRunId: string,
-    blocks: ContentBlock[],
-    promptText: string,
-  ): void {
+  private applyOptimisticPrompt(taskRunId: string, promptText: string): void {
     this.d.store.updateSession(taskRunId, {
       isPromptPending: true,
       promptStartedAt: Date.now(),
       pausedDurationMs: 0,
     });
 
-    const skillButtonId = this.d.h.extractSkillButtonId(blocks);
-    if (skillButtonId) {
-      this.d.store.appendOptimisticItem(taskRunId, {
-        type: "skill_button_action",
-        buttonId: skillButtonId,
-      });
-    } else {
-      this.d.store.appendOptimisticItem(taskRunId, {
-        type: "user_message",
-        content: promptText,
-        timestamp: Date.now(),
-      });
-    }
+    this.d.store.appendOptimisticItem(taskRunId, {
+      type: "user_message",
+      content: promptText,
+      timestamp: Date.now(),
+    });
   }
 
   private async sendLocalPrompt(
@@ -3714,7 +3701,7 @@ export class SessionService {
     options: { optimisticApplied?: boolean; isRecoveryResend?: boolean } = {},
   ): Promise<{ stopReason: string }> {
     if (!options.optimisticApplied) {
-      this.applyOptimisticPrompt(session.taskRunId, blocks, promptText);
+      this.applyOptimisticPrompt(session.taskRunId, promptText);
     }
 
     try {

@@ -215,6 +215,45 @@ describe("buildConversationItems", () => {
     ]);
   });
 
+  it("renders legacy skill-button prompts as ordinary user messages", () => {
+    const events: AcpMessage[] = [
+      {
+        type: "acp_message",
+        ts: 1,
+        message: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "session/prompt",
+          params: {
+            prompt: [
+              {
+                type: "text",
+                text: "/instrument-product-analytics",
+                _meta: {
+                  posthogCode: {
+                    skillButtonId: "add-analytics",
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    const result = buildConversationItems(events, null);
+
+    expect(result.items).toEqual([
+      {
+        type: "user_message",
+        id: "turn-1-1-user",
+        content: "/instrument-product-analytics",
+        timestamp: 1,
+        attachments: [],
+      },
+    ]);
+  });
+
   it("clears the compacting spinner on a successful completion status, without duplicating the row", () => {
     // A successful compaction sends a terminal `status: compacting, isComplete:
     // true`. It must flip the existing status row, not append a second one.
