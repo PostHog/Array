@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentStatusLine,
+  messagePreview,
   ThreadArtifactRow,
   ThreadMessageRow,
 } from "./ThreadPanel";
@@ -68,6 +69,93 @@ describe("ThreadMessageRow", () => {
     expect(
       screen.getByRole("button", { name: "Message actions" }),
     ).toBeInTheDocument();
+  });
+
+  const multiline = "First line\n\nSecond line with more detail";
+
+  it("shows the whole message by default, so comments stay readable", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: multiline,
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Second line with more detail/),
+    ).toBeInTheDocument();
+  });
+
+  it("previews only the first line in a timeline row", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: multiline,
+          created_at: "2026-07-17T00:00:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        preview
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("First line")).toBeInTheDocument();
+    expect(screen.queryByText(/Second line/)).not.toBeInTheDocument();
+  });
+
+  it("puts the timestamp in a column away from the author name", () => {
+    render(
+      <ThreadMessageRow
+        message={{
+          id: "m1",
+          task: "task",
+          content: "hi",
+          created_at: "2026-07-17T09:30:00Z",
+          author: null,
+        }}
+        isTaskAuthor
+        isOwnMessage={false}
+        canForward
+        onSendToAgent={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    // Guards the quill seam: TooltipTrigger overwrites `data-slot`, so alignment
+    // has to ride on className rather than an ancestor [data-slot] rule.
+    const time = document.querySelector("time");
+    expect(time).not.toBeNull();
+    expect(time).toHaveClass("ml-auto");
+  });
+});
+
+describe("messagePreview", () => {
+  it.each([
+    [
+      "takes the first non-empty line",
+      "\n\n  Hello there \nignored",
+      "Hello there",
+    ],
+    ["passes a single line through", "just this", "just this"],
+    ["returns empty for blank content", "\n  \n", ""],
+  ])("%s", (_, input, expected) => {
+    expect(messagePreview(input)).toBe(expected);
   });
 });
 

@@ -71,12 +71,33 @@ export const THREAD_TEXT_CLASS = "text-[13px]";
  *  2.5rem gutter so every row's node sits on the timeline's vertical line. */
 export const THREAD_GUTTER_CLASS = "justify-center";
 
+/** Timestamps sit at the row's right edge, so they form a column instead of
+ *  trailing names of varying length. Applied per row rather than as an ancestor
+ *  `[data-slot]` rule, which `TooltipTrigger` defeats — see `ThreadTimestamp`. */
+export const THREAD_TIMESTAMP_CLASS = "ml-auto shrink-0 pl-2";
+
+/** Content sits a little below its author line, so a card or a message never
+ *  looks jammed against the name above it. */
+export const THREAD_BODY_SPACING_CLASS = "mt-1.5";
+
+/** The first non-empty line of a message. Timeline rows preview one line and
+ *  truncate, so neither a leading blank line nor a wall of text makes a row
+ *  tall enough to bury the entries around it. */
+export function messagePreview(content: string): string {
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
 export function ThreadMessageRow({
   message,
   isTaskAuthor,
   isOwnMessage,
   currentUserEmail,
   canForward,
+  preview,
   onSendToAgent,
   onDelete,
 }: {
@@ -85,6 +106,8 @@ export function ThreadMessageRow({
   isOwnMessage: boolean;
   currentUserEmail?: string | null;
   canForward: boolean;
+  /** Timeline rows show one truncated line; the Comments tab shows it all. */
+  preview?: boolean;
   onSendToAgent: () => void;
   onDelete: () => void;
 }) {
@@ -101,11 +124,22 @@ export function ThreadMessageRow({
           <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
             {userDisplayName(message.author)}
           </ThreadItemAuthor>
-          <ThreadTimestamp dateTime={message.created_at} />
+          <ThreadTimestamp
+            dateTime={message.created_at}
+            className={THREAD_TIMESTAMP_CLASS}
+          />
         </ThreadItemHeader>
-        <ThreadItemBody className={THREAD_TEXT_CLASS}>
+        <ThreadItemBody
+          className={cn(
+            THREAD_TEXT_CLASS,
+            THREAD_BODY_SPACING_CLASS,
+            preview && "truncate",
+          )}
+        >
           <MentionText
-            content={message.content}
+            content={
+              preview ? messagePreview(message.content) : message.content
+            }
             currentUserEmail={currentUserEmail}
           />
         </ThreadItemBody>
@@ -305,9 +339,14 @@ export function ThreadArtifactRow({
           <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
             {artifact.kind === "canvas" ? "Canvas" : "Pull request"}
           </ThreadItemAuthor>
-          <ThreadTimestamp dateTime={createdAt} />
+          <ThreadTimestamp
+            dateTime={createdAt}
+            className={THREAD_TIMESTAMP_CLASS}
+          />
         </ThreadItemHeader>
-        <ThreadItemBody className={THREAD_TEXT_CLASS}>
+        <ThreadItemBody
+          className={cn(THREAD_TEXT_CLASS, THREAD_BODY_SPACING_CLASS)}
+        >
           {artifact.kind === "canvas" ? (
             <CanvasArtifactCard name={artifact.name} url={artifact.url} />
           ) : (

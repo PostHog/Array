@@ -1,6 +1,11 @@
-import { CheckCircleIcon, XCircleIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  PlusCircleIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
+  cn,
   ThreadItem,
   ThreadItemAuthor,
   ThreadItemBody,
@@ -17,8 +22,11 @@ import type {
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import {
+  messagePreview,
+  THREAD_BODY_SPACING_CLASS,
   THREAD_GUTTER_CLASS,
   THREAD_TEXT_CLASS,
+  THREAD_TIMESTAMP_CLASS,
   ThreadArtifactRow,
   ThreadMessageRow,
 } from "@posthog/ui/features/canvas/components/ThreadPanel";
@@ -31,34 +39,38 @@ type ConversationItem = ReturnType<
   typeof buildConversationItems
 >["items"][number];
 
+/** A lifecycle marker (task created, run finished): an icon bubble and a single
+ *  muted line. Deliberately one typographic weight and colour, so events read as
+ *  the timeline's punctuation rather than competing with authored rows. */
 function ActivityEventRow({
-  node,
-  title,
-  action,
+  icon,
+  label,
   timestamp,
 }: {
-  node: ReactNode;
-  title: string;
-  action?: string;
+  icon: ReactNode;
+  label: string;
   timestamp: string;
 }) {
   return (
     <div className="flex items-center gap-2 py-1.5 pr-2 pl-2">
-      <div className="flex w-10 shrink-0 justify-center">{node}</div>
-      <span className={`min-w-0 truncate ${THREAD_TEXT_CLASS}`}>
-        <span className="font-semibold text-gray-12">{title}</span>
-        {action && <span className="text-muted-foreground"> {action}</span>}
+      <div className="flex w-10 shrink-0 justify-center">
+        <span className="relative z-10 flex size-6 items-center justify-center rounded-full bg-gray-3">
+          {icon}
+        </span>
+      </div>
+      <span
+        className={cn(
+          "min-w-0 truncate text-muted-foreground",
+          THREAD_TEXT_CLASS,
+        )}
+      >
+        {label}
       </span>
-      <ThreadTimestamp dateTime={timestamp} />
+      <ThreadTimestamp
+        dateTime={timestamp}
+        className={THREAD_TIMESTAMP_CLASS}
+      />
     </div>
-  );
-}
-
-function EventNode({ icon }: { icon: ReactNode }) {
-  return (
-    <span className="relative z-10 flex size-6 items-center justify-center rounded-full bg-gray-3">
-      {icon}
-    </span>
   );
 }
 
@@ -81,12 +93,19 @@ function UserMessageRow({
           <ThreadItemAuthor className={THREAD_TEXT_CLASS}>
             {author ? userDisplayName(author) : "You"}
           </ThreadItemAuthor>
-          <ThreadTimestamp dateTime={timestamp} />
+          <ThreadTimestamp
+            dateTime={timestamp}
+            className={THREAD_TIMESTAMP_CLASS}
+          />
         </ThreadItemHeader>
-        <ThreadItemBody className={THREAD_TEXT_CLASS}>
-          <span className="line-clamp-4 whitespace-pre-wrap break-words">
-            {content}
-          </span>
+        <ThreadItemBody
+          className={cn(
+            THREAD_TEXT_CLASS,
+            THREAD_BODY_SPACING_CLASS,
+            "truncate",
+          )}
+        >
+          {messagePreview(content)}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>
@@ -122,15 +141,10 @@ export function ActivityTimeline({
       ts: createdTs,
       node: (
         <ActivityEventRow
-          node={
-            <UserAvatar
-              user={task.created_by}
-              size="sm"
-              className="relative z-10"
-            />
+          icon={
+            <PlusCircleIcon size={14} weight="fill" className="text-gray-11" />
           }
-          title={task.created_by ? userDisplayName(task.created_by) : "Someone"}
-          action="created this task"
+          label={`${task.created_by ? userDisplayName(task.created_by) : "Someone"} created this task`}
           timestamp={task.created_at}
         />
       ),
@@ -170,6 +184,7 @@ export function ActivityTimeline({
               }
               currentUserEmail={currentUserEmail}
               canForward={canForward}
+              preview
               onSendToAgent={() => onSendToAgent(row.message.id)}
               onDelete={() => onDelete(row.message.id)}
             />
@@ -207,26 +222,18 @@ export function ActivityTimeline({
         ts: updatedTs + 1,
         node: (
           <ActivityEventRow
-            node={
-              <EventNode
-                icon={
-                  succeeded ? (
-                    <CheckCircleIcon
-                      size={14}
-                      weight="fill"
-                      className="text-green-9"
-                    />
-                  ) : (
-                    <XCircleIcon
-                      size={14}
-                      weight="fill"
-                      className="text-red-9"
-                    />
-                  )
-                }
-              />
+            icon={
+              succeeded ? (
+                <CheckCircleIcon
+                  size={14}
+                  weight="fill"
+                  className="text-green-9"
+                />
+              ) : (
+                <XCircleIcon size={14} weight="fill" className="text-red-9" />
+              )
             }
-            title={`Task ${runStatus.replace(/_/g, " ")}`}
+            label={`Task ${runStatus.replace(/_/g, " ")}`}
             timestamp={task.updated_at}
           />
         ),

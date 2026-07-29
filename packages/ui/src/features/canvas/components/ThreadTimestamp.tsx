@@ -24,7 +24,16 @@ function formatTooltip(date: Date): string {
   return `${month} ${ordinal(date.getDate())} at ${formatClock(date)}`;
 }
 
-export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
+// `className` is the only styling seam that reaches the rendered element:
+// `TooltipTrigger` replaces the wrapped element's `data-slot` with its own, so an
+// ancestor `[data-slot=thread-item-timestamp]` rule never matches it.
+export function ThreadTimestamp({
+  dateTime,
+  className,
+}: {
+  dateTime: string;
+  className?: string;
+}) {
   const date = new Date(dateTime);
   if (Number.isNaN(date.getTime())) return null;
 
@@ -33,7 +42,7 @@ export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <ThreadItemTimestamp dateTime={dateTime}>
+            <ThreadItemTimestamp dateTime={dateTime} className={className}>
               {formatClock(date)}
             </ThreadItemTimestamp>
           }
