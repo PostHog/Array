@@ -4,7 +4,7 @@ import {
   type LlmGatewayService,
 } from "@posthog/core/llm-gateway/llm-gateway";
 import { xmlToContent } from "@posthog/core/message-editor/content";
-import { parseGithubIssueUrl } from "@posthog/core/message-editor/githubIssueUrl";
+import { parseXmlAttrs } from "@posthog/core/message-editor/skillTags";
 import { getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
@@ -26,16 +26,13 @@ const ATTACHED_FILES_REGEX =
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
 
 function getGithubPrTaskTitle(content: string): string | null {
-  const pr = xmlToContent(content).segments.find(
-    (segment) => segment.type === "chip" && segment.chip.type === "github_pr",
-  );
-  if (!pr || pr.type !== "chip") return null;
+  const match = content.match(/<github_pr\b([^>]*?)\s*\/>/);
+  if (!match) return null;
 
-  const parsed = parseGithubIssueUrl(pr.chip.id);
-  const title = pr.chip.label.replace(/^#\d+\s+-\s+/, "").trim();
-  if (parsed?.kind !== "pr" || !title) return null;
+  const { number, title } = parseXmlAttrs(match[1]);
+  if (!/^\d+$/.test(number) || !title.trim()) return null;
 
-  return `Review PR #${parsed.number}: ${title}`.slice(0, 255);
+  return `Review PR #${number}: ${title.trim()}`.slice(0, 255);
 }
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:

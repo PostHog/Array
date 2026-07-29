@@ -274,6 +274,16 @@ describe("generateTitleAndSummary", () => {
     });
   });
 
+  it("decodes the PR title from structured metadata", async () => {
+    prompt.mockResolvedValue({ content: "SUMMARY: Reviewing the PR." });
+
+    const result = await makeService().generateTitleAndSummary(
+      '<github_pr number="123" title="Fix &quot;login&quot; &amp; redirect" url="https://github.com/org/repo/pull/123" />',
+    );
+
+    expect(result?.title).toBe('Review PR #123: Fix "login" & redirect');
+  });
+
   it("returns null on error", async () => {
     prompt.mockRejectedValue(new Error("network error"));
     const result = await makeService().generateTitleAndSummary("some content");
