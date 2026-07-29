@@ -102,20 +102,27 @@ describe("ApprovalLinkService", () => {
     expect(listener).toHaveBeenCalledWith(expected);
   });
 
-  it("carries the agent slug from the ?agent= query string", () => {
+  it.each<{ name: string; search: string; agent: string | null }>([
+    {
+      name: "carries the agent slug from the ?agent= query string",
+      search: "agent=my-agent",
+      agent: "my-agent",
+    },
+    {
+      name: "drops a slug that is not a single DNS label",
+      search: "agent=evil.com%2F",
+      agent: null,
+    },
+  ])("$name", ({ search, agent }) => {
     const listener = vi.fn();
     service.on(ApprovalLinkEvent.OpenApproval, listener);
 
-    const result = deepLinkService.trigger(
-      "approval",
-      "ar_abc123",
-      "agent=my-agent",
-    );
+    const result = deepLinkService.trigger("approval", "ar_abc123", search);
 
     expect(result).toBe(true);
     expect(listener).toHaveBeenCalledWith({
       requestId: "ar_abc123",
-      agent: "my-agent",
+      agent,
     });
   });
 
