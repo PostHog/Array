@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "./buildConversationItems";
 import { mergeConversationItems } from "./mergeConversationItems";
 
+function progressGroup(id: string): ConversationItem {
+  return {
+    type: "session_update",
+    id,
+    update: {
+      sessionUpdate: "progress_group",
+      steps: [],
+      isActive: true,
+    },
+    turnContext: {
+      toolCalls: new Map(),
+      childItems: new Map(),
+      turnCancelled: false,
+      turnComplete: false,
+    },
+  };
+}
+
 function userMessage(
   id: string,
   content: string,
@@ -158,6 +176,19 @@ describe("mergeConversationItems", () => {
       isCloud: true,
     });
     expect(result.map((i) => i.id)).toEqual(["setup", "opt"]);
+  });
+
+  it("cloud: keeps a resumed prompt before trailing setup progress", () => {
+    const result = mergeConversationItems({
+      conversationItems: [
+        userMessage("old", "previous prompt"),
+        progressGroup("restore"),
+      ],
+      optimisticItems: [userMessage("opt", "follow up", false)],
+      isCloud: true,
+    });
+
+    expect(result.map((item) => item.id)).toEqual(["old", "opt", "restore"]);
   });
 
   it("cloud: does not dedupe historical messages against tail follow-up optimistics", () => {

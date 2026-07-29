@@ -89,6 +89,7 @@ import {
   getStoredLogEventPosition,
   getUserShellExecutesSinceLastPrompt,
   hasSessionPromptEvent,
+  hasSessionPromptEventForTaskRun,
   isTurnCompleteEvent,
   normalizePromptToBlocks,
   promptReferencesAbsoluteFolder,
@@ -6222,27 +6223,34 @@ export class SessionService {
         );
       }
     }
-    const hasUserPrompt = events.some(
-      (e: AcpMessage) =>
-        isJsonRpcRequest(e.message) && e.message.method === "session/prompt",
-    );
+    const hasCurrentRunUserPrompt = isResumeRun
+      ? hasSessionPromptEventForTaskRun(events, taskRunId)
+      : hasSessionPromptEvent(events);
 
-    // Seed the optimistic user-message bubble whenever the agent has
-    // not yet recorded an initial `session/prompt` request — covers the
-    // brand-new task case as well as "agent has emitted lifecycle
-    // notifications but hasn't received its first prompt yet". Prefer the
-    // stashed initial prompt (which carries the channel CONTEXT.md block, so
-    // its chip renders right away) over the bare task description.
-    const seedContent =
-      this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription;
-    if (!isTerminalRun && !hasUserPrompt && seedContent?.trim()) {
+    // A reload loses the in-memory placeholder; restore it from the resume
+    // state or initial task description until the active run records its prompt.
+    const seedContent = isResumeRun
+      ? typeof runState?.pending_user_message === "string"
+        ? runState.pending_user_message
+        : undefined
+      : (this.initialCloudOptimisticPrompt.get(taskId) ?? taskDescription);
+    const hasOptimisticUserPrompt = session.optimisticItems.some(
+      (item) => item.type === "user_message",
+    );
+    if (
+      !isTerminalRun &&
+      !hasCurrentRunUserPrompt &&
+      !hasOptimisticUserPrompt &&
+      seedContent?.trim()
+    ) {
       this.d.store.appendOptimisticItem(taskRunId, {
         type: "user_message",
         content: seedContent,
         timestamp: Date.now(),
+        ...(isResumeRun ? { pinToTop: false } : {}),
       });
     }
-    if (hasUserPrompt || isTerminalRun) {
+    if (hasCurrentRunUserPrompt || isTerminalRun) {
       // The stash is no longer needed once the real prompt lands - and a
       // finished run gets no further echoes, so leftover optimistic items
       // would otherwise linger as phantom tail items on the final transcript.
