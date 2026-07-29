@@ -47,7 +47,7 @@ export function ContextBreakdownPopover({
         <SinglePercentBar percentage={percentage} color={fillColor} />
       )}
 
-      {breakdown ? (
+      {breakdown && (
         <Flex direction="column" gap="2">
           {CONTEXT_CATEGORIES.filter((c) => breakdown[c.key] > 0).map((cat) => (
             <Flex
@@ -69,7 +69,9 @@ export function ContextBreakdownPopover({
             </Flex>
           ))}
         </Flex>
-      ) : (
+      )}
+
+      {!breakdown && usage.breakdownAvailable !== false && (
         <Text className="text-(--gray-10) text-[12px]">
           Detailed breakdown available after the first response.
         </Text>

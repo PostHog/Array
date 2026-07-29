@@ -62,6 +62,47 @@ describe("feature settingsStore cloud selections", () => {
     });
   });
 
+  it("persists and rehydrates the last used agent runtime", async () => {
+    useSettingsStore.getState().setLastUsedAgentRuntime("pi");
+
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state.lastUsedAgentRuntime).toBe("pi");
+
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: { lastUsedAgentRuntime: "pi" },
+        version: 0,
+      }),
+    );
+    useSettingsStore.setState({ lastUsedAgentRuntime: "acp" });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().lastUsedAgentRuntime).toBe("pi");
+  });
+
+  it("persists Pi and ACP model selections independently", async () => {
+    const settings = useSettingsStore.getState();
+    settings.setLastUsedModel("claude-sonnet-4-5");
+    settings.setLastUsedPiModel("claude-opus-4-8");
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      lastUsedModel: "claude-sonnet-4-5",
+      lastUsedPiModel: "claude-opus-4-8",
+    });
+    await waitForPersistedWrite();
+
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    const persisted = JSON.parse(lastCall[1]);
+    expect(persisted.state).toMatchObject({
+      lastUsedModel: "claude-sonnet-4-5",
+      lastUsedPiModel: "claude-opus-4-8",
+    });
+  });
+
   it("persists the last used cloud repository", async () => {
     useSettingsStore.getState().setLastUsedCloudRepository("posthog/posthog");
 

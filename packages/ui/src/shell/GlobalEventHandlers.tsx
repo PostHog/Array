@@ -1,8 +1,10 @@
+import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiSessionController } from "@posthog/core/pi-runtime/piSessionController";
 import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
-import { useService } from "@posthog/di/react";
+import { useService, useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
@@ -47,6 +49,9 @@ export function GlobalEventHandlers({
 }: GlobalEventHandlersProps) {
   const trpcReact = useHostTRPC();
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const piSessionController = useServiceOptional<PiSessionController>(
+    PI_SESSION_CONTROLLER,
+  );
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
   const openSettingsDialog = openSettings;
   const view = useAppView();
@@ -285,10 +290,11 @@ export function GlobalEventHandlers({
     const handleFocus = () => {
       loadFolders();
       sessionService.retryUnhealthyCloudSessions();
+      piSessionController?.retryUnhealthyCloudSessions();
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, [loadFolders, sessionService]);
+  }, [loadFolders, piSessionController, sessionService]);
 
   // Freeze perpetual CSS animations while the window is backgrounded (see the
   // `.ph-window-blurred` rule in globals.css). Driven by the shared focus store

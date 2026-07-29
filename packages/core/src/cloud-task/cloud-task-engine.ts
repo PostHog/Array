@@ -715,6 +715,10 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
+  getCloudContext(): Promise<{ apiHost: string; teamId: number } | null> {
+    return this.auth.getCloudContext();
+  }
+
   watch(input: WatchInput): void {
     const key = watcherKey(input.taskId, input.runId);
 
@@ -850,7 +854,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
       jsonrpc: "2.0",
       method: input.method,
       params: input.params ?? {},
-      id: `posthog-code-${Date.now()}`,
+      id: input.id ?? globalThis.crypto.randomUUID(),
     };
 
     try {
@@ -860,6 +864,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5 * 60_000),
       });
 
       if (!response.ok) {
@@ -886,7 +891,13 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
           status: response.status,
           error: errorMessage,
         });
-        return { success: false, error: errorMessage };
+        const retryable = [400, 502, 503, 504].includes(response.status);
+        return {
+          success: false,
+          error: errorMessage,
+          status: response.status,
+          retryable,
+        };
       }
 
       const data = (await response.json()) as {
@@ -921,7 +932,7 @@ export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
         method: input.method,
         error: errorMessage,
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorMessage, retryable: true };
     }
   }
 

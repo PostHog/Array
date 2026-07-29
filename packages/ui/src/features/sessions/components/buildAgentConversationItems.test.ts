@@ -86,6 +86,185 @@ describe("buildAgentConversationItems", () => {
     });
   });
 
+  it("keeps inline Pi images on the rendered user message", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "user_message",
+          id: "user-1",
+          timestamp: 1,
+          content: [
+            { type: "text", text: "What is this?" },
+            {
+              type: "image",
+              data: "aW1hZ2U=",
+              mimeType: "image/png",
+              fileName: "screenshot.png",
+            },
+          ],
+        },
+      ],
+      false,
+    );
+
+    expect(result.items[0]).toMatchObject({
+      type: "user_message",
+      content: "What is this?",
+      attachments: [
+        {
+          id: expect.stringMatching(/^inline-image:/),
+          label: "screenshot.png",
+          previewUrl: "data:image/png;base64,aW1hZ2U=",
+        },
+      ],
+    });
+  });
+
+  it("keeps generic extension tool result content for rendering", () => {
+    const rawOutput = [{ type: "text", text: "Workflow finished" }];
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "tool_call_started",
+          timestamp: 1,
+          toolCall: {
+            id: "workflow-1",
+            title: "workflow",
+            kind: null,
+            status: "pending",
+            rawInput: { name: "release" },
+          },
+        },
+        {
+          type: "tool_call_updated",
+          timestamp: 2,
+          toolCall: {
+            id: "workflow-1",
+            status: "completed",
+            rawOutput,
+            content: [
+              {
+                type: "content",
+                content: { type: "text", text: "Workflow finished" },
+              },
+            ],
+          },
+        },
+      ],
+      false,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: expect.objectContaining({
+          sessionUpdate: "tool_call",
+          toolCallId: "workflow-1",
+          title: "workflow",
+          status: "completed",
+          rawOutput,
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "Workflow finished" },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("groups runtime-neutral provisioning progress", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "progress",
+          timestamp: 1,
+          step: "sandbox",
+          status: "completed",
+          label: "Set up sandbox",
+          group: "setup:run-1",
+        },
+        {
+          type: "progress",
+          timestamp: 2,
+          step: "clone",
+          status: "in_progress",
+          label: "Cloning repository",
+          group: "setup:run-1",
+          detail: "posthog/code",
+        },
+      ],
+      true,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: {
+          sessionUpdate: "progress_group",
+          isActive: true,
+          steps: [
+            {
+              key: "sandbox",
+              status: "completed",
+              label: "Set up sandbox",
+              detail: undefined,
+            },
+            {
+              key: "clone",
+              status: "in_progress",
+              label: "Cloning repository",
+              detail: "posthog/code",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("settles a completed runtime-neutral agent step", () => {
+    const result = buildAgentConversationItems(
+      [
+        {
+          type: "progress",
+          timestamp: 1,
+          step: "agent",
+          status: "in_progress",
+          label: "Starting agent",
+          group: "setup:run-1",
+        },
+        {
+          type: "progress",
+          timestamp: 2,
+          step: "agent",
+          status: "completed",
+          label: "Started agent",
+          group: "setup:run-1",
+        },
+      ],
+      true,
+    );
+
+    expect(result.items).toContainEqual(
+      expect.objectContaining({
+        type: "session_update",
+        update: {
+          sessionUpdate: "progress_group",
+          isActive: false,
+          steps: [
+            {
+              key: "agent",
+              status: "completed",
+              label: "Started agent",
+              detail: undefined,
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it("builds and completes a generic compaction status", () => {
     const result = buildAgentConversationItems(
       [

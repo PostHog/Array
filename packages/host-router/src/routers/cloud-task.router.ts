@@ -2,6 +2,7 @@ import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { CLOUD_TASK_SERVICE } from "@posthog/core/cloud-task/identifiers";
 import {
   CloudTaskEvent,
+  cloudContextOutput,
   designateRelayedMcpServersInput,
   onUpdateInput,
   retryInput,
@@ -15,6 +16,12 @@ import {
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 
 export const cloudTaskRouter = router({
+  context: publicProcedure
+    .output(cloudContextOutput)
+    .query(({ ctx }) =>
+      ctx.container.get<CloudTaskService>(CLOUD_TASK_SERVICE).getCloudContext(),
+    ),
+
   watch: publicProcedure
     .input(watchInput)
     .mutation(({ ctx, input }) =>
