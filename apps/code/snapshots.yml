@@ -544,10 +544,26 @@ snapshots:
         hash: v1.k4693efd2.fdbf0c24cb386c4345279db3e648efe72aa8a2a984d491361522f62074a771c9.2QmRxRMWYFFfBFrbMm0Dm9rWcvd1lfRbc0egfzoESnY
     loops-loopslistview--long-mixed-list--light:
         hash: v1.k4693efd2.aa17d9b6f40fbd3914bd742951db9f90add0bd233c54170803c8483aeb45b43b.yXpqqGczOq1uW5k4Ie7ddNTnne-cFTglZ9cL800pXB4
+    loops-loopslistview--shared-page-header--dark:
+        hash: v1.k4693efd2.14ab860dcb0df51b4019f012288e45f3a2c4c23fa08e809efef8c04b5687fe36.qoMLHprZmV2wON156NBbl3sqP84a4nXgdYm1H6WpTVM
+    loops-loopslistview--shared-page-header--light:
+        hash: v1.k4693efd2.23be5408ff3b4a912a0ce0457af8638124b99a01c88a499d0f4204cee2c62487.dGBP1K08MA2Fvhml-BPl5eFra8U83JXmy04NK9wOQnM
     loops-loopslistview--with-builder-sessions--dark:
         hash: v1.k4693efd2.df4a1a4764e1de7b69905814b09c30d9b43f705f5e66c7ad83829c567d4faa1a.jthufoX_KPbbxScjj3pPBA4lEtT9Ym6zUCH-v1759GM
     loops-loopslistview--with-builder-sessions--light:
         hash: v1.k4693efd2.eb65c38bb0de7efedbc0d7a6c27a6695528e2e6b60949617e7d22335b1e68c8b.fJr9uykvc8S7LI_ASXk5KRqxXCwIqh6ld9zfzs4shP0
+    primitives-pageheader--title-only--dark:
+        hash: v1.k4693efd2.f7f8c560b1e5cf20050189e10fc0f129e555ba672300a7a09bef5827c171a743.yP9Pp_k51agu_9Ri55Y7uCAPBQ1UTeUQJA9U9dPMKfQ
+    primitives-pageheader--title-only--light:
+        hash: v1.k4693efd2.23cc3ecf3368b1afa7c82030bfdf970038cc08f2fc368638793cc2531c192449.TKV1iBYKoxlh2zUHTcn20XcgiSSxnwxl8RMtOtiZulA
+    primitives-pageheader--with-chip-and-actions--dark:
+        hash: v1.k4693efd2.77944f2c03180f0398b569a135a2255da1f4443f5adcb37b34cf3c0bb5600a68.QLDr2Jxc7qZBh3BzoKafcC6uOGKcySrM29MyCNbkClU
+    primitives-pageheader--with-chip-and-actions--light:
+        hash: v1.k4693efd2.43898a2a38227b59fbe8ee7ea768ae9b411dd3069147b33900f893295ddaece5.qMZmk5VbZYivoAvC9L2IoXjhNUKeCrL9R5y9u_1cJ9c
+    primitives-pageheader--with-tabs-and-filters--dark:
+        hash: v1.k4693efd2.499090cdf01f81168a5a827ce5ea98e3e7e92481ec1348aa99cd908b13d011f8.PU0bMVAyZlVLBJ_1jzlaDQ_IEnkkNhg6sDQ_Qqv3TSg
+    primitives-pageheader--with-tabs-and-filters--light:
+        hash: v1.k4693efd2.f0fd2447dd5730b62ca844dbcad158cffec22dc4c1eb7cab3ed012d207eaa401.BVQgU-A9LPUC10qrDgIs2shYu9cl7FAwnFcUfE5BkSM
     scouts-scoutsfleetlist--filtered-to-you--dark:
         hash: v1.k4693efd2.a3af6e76ef36598eaa347bedc4430878ed62754660166398e0576a9978cd084b.x3Ky-O6HOw0srWdOmnnKJwFNpmGmQVWip0t7CwVaRXY
     scouts-scoutsfleetlist--filtered-to-you--light:
