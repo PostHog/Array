@@ -65,6 +65,16 @@ describe("buildSandboxDocument", () => {
     expect(html).toContain('"open-external"');
     expect(html).toContain("event.defaultPrevented");
   });
+
+  // The document paints before its stylesheets load and before the host's
+  // theme message arrives. A light fallback there flashed white over a dark
+  // app every time a canvas preview scrolled into view.
+  it("paints nothing of its own before the host theme lands", () => {
+    const html = buildSandboxDocument("edit");
+    expect(html).toContain("background: var(--background, transparent)");
+    expect(html).not.toContain("var(--background, #fff)");
+    expect(html).toContain("html.dark { color-scheme: dark; }");
+  });
 });
 
 describe("resolveExternalAnchorUrl", () => {

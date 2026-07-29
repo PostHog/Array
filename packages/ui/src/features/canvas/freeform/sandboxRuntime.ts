@@ -453,9 +453,18 @@ ${FREEFORM_QUILL_CSS_URLS.map(
   /* Fill the iframe viewport exactly so overflow scrolls on the iframe's own root
      scroller — the iframe is pinned to its parent's height and never grows it. */
   html, body { margin: 0; padding: 0; height: 100%; }
+  /* No light default: leaving \`color-scheme\` alone lets the base canvas inherit
+     the embedder's scheme (the host sets it on the iframe), so the first paint
+     is already dark in a dark app. Once the host's theme message toggles
+     \`.dark\`, this pins it so form controls and scrollbars match too. */
+  html.dark { color-scheme: dark; }
   /* Track the theme via Quill's tokens (set on :root / .dark) so the page chrome
-     flips with the host theme; fall back to light if the tokens haven't loaded. */
-  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, #111); background: var(--background, #fff); }
+     flips with the host theme. Until those tokens land — the stylesheets are
+     still loading, and \`.dark\` is only applied once the host's init/set-theme
+     message arrives — stay transparent and inherit, so the host iframe's own
+     themed background shows through. A hard light fallback here flashed white
+     over a dark app every time a preview scrolled into view. */
+  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--foreground, inherit); background: var(--background, transparent); }
   #root { min-height: 100vh; }
 </style>
 </head>

@@ -3,12 +3,12 @@ import {
   DEFAULT_CLAUDE_EXECUTION_MODE,
   getAvailableModes,
 } from "@posthog/core/sessions/executionModes";
-import { resolveCloudComposerModelChange } from "@posthog/core/task-detail/composerModelPolicy";
 import {
   DEFAULT_GATEWAY_MODEL,
   DEFAULT_REASONING_EFFORT,
   type ExecutionMode,
   getReasoningEffortOptions,
+  isSupportedReasoningEffort,
   type SupportedReasoningEffort,
 } from "@posthog/shared";
 import * as Haptics from "expo-haptics";
@@ -57,11 +57,10 @@ import {
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
 import {
-  getComposerModelOptions,
-  getConfigOptionLabel,
-  getMobileExecutionModes,
+  getMobileModelOptions,
   getModelConfigOption,
-  resolveComposerPrimaryAction,
+  getModelLabel,
+  resolveAvailableModel,
 } from "./options";
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
@@ -72,7 +71,7 @@ import {
 } from "./submitComposerMessage";
 
 const log = logger.scope("task-chat-composer");
-const EXECUTION_MODES = getMobileExecutionModes(getAvailableModes());
+const EXECUTION_MODES = getAvailableModes();
 
 interface TaskChatComposerProps {
   onSend: (
@@ -197,7 +196,7 @@ export function TaskChatComposer({
   const themeColors = useThemeColors();
   const { configOptions, hasLiveConfig } = useCloudTaskConfigOptions("claude");
   const modelConfigOption = getModelConfigOption(configOptions);
-  const mobileModelOptions = getComposerModelOptions(modelConfigOption);
+  const mobileModelOptions = getMobileModelOptions(modelConfigOption);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
@@ -223,14 +222,12 @@ export function TaskChatComposer({
 
   useEffect(() => {
     if (!hasLiveConfig) return;
-    const next = resolveCloudComposerModelChange({
-      adapter: "claude",
-      modelOption: modelConfigOption,
-      requestedModel: model,
-      reasoning,
-    });
-    if (next.model !== model) onModelChange(next.model);
-    if (next.reasoning !== reasoning) onReasoningChange(next.reasoning);
+    const availableModel = resolveAvailableModel(modelConfigOption, model);
+    if (availableModel === model) return;
+    onModelChange(availableModel);
+    if (!isSupportedReasoningEffort("claude", availableModel, reasoning)) {
+      onReasoningChange(DEFAULT_REASONING_EFFORT);
+    }
   }, [
     hasLiveConfig,
     model,
@@ -258,16 +255,9 @@ export function TaskChatComposer({
   const showReasoningPill = reasoningOptions.length > 0;
 
   const hasContent = !isComposerEmpty({ text: message, attachments });
-  const primaryAction = resolveComposerPrimaryAction({
-    hasContent,
-    disabled,
-    isRecording,
-    isTranscribing,
-    canStop: !isUserTurn && !!onStop,
-    allowSendWhileRunning: true,
-  });
-  const canSend = primaryAction === "send";
-  const showStop = primaryAction === "stop";
+  const canSend = hasContent && !disabled && !isRecording;
+  const showStop =
+    !isUserTurn && !canSend && !isRecording && !isTranscribing && !!onStop;
 
   const applyContent = (content: ComposerContent) => {
     setMessage(content.text);
@@ -451,10 +441,7 @@ export function TaskChatComposer({
 
                 <Pill
                   icon={<Robot size={14} color={themeColors.gray[11]} />}
-                  label={
-                    getConfigOptionLabel(modelConfigOption.options, model) ??
-                    model
-                  }
+                  label={getModelLabel(modelConfigOption, model)}
                   onPress={() => setModelSheetOpen(true)}
                 />
 
@@ -530,14 +517,10 @@ export function TaskChatComposer({
         title="Model"
         value={model}
         onChange={(v) => {
-          const next = resolveCloudComposerModelChange({
-            adapter: "claude",
-            modelOption: modelConfigOption,
-            requestedModel: v,
-            reasoning,
-          });
-          onModelChange(next.model);
-          onReasoningChange(next.reasoning);
+          onModelChange(v);
+          if (!isSupportedReasoningEffort("claude", v, reasoning)) {
+            onReasoningChange(DEFAULT_REASONING_EFFORT);
+          }
         }}
         onClose={() => setModelSheetOpen(false)}
         options={mobileModelOptions.map((m) => ({

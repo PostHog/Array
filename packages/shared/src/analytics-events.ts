@@ -918,7 +918,8 @@ export type ChannelActionType =
   | "view_activity"
   | "open_mention"
   | "canvas_mode_toggle"
-  | "activity_tab_change";
+  | "activity_tab_change"
+  | "artifacts_view_change";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -939,6 +940,7 @@ export interface ChannelActionProperties {
   armed?: boolean;
   /** For activity_tab_change: the tab landed on. */
   tab?: string;
+  view_mode?: "list" | "grid" | "masonry";
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -947,6 +949,8 @@ export type DashboardActionType =
   | "open"
   | "create"
   | "delete"
+  /** The delete was undone inside its undo window, so nothing was removed. */
+  | "delete_undo"
   | "rename"
   | "save"
   | "fork"
