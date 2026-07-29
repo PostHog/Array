@@ -1,4 +1,5 @@
 import { Text } from "@components/text";
+import type { SignalReport } from "@posthog/shared/domain-types";
 import { Tray } from "phosphor-react-native";
 import {
   ActivityIndicator,
@@ -9,7 +10,6 @@ import {
 } from "react-native";
 import { useThemeColors } from "@/lib/theme";
 import { useInboxReports } from "../hooks/useInboxReports";
-import type { SignalReport } from "../types";
 import { ReportListRow } from "./ReportListRow";
 
 interface ReportListProps {

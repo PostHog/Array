@@ -52,6 +52,9 @@ export function useDashboards(
       },
     ),
   );
+  // Canvases inside their delete-undo window stay in the list — surfaces mark
+  // them as deleting (see usePendingCanvasDeleteStore) rather than removing a
+  // row that Undo would put straight back.
   return { dashboards: data ?? [], isLoading };
 }
 
@@ -138,6 +141,9 @@ export function useDashboardMutations() {
   );
 
   return {
+    // Refresh the canvas queries after a mutation that didn't go through this
+    // hook (the undo-window delete commits outside React).
+    invalidateDashboards: invalidate,
     createDashboard: (channelId: string, name: string, templateId?: string) =>
       create.mutateAsync({ channelId, name, templateId }),
     deleteDashboard: (id: string) => remove.mutateAsync({ id }),

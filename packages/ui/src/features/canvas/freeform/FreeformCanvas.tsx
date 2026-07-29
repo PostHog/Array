@@ -270,6 +270,11 @@ export function FreeformCanvas({
       }}
       // bg tracks the host theme so there's no white flash in dark mode before
       // the iframe paints; the canvas body uses the same --background token.
+      // color-scheme matters as much as the background: without it the embedded
+      // document's base canvas is painted white by the UA — which is what a
+      // preview scrolling into view flashed before its stylesheets and the
+      // first `init` (carrying the theme) arrived.
+      style={{ colorScheme: theme }}
       className="h-full w-full border-0 bg-background"
     />
   );

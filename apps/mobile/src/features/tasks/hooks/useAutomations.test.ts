@@ -8,35 +8,27 @@ const {
   mockGetTaskAutomations,
   mockCreateTaskAutomation,
   mockUpdateTaskAutomation,
-  mockApiClient,
 } = vi.hoisted(() => ({
   mockUseAuthStore: vi.fn(),
   mockGetTaskAutomations: vi.fn(),
   mockCreateTaskAutomation: vi.fn(),
   mockUpdateTaskAutomation: vi.fn(),
-  mockApiClient: {
-    listTaskAutomations: vi.fn(),
-    getTaskAutomation: vi.fn(),
-    createTaskAutomation: vi.fn(),
-    updateTaskAutomation: vi.fn(),
-    deleteTaskAutomation: vi.fn(),
-    runTaskAutomation: vi.fn(),
-  },
 }));
 
 vi.mock("@/features/auth", () => ({
   useAuthStore: mockUseAuthStore,
 }));
 
-vi.mock("../api", () => ({ runTaskInCloud: vi.fn() }));
-
 vi.mock("@/lib/posthogApiClient", () => ({
-  getPostHogApiClient: () => mockApiClient,
+  getPostHogApiClient: vi.fn(() => ({
+    listTaskAutomations: mockGetTaskAutomations,
+    getTaskAutomation: vi.fn(),
+    createTaskAutomation: mockCreateTaskAutomation,
+    updateTaskAutomation: mockUpdateTaskAutomation,
+    deleteTaskAutomation: vi.fn(),
+    runTaskAutomation: vi.fn(),
+  })),
 }));
-
-mockApiClient.listTaskAutomations = mockGetTaskAutomations;
-mockApiClient.createTaskAutomation = mockCreateTaskAutomation;
-mockApiClient.updateTaskAutomation = mockUpdateTaskAutomation;
 
 import {
   automationKeys,

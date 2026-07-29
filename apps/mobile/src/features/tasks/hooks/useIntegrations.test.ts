@@ -15,10 +15,10 @@ vi.mock("@/features/auth", () => ({
 }));
 
 vi.mock("@/lib/posthogApiClient", () => ({
-  getPostHogApiClient: () => ({
+  getPostHogApiClient: vi.fn(() => ({
     getGithubRepositories: mockGetGithubRepositories,
     getIntegrations: mockGetIntegrations,
-  }),
+  })),
 }));
 
 import { useRepositoryCacheStore } from "../stores/repositoryCacheStore";
@@ -123,7 +123,7 @@ describe("useIntegrations", () => {
       },
     ]);
     mockGetGithubRepositories
-      .mockResolvedValueOnce(["annika/mobile-app"])
+      .mockResolvedValueOnce(["Annika/Mobile-App", ""])
       .mockRejectedValueOnce(new Error("GitHub repos failed"));
 
     const queryClient = new QueryClient({
