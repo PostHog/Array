@@ -2,6 +2,7 @@ import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { ArtifactComment } from "@posthog/api-client/posthog-client";
 import type { RegionArtifactAnchor } from "@posthog/core/artifact-comments/anchors";
 import { Button } from "@posthog/quill";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { ZoomableImage } from "@posthog/ui/primitives/SafeImagePreview";
@@ -20,6 +21,7 @@ export function AnnotatedArtifactImage({
   activeThreadId,
   locateRequest,
   commenting,
+  members,
   onCommentingChange,
   onActivateThread,
   onCreate,
@@ -31,9 +33,14 @@ export function AnnotatedArtifactImage({
   activeThreadId: string | null;
   locateRequest: ArtifactLocateRequest | null;
   commenting: boolean;
+  members: UserBasic[];
   onCommentingChange: (commenting: boolean) => void;
   onActivateThread: (id: string) => void;
-  onCreate: (anchor: RegionArtifactAnchor, content: string) => void;
+  onCreate: (
+    anchor: RegionArtifactAnchor,
+    content: string,
+    mentions?: number[],
+  ) => void;
   onError: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -185,14 +192,17 @@ export function AnnotatedArtifactImage({
           {regionComments.map(({ comment, anchor }) => (
             <Button
               key={comment.id}
-              size="sm"
-              variant={comment.id === activeThreadId ? "primary" : "outline"}
+              size="icon-sm"
+              variant="primary"
               aria-label="Open image comment thread"
+              title={comment.content ?? "Comment"}
               data-image-comment-id={comment.id}
-              className="pointer-events-auto absolute z-10 max-w-48 shadow-md"
+              className={`pointer-events-auto absolute z-10 rounded-full shadow-md ${
+                comment.id === activeThreadId ? "ring-2 ring-white/80" : ""
+              }`}
               style={{
-                left: `${anchor.x * 100}%`,
-                top: `${anchor.y * 100}%`,
+                left: `${(anchor.x + anchor.width / 2) * 100}%`,
+                top: `${(anchor.y + anchor.height / 2) * 100}%`,
                 transform:
                   anchor.y < 0.15
                     ? "translate(-50%, 8px)"
@@ -203,8 +213,7 @@ export function AnnotatedArtifactImage({
                 onActivateThread(comment.id);
               }}
             >
-              <ChatCircleIcon />
-              <span className="truncate">{comment.content || "Comment"}</span>
+              <ChatCircleIcon weight="fill" />
             </Button>
           ))}
         </section>
@@ -216,9 +225,10 @@ export function AnnotatedArtifactImage({
         actionLabel="Add image comment"
         placeholder="Add a comment about this part of the image..."
         initiallyExpanded
+        members={members}
         onDismiss={dismiss}
-        onSubmit={(_start, _end, content) => {
-          if (pendingAnchor) onCreate(pendingAnchor, content);
+        onSubmit={(_start, _end, content, mentions) => {
+          if (pendingAnchor) onCreate(pendingAnchor, content, mentions);
           dismiss();
         }}
       />

@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwise,
+  CaretDownIcon,
   ChatCircle,
   CheckCircle,
   WarningCircle,
@@ -13,6 +14,11 @@ import {
   Button,
   Card,
   CardContent,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -20,10 +26,12 @@ import {
   EmptyTitle,
   Separator,
   Spinner,
-  Textarea,
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
+import type { UserBasic } from "@posthog/shared/domain-types";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useMemo, useState } from "react";
+import { ArtifactCommentComposer } from "./ArtifactCommentComposer";
 import {
   type HighlightResolution,
   parseArtifactCommentContext,
@@ -59,12 +67,35 @@ function CommentBody({ comment }: { comment: ArtifactComment }) {
             {formatRelativeTimeShort(comment.created_at)}
           </span>
         </div>
-        <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
-          {comment.content}
-        </p>
+        <MentionText
+          content={comment.content ?? ""}
+          className="mt-1 block whitespace-pre-wrap break-words text-[13px] leading-relaxed"
+        />
       </div>
     </div>
   );
+}
+
+function isThreadResolved(
+  root: ArtifactComment,
+  replies: ArtifactComment[],
+): boolean {
+  const latestState = replies
+    .map((comment) => ({
+      createdAt: comment.created_at,
+      state: parseArtifactCommentContext(comment)?.threadState,
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        createdAt: string;
+        state: "resolved" | "open";
+      } => !!entry.state,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1)?.state;
+  return latestState ? latestState === "resolved" : !!root.completed_at;
 }
 
 function Thread({
@@ -73,6 +104,7 @@ function Thread({
   selected,
   pulsing,
   currentVersion,
+  members,
   resolution,
   busy,
   onSelect,
@@ -84,32 +116,16 @@ function Thread({
   selected: boolean;
   pulsing: boolean;
   currentVersion: string;
+  members: UserBasic[];
   resolution?: HighlightResolution;
   busy: boolean;
   onSelect: () => void;
-  onReply: (content: string) => void;
+  onReply: (content: string, mentions: number[]) => void;
   onResolve: (resolved: boolean) => void;
 }) {
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
-  const stateEvents = replies
-    .map((comment) => ({
-      comment,
-      state: parseArtifactCommentContext(comment)?.threadState,
-    }))
-    .filter(
-      (
-        entry,
-      ): entry is {
-        comment: ArtifactComment;
-        state: "resolved" | "open";
-      } => !!entry.state,
-    )
-    .sort((a, b) => a.comment.created_at.localeCompare(b.comment.created_at));
-  const latestState = stateEvents.at(-1)?.state;
-  const resolved = latestState
-    ? latestState === "resolved"
-    : !!root.completed_at;
+  const resolved = isThreadResolved(root, replies);
   const visibleReplies = replies.filter(
     (comment) => !parseArtifactCommentContext(comment)?.threadState,
   );
@@ -145,39 +161,21 @@ function Thread({
         )}
         <Separator className="my-2" />
         {replying ? (
-          <div className="space-y-2">
-            <Textarea
-              autoFocus
-              value={reply}
-              placeholder="Write a reply..."
-              onChange={(event) => setReply(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  if (reply.trim()) onReply(reply.trim());
-                  setReply("");
-                  setReplying(false);
-                }
-              }}
-            />
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!reply.trim() || busy}
-                onClick={() => {
-                  onReply(reply.trim());
-                  setReply("");
-                  setReplying(false);
-                }}
-              >
-                Reply
-              </Button>
-              <Button size="sm" onClick={() => setReplying(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
+          <ArtifactCommentComposer
+            value={reply}
+            onValueChange={setReply}
+            onSubmit={(content, mentions) => {
+              onReply(content, mentions);
+              setReply("");
+              setReplying(false);
+            }}
+            onCancel={() => setReplying(false)}
+            members={members}
+            placeholder="Reply… Type @ to mention someone"
+            rows={2}
+            disabled={busy}
+            submitLabel="Reply"
+          />
         ) : (
           <div className="flex gap-1">
             <Button size="sm" onClick={() => setReplying(true)}>
@@ -201,6 +199,7 @@ function Thread({
 
 export function ArtifactCommentsSidebar({
   comments,
+  members,
   currentVersion,
   selectedThreadId,
   pulseThreadId,
@@ -214,6 +213,7 @@ export function ArtifactCommentsSidebar({
   onResolve,
 }: {
   comments: ArtifactComment[];
+  members: UserBasic[];
   currentVersion: string;
   selectedThreadId: string | null;
   pulseThreadId: string | null;
@@ -222,11 +222,12 @@ export function ArtifactCommentsSidebar({
   busy: boolean;
   onClose: () => void;
   onSelectThread: (id: string) => void;
-  onCreateDocumentComment: (content: string) => void;
-  onReply: (root: ArtifactComment, content: string) => void;
+  onCreateDocumentComment: (content: string, mentions: number[]) => void;
+  onReply: (root: ArtifactComment, content: string, mentions: number[]) => void;
   onResolve: (root: ArtifactComment, resolved: boolean) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [filter, setFilter] = useState<"open" | "resolved">("open");
   const { roots, repliesByRoot } = useMemo(() => {
     const roots = comments
       .filter((comment) => !comment.source_comment)
@@ -240,43 +241,82 @@ export function ArtifactCommentsSidebar({
     }
     return { roots, repliesByRoot };
   }, [comments]);
+  const openCount = roots.filter(
+    (root) => !isThreadResolved(root, repliesByRoot.get(root.id) ?? []),
+  ).length;
+  const resolvedCount = roots.length - openCount;
+  const visibleRoots = roots.filter(
+    (root) =>
+      isThreadResolved(root, repliesByRoot.get(root.id) ?? []) ===
+      (filter === "resolved"),
+  );
 
   return (
     <aside className="flex h-full w-[360px] shrink-0 flex-col border-border border-l bg-muted/30">
       <header className="flex h-11 shrink-0 items-center justify-between border-border border-b px-3">
         <div className="flex items-center gap-2 font-medium text-sm">
           Comments
-          {comments.length > 0 && <Badge>{roots.length}</Badge>}
+          {comments.length > 0 && <Badge>{visibleRoots.length}</Badge>}
         </div>
-        <Button
-          size="icon-sm"
-          variant="default"
-          aria-label="Close comments"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button size="sm" aria-label="Filter comments">
+                  {filter === "open" ? "Open" : "Resolved"}
+                  <CaretDownIcon />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" sideOffset={6}>
+              <DropdownMenuRadioGroup
+                value={filter}
+                onValueChange={(value) =>
+                  setFilter(value as "open" | "resolved")
+                }
+              >
+                <DropdownMenuRadioItem value="open">
+                  Open ({openCount})
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="resolved">
+                  Resolved ({resolvedCount})
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            size="icon-sm"
+            variant="default"
+            aria-label="Close comments"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </div>
       </header>
       <div className="flex-1 space-y-2 overflow-auto p-3">
         {loading ? (
           <div className="flex justify-center py-8">
             <Spinner />
           </div>
-        ) : roots.length === 0 ? (
+        ) : visibleRoots.length === 0 ? (
           <Empty className="py-8">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <ChatCircle />
               </EmptyMedia>
-              <EmptyTitle>No comments yet</EmptyTitle>
+              <EmptyTitle>
+                No {filter === "open" ? "open" : "resolved"} comments
+              </EmptyTitle>
               <EmptyDescription>
-                Select text to comment inline, or comment on the whole artifact
-                below.
+                {filter === "open"
+                  ? "Select text to comment inline, or comment on the whole artifact below."
+                  : "Resolved threads will appear here."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
-          roots.map((root) => (
+          visibleRoots.map((root) => (
             <Thread
               key={root.id}
               root={root}
@@ -284,41 +324,29 @@ export function ArtifactCommentsSidebar({
               selected={root.id === selectedThreadId}
               pulsing={root.id === pulseThreadId}
               currentVersion={currentVersion}
+              members={members}
               resolution={resolutions.get(root.id)}
               busy={busy}
               onSelect={() => onSelectThread(root.id)}
-              onReply={(content) => onReply(root, content)}
+              onReply={(content, mentions) => onReply(root, content, mentions)}
               onResolve={(resolved) => onResolve(root, resolved)}
             />
           ))
         )}
       </div>
       <footer className="shrink-0 border-border border-t bg-background p-3">
-        <Textarea
+        <ArtifactCommentComposer
           value={draft}
-          placeholder="Comment on this artifact..."
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-              event.preventDefault();
-              if (draft.trim()) onCreateDocumentComment(draft.trim());
-              setDraft("");
-            }
+          onValueChange={setDraft}
+          onSubmit={(content, mentions) => {
+            onCreateDocumentComment(content, mentions);
+            setDraft("");
           }}
+          members={members}
+          placeholder="Comment… Type @ to mention someone"
+          rows={3}
+          disabled={busy}
         />
-        <div className="mt-2 flex justify-end">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!draft.trim() || busy}
-            onClick={() => {
-              onCreateDocumentComment(draft.trim());
-              setDraft("");
-            }}
-          >
-            Comment
-          </Button>
-        </div>
       </footer>
     </aside>
   );

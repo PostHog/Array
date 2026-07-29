@@ -13,6 +13,7 @@ import {
   useAuthStateValue,
 } from "@posthog/ui/features/auth/store";
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
+import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -147,6 +148,7 @@ export function ArtifactPreview({
   const [imageCommenting, setImageCommenting] = useState(false);
   const authIdentity = useAuthStateValue(getAuthIdentity);
   const commentsQuery = useArtifactCommentsQuery(artifactId);
+  const { members } = useOrgMembers();
   const createComment = useCreateArtifactComment(artifactId);
   const setResolved = useSetArtifactCommentResolved(artifactId);
   const { data, isLoading, isError } = useQuery<PreviewData>({
@@ -231,8 +233,12 @@ export function ArtifactPreview({
   );
 
   const createAnchoredComment = useCallback(
-    (anchor: ArtifactAnchor, content: string) => {
-      createComment.mutate({ content, context: contextFor(anchor) });
+    (anchor: ArtifactAnchor, content: string, mentions: number[] = []) => {
+      createComment.mutate({
+        content,
+        context: contextFor(anchor),
+        mentions,
+      });
       setCommentsOpen(true);
     },
     [contextFor, createComment],
@@ -249,6 +255,7 @@ export function ArtifactPreview({
   const sidebar = commentsOpen ? (
     <ArtifactCommentsSidebar
       comments={comments}
+      members={members}
       currentVersion={currentVersion}
       selectedThreadId={selectedThreadId}
       pulseThreadId={pulseThreadId}
@@ -257,15 +264,16 @@ export function ArtifactPreview({
       busy={createComment.isPending || setResolved.isPending}
       onClose={() => setCommentsOpen(false)}
       onSelectThread={activateThread}
-      onCreateDocumentComment={(content) =>
-        createAnchoredComment({ kind: "document" }, content)
+      onCreateDocumentComment={(content, mentions) =>
+        createAnchoredComment({ kind: "document" }, content, mentions)
       }
-      onReply={(root: ArtifactComment, content) => {
+      onReply={(root: ArtifactComment, content, mentions) => {
         const rootContext = parseArtifactCommentContext(root);
         createComment.mutate({
           content,
           sourceCommentId: root.id,
           context: rootContext ?? contextFor({ kind: "document" }),
+          mentions,
         });
       }}
       onResolve={(root, resolved) => setResolved.mutate({ root, resolved })}
@@ -310,6 +318,7 @@ export function ArtifactPreview({
                 comments={comments}
                 activeThreadId={selectedThreadId}
                 locateRequest={locateRequest}
+                members={members}
                 onActivateThread={(id) => activateThread(id, true)}
                 onCreate={createAnchoredComment}
                 onResolutionsChange={setResolutions}
@@ -336,6 +345,7 @@ export function ArtifactPreview({
             comments={comments}
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
+            members={members}
             onActivateThread={(id) => activateThread(id, true)}
             onCreate={createAnchoredComment}
             onResolutionsChange={setResolutions}
@@ -372,6 +382,7 @@ export function ArtifactPreview({
             activeThreadId={selectedThreadId}
             locateRequest={locateRequest}
             commenting={imageCommenting}
+            members={members}
             onCommentingChange={setImageCommenting}
             onActivateThread={(id) => activateThread(id, true)}
             onCreate={createAnchoredComment}

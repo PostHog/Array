@@ -30,6 +30,10 @@ vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
   AUTH_SCOPED_QUERY_META: { authScoped: true },
 }));
 
+vi.mock("@posthog/ui/features/canvas/hooks/useOrgMembers", () => ({
+  useOrgMembers: () => ({ members: [] }),
+}));
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery,
 }));

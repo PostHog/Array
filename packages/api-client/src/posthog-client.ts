@@ -206,6 +206,7 @@ export interface CreateArtifactCommentRequest {
   content: string;
   context: unknown;
   sourceCommentId?: string;
+  mentions?: number[];
 }
 
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
@@ -3372,6 +3373,7 @@ export class PostHogAPIClient {
           item_id: request.artifactId,
           item_context: request.context,
           source_comment: request.sourceCommentId ?? null,
+          mentions: request.mentions ?? [],
           // Resolution is represented by a thread-state reply. This keeps the
           // write path compatible with personal API key authentication.
           is_task: false,

@@ -39,6 +39,7 @@ describe("ArtifactCommentsSidebar", () => {
     const { container } = render(
       <ArtifactCommentsSidebar
         comments={[comment]}
+        members={[]}
         currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}
@@ -56,9 +57,9 @@ describe("ArtifactCommentsSidebar", () => {
     const thread = container.querySelector(
       '[data-comment-thread-id="comment-1"]',
     );
-    const composer = screen.getByPlaceholderText("Comment on this artifact...");
-    expect(thread).not.toBeNull();
-    expect(thread?.compareDocumentPosition(composer) ?? 0).toBe(
+    const composer = container.querySelector("footer .mention-composer");
+    if (!thread || !composer) throw new Error("Expected thread and composer");
+    expect(thread.compareDocumentPosition(composer)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
   });
@@ -77,6 +78,7 @@ describe("ArtifactCommentsSidebar", () => {
     render(
       <ArtifactCommentsSidebar
         comments={[comment, stateEvent]}
+        members={[]}
         currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}
@@ -91,6 +93,10 @@ describe("ArtifactCommentsSidebar", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Filter comments" }));
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: "Resolved (1)" }),
+    );
     expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
     expect(screen.queryByText("Resolved this thread")).toBeNull();
   });
@@ -99,6 +105,7 @@ describe("ArtifactCommentsSidebar", () => {
     const { container } = render(
       <ArtifactCommentsSidebar
         comments={[comment]}
+        members={[]}
         currentVersion="artifact-1"
         selectedThreadId="comment-1"
         pulseThreadId="comment-1"
@@ -123,6 +130,7 @@ describe("ArtifactCommentsSidebar", () => {
     render(
       <ArtifactCommentsSidebar
         comments={[comment]}
+        members={[]}
         currentVersion="artifact-1"
         selectedThreadId={null}
         pulseThreadId={null}

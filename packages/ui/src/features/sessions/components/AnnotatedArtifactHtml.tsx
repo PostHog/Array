@@ -3,6 +3,7 @@ import {
   artifactAnchorSchema,
   type TextArtifactAnchor,
 } from "@posthog/core/artifact-comments/anchors";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +39,7 @@ export function AnnotatedArtifactHtml({
   comments,
   activeThreadId,
   locateRequest,
+  members,
   onActivateThread,
   onCreate,
   onResolutionsChange,
@@ -47,8 +49,13 @@ export function AnnotatedArtifactHtml({
   comments: ArtifactComment[];
   activeThreadId: string | null;
   locateRequest: ArtifactLocateRequest | null;
+  members: UserBasic[];
   onActivateThread: (id: string) => void;
-  onCreate: (anchor: TextArtifactAnchor, content: string) => void;
+  onCreate: (
+    anchor: TextArtifactAnchor,
+    content: string,
+    mentions?: number[],
+  ) => void;
   onResolutionsChange: (resolutions: Map<string, HighlightResolution>) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -199,9 +206,10 @@ export function AnnotatedArtifactHtml({
         placeholder="Add a comment about this selection..."
         showActionText
         initiallyExpanded
+        members={members}
         onDismiss={dismiss}
-        onSubmit={(_start, _end, content) => {
-          if (pendingAnchor) onCreate(pendingAnchor, content);
+        onSubmit={(_start, _end, content, mentions) => {
+          if (pendingAnchor) onCreate(pendingAnchor, content, mentions);
           dismiss();
         }}
       />

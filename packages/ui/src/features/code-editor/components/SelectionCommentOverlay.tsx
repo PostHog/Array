@@ -1,7 +1,9 @@
 import { ChatCircle, Plus } from "@phosphor-icons/react";
 import { Button } from "@posthog/quill";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { CommentAnnotation } from "@posthog/ui/features/code-review/components/CommentAnnotation";
+import { ArtifactCommentComposer } from "@posthog/ui/features/sessions/components/ArtifactCommentComposer";
 import { Tooltip } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
@@ -22,12 +24,18 @@ interface SelectionCommentOverlayProps {
   selection: EditorSelection | null;
   open: boolean;
   filePath: string;
-  onSubmit: (startLine: number, endLine: number, text: string) => void;
+  onSubmit: (
+    startLine: number,
+    endLine: number,
+    text: string,
+    mentions?: number[],
+  ) => void;
   onDismiss: () => void;
   actionLabel?: string;
   placeholder?: string;
   showActionText?: boolean;
   initiallyExpanded?: boolean;
+  members?: UserBasic[];
 }
 
 /**
@@ -45,6 +53,7 @@ export function SelectionCommentOverlay({
   placeholder,
   showActionText = false,
   initiallyExpanded = false,
+  members,
 }: SelectionCommentOverlayProps) {
   if (!open || !selection?.anchor) return null;
   // Key by the range so a fresh selection remounts the card back to the "+".
@@ -61,6 +70,7 @@ export function SelectionCommentOverlay({
       placeholder={placeholder}
       showActionText={showActionText}
       initiallyExpanded={initiallyExpanded}
+      members={members}
     />
   );
 }
@@ -76,19 +86,27 @@ function SelectionComposerCard({
   placeholder,
   showActionText,
   initiallyExpanded,
+  members,
 }: {
   anchor: { top: number; left: number };
   fromLine: number;
   toLine: number;
   filePath: string;
-  onSubmit: (startLine: number, endLine: number, text: string) => void;
+  onSubmit: (
+    startLine: number,
+    endLine: number,
+    text: string,
+    mentions?: number[],
+  ) => void;
   onDismiss: () => void;
   actionLabel: string;
   placeholder?: string;
   showActionText: boolean;
   initiallyExpanded: boolean;
+  members?: UserBasic[];
 }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [draft, setDraft] = useState("");
   const style = { top: anchor.top + 4, left: anchor.left };
 
   if (!expanded) {
@@ -122,15 +140,32 @@ function SelectionComposerCard({
       className="fixed z-50 w-[420px] max-w-[80vw] rounded-md border border-gray-5 bg-gray-2 shadow-lg"
       style={style}
     >
-      <CommentAnnotation
-        filePath={filePath}
-        startLine={fromLine}
-        endLine={toLine}
-        onDismiss={onDismiss}
-        onSubmitText={(text) => onSubmit(fromLine, toLine, text)}
-        placeholder={placeholder}
-        submitLabel="Add comment"
-      />
+      {members ? (
+        <div className="p-2">
+          <ArtifactCommentComposer
+            value={draft}
+            onValueChange={setDraft}
+            onSubmit={(content, mentions) => {
+              onSubmit(fromLine, toLine, content, mentions);
+              onDismiss();
+            }}
+            onCancel={onDismiss}
+            members={members}
+            placeholder={placeholder ?? "Add a comment…"}
+            rows={2}
+          />
+        </div>
+      ) : (
+        <CommentAnnotation
+          filePath={filePath}
+          startLine={fromLine}
+          endLine={toLine}
+          onDismiss={onDismiss}
+          onSubmitText={(text) => onSubmit(fromLine, toLine, text)}
+          placeholder={placeholder}
+          submitLabel="Add comment"
+        />
+      )}
     </div>,
     document.body,
   );
