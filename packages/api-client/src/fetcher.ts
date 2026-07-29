@@ -1,9 +1,16 @@
 import type { createApiClient } from "./generated";
 
+export type FetchImplementation = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 export type ApiFetcherConfig = {
   getAccessToken: () => Promise<string>;
   refreshAccessToken: () => Promise<string>;
   appVersion: string;
+  fetch?: FetchImplementation;
+  userAgent?: string | null;
 };
 
 /**
@@ -13,11 +20,13 @@ export type ApiFetcherConfig = {
  */
 export class ApiRequestError extends Error {
   readonly status: number;
+  readonly body: unknown;
 
-  constructor(status: number, serializedBody: string) {
+  constructor(status: number, serializedBody: string, body?: unknown) {
     super(`Failed request: [${status}] ${serializedBody}`);
     this.name = "ApiRequestError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -29,7 +38,11 @@ export function requestErrorStatus(error: unknown): number | undefined {
 export const buildApiFetcher: (
   config: ApiFetcherConfig,
 ) => Parameters<typeof createApiClient>[0] = (config) => {
-  const userAgent = `posthog/desktop.hog.dev; version: ${config.appVersion}`;
+  const fetchImpl = config.fetch ?? globalThis.fetch;
+  const userAgent =
+    config.userAgent === undefined
+      ? `posthog/desktop.hog.dev; version: ${config.appVersion}`
+      : config.userAgent;
 
   const makeRequest = async (
     input: Parameters<Parameters<typeof createApiClient>[0]["fetch"]>[0],
@@ -38,7 +51,9 @@ export const buildApiFetcher: (
     const headers = new Headers();
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("Content-Type", "application/json");
-    headers.set("User-Agent", userAgent);
+    if (userAgent) {
+      headers.set("User-Agent", userAgent);
+    }
 
     if (input.urlSearchParams) {
       input.url.search = input.urlSearchParams.toString();
@@ -59,7 +74,7 @@ export const buildApiFetcher: (
     }
 
     try {
-      const response = await fetch(input.url, {
+      const response = await fetchImpl(input.url, {
         method: input.method.toUpperCase(),
         ...(body && { body }),
         headers,
@@ -114,6 +129,7 @@ export const buildApiFetcher: (
           throw new ApiRequestError(
             response.status,
             JSON.stringify(errorResponse),
+            errorResponse,
           );
         }
       }
@@ -128,6 +144,7 @@ export const buildApiFetcher: (
         throw new ApiRequestError(
           response.status,
           JSON.stringify(errorResponse),
+          errorResponse,
         );
       }
 
