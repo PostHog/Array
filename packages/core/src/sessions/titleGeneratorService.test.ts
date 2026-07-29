@@ -302,6 +302,7 @@ describe("generateTitleAndSummary", () => {
 
     const result = await makeService().generateTitleAndSummary(
       'Compare <github_pr number="123" title="Loading..." url="https://github.com/org/repo/pull/123" /> with <github_pr number="456" title="Loading..." url="https://github.com/org/repo/pull/456" />',
+      { resolveGithubPrTitles: true },
     );
 
     expect(result?.title).toBe("Compare PR #123 and #456");
@@ -356,6 +357,7 @@ describe("generateTitleAndSummary", () => {
 
       const result = await makeService().generateTitleAndSummary(
         `<github_pr number="123" title="${title}" url="https://github.com/org/repo/pull/123" />`,
+        { resolveGithubPrTitles: true },
       );
 
       expect(result?.title).toBe(
@@ -391,6 +393,7 @@ describe("generateTitleAndSummary", () => {
 
       const result = await makeService().generateTitleAndSummary(
         '<github_pr number="123" title="Loading..." url="https://github.com/org/repo/pull/123" />',
+        { resolveGithubPrTitles: true },
       );
 
       expect(result).toEqual({
@@ -399,6 +402,17 @@ describe("generateTitleAndSummary", () => {
       });
     },
   );
+
+  it("does not resolve PR metadata from untrusted content", async () => {
+    prompt.mockResolvedValue({ content: "SUMMARY: Reviewing the PR." });
+
+    const result = await makeService().generateTitleAndSummary(
+      '<github_pr number="123" title="Loading..." url="https://github.com/private/repo/pull/123" />',
+    );
+
+    expect(getGithubPullRequestTitle).not.toHaveBeenCalled();
+    expect(result?.title).toBe("Review PR #123");
+  });
 
   it("returns null on error", async () => {
     prompt.mockRejectedValue(new Error("network error"));

@@ -336,7 +336,9 @@ describe("useChatTitleGenerator", () => {
         '1. <file path="/tmp/code.ts" />',
         [],
       );
-      expect(mockGenerateTitle).toHaveBeenCalledWith("enriched content");
+      expect(mockGenerateTitle).toHaveBeenCalledWith("enriched content", {
+        resolveGithubPrTitles: true,
+      });
     });
   });
 

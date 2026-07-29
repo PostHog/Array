@@ -110,7 +110,9 @@ export function useChatTitleGenerator(task: Task): void {
           rawContent,
           attachmentPaths,
         );
-        const result = await titleGenerator.generateTitleAndSummary(content);
+        const result = await titleGenerator.generateTitleAndSummary(content, {
+          resolveGithubPrTitles: shouldGenerateFromPrompts,
+        });
         if (result) {
           // Drop the stash once a title has been successfully produced so the
           // map doesn't grow across a long-lived session. Keeping it on failure

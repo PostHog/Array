@@ -37,6 +37,7 @@ interface GithubPrGenerationContext {
 async function prepareGithubPrGenerationContext(
   content: string,
   githubPrTitleClient: GithubPrTitleClient,
+  resolveGithubPrTitles: boolean,
 ): Promise<GithubPrGenerationContext> {
   const tagRegex = /<github_pr\b([^>]*?)\s*\/>/g;
   const matches = [...content.matchAll(tagRegex)];
@@ -48,7 +49,8 @@ async function prepareGithubPrGenerationContext(
     matches.map(async (match) => {
       const attrs = parseXmlAttrs(match[1]);
       let title = (attrs.title ?? "").trim();
-      if (!title || isLoadingGithubRefTitle(title)) {
+      const needsResolution = !title || isLoadingGithubRefTitle(title);
+      if (resolveGithubPrTitles && needsResolution) {
         const parsed = parseGithubIssueUrl(attrs.url);
         if (parsed?.kind === "pr") {
           try {
@@ -62,6 +64,8 @@ async function prepareGithubPrGenerationContext(
             title = "";
           }
         }
+      } else if (needsResolution) {
+        title = "";
       }
 
       const tag = match[0].replace(
@@ -263,11 +267,13 @@ export class TitleGeneratorService {
 
   async generateTitleAndSummary(
     content: string,
+    options: { resolveGithubPrTitles?: boolean } = {},
   ): Promise<TitleAndSummary | null> {
     try {
       const githubPrContext = await prepareGithubPrGenerationContext(
         content,
         this.githubPrTitleClient,
+        options.resolveGithubPrTitles ?? false,
       );
       const githubPrTitle = githubPrContext.deterministicTitle;
       const prompt = getGenerationPrompt(
