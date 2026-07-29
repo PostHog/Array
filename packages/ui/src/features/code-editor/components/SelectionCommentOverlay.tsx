@@ -27,6 +27,7 @@ interface SelectionCommentOverlayProps {
   actionLabel?: string;
   placeholder?: string;
   showActionText?: boolean;
+  initiallyExpanded?: boolean;
 }
 
 /**
@@ -43,6 +44,7 @@ export function SelectionCommentOverlay({
   actionLabel = "Add to chat",
   placeholder,
   showActionText = false,
+  initiallyExpanded = false,
 }: SelectionCommentOverlayProps) {
   if (!open || !selection?.anchor) return null;
   // Key by the range so a fresh selection remounts the card back to the "+".
@@ -58,6 +60,7 @@ export function SelectionCommentOverlay({
       actionLabel={actionLabel}
       placeholder={placeholder}
       showActionText={showActionText}
+      initiallyExpanded={initiallyExpanded}
     />
   );
 }
@@ -72,6 +75,7 @@ function SelectionComposerCard({
   actionLabel,
   placeholder,
   showActionText,
+  initiallyExpanded,
 }: {
   anchor: { top: number; left: number };
   fromLine: number;
@@ -82,8 +86,9 @@ function SelectionComposerCard({
   actionLabel: string;
   placeholder?: string;
   showActionText: boolean;
+  initiallyExpanded: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const style = { top: anchor.top + 4, left: anchor.left };
 
   if (!expanded) {

@@ -177,6 +177,7 @@ export function AnnotatedArtifactHtml({
         actionLabel="Add comment"
         placeholder="Add a comment about this selection..."
         showActionText
+        initiallyExpanded
         onDismiss={dismiss}
         onSubmit={(_start, _end, content) => {
           if (pendingAnchor) onCreate(pendingAnchor, content);
