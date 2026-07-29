@@ -4,7 +4,6 @@ import { ArtifactPreview } from "./ArtifactPreview";
 import {
   artifactHtmlDocument,
   artifactPreviewBlob,
-  markdownDocument,
 } from "./artifactPreviewDocument";
 
 const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
@@ -32,6 +31,12 @@ vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery,
+}));
+
+vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
+  CodeMirrorEditor: ({ content }: { content: string }) => (
+    <div data-testid="source-view">{content}</div>
+  ),
 }));
 
 describe("ArtifactPreview", () => {
@@ -215,17 +220,35 @@ describe("ArtifactPreview", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders GFM Markdown while escaping embedded HTML", () => {
-    const document = markdownDocument(
-      "# Report\n\n**Ready**\n\n| Name | Value |\n| --- | --- |\n| Cost | 12 |\n\n<script>alert('no')</script>",
+  it("renders Markdown artifacts with the file preview styling", () => {
+    useQuery.mockReturnValue({
+      data: "# Report\n\n**Ready**\n\n| Name | Value |\n| --- | --- |\n| Cost | 12 |",
+      isLoading: false,
+      isError: false,
+    });
+
+    const { container } = render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="report.md"
+      />,
     );
 
-    expect(document).toContain("<h1>Report</h1>");
-    expect(document).toContain("<strong>Ready</strong>");
-    expect(document).toContain("<table>");
-    expect(document).toContain("&lt;script&gt;");
-    expect(document).not.toContain("<script>");
-    expect(document).toContain("default-src &#39;none&#39;");
+    expect(screen.getByRole("heading", { name: "Report" })).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(
+      container.querySelector(".plan-markdown.mx-auto"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("report.md")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View source" }));
+
+    expect(screen.getByTestId("source-view")).toHaveTextContent("# Report");
+    expect(
+      screen.getByRole("button", { name: "View preview" }),
+    ).toBeInTheDocument();
   });
 
   it("blocks network subresources in HTML artifacts", () => {
