@@ -91,6 +91,26 @@ SUMMARY: <summary here>
 
 Write 1-3 sentences describing what the user is working on and why. Use third-person perspective and include relevant technical details. Never include a title or any explanation outside the SUMMARY line.`;
 
+function getGenerationPrompt(
+  content: string,
+  summaryOnly: boolean,
+): {
+  user: string;
+  system: string;
+} {
+  if (summaryOnly) {
+    return {
+      user: `Generate a summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a summary.\n\n<content>\n${content}\n</content>\n\nOutput the summary now:`,
+      system: SUMMARY_SYSTEM_PROMPT,
+    };
+  }
+
+  return {
+    user: `Generate a title and summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a title and summary.\n\n<content>\n${content}\n</content>\n\nOutput the title and summary now:`,
+    system: SYSTEM_PROMPT,
+  };
+}
+
 // Canvas names describe the RESULT (the artifact being built), not the task of
 // building it — so this prompt is deliberately separate from the task SYSTEM_PROMPT
 // above, which is action-verb oriented ("Fix...", "Create..."). Don't merge them.
@@ -181,17 +201,16 @@ export class TitleGeneratorService {
   ): Promise<TitleAndSummary | null> {
     try {
       const githubPrTitle = getGithubPrTaskTitle(content);
+      const prompt = getGenerationPrompt(content, !!githubPrTitle);
       const result = await this.llmGateway.prompt(
         [
           {
             role: "user",
-            content: githubPrTitle
-              ? `Generate a summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a summary.\n\n<content>\n${content}\n</content>\n\nOutput the summary now:`
-              : `Generate a title and summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a title and summary.\n\n<content>\n${content}\n</content>\n\nOutput the title and summary now:`,
+            content: prompt.user,
           },
         ],
         {
-          system: githubPrTitle ? SUMMARY_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          system: prompt.system,
           model: HELPER_GATEWAY_MODEL,
         },
       );
