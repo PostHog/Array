@@ -192,6 +192,14 @@ export function isCloudflareModel(model: GatewayModel): boolean {
   return isCloudflareModelId(model.id) || model.owned_by === "cloudflare";
 }
 
+export function isModalModelId(modelId: string): boolean {
+  return modelId === "moonshotai/kimi-k3";
+}
+
+export function isModalModel(model: GatewayModel): boolean {
+  return isModalModelId(model.id) || model.owned_by === "modal";
+}
+
 export function pickAllowedModel(
   models: ReadonlyArray<Pick<GatewayModel, "id" | "allowed">>,
   preferred: string,
@@ -259,6 +267,9 @@ export function formatGatewayModelName(model: GatewayModel): string {
   if (isCloudflareModel(model)) {
     return formatProviderModelName(model.id.split("/").pop() ?? model.id);
   }
+  if (isModalModel(model)) {
+    return formatModelId(model.id.split("/").pop() ?? model.id);
+  }
   if (isOpenAIModel(model)) {
     return formatProviderModelName(stripProviderPrefix(model.id));
   }
@@ -283,7 +294,9 @@ function getAdapterModels(
   return models.filter((model) =>
     adapter === "codex"
       ? isOpenAIModel(model)
-      : isAnthropicModel(model) || isCloudflareModel(model),
+      : isAnthropicModel(model) ||
+        isCloudflareModel(model) ||
+        isModalModel(model),
   );
 }
 

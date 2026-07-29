@@ -23,7 +23,10 @@ export interface EffectiveDiffSource {
   diffStats: DiffStats;
 }
 
-export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
+export function useEffectiveDiffSource(
+  taskId: string,
+  prUrlOverride?: string,
+): EffectiveDiffSource {
   const trpc = useHostTRPC();
   const repoPath = useCwd(taskId);
   const workspace = useWorkspace(taskId);
@@ -54,7 +57,8 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
   const hasLocalChanges = diffStats.filesChanged > 0;
   const branchSourceAvailable = !!linkedBranch && aheadOfDefault > 0;
 
-  const prUrl = useTaskPrUrl(taskId, workspace?.mode === "cloud");
+  const taskPrUrl = useTaskPrUrl(taskId, workspace?.mode === "cloud");
+  const prUrl = prUrlOverride ?? taskPrUrl;
   const prSourceAvailable = !!prUrl;
 
   const repoSlug = repoInfo
@@ -62,7 +66,7 @@ export function useEffectiveDiffSource(taskId: string): EffectiveDiffSource {
     : null;
 
   const effectiveSource = resolveDiffSource({
-    configured,
+    configured: prUrlOverride ? "pr" : configured,
     hasLocalChanges,
     linkedBranch,
     aheadOfDefault,

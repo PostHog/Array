@@ -1,6 +1,7 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { ThreadSidebar } from "@posthog/ui/features/canvas/components/ThreadSidebar";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskViewed } from "@posthog/ui/features/sidebar/useTaskViewed";
 import { TaskDetail } from "@posthog/ui/features/task-detail/components/TaskDetail";
 import {
@@ -35,6 +36,7 @@ export const Route = createFileRoute("/website/$channelId/tasks/$taskId")({
 });
 
 function ChannelTaskDetailRoute() {
+  const spacesLayout = useChannelsLayout();
   const { channelId, taskId } = Route.useParams();
   const loaderTask = Route.useLoaderData();
   const { data: tasks } = useTasks();
@@ -108,7 +110,7 @@ function ChannelTaskDetailRoute() {
       <div className="min-w-0 flex-1">
         <TaskDetail
           task={task}
-          channelName={channelName ?? "Channel"}
+          channelName={channelName ?? (spacesLayout ? "Space" : "Channel")}
           channelId={channelId}
         />
       </div>

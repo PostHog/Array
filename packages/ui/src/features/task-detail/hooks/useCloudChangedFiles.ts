@@ -12,9 +12,11 @@ export function useCloudChangedFiles(
   taskId: string,
   task: Task,
   isActive = true,
+  prUrlOverride?: string,
 ) {
   const cloudRunState = useCloudRunState(taskId, task);
-  const { prUrl, effectiveBranch, repo, isRunActive } = cloudRunState;
+  const prUrl = prUrlOverride ?? cloudRunState.prUrl;
+  const { effectiveBranch, repo, isRunActive } = cloudRunState;
 
   const {
     data: prFiles,
@@ -45,6 +47,7 @@ export function useCloudChangedFiles(
 
   return {
     ...cloudRunState,
+    prUrl,
     changedFiles,
     remoteFiles,
     reviewFiles: changedFiles,

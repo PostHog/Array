@@ -4,6 +4,7 @@ import {
   OverflowTickerText,
   useOverflowTickerReveal,
 } from "@posthog/ui/primitives/OverflowTickerText";
+import type { ComponentPropsWithRef } from "react";
 
 export const INDENT_SIZE = 8;
 
@@ -11,7 +12,11 @@ export function getSidebarItemPaddingLeft(depth: number): string {
   return `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`;
 }
 
-interface SidebarItemProps {
+interface SidebarItemProps
+  extends Omit<
+    ComponentPropsWithRef<"button">,
+    "children" | "onDragStart" | "onDoubleClick"
+  > {
   depth: number;
   icon?: React.ReactNode;
   label: React.ReactNode;
@@ -47,11 +52,15 @@ export function SidebarItem({
   badge,
   endContent,
   disabled,
+  ref,
+  ...buttonProps
 }: SidebarItemProps) {
   const { reveal, hoverProps, focusProps } = useOverflowTickerReveal();
 
   return (
     <Button
+      {...buttonProps}
+      ref={ref}
       type="button"
       className={cn(
         "group flex w-full cursor-default text-left text-[13px] leading-snug transition-colors",

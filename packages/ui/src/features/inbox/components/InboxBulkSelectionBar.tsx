@@ -3,6 +3,7 @@ import {
   EyeSlashIcon,
   PauseIcon,
   TrashIcon,
+  UserMinusIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import { isDismissalReasonSnooze } from "@posthog/shared/dismissalReasons";
@@ -156,6 +157,24 @@ export function InboxBulkSelectionBar({
           >
             <ArrowClockwiseIcon size={12} />
             Reingest
+          </Button>
+
+          <Button
+            type="button"
+            size="1"
+            variant="soft"
+            color="gray"
+            tooltipContent="Remove yourself as a suggested reviewer on the selected reports"
+            disabledReason={bulkActions.removeReviewerDisabledReason}
+            disabled={
+              bulkActions.removeReviewerDisabledReason !== null ||
+              bulkActions.isRemovingReviewer
+            }
+            loading={bulkActions.isRemovingReviewer}
+            onClick={() => void bulkActions.removeReviewerSelected()}
+          >
+            <UserMinusIcon size={12} />
+            Remove me as reviewer
           </Button>
 
           <Button

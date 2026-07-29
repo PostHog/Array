@@ -1,6 +1,5 @@
 import {
   BrainIcon,
-  HashIcon,
   PlugsConnectedIcon,
   RobotIcon,
   SquaresFourIcon,
@@ -24,11 +23,13 @@ import {
 } from "@posthog/shared";
 import { channelSectionFor } from "@posthog/ui/features/canvas/channelSections";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyph";
 import { ensurePersonalChannel } from "@posthog/ui/features/canvas/ensurePersonalChannel";
 import {
   useChannelMutations,
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import {
   useDashboard,
   useDashboards,
@@ -145,6 +146,7 @@ function isAppView(value: string): value is AppView {
 }
 
 export function BrowserTabStrip() {
+  const spacesLayout = useChannelsLayout();
   const logger = useService<RootLogger>(ROOT_LOGGER);
   const snapshot = useTabsSnapshot();
   const navigate = useNavigate();
@@ -503,14 +505,18 @@ export function BrowserTabStrip() {
           };
         }
         // A channel tab: a sub-section (Artifacts/Recents/…) or the channel home.
-        // The section drives the label; the channel name carries the `#` hover
+        // The section drives the label; the channel name carries the space
         // context. Home has no section, so it labels by the channel name.
         if (channelId) {
           const meta = channelSectionFor(section);
           return {
             id: t.id,
-            label: meta?.label ?? channel ?? "Channel",
-            icon: <HashIcon size={14} />,
+            label:
+              meta?.label ?? channel ?? (spacesLayout ? "Space" : "Channel"),
+            icon: channelGlyph(channel ?? undefined, {
+              size: 14,
+              space: spacesLayout,
+            }),
             channelName: channel,
             // No section meta → the channel's index page.
             isChannelHome: !meta,
@@ -545,6 +551,7 @@ export function BrowserTabStrip() {
     params.taskId,
     routeChannelSection,
     routeAppView,
+    spacesLayout,
   ]);
 
   // Navigate to a tab, tagging the history entry with its id so the switch is

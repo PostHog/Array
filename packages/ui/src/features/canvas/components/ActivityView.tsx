@@ -1,4 +1,10 @@
-import { BellIcon, LinkIcon, RobotIcon } from "@phosphor-icons/react";
+import {
+  BellIcon,
+  CheckIcon,
+  ChecksIcon,
+  LinkIcon,
+  RobotIcon,
+} from "@phosphor-icons/react";
 import type { TaskActivityItem } from "@posthog/core/canvas/taskActivity";
 import {
   Avatar,
@@ -20,9 +26,9 @@ import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkTaskActivityRead } from "@posthog/ui/features/canvas/hooks/useMarkTaskActivityRead";
 import { useTaskActivity } from "@posthog/ui/features/canvas/hooks/useTaskActivity";
-import { normalizeChannelName } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { copyChannelLink } from "@posthog/ui/features/canvas/utils/copyChannelLink";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import {
@@ -33,6 +39,13 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Text } from "@radix-ui/themes";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo } from "react";
+import {
+  activityReadPayload,
+  channelIdForName,
+  createChannelIdByName,
+  getUnreadActivityItems,
+  markLoadedReadLabel,
+} from "./activityFeed";
 
 function ChannelSuffix({ channelName }: { channelName: string | null }) {
   if (!channelName) return null;
@@ -98,17 +111,25 @@ export function activityHeadline(
   }
 }
 
-function ActivityRow({
+export function ActivityRow({
   item,
   folderChannelId,
   onOpen,
+  onMarkRead,
   currentUser,
+  surface = "activity",
+  onNavigate,
+  compact = false,
 }: {
   item: TaskActivityItem;
   /** Desktop folder channel id (the /website route param); null when unmapped. */
   folderChannelId: string | null;
   onOpen: (item: TaskActivityItem) => void;
+  onMarkRead: (item: TaskActivityItem) => void;
   currentUser?: UserBasic | null;
+  surface?: "activity" | "activity_panel";
+  onNavigate?: () => void;
+  compact?: boolean;
 }) {
   const isAgentActivity =
     item.activityKind === "awaiting_input" ||
@@ -117,11 +138,12 @@ function ActivityRow({
   const openTask = () => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "open_task",
-      surface: "activity",
+      surface,
       channel_id: folderChannelId ?? undefined,
       task_id: item.taskId,
     });
     onOpen(item);
+    onNavigate?.();
     // The channel thread route is the deep-link target; tasks whose channel
     // folder is gone fall back to the plain task view.
     if (folderChannelId) {
@@ -136,7 +158,7 @@ function ActivityRow({
       <button
         type="button"
         onClick={openTask}
-        className={`flex w-full gap-2 rounded-md px-2 py-2 text-left hover:bg-fill-secondary ${item.isUnread ? "bg-fill-secondary" : ""}`}
+        className={`flex w-full gap-2 rounded-md px-2 text-left transition-colors hover:bg-fill-hover ${compact ? "py-1.5 pr-14" : "py-2"} ${item.isUnread ? "bg-fill-secondary" : ""}`}
       >
         <span className="relative mt-0.5 shrink-0">
           {isAgentActivity ? (
@@ -164,15 +186,17 @@ function ActivityRow({
             >
               {activityHeadline(item, currentUser?.email)}
             </Text>
-            {item.isUnread && <Badge variant="info">New</Badge>}
-            <Text size="1" className="shrink-0 text-muted-foreground">
-              {formatRelativeTimeShort(item.activityAt)}
-            </Text>
+            {item.isUnread && !compact && <Badge variant="info">New</Badge>}
+            {!compact && (
+              <Text size="1" className="shrink-0 text-muted-foreground">
+                {formatRelativeTimeShort(item.activityAt)}
+              </Text>
+            )}
           </span>
           <Text size="1" className="block truncate text-muted-foreground">
             {item.taskTitle}
           </Text>
-          {item.snippet && (
+          {item.snippet && !compact && (
             <MentionText
               content={item.snippet}
               currentUserEmail={currentUser?.email}
@@ -181,7 +205,27 @@ function ActivityRow({
           )}
         </span>
       </button>
-      {folderChannelId && (
+      {compact && (
+        <Text
+          size="1"
+          className="pointer-events-none absolute top-1.5 right-2 text-muted-foreground"
+        >
+          {formatRelativeTimeShort(item.activityAt)}
+        </Text>
+      )}
+      {item.isUnread && (
+        <Button
+          variant="default"
+          size="icon-xs"
+          aria-label="Mark as read"
+          title="Mark as read"
+          className={`absolute opacity-0 transition-opacity group-hover:opacity-100 ${compact ? "right-2 bottom-1" : `top-2 ${folderChannelId ? "right-9" : "right-2"}`}`}
+          onClick={() => onMarkRead(item)}
+        >
+          <CheckIcon size={14} />
+        </Button>
+      )}
+      {folderChannelId && !compact && (
         <Button
           variant="default"
           size="icon-xs"
@@ -202,11 +246,20 @@ function ActivityRow({
 // in, or messaged in — newest activity first. Rows clear as they are opened, not
 // when the page is; merely landing here shouldn't dismiss what you haven't read.
 export function ActivityView() {
+  const spacesLayout = useChannelsLayout();
   const client = useOptionalAuthenticatedClient();
   const { data: currentUser } = useCurrentUser({ client });
-  const { items, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useTaskActivity();
-  const { mutate: markTasksRead } = useMarkTaskActivityRead();
+  const {
+    items,
+    unreadCount,
+    isLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useTaskActivity();
+  const { mutate: markTasksRead, isPending: isMarkingRead } =
+    useMarkTaskActivityRead();
+  const unreadItems = useMemo(() => getUnreadActivityItems(items), [items]);
   // Opening a row is what marks it read. The server does the same when the task is
   // reached any other way, so the feed converges either way.
   const markRead = useCallback(
@@ -214,24 +267,19 @@ export function ActivityView() {
       markTasksRead([{ task_id: item.taskId, seen_before: item.activityAt }]),
     [markTasksRead],
   );
+  const markAllRead = useCallback(() => {
+    markTasksRead(activityReadPayload(unreadItems));
+  }, [markTasksRead, unreadItems]);
   // Items carry backend channel names only; the desktop folder-channel id
   // (needed for /website navigation and copy-link) is resolved here, where
   // the single useChannels subscription lives.
   const { channels: folderChannels } = useChannels();
   const folderIdByName = useMemo(
-    () =>
-      new Map(
-        folderChannels.map((folder) => [
-          normalizeChannelName(folder.name),
-          folder.id,
-        ]),
-      ),
+    () => createChannelIdByName(folderChannels),
     [folderChannels],
   );
   const folderChannelIdFor = (channelName: string | null): string | null =>
-    channelName
-      ? (folderIdByName.get(normalizeChannelName(channelName)) ?? null)
-      : null;
+    channelIdForName(folderIdByName, channelName);
   useEffect(() => {
     track(ANALYTICS_EVENTS.CHANNEL_ACTION, {
       action_type: "view_activity",
@@ -242,12 +290,29 @@ export function ActivityView() {
   return (
     <div className="h-full overflow-y-auto bg-gray-1">
       <div className="mx-auto w-full max-w-[680px] px-4 py-6">
-        <Text size="5" weight="bold" className="block">
-          Activity
-        </Text>
-        <Text size="2" className="block text-muted-foreground">
-          Tasks you're involved in across channels.
-        </Text>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Text size="5" weight="bold" className="block">
+              Activity
+            </Text>
+            <Text size="2" className="block text-muted-foreground">
+              Tasks you're involved in across{" "}
+              {spacesLayout ? "spaces" : "channels"}.
+            </Text>
+          </div>
+          {unreadCount > 0 && (
+            <Button
+              variant="default"
+              size="sm"
+              loading={isMarkingRead}
+              disabled={isMarkingRead}
+              onClick={markAllRead}
+            >
+              <ChecksIcon size={14} />
+              {markLoadedReadLabel(unreadItems.length, unreadCount)}
+            </Button>
+          )}
+        </div>
         <div className="mt-4">
           {isLoading && items.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -261,8 +326,8 @@ export function ActivityView() {
                 </EmptyMedia>
                 <EmptyTitle>No activity yet</EmptyTitle>
                 <EmptyDescription>
-                  Tasks you create, get tagged in, or reply to across channels
-                  land here.
+                  Tasks you create, get tagged in, or reply to across{" "}
+                  {spacesLayout ? "spaces" : "channels"} land here.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -274,6 +339,7 @@ export function ActivityView() {
                   item={item}
                   folderChannelId={folderChannelIdFor(item.channelName)}
                   onOpen={markRead}
+                  onMarkRead={markRead}
                   currentUser={currentUser}
                 />
               ))}

@@ -91,6 +91,8 @@ export {
   isCloudflareModel,
   isCloudflareModelId,
   isGlmModelId,
+  isModalModel,
+  isModalModelId,
   isOpenAIModel,
   normalizeGatewayModelsResponse,
   pickAllowedModel,

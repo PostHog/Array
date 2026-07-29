@@ -7,7 +7,9 @@ interface ReviewNavigationStoreState {
   activeFilePaths: Record<string, string | null>;
   scrollRequests: Record<string, string | null>;
   reviewModes: Record<string, ReviewMode>;
+  selectedPrUrls: Record<string, string | undefined>;
   commentFileFilters: Record<string, CommentFileFilter>;
+  hideViewedFiles: Record<string, boolean>;
 }
 
 interface ReviewNavigationStoreActions {
@@ -16,7 +18,9 @@ interface ReviewNavigationStoreActions {
   clearScrollRequest: (taskId: string) => void;
   clearTask: (taskId: string) => void;
   setReviewMode: (taskId: string, mode: ReviewMode) => void;
+  setSelectedPrUrl: (taskId: string, url: string) => void;
   setCommentFileFilter: (taskId: string, filter: CommentFileFilter) => void;
+  setHideViewedFiles: (taskId: string, hideViewed: boolean) => void;
   getReviewMode: (taskId: string) => ReviewMode;
 }
 
@@ -28,7 +32,9 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
     activeFilePaths: {},
     scrollRequests: {},
     reviewModes: {},
+    selectedPrUrls: {},
     commentFileFilters: {},
+    hideViewedFiles: {},
 
     setActiveFilePath: (taskId, path) =>
       set((state) => ({
@@ -42,6 +48,7 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
           ...state.commentFileFilters,
           [taskId]: "none",
         },
+        hideViewedFiles: { ...state.hideViewedFiles, [taskId]: false },
       })),
 
     clearScrollRequest: (taskId) =>
@@ -57,11 +64,24 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
           ...state.commentFileFilters,
           [taskId]: "none",
         },
+        selectedPrUrls: { ...state.selectedPrUrls, [taskId]: undefined },
+        hideViewedFiles: { ...state.hideViewedFiles, [taskId]: false },
       })),
 
     setReviewMode: (taskId, mode) =>
       set((state) => ({
         reviewModes: { ...state.reviewModes, [taskId]: mode },
+        // A row-selected historical PR only applies to this review visit.
+        // Closing restores the task's normal primary-PR resolution.
+        selectedPrUrls:
+          mode === "closed"
+            ? { ...state.selectedPrUrls, [taskId]: undefined }
+            : state.selectedPrUrls,
+      })),
+
+    setSelectedPrUrl: (taskId, url) =>
+      set((state) => ({
+        selectedPrUrls: { ...state.selectedPrUrls, [taskId]: url },
       })),
 
     setCommentFileFilter: (taskId, filter) =>
@@ -69,6 +89,14 @@ export const useReviewNavigationStore = create<ReviewNavigationStore>()(
         commentFileFilters: {
           ...state.commentFileFilters,
           [taskId]: filter,
+        },
+      })),
+
+    setHideViewedFiles: (taskId, hideViewed) =>
+      set((state) => ({
+        hideViewedFiles: {
+          ...state.hideViewedFiles,
+          [taskId]: hideViewed,
         },
       })),
 

@@ -20,6 +20,8 @@ export {
   isBlockedModelId,
   isCloudflareModel,
   isCloudflareModelId,
+  isModalModel,
+  isModalModelId,
   isOpenAIModel,
   pickAllowedModel,
 } from "@posthog/shared";

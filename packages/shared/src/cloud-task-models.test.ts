@@ -8,6 +8,8 @@ import {
   isAnthropicModel,
   isBlockedModelId,
   isCloudflareModel,
+  isModalModel,
+  isModalModelId,
   normalizeGatewayModelsResponse,
   pickAllowedModel,
 } from "./cloud-task-models";
@@ -30,6 +32,7 @@ describe("formatGatewayModelName", () => {
     [model("claude-opus-4-8"), "Claude Opus 4.8"],
     [model("GPT-5.5", "openai"), "GPT-5.5"],
     [model("openai/gpt-5.6-sol", "openai"), "GPT-5.6 Sol"],
+    [model("moonshotai/kimi-k3", "modal"), "Kimi K3"],
     [model("@cf/zai-org/glm-5.2", "cloudflare"), "GLM-5.2"],
     [
       model("@cf/meta/llama-3.1-8b-instruct", "cloudflare"),
@@ -113,6 +116,12 @@ describe("model classification", () => {
     const gatewayModel = model("@cf/openai/gpt-oss", "openai");
     expect(isCloudflareModel(gatewayModel)).toBe(true);
     expect(isAnthropicModel(gatewayModel)).toBe(false);
+  });
+
+  it("recognizes Modal models by owner and id", () => {
+    const gatewayModel = model("moonshotai/kimi-k3", "modal");
+    expect(isModalModel(gatewayModel)).toBe(true);
+    expect(isModalModelId(gatewayModel.id)).toBe(true);
   });
 });
 
@@ -204,6 +213,20 @@ describe("buildCloudTaskConfigOptions", () => {
           { value: "xhigh" },
         ],
       },
+    ]);
+  });
+
+  it("offers Modal models to Claude sessions", () => {
+    const options = buildCloudTaskConfigOptions(
+      [model("moonshotai/kimi-k3", "modal")],
+      "claude",
+    );
+
+    expect(options.find((option) => option.id === "model")?.options).toEqual([
+      expect.objectContaining({
+        value: "moonshotai/kimi-k3",
+        name: "Kimi K3",
+      }),
     ]);
   });
 });
