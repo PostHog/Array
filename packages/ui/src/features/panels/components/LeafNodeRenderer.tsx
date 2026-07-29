@@ -1,8 +1,6 @@
 import { Cloud as CloudIcon } from "@phosphor-icons/react";
 import {
-  Button,
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -85,24 +83,9 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
               Local workspace tools are unavailable for this run.
             </EmptyDescription>
           </EmptyHeader>
-          {hiddenTabIds.length > 0 && (
-            <EmptyContent>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={() => {
-                  for (const tabId of hiddenTabIds) {
-                    closeTab(taskId, node.id, tabId);
-                  }
-                }}
-              >
-                Close panel
-              </Button>
-            </EmptyContent>
-          )}
         </Empty>
       ) : undefined,
-    [closeTab, hiddenTabIds, isCloud, node.id, taskId],
+    [isCloud],
   );
 
   const contentWithComponents = {
@@ -124,7 +107,20 @@ export const LeafNodeRenderer: React.FC<LeafNodeRendererProps> = ({
       draggingTabId={draggingTabId}
       draggingTabPanelId={draggingTabPanelId}
       onAddTerminal={hideTerminal ? undefined : () => onAddTerminal(node.id)}
-      onSplitPanel={(direction) => onSplitPanel(node.id, direction)}
+      onSplitPanel={
+        tabs.length > 1
+          ? (direction) => onSplitPanel(node.id, direction)
+          : undefined
+      }
+      onClosePanel={
+        tabs.length === 0 && hiddenTabIds.length > 0
+          ? () => {
+              for (const tabId of hiddenTabIds) {
+                closeTab(taskId, node.id, tabId);
+              }
+            }
+          : undefined
+      }
       emptyState={cloudEmptyState}
     />
   );
