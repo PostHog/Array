@@ -16,8 +16,8 @@ import {
   isModalModelId,
   isSupportedReasoningEffort,
   KIMI_MODEL_FLAG,
-  type SupportedReasoningEffort,
   readPrUrls,
+  type SupportedReasoningEffort,
   serializeCloudPrompt,
   type Task,
 } from "@posthog/shared";

@@ -1,4 +1,4 @@
-import { type Task, readPrUrls } from "@posthog/shared";
+import { readPrUrls, type Task } from "@posthog/shared";
 
 export type TaskStatusIconKind =
   | "pr"
