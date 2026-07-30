@@ -7,6 +7,10 @@ import {
   RpcClient,
   type RpcClientOptions,
 } from "@earendil-works/pi-coding-agent";
+import {
+  buildLocalToolsServer,
+  type LocalToolsMeta,
+} from "../adapters/local-tools/mcp-server-config";
 import { safePiEnvironment } from "./rpc-environment";
 import type { PiQueueSnapshot } from "./types";
 
@@ -19,6 +23,35 @@ export interface PiRpcProviderOptions {
   region?: "us" | "eu" | "dev";
   apiKey: string;
   baseUrl?: string;
+}
+
+export interface PiLocalMcpServer {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
+export interface PiRuntimeCapabilities extends LocalToolsMeta {
+  environment: "local" | "cloud";
+}
+
+function createPiLocalMcpServer(
+  cwd: string,
+  capabilities: PiRuntimeCapabilities,
+): PiLocalMcpServer | undefined {
+  const server = buildLocalToolsServer({ cwd }, capabilities);
+  if (!server) {
+    return undefined;
+  }
+  return {
+    name: server.name,
+    command: server.command,
+    args: server.args,
+    env: Object.fromEntries(
+      (server.env ?? []).map(({ name, value }) => [name, value]),
+    ),
+  };
 }
 
 type RpcClientProcessAccess = {
@@ -84,6 +117,7 @@ class SecurePiRpcClient extends RpcClient {
   constructor(
     private readonly secureOptions: RpcClientOptions,
     private readonly providerOptions: PiRpcProviderOptions,
+    private readonly localMcpServer: PiLocalMcpServer | undefined,
   ) {
     super(secureOptions);
   }
@@ -162,7 +196,10 @@ class SecurePiRpcClient extends RpcClient {
     const bootstrapPipe = child.stdio[3] as Writable | null;
     bootstrapPipe?.on("error", () => {});
     bootstrapPipe?.end(
-      JSON.stringify({ providerOptions: this.providerOptions }),
+      JSON.stringify({
+        providerOptions: this.providerOptions,
+        localMcpServer: this.localMcpServer,
+      }),
     );
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -265,10 +302,15 @@ export type PiRpcClientOptions = Pick<
 > & {
   sessionFile?: string;
   providerOptions: PiRpcProviderOptions;
+  capabilities: PiRuntimeCapabilities;
 };
 
 export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
-  const { sessionFile, providerOptions, ...rpcOptions } = options;
+  const { sessionFile, providerOptions, capabilities, ...rpcOptions } = options;
+  const localMcpServer = createPiLocalMcpServer(
+    rpcOptions.cwd ?? process.cwd(),
+    capabilities,
+  );
   const args = sessionFile ? ["--session-file", sessionFile] : [];
   const cliPath =
     rpcOptions.cliPath ??
@@ -281,5 +323,6 @@ export function createPiRpcClient(options: PiRpcClientOptions): PiRpcClient {
       provider: "posthog",
     },
     providerOptions,
+    localMcpServer,
   );
 }

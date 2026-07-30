@@ -493,6 +493,13 @@ export class PiAgentServer {
       cwd,
       model: this.config.model,
       sessionFile: restoredSessionFile,
+      capabilities: {
+        environment: "cloud",
+        taskId: payload.task_id,
+        taskRunId: payload.run_id,
+        baseBranch: this.config.baseBranch,
+        background: this.config.mode === "background",
+      },
       providerOptions: {
         apiKey: this.config.apiKey,
         baseUrl: resolveLlmGatewayUrl(

@@ -1,21 +1,19 @@
 /**
- * Builds the stdio local-tools MCP server config to inject into a Codex
- * app-server thread's `config.mcp_servers`.
- * Returns the ACP `McpServerStdio` shape so the existing translation layer stays
- * the single owner of the ACP→Codex map.
+ * Builds the stdio local-tools MCP server config for agent runtimes.
+ * Returns the ACP `McpServerStdio` shape used by the Codex adapter and Pi.
  */
 
 import type { McpServerStdio } from "@agentclientprotocol/sdk";
 import { ghTokenEnv } from "@posthog/git/signed-commit";
 import { resolveGithubToken } from "../../utils/github-token";
 import { resolveBundledMcpScript } from "../../utils/resolve-bundled-script";
+import { resolveTaskId } from "../session-meta";
 import {
   enabledLocalTools,
   LOCAL_TOOLS_MCP_NAME,
   type LocalToolCtx,
   type LocalToolGateMeta,
-} from "../local-tools";
-import { resolveTaskId } from "../session-meta";
+} from "./index";
 
 /**
  * Gate inputs the local-tools server needs beyond `LocalToolGateMeta`: the task id
@@ -34,7 +32,7 @@ function toMcpServerStdio(
   enabledNames: string[],
 ): McpServerStdio {
   const scriptPath = resolveBundledMcpScript(
-    "adapters/codex-app-server/local-tools-mcp-server.js",
+    "adapters/local-tools/mcp-server.js",
   );
   const ctxBase64 = Buffer.from(JSON.stringify(ctx)).toString("base64");
   const env = [

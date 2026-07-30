@@ -167,21 +167,36 @@ export function copyPiRpcHost(): Plugin {
   return {
     name: "copy-pi-rpc-host",
     writeBundle() {
-      const candidates = [
-        join(__dirname, "node_modules/@posthog/agent/dist/pi/rpc-host.js"),
-        join(
-          __dirname,
-          "../../node_modules/@posthog/agent/dist/pi/rpc-host.js",
-        ),
-        join(__dirname, "../../packages/agent/dist/pi/rpc-host.js"),
+      const assets = [
+        {
+          name: "Pi RPC host",
+          source: "pi/rpc-host.js",
+          destination: "rpc-host.js",
+        },
+        {
+          name: "Pi local-tools MCP server",
+          source: "adapters/local-tools/mcp-server.js",
+          destination: "mcp-server.js",
+        },
       ];
-      const source = candidates.find((candidate) => existsSync(candidate));
-      if (!source) {
-        throw new Error(
-          `[copy-pi-rpc-host] Unable to find Pi RPC host, required at runtime by createPiRpcClient. Build @posthog/agent first. Checked:\n  ${candidates.join("\n  ")}`,
-        );
+
+      for (const asset of assets) {
+        const candidates = [
+          join(__dirname, `node_modules/@posthog/agent/dist/${asset.source}`),
+          join(
+            __dirname,
+            `../../node_modules/@posthog/agent/dist/${asset.source}`,
+          ),
+          join(__dirname, `../../packages/agent/dist/${asset.source}`),
+        ];
+        const source = candidates.find((candidate) => existsSync(candidate));
+        if (!source) {
+          throw new Error(
+            `[copy-pi-rpc-host] Unable to find ${asset.name}. Build @posthog/agent first. Checked:\n  ${candidates.join("\n  ")}`,
+          );
+        }
+        copyFileSync(source, join(__dirname, ".vite/build", asset.destination));
       }
-      copyFileSync(source, join(__dirname, ".vite/build/rpc-host.js"));
     },
   };
 }

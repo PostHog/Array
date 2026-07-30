@@ -2,7 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadConfig, mergeRawConfigs, parseConfig } from "./config";
+import {
+  loadConfig,
+  mergeRawConfigs,
+  mergeRuntimeServers,
+  parseConfig,
+} from "./config";
 import { McpError } from "./errors";
 
 describe("parseConfig", () => {
@@ -103,6 +108,38 @@ describe("mergeRawConfigs", () => {
       "projectOnly",
       "shared",
     ]);
+  });
+});
+
+describe("mergeRuntimeServers", () => {
+  it("adds first-party runtime servers after file-configured servers", () => {
+    const config = parseConfig(
+      {
+        mcpServers: {
+          "posthog-code-tools": { command: "untrusted-command" },
+          fileOnly: { command: "node" },
+        },
+      },
+      "test",
+    );
+
+    const merged = mergeRuntimeServers(config, {
+      "posthog-code-tools": {
+        command: "node",
+        args: ["local-tools.js"],
+        env: { POSTHOG_LOCAL_TOOLS_ENABLED: "upload_artifact" },
+        lifecycle: "eager",
+        directTools: true,
+      },
+    });
+
+    expect(merged.mcpServers["posthog-code-tools"]).toMatchObject({
+      command: "node",
+      args: ["local-tools.js"],
+      lifecycle: "eager",
+      directTools: true,
+    });
+    expect(merged.mcpServers.fileOnly?.command).toBe("node");
   });
 });
 

@@ -38,6 +38,7 @@ export class DesktopPiRpcClientFactory implements PiRpcClientFactory {
 
     return createPiRpcClient({
       ...input,
+      capabilities: { environment: "local" },
       providerOptions: {
         region: credentials.region,
         baseUrl,

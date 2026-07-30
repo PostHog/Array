@@ -1,5 +1,5 @@
 // Post-build smoke check: boot the bundled local-tools MCP server exactly the
-// way Codex spawns it in a cloud sandbox (a bare `node dist/...js` process) and
+// way an agent runtime spawns it in a cloud sandbox (a bare `node dist/...js` process) and
 // assert it answers `tools/list`. Catches bundling regressions — e.g. inlined
 // CJS deps whose dynamic `require()` throws in ESM output — that unit tests
 // running from src can never see, and that otherwise fail silently in cloud
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const script = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
-  "../dist/adapters/codex-app-server/local-tools-mcp-server.js",
+  "../dist/adapters/local-tools/mcp-server.js",
 );
 
 const ctx = Buffer.from(
@@ -20,7 +20,7 @@ const ctx = Buffer.from(
 const child = spawn(process.execPath, [script], {
   env: {
     ...process.env,
-    // Mirror the production Codex spawn: if this ever runs from an
+    // Mirror the production child spawn: if this ever runs from an
     // Electron-hosted process, execPath is the app binary, not node.
     ELECTRON_RUN_AS_NODE: "1",
     POSTHOG_LOCAL_TOOLS_CTX: ctx,

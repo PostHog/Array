@@ -139,12 +139,27 @@ const mcpConfigSchema = z.object({
 });
 
 export type McpAuthConfig = z.output<typeof authConfigSchema>;
+export type McpServerInput = z.input<typeof serverConfigSchema>;
+export type RuntimeMcpServers = Record<string, McpServerInput>;
 export type McpServerConfig = z.output<typeof serverConfigSchema>;
 export type McpSettings = z.output<typeof settingsSchema>;
 export type McpConfig = z.output<typeof mcpConfigSchema>;
 
 export function emptyConfig(): McpConfig {
   return mcpConfigSchema.parse({});
+}
+
+export function mergeRuntimeServers(
+  config: McpConfig,
+  servers: RuntimeMcpServers,
+): McpConfig {
+  return parseConfig(
+    {
+      settings: config.settings,
+      mcpServers: { ...config.mcpServers, ...servers },
+    },
+    "runtime MCP servers",
+  );
 }
 
 async function readJsonFile(path: string): Promise<unknown | null> {

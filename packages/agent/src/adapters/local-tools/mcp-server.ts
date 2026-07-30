@@ -1,25 +1,18 @@
 /**
- * Standalone stdio MCP server exposing the general local tools to the Codex
- * app-server adapter, which spawns it as an MCP server process. Reads its context
- * (cwd, taskId, token) from POSTHOG_LOCAL_TOOLS_CTX and the set of tools to
- * register from POSTHOG_LOCAL_TOOLS_ENABLED (both set by the parent, which has
- * already evaluated each tool's gate) — then registers those registry tools,
- * the same ones the Claude adapter exposes in-process.
+ * Standalone stdio MCP server exposing the general local tools to agent runtimes.
+ * It reads its context from POSTHOG_LOCAL_TOOLS_CTX and its enabled tool set from
+ * POSTHOG_LOCAL_TOOLS_ENABLED, then registers the corresponding registry tools.
  *
  * Usage:
  *   POSTHOG_LOCAL_TOOLS_CTX=<base64> \
  *   POSTHOG_LOCAL_TOOLS_ENABLED=git_signed_commit \
- *     node local-tools-mcp-server.js
+ *     node mcp-server.js
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
-import {
-  LOCAL_TOOLS,
-  LOCAL_TOOLS_MCP_NAME,
-  type LocalToolCtx,
-} from "../local-tools";
+import { LOCAL_TOOLS, LOCAL_TOOLS_MCP_NAME, type LocalToolCtx } from "./index";
 
 function die(message: string): never {
   process.stderr.write(`[local-tools-mcp-server] ${message}\n`);

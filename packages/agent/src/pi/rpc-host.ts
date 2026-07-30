@@ -6,10 +6,12 @@ import {
   POSTHOG_PI_QUEUE_ENTRY_TYPE,
   readPersistedPiQueue,
 } from "./queue-persistence";
+import type { PiLocalMcpServer } from "./rpc-client";
 import { sanitizePiHostEnvironment } from "./rpc-environment";
 
 interface PiRpcBootstrap {
   providerOptions?: PosthogProviderOptions;
+  localMcpServer?: PiLocalMcpServer;
 }
 
 interface PiHostRequest {
@@ -25,6 +27,7 @@ function argumentValue(name: string): string | undefined {
 
 const bootstrap = JSON.parse(readFileSync(3, "utf8")) as PiRpcBootstrap;
 const providerOptions = bootstrap.providerOptions;
+const localMcpServer = bootstrap.localMcpServer;
 if (!providerOptions?.apiKey) {
   throw new Error("Pi RPC host requires PostHog provider credentials");
 }
@@ -38,6 +41,17 @@ const sessionManager = sessionFile
 const runtime = await createHarnessRuntime({
   cwd,
   sessionManager,
+  runtimeMcpServers: localMcpServer
+    ? {
+        [localMcpServer.name]: {
+          command: localMcpServer.command,
+          args: localMcpServer.args,
+          env: localMcpServer.env,
+          lifecycle: "eager",
+          directTools: true,
+        },
+      }
+    : undefined,
   ...providerOptions,
 });
 
