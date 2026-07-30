@@ -389,11 +389,13 @@ export const ChannelHomeComposer = forwardRef<
   const submitComposer = canvasArmed ? handleCanvasSubmit : submit;
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="relative flex w-full flex-col">
       {/* Canvas generation always runs in the cloud, so the local/cloud pick
-          doesn't apply while canvas mode is armed. */}
+          doesn't apply while canvas mode is armed. The row floats over the feed,
+          and the trigger's own fill is translucent, so it carries an opaque
+          backdrop at the button's radius to stop messages showing through. */}
       {!canvasArmed && (
-        <div className="mb-2 flex items-center gap-2">
+        <div className="absolute bottom-full left-0 mb-2 flex items-center gap-2 rounded-sm bg-card">
           <WorkspaceModeSelect
             value={workspaceMode}
             onChange={setWorkspaceMode}
