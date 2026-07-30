@@ -319,7 +319,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedInitialTaskMode: "plan",
       lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
-      defaultMessagingMode: "queue",
+      defaultMessagingMode: "steer",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
