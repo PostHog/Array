@@ -117,6 +117,24 @@ describe("signed-commit tool handler", () => {
     });
   });
 
+  it("persists the branch when cwd uses an equivalent path representation", async () => {
+    await signedCommitTool.handler(
+      {
+        cwd: "/tmp/workspace/repos/posthog/code/.",
+        token: "ghs_x",
+        taskId: "task-1",
+        taskRunId: "run-1",
+      },
+      { message: "chore: bump", cwd: "." },
+    );
+
+    expect(reportTaskRunBranch).toHaveBeenCalledWith({
+      taskId: "task-1",
+      taskRunId: "run-1",
+      branch: "posthog-code/feature",
+    });
+  });
+
   it("does not persist a branch created in a sibling repository", async () => {
     await signedCommitTool.handler(
       {
