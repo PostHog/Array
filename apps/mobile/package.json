@@ -25,11 +25,9 @@
   },
   "expo": {
     "autolinking": {
-      "ios": {
-        "buildFromSource": [
-          "react-native-worklets"
-        ]
-      }
+      "buildFromSource": [
+        "react-native-worklets"
+      ]
     },
     "doctor": {
       "reactNativeDirectoryCheck": {
