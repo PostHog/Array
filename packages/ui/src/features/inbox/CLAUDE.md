@@ -123,7 +123,7 @@ The current UI is single-column, route-based, and card/list oriented. Do not rei
 Shared primitives exist to keep the surfaces consistent:
 
 - `InboxDetailPageHeader` for detail headers.
-- `DetailSection` for content sections inside detail screens.
+- `DetailSection` for main-column content sections inside detail screens, and `RightColumnSection` for the slimmer supporting sections beside them. Both take `collapsible` (plus `defaultCollapsed`) to turn the header into a disclosure button; `rightSlot` stays outside that button so its own controls remain clickable. Mobile's equivalent is `apps/mobile/src/features/inbox/components/ReportSection.tsx`.
 - `SignalsList` and the existing detail `SignalCard` for contributing signals.
 - Badge and metadata helpers in `components/utils/` and `InboxMetaRow`.
 - `SOURCE_PRODUCT_META` for source-product labels and icons.

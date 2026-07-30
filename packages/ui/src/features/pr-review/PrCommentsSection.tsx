@@ -1,11 +1,11 @@
 import { ArrowSquareOutIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { Spinner } from "@posthog/quill";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { DetailSection } from "@posthog/ui/features/inbox/components/DetailSection";
 import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import { RelativeTimestamp } from "@posthog/ui/primitives/RelativeTimestamp";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { openExternalUrl } from "../../shell/openExternal";
-import { PrSectionHeader } from "./PrSectionHeader";
 import { usePrComments } from "./usePrComments";
 import { usePrReviewThreads } from "./usePrReviewThreads";
 
@@ -32,7 +32,6 @@ interface PrCommentsSectionProps {
 export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
   const commentsQuery = usePrComments(prUrl);
   const threadsQuery = usePrReviewThreads(prUrl);
-  const [collapsed, setCollapsed] = useState(true);
 
   const items = useMemo((): CommentItem[] => {
     // Conversation items mix issue comments and review summaries, whose ids
@@ -70,18 +69,21 @@ export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
 
   if (commentsQuery.isLoading || threadsQuery.isLoading) {
     return (
-      <PrSectionHeader
+      <DetailSection
         Icon={ChatCircleIcon}
         title="Comments"
-        collapsed
-        onToggle={() => {}}
-        summary={
+        collapsible
+        defaultCollapsed
+        rightSlot={
           <span className="inline-flex items-center gap-2 text-[11px] text-gray-10">
             <Spinner />
             Loading…
           </span>
         }
-      />
+      >
+        {/* Header-only while loading – the section lands collapsed anyway. */}
+        {null}
+      </DetailSection>
     );
   }
 
@@ -110,26 +112,23 @@ export function PrCommentsSection({ prUrl }: PrCommentsSectionProps) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <PrSectionHeader
-        Icon={ChatCircleIcon}
-        title="Comments"
-        collapsed={collapsed}
-        onToggle={() => setCollapsed(!collapsed)}
-        summary={
-          <span className="text-[11px] text-gray-10 tabular-nums">
-            {items.length} comment{items.length === 1 ? "" : "s"}
-          </span>
-        }
-      />
-      {!collapsed && (
-        <div className="overflow-hidden rounded-md border border-(--gray-5)">
-          {items.map((item) => (
-            <CommentRow key={item.key} item={item} />
-          ))}
-        </div>
-      )}
-    </div>
+    <DetailSection
+      Icon={ChatCircleIcon}
+      title="Comments"
+      collapsible
+      defaultCollapsed
+      rightSlot={
+        <span className="text-[11px] text-gray-10 tabular-nums">
+          {items.length} comment{items.length === 1 ? "" : "s"}
+        </span>
+      }
+    >
+      <div className="overflow-hidden rounded-md border border-(--gray-5)">
+        {items.map((item) => (
+          <CommentRow key={item.key} item={item} />
+        ))}
+      </div>
+    </DetailSection>
   );
 }
 

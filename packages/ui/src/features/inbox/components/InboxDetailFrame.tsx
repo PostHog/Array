@@ -178,7 +178,11 @@ export function InboxDetailFrame({
       <div className="@container mx-auto w-full max-w-[calc(160ch+5rem)] px-6 py-5 text-[13px]">
         <div className="grid @4xl:grid-cols-[minmax(0,80ch)_minmax(0,1fr)] grid-cols-1 gap-5">
           <div className="flex min-w-0 flex-col gap-5">
-            <DetailSection Icon={SummaryIcon} title={summarySection.title}>
+            <DetailSection
+              Icon={SummaryIcon}
+              title={summarySection.title}
+              collapsible
+            >
               <SignalReportSummaryMarkdown
                 content={report.summary}
                 fallback="No summary yet – the agent is still investigating."
@@ -194,6 +198,7 @@ export function InboxDetailFrame({
               <RightColumnSection
                 Icon={EvidenceIcon}
                 title={evidenceSection.title}
+                collapsible
                 rightSlot={
                   <Text className="cursor-default select-none text-[11px] text-gray-10 tabular-nums">
                     {evidenceCount} signal
