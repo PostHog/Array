@@ -181,15 +181,26 @@ export function byNewestActivity(
   return b.lastActivityAt.localeCompare(a.lastActivityAt);
 }
 
+export type SourceKind = TaskCommentThread["sourceKind"];
+export type ThreadSourceOption = {
+  key: string;
+  label: string;
+  kind: SourceKind;
+};
+
 /** The sources present in a set of threads, for the source filter. */
 export function threadSourceOptions(
   threads: TaskCommentThread[],
-): { key: string; label: string }[] {
-  const byKey = new Map<string, string>();
+): ThreadSourceOption[] {
+  const byKey = new Map<string, ThreadSourceOption>();
   for (const thread of threads) {
     if (!byKey.has(thread.sourceKey)) {
-      byKey.set(thread.sourceKey, thread.sourceLabel);
+      byKey.set(thread.sourceKey, {
+        key: thread.sourceKey,
+        label: thread.sourceLabel,
+        kind: thread.sourceKind,
+      });
     }
   }
-  return [...byKey].map(([key, label]) => ({ key, label }));
+  return [...byKey.values()];
 }

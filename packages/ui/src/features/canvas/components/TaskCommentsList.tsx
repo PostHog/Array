@@ -1,6 +1,7 @@
 import {
   CaretDownIcon,
   ChatCircleIcon,
+  FunnelSimpleIcon,
   GitPullRequestIcon,
 } from "@phosphor-icons/react";
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
@@ -37,6 +38,7 @@ import {
   byNewestActivity,
   prCommentThreads,
   resourceCommentThreads,
+  type SourceKind,
   type TaskCommentThread,
   threadSourceOptions,
 } from "@posthog/ui/features/canvas/components/taskCommentThreads";
@@ -74,21 +76,28 @@ const ALL_SOURCES = "all";
 
 type StateFilter = "open" | "resolved";
 
+/** The icon a source shows wherever it's named — the card label and the
+ *  filter menu — so the two always agree. */
+function sourceIcon(kind: SourceKind, label: string, size = 12) {
+  switch (kind) {
+    case "pr":
+      return (
+        <GitPullRequestIcon size={size} className="shrink-0 text-gray-11" />
+      );
+    case "canvas":
+      return iconForTemplate("", { size, className: "text-violet-9" });
+    case "task":
+      return <ChatCircleIcon size={size} className="shrink-0 text-gray-11" />;
+    default:
+      return <FileIcon filename={label} size={size} />;
+  }
+}
+
 function SourceLabel({ thread }: { thread: TaskCommentThread }) {
-  const icon =
-    thread.sourceKind === "pr" ? (
-      <GitPullRequestIcon size={12} className="shrink-0 text-gray-11" />
-    ) : thread.sourceKind === "canvas" ? (
-      iconForTemplate("", { size: 12, className: "text-violet-9" })
-    ) : thread.sourceKind === "task" ? (
-      <ChatCircleIcon size={12} className="shrink-0 text-gray-11" />
-    ) : (
-      <FileIcon filename={thread.sourceLabel} size={12} />
-    );
   const replies = thread.entries.length - 1;
   return (
     <span className="mb-1 flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-      {icon}
+      {sourceIcon(thread.sourceKind, thread.sourceLabel)}
       <span className="min-w-0 truncate" title={thread.sourceLabel}>
         {thread.sourceLabel}
       </span>
@@ -441,7 +450,8 @@ export function TaskCommentsList({
                 setSourceFilter(value);
               }}
             >
-              <DropdownMenuRadioItem value={ALL_SOURCES}>
+              <DropdownMenuRadioItem value={ALL_SOURCES} className="gap-2">
+                <FunnelSimpleIcon size={12} className="shrink-0 text-gray-11" />
                 <span className="min-w-0 truncate">All sources</span>
                 <span className="ml-auto shrink-0 pl-3 text-muted-foreground tabular-nums">
                   {threads.length}
@@ -452,7 +462,9 @@ export function TaskCommentsList({
                   key={option.key}
                   value={option.key}
                   title={option.label}
+                  className="gap-2"
                 >
+                  {sourceIcon(option.kind, option.label)}
                   <span className="min-w-0 truncate">{option.label}</span>
                   <span className="ml-auto shrink-0 pl-3 text-muted-foreground tabular-nums">
                     {

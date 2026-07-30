@@ -184,10 +184,13 @@ describe("threadSourceOptions / byNewestActivity", () => {
     ].sort(byNewestActivity);
 
     expect(threads[0].entries[0].body).toBe("new");
-    // Options follow list order, which is newest-first.
-    expect(threadSourceOptions(threads).map((option) => option.label)).toEqual([
-      "PR #7",
-      "report.md",
+    // Options follow list order, which is newest-first, and carry the kind so
+    // the filter can show a matching icon.
+    expect(
+      threadSourceOptions(threads).map((option) => [option.label, option.kind]),
+    ).toEqual([
+      ["PR #7", "pr"],
+      ["report.md", "file"],
     ]);
   });
 });
