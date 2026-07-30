@@ -56,8 +56,31 @@ describe("MentionNotificationsContribution", () => {
     expect(notify).toHaveBeenCalledExactlyOnceWith({
       body: 'Charles V mentioned you in "Fix flaky tests"',
       target: { kind: "task", taskId: "task-1" },
+      muteSound: false,
       toast: { level: "warning", description: "@Adam can you look?" },
     });
+  });
+
+  it("rings once per batch: only the first delivered mention carries sound", () => {
+    queryClient.setQueryData(MENTIONS_KEY, []);
+    queryClient.setQueryData(MENTIONS_KEY, [
+      mention({ message_id: "m2", created_at: "2026-07-30T10:02:00Z" }),
+      mention({ message_id: "m1", created_at: "2026-07-30T10:01:00Z" }),
+    ]);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify.mock.calls[0][0]).toMatchObject({ muteSound: false });
+    expect(notify.mock.calls[1][0]).toMatchObject({ muteSound: true });
+  });
+
+  it("hands the batch's sound to the next mention when the first is suppressed", () => {
+    notify.mockReturnValueOnce("suppress");
+    queryClient.setQueryData(MENTIONS_KEY, []);
+    queryClient.setQueryData(MENTIONS_KEY, [
+      mention({ message_id: "m2", created_at: "2026-07-30T10:02:00Z" }),
+      mention({ message_id: "m1", created_at: "2026-07-30T10:01:00Z" }),
+    ]);
+    expect(notify.mock.calls[0][0]).toMatchObject({ muteSound: false });
+    expect(notify.mock.calls[1][0]).toMatchObject({ muteSound: false });
   });
 
   it("does not re-notify when the query refreshes with the same data", () => {

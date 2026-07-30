@@ -77,6 +77,10 @@ export class MentionNotificationsContribution implements Contribution {
       });
       return;
     }
+    // One meep per batch, not per mention: mute the sound on every
+    // notification after the first that actually delivered (a suppressed
+    // mention — its task is being viewed — shouldn't spend the batch's sound).
+    let sounded = false;
     for (const mention of mentions) {
       const author = mention.author
         ? userDisplayName(mention.author)
@@ -85,14 +89,16 @@ export class MentionNotificationsContribution implements Contribution {
         mention.task_title || "Untitled task",
         MAX_TITLE_LENGTH,
       );
-      this.bus.notify({
+      const channel = this.bus.notify({
         body: `${author} mentioned you in "${title}"`,
         target: { kind: "task", taskId: mention.task_id },
+        muteSound: sounded,
         toast: {
           level: "warning",
           description: mentionPreview(mention.content),
         },
       });
+      if (channel !== "suppress") sounded = true;
     }
   }
 }
