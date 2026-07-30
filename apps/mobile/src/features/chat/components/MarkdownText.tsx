@@ -18,6 +18,11 @@ const BARE_POSTHOG_REF_PATTERN =
 
 interface MarkdownTextProps {
   content: string;
+  // When true, remote images embedded in the markdown are not fetched
+  // automatically. Set this for untrusted content (e.g. generated artifact
+  // previews) so opening the preview can't make the device issue requests to
+  // arbitrary URLs; images render as a tap-to-open placeholder instead.
+  disableRemoteImages?: boolean;
 }
 
 function HighlightedCode({
@@ -419,7 +424,10 @@ function renderInline(
   return nodes.length > 0 ? nodes : [text];
 }
 
-export function MarkdownText({ content }: MarkdownTextProps) {
+export function MarkdownText({
+  content,
+  disableRemoteImages,
+}: MarkdownTextProps) {
   const blocks = parseBlocks(content);
   const cloudRegion = useAuthStore((state) => state.cloudRegion);
   const posthogUrlOptions = useMemo<ParsePostHogUrlOptions>(
@@ -612,7 +620,12 @@ export function MarkdownText({ content }: MarkdownTextProps) {
 
           case "image":
             return block.url ? (
-              <MarkdownImage key={key} url={block.url} alt={block.alt} />
+              <MarkdownImage
+                key={key}
+                url={block.url}
+                alt={block.alt}
+                disableRemoteImages={disableRemoteImages}
+              />
             ) : null;
 
           case "hr":
