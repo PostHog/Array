@@ -111,6 +111,12 @@ import { type WorkspaceMode, WorkspaceModeSelect } from "./WorkspaceModeSelect";
 interface TaskInputProps {
   sessionId?: string;
   onTaskCreated?: (task: Task) => void;
+  /**
+   * Creation failed after onTaskCreated fired and the task was rolled back
+   * (see useTaskCreation's onTaskCreationFailed). Callers whose onTaskCreated
+   * navigates use this to route the user off the now-dead task.
+   */
+  onTaskCreationFailed?: (task: Task, promptText: string) => void;
   initialPrompt?: string;
   initialPromptKey?: string;
   initialCloudRepository?: string;
@@ -159,6 +165,7 @@ interface TaskInputProps {
 export function TaskInput({
   sessionId = "task-input",
   onTaskCreated,
+  onTaskCreationFailed,
   initialPrompt,
   initialPromptKey,
   initialCloudRepository,
@@ -946,6 +953,7 @@ export function TaskInput({
     fastMode: runtime === "pi" ? undefined : currentFastMode,
     onTaskCreated,
     onTaskCreatedEffect: handleAutoresearchTaskCreated,
+    onTaskCreationFailed,
     environmentId: selectedEnvironment,
     sandboxEnvironmentId:
       effectiveWorkspaceMode === "cloud" && selectedCloudEnvId

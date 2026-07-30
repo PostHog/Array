@@ -131,6 +131,111 @@ describe("TaskService.resumeCloudPiRun", () => {
   });
 });
 
+describe("TaskService.createTask rollback after surfacing", () => {
+  // Repo-less local ("channels chat box") creation: the saga creates the task
+  // row, provisions a scratch dir, fires onTaskReady, then connects the agent
+  // session — so a connect failure rolls back a task the UI already surfaced.
+  function makeHarness({ connectToTask }: { connectToTask: () => void }) {
+    const task = { id: "task-1", title: "T", description: "do the thing" };
+    const api = {
+      createTask: vi.fn(async () => task),
+      deleteTask: vi.fn(async () => undefined),
+    };
+    const host = {
+      getAuthenticatedClient: vi.fn(async () => api),
+      detectRepo: vi.fn(async () => null),
+      getTaskDirectory: vi.fn(async () => null),
+      ensureScratchDir: vi.fn(async () => "/scratch/task-1"),
+      track: vi.fn(),
+    } as unknown as ITaskCreationHost;
+    const sessionService = {
+      markTaskCreationInFlight: vi.fn(),
+      connectToTask: vi.fn(connectToTask),
+      disconnectFromTask: vi.fn(),
+    } as unknown as SessionService;
+    const effects = {
+      onWorkspaceCreated: vi.fn(),
+      onCreateSuccess: vi.fn(),
+      onCreateRolledBack: vi.fn(),
+    };
+    const service = new TaskService(
+      host,
+      sessionService,
+      effects as unknown as TaskCreationEffects,
+      {} as PiRunner,
+      rootLogger,
+    );
+    return { service, api, effects, task };
+  }
+
+  const input = {
+    content: "do the thing",
+    workspaceMode: "local" as const,
+    allowNoRepo: true,
+  };
+
+  it("fires onCreateRolledBack when a step fails after onTaskReady", async () => {
+    const { service, api, effects, task } = makeHarness({
+      connectToTask: () => {
+        throw new Error("agent server down");
+      },
+    });
+    const onTaskReady = vi.fn();
+
+    const result = await service.createTask(input, onTaskReady);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("expected agent_session failure");
+    expect(result.failedStep).toBe("agent_session");
+    // The UI got the task before the failure, and the saga deleted it — the
+    // effect is what lets hosts pull it back out of their caches.
+    expect(onTaskReady).toHaveBeenCalledOnce();
+    expect(api.deleteTask).toHaveBeenCalledWith(task.id);
+    expect(effects.onCreateRolledBack).toHaveBeenCalledExactlyOnceWith(task);
+  });
+
+  it("does not fire onCreateRolledBack when creation succeeds", async () => {
+    const { service, effects } = makeHarness({ connectToTask: () => {} });
+
+    const result = await service.createTask(input, vi.fn());
+
+    expect(result.success).toBe(true);
+    expect(effects.onCreateRolledBack).not.toHaveBeenCalled();
+  });
+
+  it("does not fire onCreateRolledBack when creation fails before surfacing", async () => {
+    const effects = {
+      onWorkspaceCreated: vi.fn(),
+      onCreateSuccess: vi.fn(),
+      onCreateRolledBack: vi.fn(),
+    };
+    const host = {
+      getAuthenticatedClient: vi.fn(async () => ({
+        createTask: vi.fn().mockRejectedValue(new Error("api down")),
+        deleteTask: vi.fn(),
+      })),
+      detectRepo: vi.fn(async () => null),
+      track: vi.fn(),
+    } as unknown as ITaskCreationHost;
+    const service = new TaskService(
+      host,
+      { markTaskCreationInFlight: vi.fn() } as unknown as SessionService,
+      effects as unknown as TaskCreationEffects,
+      {} as PiRunner,
+      rootLogger,
+    );
+    const onTaskReady = vi.fn();
+
+    const result = await service.createTask(input, onTaskReady);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("expected task_creation failure");
+    expect(result.failedStep).toBe("task_creation");
+    expect(onTaskReady).not.toHaveBeenCalled();
+    expect(effects.onCreateRolledBack).not.toHaveBeenCalled();
+  });
+});
+
 describe("TaskService.createTask validation", () => {
   it("rejects an input with neither content nor a taskDescription", async () => {
     const result = await makeService().createTask({

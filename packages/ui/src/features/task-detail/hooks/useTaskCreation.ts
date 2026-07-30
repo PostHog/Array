@@ -109,6 +109,14 @@ interface UseTaskCreationOptions {
    * this does not suppress the pending-task view.
    */
   onTaskCreatedEffect?: (task: Task) => void;
+  /**
+   * Called when creation failed after onTaskCreated already fired — the saga
+   * surfaced the task, then a later step failed and rolled it back, so the
+   * task no longer exists. Query caches are cleaned centrally
+   * (TaskCreationEffects.onCreateRolledBack); use this to undo caller-side
+   * effects like navigation onto the dead task.
+   */
+  onTaskCreationFailed?: (task: Task, promptText: string) => void;
 }
 
 interface UseTaskCreationReturn {
@@ -197,6 +205,7 @@ export function useTaskCreation({
   allowNoRepo,
   onTaskCreated,
   onTaskCreatedEffect,
+  onTaskCreationFailed,
 }: UseTaskCreationOptions): UseTaskCreationReturn {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const hostClient = useHostTRPCClient();
@@ -344,6 +353,7 @@ export function useTaskCreation({
       }
 
       let createdTaskId: string | undefined;
+      let surfacedTask: Task | undefined;
 
       try {
         if (!contentOverride) {
@@ -428,6 +438,7 @@ export function useTaskCreation({
               clearTaskInputReportAssociation();
             }
             createdTaskId = output.task.id;
+            surfacedTask = output.task;
             if (pendingTaskKey) {
               pendingTaskPromptStoreApi.move(pendingTaskKey, output.task.id);
             }
@@ -523,6 +534,10 @@ export function useTaskCreation({
             }
             openTaskInput({ initialPrompt: plainPromptText });
           }
+          if (surfacedTask) {
+            titleAttachmentStoreApi.clear(surfacedTask.id);
+            onTaskCreationFailed?.(surfacedTask, plainPromptText);
+          }
         }
         return result.success;
       } catch (error) {
@@ -576,6 +591,7 @@ export function useTaskCreation({
       invalidateTasks,
       onTaskCreated,
       onTaskCreatedEffect,
+      onTaskCreationFailed,
       hostClient,
       trpc,
       queryClient,

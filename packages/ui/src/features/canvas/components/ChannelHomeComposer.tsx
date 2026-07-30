@@ -333,9 +333,12 @@ export const ChannelHomeComposer = forwardRef<
 
     const created = await handleSubmit(content);
     if (!created) {
-      // Creation failed — onTaskCreated never fired, so this id is still
-      // queued. Pull its row and give the full structured prompt (chips and
-      // attachments, not just flattened text) back so the user can retry.
+      // Creation failed. If it failed before the task surfaced, this id is
+      // still queued — pull its "Starting…" row (no-ops otherwise: a failure
+      // after onTaskCreated fired already retired the id, and the spliced
+      // card is rolled back centrally via onCreateRolledBack). Give the full
+      // structured prompt (chips and attachments, not just flattened text)
+      // back so the user can retry.
       pendingIdsRef.current = pendingIdsRef.current.filter((p) => p !== id);
       onPendingEnd(id);
       editor.insertEditorContent(content);

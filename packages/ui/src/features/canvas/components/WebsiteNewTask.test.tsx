@@ -12,11 +12,14 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   } as unknown as typeof ResizeObserver;
 }
 
-const { track, useFolderInstructions, taskInputProps } = vi.hoisted(() => ({
-  track: vi.fn(),
-  useFolderInstructions: vi.fn(),
-  taskInputProps: vi.fn(),
-}));
+const { track, useFolderInstructions, taskInputProps, router, openTaskInput } =
+  vi.hoisted(() => ({
+    track: vi.fn(),
+    useFolderInstructions: vi.fn(),
+    taskInputProps: vi.fn(),
+    router: { state: { location: { pathname: "/website/chan-1/new" } } },
+    openTaskInput: vi.fn(),
+  }));
 
 // TaskInput is a huge hook-heavy component; stub it down to just the surface
 // this test cares about — a button that fires onContextChipClick when wired.
@@ -59,8 +62,10 @@ vi.mock("@posthog/ui/shell/analytics", () => ({ track }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: vi.fn() }),
 }));
+vi.mock("@posthog/ui/router/useOpenTask", () => ({ openTaskInput }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
+  useRouter: () => router,
   // The view reads the matched route so it can pass new-task prefill through.
   useRouterState: ({
     select,
@@ -145,5 +150,43 @@ describe("WebsiteNewTask context panel", () => {
     useFolderInstructions.mockReturnValue({ data: undefined });
     renderNewTask();
     expect(screen.getByRole("button", { name: "context-chip" })).toBeDisabled();
+  });
+});
+
+// onTaskCreated navigates onto the task before creation fully settles; when a
+// later step fails the task is rolled back and that page is a dead end.
+describe("WebsiteNewTask creation rollback", () => {
+  beforeEach(() => {
+    useFolderInstructions.mockReturnValue({ data: undefined });
+    taskInputProps.mockReset();
+    openTaskInput.mockReset();
+  });
+
+  function failCreation() {
+    const props = taskInputProps.mock.lastCall?.[0] as {
+      onTaskCreationFailed: (task: { id: string }, promptText: string) => void;
+    };
+    props.onTaskCreationFailed({ id: "task-9" }, "ship the thing");
+  }
+
+  it("returns the user to the composer when parked on the dead task", () => {
+    renderNewTask();
+    router.state.location.pathname = "/website/chan-1/tasks/task-9";
+
+    failCreation();
+
+    expect(openTaskInput).toHaveBeenCalledExactlyOnceWith({
+      channelId: "chan-1",
+      initialPrompt: "ship the thing",
+    });
+  });
+
+  it("leaves navigation alone when the user already moved elsewhere", () => {
+    renderNewTask();
+    router.state.location.pathname = "/website/chan-2";
+
+    failCreation();
+
+    expect(openTaskInput).not.toHaveBeenCalled();
   });
 });

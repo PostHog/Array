@@ -1,4 +1,5 @@
 import type { TaskCreationEffects } from "@posthog/core/task-detail/taskCreationEffects";
+import { removeTaskFromList } from "@posthog/core/tasks/taskDelete";
 import { resolveService } from "@posthog/di/container";
 import type {
   TaskCreationInput,
@@ -10,6 +11,7 @@ import {
   IMPERATIVE_QUERY_CLIENT,
   type ImperativeQueryClient,
 } from "../../shell/queryClient";
+import { channelFeedQueryRoot } from "../canvas/hooks/useChannelFeed";
 import { useDraftStore } from "../message-editor/draftStore";
 import { useSettingsStore } from "../settings/settingsStore";
 import { taskKeys } from "../tasks/taskKeys";
@@ -42,6 +44,27 @@ export const taskCreationEffects: TaskCreationEffects = {
       ),
     );
     void client.invalidateQueries({ queryKey: taskKeys.allSummaries() });
+  },
+
+  onCreateRolledBack(task: Task): void {
+    const client = queryClient();
+    // Ready-time invalidations may still have refetches in flight that were
+    // answered while the task existed; cancel them so a late response can't
+    // splice the dead task back in after the removal below.
+    void client.cancelQueries({ queryKey: taskKeys.lists() });
+    void client.cancelQueries({ queryKey: channelFeedQueryRoot });
+    client.setQueriesData<Task[]>({ queryKey: taskKeys.lists() }, (tasks) =>
+      removeTaskFromList(tasks, task.id),
+    );
+    client.setQueriesData<Task[]>({ queryKey: channelFeedQueryRoot }, (tasks) =>
+      removeTaskFromList(tasks, task.id),
+    );
+    // Dropped (not just invalidated): a lingering detail entry makes the task
+    // route treat the server's 404 as non-authoritative and render the dead
+    // task instead of redirecting.
+    client.removeQueries({ queryKey: taskKeys.detail(task.id) });
+    void client.invalidateQueries({ queryKey: taskKeys.lists() });
+    void client.invalidateQueries({ queryKey: channelFeedQueryRoot });
   },
 
   onCreateSuccess(output: TaskCreationOutput, input?: TaskCreationInput): void {

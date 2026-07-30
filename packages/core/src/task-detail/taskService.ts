@@ -150,6 +150,10 @@ export class TaskService {
       }
     }
 
+    // onTaskReady fires mid-saga, before the remaining steps run — so a later
+    // failure rolls back (deletes) a task the UI has already been handed and
+    // surfaced into feeds and caches. Track it so hosts can undo that.
+    let surfacedTask: Task | undefined;
     const creator = new TaskCreationSaga(
       {
         posthogClient,
@@ -157,7 +161,10 @@ export class TaskService {
         sessionService: this.sessionService,
         piRunner: this.piRunner,
         track: (event, props) => this.host.track(event, props),
-        onTaskReady,
+        onTaskReady: (output) => {
+          surfacedTask = output.task;
+          onTaskReady?.(output);
+        },
       },
       this.log,
     );
@@ -166,6 +173,12 @@ export class TaskService {
     if (result.success) {
       this.effects.onWorkspaceCreated(result.data);
       this.effects.onCreateSuccess(result.data, input);
+    } else if (surfacedTask) {
+      this.log.info("Task creation rolled back after task was surfaced", {
+        taskId: surfacedTask.id,
+        failedStep: result.failedStep,
+      });
+      this.effects.onCreateRolledBack(surfacedTask);
     }
 
     return result;

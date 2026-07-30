@@ -14,10 +14,11 @@ import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useAppView } from "@posthog/ui/router/useAppView";
+import { openTaskInput } from "@posthog/ui/router/useOpenTask";
 import { track } from "@posthog/ui/shell/analytics";
 import { Flex } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 
 // A channel's "New task" view. Reuses /code's TaskInput, but routes the created
@@ -27,6 +28,7 @@ import { useCallback, useMemo, useState } from "react";
 export function WebsiteNewTask({ channelId }: { channelId: string }) {
   const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
+  const router = useRouter();
   const view = useAppView();
   const queryClient = useQueryClient();
   const { fileTask } = useChannelTaskMutations();
@@ -109,11 +111,24 @@ export function WebsiteNewTask({ channelId }: { channelId: string }) {
     [channelId, fileTask, navigate, queryClient],
   );
 
+  // onTaskCreated above navigates onto the task optimistically; if creation
+  // then fails and rolls the task back, that page is a dead end. Return the
+  // user to this composer with their prompt — unless they've already moved on.
+  const onTaskCreationFailed = useCallback(
+    (task: Task, promptText: string) => {
+      if (router.state.location.pathname.endsWith(`/tasks/${task.id}`)) {
+        openTaskInput({ channelId, initialPrompt: promptText });
+      }
+    },
+    [router, channelId],
+  );
+
   return (
     <Flex className="h-full min-w-0 flex-1">
       <div className="min-w-0 flex-1">
         <TaskInput
           onTaskCreated={onTaskCreated}
+          onTaskCreationFailed={onTaskCreationFailed}
           channelContext={channelContext}
           channelName={channelName}
           channelId={backendChannel?.id}
