@@ -8,17 +8,19 @@ import { useSessionIsCloud } from "@posthog/ui/features/sessions/useSession";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 
 /**
- * Effective messaging mode for a task: per-task override, else cloud sessions
- * default to steer (mid-turn messages keep cloud runs on track without waiting
- * for the turn to end), else the global default from settings.
+ * Effective messaging mode for a task: per-task override, else the global
+ * default for the session's run target — cloud sessions have their own
+ * default (steer ships enabled for cloud), local sessions use the local one.
  */
 export function useMessagingMode(taskId: string | undefined): MessagingMode {
   const override = useMessagingModeStore((s) =>
     taskId ? s.modesByTaskId[taskId] : undefined,
   );
   const isCloud = useSessionIsCloud(taskId);
-  const globalDefault = useSettingsStore((s) => s.defaultMessagingMode);
-  return override ?? (isCloud ? "steer" : globalDefault);
+  const globalDefault = useSettingsStore((s) =>
+    isCloud ? s.defaultCloudMessagingMode : s.defaultMessagingMode,
+  );
+  return override ?? globalDefault;
 }
 
 /**
