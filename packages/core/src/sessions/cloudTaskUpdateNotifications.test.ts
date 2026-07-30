@@ -93,7 +93,7 @@ function snapshotUpdate(
   };
 }
 
-function createHarness() {
+function createHarness(isTaskAuthor = true) {
   const sessions: Record<string, AgentSession> = {};
   const store = {
     getSessions: () => sessions,
@@ -197,6 +197,8 @@ function createHarness() {
   const service = new SessionService(deps);
   service.watchCloudTask(TASK_ID, RUN_ID, "https://us.posthog.com", 1);
   if (!onUpdate) throw new Error("watchCloudTask did not subscribe");
+  const session = sessions[RUN_ID];
+  if (session) session.isTaskAuthor = isTaskAuthor;
 
   return {
     sendUpdate: (update: CloudTaskUpdatePayload) => onUpdate?.(update),
@@ -208,6 +210,25 @@ function createHarness() {
 }
 
 describe("cloud task update notifications", () => {
+  it("does not notify a non-owner watching the task", () => {
+    const harness = createHarness(false);
+
+    harness.sendUpdate(
+      logsUpdate(
+        [
+          sessionPrompt(1),
+          permissionRequest("request-1", "tool-1"),
+          turnComplete(),
+        ],
+        3,
+      ),
+    );
+
+    expect(harness.notifyPromptComplete).not.toHaveBeenCalled();
+    expect(harness.notifyPermissionRequest).not.toHaveBeenCalled();
+    expect(harness.enqueueSpeech).not.toHaveBeenCalled();
+  });
+
   it("does not notify for turn_completes replayed in a snapshot", () => {
     const harness = createHarness();
 
