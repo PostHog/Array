@@ -20,10 +20,7 @@ import {
   type INotificationSettings,
   NOTIFICATION_SETTINGS_PROVIDER,
 } from "./identifiers";
-import {
-  type NotificationChannel,
-  routeNotification,
-} from "./routeNotification";
+import { routeNotification } from "./routeNotification";
 
 const MAX_TITLE_LENGTH = 50;
 const log = logger.scope("notifications");
@@ -45,10 +42,6 @@ export interface NotificationDescriptor {
     duration?: number;
   };
   silent?: boolean;
-  // Skip the completion sound AND the native chime for this notification.
-  // Batch producers set it on every notification after their first delivered
-  // one, so a burst rings once instead of once per item.
-  muteSound?: boolean;
   // How long the task took, in ms. When the user enables sound scaling, this
   // drives the completion sound's playback rate (fast task -> faster/higher).
   soundDurationMs?: number;
@@ -86,13 +79,13 @@ export class NotificationBus {
     private readonly view: IActiveView,
   ) {}
 
-  notify(descriptor: NotificationDescriptor): NotificationChannel {
+  notify(descriptor: NotificationDescriptor): void {
     const channel = routeNotification({
       appFocused: this.view.hasFocus(),
       viewingTarget: this.view.getActiveTarget(),
       notificationTarget: descriptor.target,
     });
-    if (channel === "suppress") return channel;
+    if (channel === "suppress") return;
 
     const settings = this.settings.get();
     const playbackRate =
@@ -102,18 +95,16 @@ export class NotificationBus {
         : 1;
     // Sound fires on both delivered tiers (toast + native), not on suppress —
     // matching the pre-bus behavior where any non-suppressed notification rang.
-    if (!descriptor.muteSound) {
-      playCompletionSound(
-        settings.completionSound,
-        settings.completionVolume,
-        settings.customSounds,
-        playbackRate,
-      );
-    }
+    playCompletionSound(
+      settings.completionSound,
+      settings.completionVolume,
+      settings.customSounds,
+      playbackRate,
+    );
 
     if (channel === "toast") {
       this.showToast(descriptor);
-      return channel;
+      return;
     }
 
     // native
@@ -127,14 +118,13 @@ export class NotificationBus {
       this.notifications.notify({
         title: descriptor.title ?? "PostHog",
         body: descriptor.body,
-        silent: descriptor.silent ?? (descriptor.muteSound || willPlaySound),
+        silent: descriptor.silent ?? willPlaySound,
         target: descriptor.target,
       });
     }
     if (settings.dockBadgeNotifications)
       this.notifications.showUnreadIndicator();
     if (settings.dockBounceNotifications) this.notifications.requestAttention();
-    return channel;
   }
 
   // --- Task-specific producers (delegate to notify) ---

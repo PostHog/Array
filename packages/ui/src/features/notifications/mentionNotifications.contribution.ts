@@ -16,8 +16,6 @@ import {
 import { inject, injectable } from "inversify";
 import { NotificationBus } from "./notifications";
 
-// Past this, individual notifications read as spam; collapse to one summary.
-const MAX_INDIVIDUAL_NOTIFICATIONS = 3;
 const MAX_TITLE_LENGTH = 50;
 const MAX_PREVIEW_LENGTH = 120;
 
@@ -68,39 +66,52 @@ export class MentionNotificationsContribution implements Contribution {
     this.notifyAll(toNotify);
   }
 
+  // A batch is one notification, however many mentions it holds — one banner,
+  // one sound. Copy narrows with what the batch shares: same author and task
+  // name both; same task names the task and keeps click-through; mixed tasks
+  // fall back to a count (no target — a click can't pick one task).
   private notifyAll(mentions: TaskMention[]): void {
     if (mentions.length === 0) return;
-    if (mentions.length > MAX_INDIVIDUAL_NOTIFICATIONS) {
+    if (mentions.length === 1) {
+      const mention = mentions[0];
+      this.bus.notify({
+        body: `${authorName(mention)} mentioned you in "${taskTitle(mention)}"`,
+        target: { kind: "task", taskId: mention.task_id },
+        toast: {
+          level: "warning",
+          description: mentionPreview(mention.content),
+        },
+      });
+      return;
+    }
+    const first = mentions[0];
+    const newest = mentions[mentions.length - 1];
+    if (mentions.some((mention) => mention.task_id !== first.task_id)) {
       this.bus.notify({
         body: `${mentions.length} new mentions from teammates`,
         toast: { level: "warning" },
       });
       return;
     }
-    // One meep per batch, not per mention: mute the sound on every
-    // notification after the first that actually delivered (a suppressed
-    // mention — its task is being viewed — shouldn't spend the batch's sound).
-    let sounded = false;
-    for (const mention of mentions) {
-      const author = mention.author
-        ? userDisplayName(mention.author)
-        : "Someone";
-      const title = truncate(
-        mention.task_title || "Untitled task",
-        MAX_TITLE_LENGTH,
-      );
-      const channel = this.bus.notify({
-        body: `${author} mentioned you in "${title}"`,
-        target: { kind: "task", taskId: mention.task_id },
-        muteSound: sounded,
-        toast: {
-          level: "warning",
-          description: mentionPreview(mention.content),
-        },
-      });
-      if (channel !== "suppress") sounded = true;
-    }
+    const sameAuthor = mentions.every(
+      (mention) => mention.author?.uuid === first.author?.uuid,
+    );
+    this.bus.notify({
+      body: sameAuthor
+        ? `${authorName(first)} mentioned you ${mentions.length} times in "${taskTitle(first)}"`
+        : `${mentions.length} new mentions in "${taskTitle(first)}"`,
+      target: { kind: "task", taskId: first.task_id },
+      toast: { level: "warning", description: mentionPreview(newest.content) },
+    });
   }
+}
+
+function authorName(mention: TaskMention): string {
+  return mention.author ? userDisplayName(mention.author) : "Someone";
+}
+
+function taskTitle(mention: TaskMention): string {
+  return truncate(mention.task_title || "Untitled task", MAX_TITLE_LENGTH);
 }
 
 function isTaskMentionsKey(queryKey: readonly unknown[]): boolean {

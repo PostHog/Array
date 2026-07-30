@@ -298,40 +298,4 @@ describe("sound", () => {
     bus.notifyPromptComplete("My task", "end_turn", TASK_ID, durationMs);
     expect(play).toHaveBeenCalledWith("meep", 80, [], expectedRate);
   });
-
-  it("muteSound skips the completion sound and silences the native chime", () => {
-    const { bus, play, notify } = makeBus({ hasFocus: false });
-    const channel = bus.notify({ body: "quiet", muteSound: true });
-    expect(channel).toBe("native");
-    expect(play).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledWith(
-      expect.objectContaining({ silent: true }),
-    );
-  });
-
-  it("muteSound skips the sound on the toast tier too", () => {
-    const { bus, play } = makeBus({
-      hasFocus: true,
-      activeTarget: taskTarget(OTHER_TASK_ID),
-    });
-    const channel = bus.notify({
-      body: "quiet",
-      target: taskTarget(TASK_ID),
-      muteSound: true,
-      toast: { level: "warning" },
-    });
-    expect(channel).toBe("toast");
-    expect(play).not.toHaveBeenCalled();
-    expect(toastMock.warning).toHaveBeenCalled();
-  });
-
-  it("reports suppression so batch producers can hand the sound to the next item", () => {
-    const { bus, play } = makeBus({
-      hasFocus: true,
-      activeTarget: taskTarget(TASK_ID),
-    });
-    const channel = bus.notify({ body: "unseen", target: taskTarget(TASK_ID) });
-    expect(channel).toBe("suppress");
-    expect(play).not.toHaveBeenCalled();
-  });
 });
