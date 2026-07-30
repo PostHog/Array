@@ -7,7 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
 import type { RpcCommand, RpcResponse } from "@posthog/agent/pi/rpc-transport";
-import type { PiRuntime } from "@posthog/agent/pi/runtime";
+import { PiRuntime } from "@posthog/agent/pi/runtime";
 import {
   PI_THINKING_LEVELS,
   type PiPersistedSessionConfig,
@@ -24,7 +24,7 @@ import { TASK_METADATA_REPOSITORY } from "../../db/identifiers";
 import type { ITaskMetadataRepository } from "../../db/repositories/task-metadata-repository";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
-import { PI_RUNTIME_FACTORY, type PiRuntimeFactory } from "./identifiers";
+import { PI_RPC_CLIENT_FACTORY, type PiRpcClientFactory } from "./identifiers";
 import type { StartPiSessionInput } from "./schemas";
 
 type PiPoolSessionState = "starting" | "idle" | "streaming";
@@ -91,8 +91,8 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
   private readonly log: ReturnType<RootLogger["scope"]>;
 
   constructor(
-    @inject(PI_RUNTIME_FACTORY)
-    private readonly runtimeFactory: PiRuntimeFactory,
+    @inject(PI_RPC_CLIENT_FACTORY)
+    private readonly clientFactory: PiRpcClientFactory,
     @inject(TASK_METADATA_REPOSITORY)
     private readonly taskMetadataRepository: ITaskMetadataRepository,
     @inject(PROCESS_TRACKING_SERVICE)
@@ -114,7 +114,7 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
   ): Promise<{ sessionFile: string | null; sessionId: string }> {
     await this.stopLocked(input.taskId);
 
-    const runtime = await this.runtimeFactory.create({
+    const runtime = await this.createRuntime({
       cwd: input.cwd,
       model: input.model,
     });
@@ -171,7 +171,7 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
 
     await this.stopLocked(input.taskId);
 
-    const runtime = await this.runtimeFactory.create({
+    const runtime = await this.createRuntime({
       cwd: input.cwd,
       sessionFile,
     });
@@ -249,6 +249,15 @@ export class PiSessionService extends TypedEventEmitter<PiSessionEvents> {
 
   async stop(taskId: string): Promise<void> {
     await this.runExclusive(taskId, () => this.stopLocked(taskId));
+  }
+
+  private async createRuntime(input: {
+    cwd: string;
+    model?: string;
+    sessionFile?: string;
+  }): Promise<PiRuntime> {
+    const client = await this.clientFactory.create(input);
+    return new PiRuntime(client);
   }
 
   private async stopLocked(taskId: string): Promise<void> {

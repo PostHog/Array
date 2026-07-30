@@ -53,6 +53,10 @@ import {
   estimateTokens,
 } from "../claude/context-breakdown";
 import { isLocalSkillCommandChunk } from "../local-skill";
+import {
+  buildLocalToolsServer,
+  type LocalToolsMeta,
+} from "../local-tools/mcp-server-config";
 import { resolveSpokenNarration } from "../session-meta";
 import {
   AppServerClient,
@@ -67,7 +71,6 @@ import {
   buildUsageBreakdownParams,
 } from "./ext-notifications";
 import { type CodexUserInput, toCodexInput } from "./input";
-import { buildLocalToolsServer, type LocalToolsMeta } from "./local-tools-mcp";
 import {
   type AppServerItem,
   changePaths,

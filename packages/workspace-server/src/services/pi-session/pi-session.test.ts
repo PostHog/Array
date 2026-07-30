@@ -1,11 +1,10 @@
 import type { PiRpcClient } from "@posthog/agent/pi/rpc-client";
-import type { RpcCommand, RpcResponse } from "@posthog/agent/pi/rpc-transport";
-import type { PiRuntime } from "@posthog/agent/pi/runtime";
+import type { RpcResponse } from "@posthog/agent/pi/rpc-transport";
 import type { RootLogger } from "@posthog/di/logger";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ITaskMetadataRepository } from "../../db/repositories/task-metadata-repository";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
-import type { PiRuntimeFactory } from "./identifiers";
+import type { PiRpcClientFactory } from "./identifiers";
 import { PiSessionService, selectPiPoolEvictionCandidate } from "./pi-session";
 
 const scopedLogger = {
@@ -158,7 +157,7 @@ describe("PiSessionService task session config", () => {
       vi.fn(async () => new Response(content)),
     );
     const service = new PiSessionService(
-      {} as PiRuntimeFactory,
+      {} as PiRpcClientFactory,
       {} as ITaskMetadataRepository,
       {} as ProcessTrackingService,
       rootLogger,
@@ -178,6 +177,7 @@ describe("PiSessionService start", () => {
     const setThinkingLevel = vi.fn().mockResolvedValue(undefined);
     const prompt = vi.fn().mockResolvedValue(undefined);
     const client = {
+      onEvent: vi.fn(() => () => {}),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       getState: vi.fn().mockResolvedValue({
@@ -188,14 +188,9 @@ describe("PiSessionService start", () => {
       setThinkingLevel,
       prompt,
     } as unknown as PiRpcClient;
-    const runtimeFactory = {
-      create: vi.fn(async () => ({
-        client,
-        process: undefined,
-        onRuntimeEvent: vi.fn(),
-        onConversationEvent: vi.fn(),
-      })),
-    } as unknown as PiRuntimeFactory;
+    const clientFactory = {
+      create: vi.fn(async () => client),
+    } as unknown as PiRpcClientFactory;
     const taskMetadataRepository = {
       upsert: vi.fn(),
     } as unknown as ITaskMetadataRepository;
@@ -204,7 +199,7 @@ describe("PiSessionService start", () => {
       unregister: vi.fn(),
     } as unknown as ProcessTrackingService;
     const service = new PiSessionService(
-      runtimeFactory,
+      clientFactory,
       taskMetadataRepository,
       processTracking,
       rootLogger,
@@ -236,6 +231,7 @@ describe("PiSessionService RPC request pinning", () => {
       followUp: string[];
     }) => void = () => {};
     const firstClient = {
+      onEvent: vi.fn(() => () => {}),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       getState: vi.fn().mockResolvedValue({
@@ -256,6 +252,7 @@ describe("PiSessionService RPC request pinning", () => {
       ),
     } as unknown as PiRpcClient;
     const secondClient = {
+      onEvent: vi.fn(() => () => {}),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       getState: vi.fn().mockResolvedValue({
@@ -265,6 +262,7 @@ describe("PiSessionService RPC request pinning", () => {
       send: vi.fn(),
     } as unknown as PiRpcClient;
     const thirdClient = {
+      onEvent: vi.fn(() => () => {}),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       getState: vi.fn().mockResolvedValue({
@@ -274,24 +272,9 @@ describe("PiSessionService RPC request pinning", () => {
       send: vi.fn(),
     } as unknown as PiRpcClient;
     const clients = [firstClient, secondClient, thirdClient];
-    const runtimeFactory = {
-      create: vi.fn(async () => {
-        const client = clients.shift() as PiRpcClient;
-        return {
-          client,
-          process: undefined,
-          sendCommand: vi.fn((command) =>
-            (
-              client as unknown as {
-                send(command: RpcCommand): Promise<RpcResponse>;
-              }
-            ).send(command),
-          ),
-          onRuntimeEvent: vi.fn(),
-          onConversationEvent: vi.fn(),
-        } as unknown as PiRuntime;
-      }),
-    } as PiRuntimeFactory;
+    const clientFactory = {
+      create: vi.fn(async () => clients.shift() as PiRpcClient),
+    } as PiRpcClientFactory;
     const taskMetadataRepository = {
       findByTaskId: vi.fn((taskId: string) => ({
         piSessionFile: `/tmp/${taskId}.jsonl`,
@@ -303,7 +286,7 @@ describe("PiSessionService RPC request pinning", () => {
       unregister: vi.fn(),
     } as unknown as ProcessTrackingService;
     const service = new PiSessionService(
-      runtimeFactory,
+      clientFactory,
       taskMetadataRepository,
       processTracking,
       rootLogger,
@@ -311,15 +294,16 @@ describe("PiSessionService RPC request pinning", () => {
 
     await service.resume({ taskId: "first", cwd: "/tmp" });
     const bashRequest = service.request("first", {
-      type: "bash",
-      command: "sleep 1",
+      id: "request-1",
+      type: "prompt",
+      message: "hello",
     });
     const queueRequest = service.getQueue("first");
 
     await service.resume({ taskId: "second", cwd: "/tmp" });
     expect(firstClient.stop).not.toHaveBeenCalled();
 
-    requestResolvers[0](successfulResponse("bash"));
+    requestResolvers[0](successfulResponse("prompt"));
     await bashRequest;
     await vi.waitFor(() => expect(secondClient.stop).toHaveBeenCalledOnce());
     expect(firstClient.stop).not.toHaveBeenCalled();

@@ -2,6 +2,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+
+const createPiRpcClient = vi.hoisted(() => vi.fn());
+
+vi.mock("../pi/rpc-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../pi/rpc-client")>()),
+  createPiRpcClient,
+}));
+
 import { PiAgentServer } from "./pi-agent-server";
 import type { AgentServerConfig } from "./types";
 
@@ -22,6 +30,44 @@ function config(overrides: Partial<AgentServerConfig> = {}): AgentServerConfig {
 }
 
 describe("PiAgentServer", () => {
+  it("passes enabled local tools into the Pi runtime", async () => {
+    const client = {
+      onEvent: vi.fn(),
+      start: vi.fn(async () => {}),
+      getState: vi.fn(async () => ({ sessionFile: "/tmp/session.jsonl" })),
+    };
+    createPiRpcClient.mockReturnValue(client);
+    const server = new PiAgentServer(
+      config({ baseBranch: "main" }),
+    ) as unknown as {
+      posthogAPI: Record<string, unknown>;
+      createSession(payload: Record<string, unknown>): Promise<void>;
+    };
+    server.posthogAPI = {
+      getTaskSession: vi.fn(async () => ({
+        id: "session-storage-1",
+        content_sha256: null,
+      })),
+      downloadTaskSession: vi.fn(async () => ""),
+      updateTaskRun: vi.fn(async () => ({})),
+      appendTaskRunLog: vi.fn(async () => ({})),
+    };
+
+    await server.createSession({ task_id: "task-1", run_id: "run-1" });
+
+    expect(createPiRpcClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capabilities: {
+          environment: "cloud",
+          taskId: "task-1",
+          taskRunId: "run-1",
+          baseBranch: "main",
+          background: false,
+        },
+      }),
+    );
+  });
+
   it("logs session initialization diagnostics when setup fails", async () => {
     const payload = { task_id: "task-1", run_id: "run-1" };
     const server = new PiAgentServer(

@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcClient } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+
+const buildLocalToolsServer = vi.hoisted(() => vi.fn());
+
+vi.mock("../adapters/local-tools/mcp-server-config", () => ({
+  buildLocalToolsServer,
+}));
+
 import { createPiRpcClient } from "./rpc-client";
 
 describe("createPiRpcClient", () => {
@@ -10,6 +17,7 @@ describe("createPiRpcClient", () => {
     const client = createPiRpcClient({
       cwd: "/workspace",
       model: "claude-opus-4-8",
+      capabilities: { environment: "local" },
       providerOptions: {
         region: "us",
         baseUrl: "http://127.0.0.1:1234",
@@ -48,6 +56,7 @@ process.stdin.resume();
     const client = createPiRpcClient({
       cliPath: hostPath,
       cwd: directory,
+      capabilities: { environment: "local" },
       providerOptions: { apiKey: "proxy-key" },
     });
 
@@ -56,6 +65,51 @@ process.stdin.resume();
       await vi.waitFor(async () => {
         await expect(readFile(capturePath, "utf8")).resolves.toBe("1");
       });
+    } finally {
+      await client.stop();
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it("passes local MCP configuration through the private bootstrap pipe", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pi-local-mcp-bootstrap-"));
+    const hostPath = join(directory, "host.mjs");
+    const capturePath = join(directory, "capture.json");
+    await writeFile(
+      hostPath,
+      `
+import { readFileSync, writeFileSync } from "node:fs";
+
+const bootstrap = JSON.parse(readFileSync(3, "utf8"));
+writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify(bootstrap));
+process.stdin.resume();
+`,
+    );
+    buildLocalToolsServer.mockReturnValueOnce({
+      name: "posthog-code-tools",
+      command: "node",
+      args: ["local-tools.js"],
+      env: [{ name: "POSTHOG_LOCAL_TOOLS_ENABLED", value: "upload_artifact" }],
+    });
+    const client = createPiRpcClient({
+      cliPath: hostPath,
+      cwd: directory,
+      capabilities: {
+        environment: "cloud",
+        taskId: "task-1",
+        taskRunId: "run-1",
+      },
+      providerOptions: { apiKey: "proxy-key" },
+    });
+
+    try {
+      await client.start();
+      await vi.waitFor(async () => {
+        await expect(readFile(capturePath, "utf8")).resolves.not.toBe("");
+      });
+      await expect(readFile(capturePath, "utf8")).resolves.toContain(
+        '"name":"posthog-code-tools"',
+      );
     } finally {
       await client.stop();
       await rm(directory, { recursive: true });
@@ -83,6 +137,7 @@ process.on("message", (request) => {
     const client = createPiRpcClient({
       cliPath: hostPath,
       cwd: directory,
+      capabilities: { environment: "local" },
       providerOptions: { apiKey: "proxy-key" },
     });
 

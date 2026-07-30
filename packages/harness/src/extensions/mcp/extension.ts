@@ -29,8 +29,8 @@ import type { OAuthFlowRunner } from "./auth-flow";
 import { runOAuthFlow } from "./auth-flow";
 import { McpAuthStorage } from "./auth-storage";
 import { CallbackServer } from "./callback-server";
-import type { ConfigLoader, McpConfig } from "./config";
-import { emptyConfig, loadConfig } from "./config";
+import type { ConfigLoader, McpConfig, RuntimeMcpServers } from "./config";
+import { emptyConfig, loadConfig, mergeRuntimeServers } from "./config";
 import { describeError } from "./errors";
 import { createMcpProxyTool } from "./proxy-tool";
 import type { TransportFactory } from "./server-manager";
@@ -49,6 +49,7 @@ export interface McpExtensionOptions {
   toolCache?: McpToolCache;
   /** Override the interactive OAuth flow (tests). */
   oauthFlow?: OAuthFlowRunner;
+  runtimeServers?: RuntimeMcpServers;
 }
 
 /** Open a URL in the user's default browser (best effort). Exported for tests. */
@@ -228,9 +229,13 @@ export function createMcpExtension(
     pi.on("session_start", async (_event, ctx) => {
       let nextConfig: McpConfig;
       try {
-        nextConfig = await configLoader(ctx.cwd, {
+        const fileConfig = await configLoader(ctx.cwd, {
           includeProject: ctx.isProjectTrusted(),
         });
+        nextConfig = mergeRuntimeServers(
+          fileConfig,
+          options.runtimeServers ?? {},
+        );
       } catch (err) {
         if (ctx.hasUI) {
           ctx.ui.notify(`mcp: config error — ${describeError(err)}`, "error");

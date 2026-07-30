@@ -144,7 +144,7 @@ export default defineConfig([
       "src/adapters/claude/session/mcp-config.ts",
       "src/adapters/claude/session/models.ts",
       "src/adapters/codex-app-server/models.ts",
-      "src/adapters/codex-app-server/local-tools-mcp-server.ts",
+      "src/adapters/local-tools/mcp-server.ts",
       "src/adapters/claude/mcp/tool-metadata.ts",
       "src/adapters/reasoning-effort.ts",
       "src/execution-mode.ts",
@@ -157,7 +157,7 @@ export default defineConfig([
     clean: false,
     // noExternal inlines CJS deps (e.g. simple-git via @posthog/git) whose
     // dynamic `require(...)` calls throw in ESM output unless a real require
-    // exists. Entries spawned directly by node (local-tools-mcp-server.js)
+    // exists. Entries spawned directly by node (mcp-server.js)
     // crash at import time without this shim.
     banner: {
       js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',

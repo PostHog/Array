@@ -33,6 +33,7 @@ describe("DesktopPiRpcClientFactory", () => {
     );
     expect(createPiRpcClient).toHaveBeenCalledWith({
       cwd: "/workspace",
+      capabilities: { environment: "local" },
       providerOptions: {
         region: "eu",
         baseUrl: "http://127.0.0.1:1234",

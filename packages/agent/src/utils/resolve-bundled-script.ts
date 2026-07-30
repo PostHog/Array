@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { basename, resolve as resolvePath } from "node:path";
 
 /**
  * Resolve a shared dist asset relative to the compiled adapter location. When
@@ -11,8 +11,9 @@ import { resolve as resolvePath } from "node:path";
 export function resolveBundledMcpScript(rel: string): string {
   let dir = import.meta.dirname ?? __dirname;
   for (let i = 0; i < 5; i++) {
-    const candidate = resolvePath(dir, rel);
-    if (existsSync(candidate)) return candidate;
+    const candidates = [resolvePath(dir, rel), resolvePath(dir, basename(rel))];
+    const candidate = candidates.find((path) => existsSync(path));
+    if (candidate) return candidate;
     dir = resolvePath(dir, "..");
   }
   throw new Error(

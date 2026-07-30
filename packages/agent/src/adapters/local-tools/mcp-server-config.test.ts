@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_TOOLS_MCP_NAME } from "../local-tools";
-import { buildLocalToolsServer } from "./local-tools-mcp";
+import { buildLocalToolsServer } from "./mcp-server-config";
 
 // The dist asset isn't on the walk-up path in unit tests, so make existsSync
 // succeed; nothing spawns the script — we only inspect the path.
@@ -55,7 +55,7 @@ describe("buildLocalToolsServer", () => {
     expect(server?.name).toBe(LOCAL_TOOLS_MCP_NAME);
     expect(server?.command).toBe(process.execPath);
     expect(server?.args).toHaveLength(1);
-    expect(server?.args[0]).toMatch(/local-tools-mcp-server\.js$/);
+    expect(server?.args[0]).toMatch(/mcp-server\.js$/);
 
     const envNames = server?.env.map((e) => e.name) ?? [];
     expect(envNames).toContain("POSTHOG_LOCAL_TOOLS_CTX");
