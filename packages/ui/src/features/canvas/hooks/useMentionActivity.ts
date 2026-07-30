@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 const ACTIVITY_POLL_INTERVAL_MS = 60_000;
-const TASK_MENTIONS_QUERY_KEY = ["task-mentions"] as const;
+export const TASK_MENTIONS_QUERY_KEY = ["task-mentions"] as const;
 
 /**
  * Thread messages across all channels that @-mention the current user,

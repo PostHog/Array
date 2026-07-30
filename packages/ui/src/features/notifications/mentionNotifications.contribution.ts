@@ -1,4 +1,3 @@
-import type { PostHogAPIClient } from "@posthog/api-client/posthog-client";
 import {
   advanceMentionWatch,
   baselineMentionWatch,
@@ -8,71 +7,65 @@ import {
 import type { Contribution } from "@posthog/di/contribution";
 import { splitMentionSegments } from "@posthog/shared";
 import type { TaskMention } from "@posthog/shared/domain-types";
-import { getAuthenticatedClient } from "@posthog/ui/features/auth/authClientImperative";
+import { TASK_MENTIONS_QUERY_KEY } from "@posthog/ui/features/canvas/hooks/useMentionActivity";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
-import { logger } from "@posthog/ui/shell/logger";
+import {
+  IMPERATIVE_QUERY_CLIENT,
+  type ImperativeQueryClient,
+} from "@posthog/ui/shell/queryClient";
 import { inject, injectable } from "inversify";
 import { NotificationBus } from "./notifications";
 
-const POLL_INTERVAL_MS = 60_000;
 // Past this, individual notifications read as spam; collapse to one summary.
 const MAX_INDIVIDUAL_NOTIFICATIONS = 3;
 const MAX_TITLE_LENGTH = 50;
 const MAX_PREVIEW_LENGTH = 120;
 
-type MentionsClient = Pick<PostHogAPIClient, "getTaskMentions">;
-
-const log = logger.scope("mention-notifications");
-
 /**
- * Polls the mentions index and routes new @-mentions of the current user
- * through the NotificationBus, so they get the same suppression, settings
- * gating, sound, and click-through-to-task as agent activity.
+ * Routes new @-mentions of the current user through the NotificationBus, so
+ * they get the same suppression, settings gating, sound, and click-through-to-
+ * task as agent activity.
+ *
+ * Rides the mentions query the channels UI already polls (`useMentionActivity`)
+ * rather than fetching itself — one poll, one source of truth. Notifications
+ * therefore live where the spaces layout lives, which is where the product is
+ * headed anyway.
  */
 @injectable()
 export class MentionNotificationsContribution implements Contribution {
   private state: MentionWatchState = INITIAL_MENTION_WATCH_STATE;
-  private inFlight = false;
 
-  // Instance field rather than an injected dependency: resolving auth per tick
-  // covers login, logout, and project switches without subscription plumbing,
-  // and tests swap it for a stub.
-  getClient: () => Promise<MentionsClient | null> = getAuthenticatedClient;
-
-  constructor(@inject(NotificationBus) private readonly bus: NotificationBus) {}
+  constructor(
+    @inject(NotificationBus) private readonly bus: NotificationBus,
+    @inject(IMPERATIVE_QUERY_CLIENT)
+    private readonly queryClient: ImperativeQueryClient,
+  ) {}
 
   start(): void {
-    void this.tick();
-    setInterval(() => void this.tick(), POLL_INTERVAL_MS);
-  }
-
-  async tick(): Promise<void> {
-    if (this.inFlight) return;
-    this.inFlight = true;
-    try {
-      const client = await this.getClient();
-      if (!client) {
-        // Logged out: re-baseline on next login so another account's backlog
-        // doesn't fire as new mentions.
+    this.queryClient.getQueryCache().subscribe((event) => {
+      if (!isTaskMentionsKey(event.query.queryKey)) return;
+      if (event.type === "removed") {
+        // Auth-scoped queries are removed on logout; re-baseline so the next
+        // account's backlog stays silent.
         this.state = INITIAL_MENTION_WATCH_STATE;
         return;
       }
-      const since = this.state.seenThrough;
-      const mentions = await client.getTaskMentions(
-        since ? { since } : undefined,
-      );
-      if (since === null) {
-        this.state = baselineMentionWatch(mentions, new Date().toISOString());
-        return;
-      }
-      const { state, toNotify } = advanceMentionWatch(this.state, mentions);
-      this.state = state;
-      this.notifyAll(toNotify);
-    } catch (error) {
-      log.warn("Mention poll failed", { error });
-    } finally {
-      this.inFlight = false;
+      if (event.type !== "updated") return;
+      if (event.query.meta?.authScoped !== true) return;
+      const mentions = event.query.state.data as TaskMention[] | undefined;
+      if (mentions) this.absorb(mentions);
+    });
+  }
+
+  private absorb(mentions: readonly TaskMention[]): void {
+    if (this.state.seenThrough === null) {
+      // The first page after boot or login is backlog, not news.
+      this.state = baselineMentionWatch(mentions, new Date().toISOString());
+      return;
     }
+    const { state, toNotify } = advanceMentionWatch(this.state, mentions);
+    this.state = state;
+    this.notifyAll(toNotify);
   }
 
   private notifyAll(mentions: TaskMention[]): void {
@@ -102,6 +95,10 @@ export class MentionNotificationsContribution implements Contribution {
       });
     }
   }
+}
+
+function isTaskMentionsKey(queryKey: readonly unknown[]): boolean {
+  return queryKey.length === 1 && queryKey[0] === TASK_MENTIONS_QUERY_KEY[0];
 }
 
 function truncate(text: string, max: number): string {
