@@ -17,7 +17,7 @@ export const useMessagingModeStore = create<MessagingModeState>()(
   persist(
     (set, get) => ({
       modesByTaskId: {},
-      defaultMode: "queue",
+      defaultMode: "steer",
       setMode: (taskId, mode) =>
         set((state) => ({
           modesByTaskId: { ...state.modesByTaskId, [taskId]: mode },
@@ -34,6 +34,19 @@ export const useMessagingModeStore = create<MessagingModeState>()(
     {
       name: "messaging-mode-storage",
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      // Pre-v1 installs persisted the old "queue" default, so flip them to the
+      // new "steer" default once. Per-task overrides are left untouched.
+      migrate: (persisted, version) => {
+        const state = persisted as Pick<
+          MessagingModeState,
+          "modesByTaskId" | "defaultMode"
+        >;
+        if (version < 1 && state.defaultMode === "queue") {
+          return { ...state, defaultMode: "steer" };
+        }
+        return state;
+      },
       partialize: (state) => ({
         modesByTaskId: state.modesByTaskId,
         defaultMode: state.defaultMode,
