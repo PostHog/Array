@@ -1,5 +1,5 @@
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -97,5 +97,20 @@ describe("WebsiteChannelHome", () => {
     expect(screen.getByTestId("feed")).toBeTruthy();
     expect(screen.queryByTestId("task-sidebar")).toBeNull();
     expect(useThreadPanelStore.getState().openByChannel["chan-1"]).toBeNull();
+  });
+
+  it("shows the task sidebar for a thread opened from this feed", () => {
+    render(
+      <Theme>
+        <WebsiteChannelHome channelId="chan-1" />
+      </Theme>,
+    );
+
+    act(() => {
+      useThreadPanelStore.getState().openThread("chan-1", "task-1");
+    });
+
+    expect(screen.getByTestId("task-sidebar")).toBeTruthy();
+    expect(screen.queryByTestId("feed")).toBeTruthy();
   });
 });
