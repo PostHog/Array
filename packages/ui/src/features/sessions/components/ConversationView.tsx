@@ -36,7 +36,6 @@ import type {
   ThreadRow,
 } from "@posthog/ui/features/sessions/components/new-thread/buildThreadGroups";
 import type { CollapseMode } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
-import { createIncrementalThreadGrouper } from "@posthog/ui/features/sessions/components/new-thread/incrementalThreadGrouping";
 import { ToolCallGroupChip } from "@posthog/ui/features/sessions/components/new-thread/ToolCallGroupChip";
 import { SessionFooter } from "@posthog/ui/features/sessions/components/SessionFooter";
 import {
@@ -51,7 +50,7 @@ import {
 } from "@posthog/ui/features/sessions/components/VirtualizedList";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
-import { getPersistentThreadGrouper } from "@posthog/ui/features/sessions/hooks/conversationDerivedCache";
+import { usePersistentThreadGrouper } from "@posthog/ui/features/sessions/hooks/conversationDerivedCache";
 import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import { useConversationSearch } from "@posthog/ui/features/sessions/hooks/useConversationSearch";
@@ -168,7 +167,7 @@ export function ConversationView({
     events,
     isPromptPending,
     { showDebugLogs },
-    taskId ? { scope: "conversation-view", taskId } : undefined,
+    { scope: "conversation-view", taskId },
   );
 
   const firstUserMessageIdRef = useRef<string | undefined>(undefined);
@@ -210,19 +209,7 @@ export function ConversationView({
   // Fold each completed turn's tool-call work into a collapsible chip, and emit
   // the keepMounted indices (standalone MCP-app rows, whose iframes must survive
   // scrolling) + the item→row map in the same pass.
-  const threadGrouperRef = useRef<ReturnType<
-    typeof createIncrementalThreadGrouper
-  > | null>(null);
-  let threadGrouper: ReturnType<typeof createIncrementalThreadGrouper>;
-  if (taskId) {
-    threadGrouper = getPersistentThreadGrouper({
-      scope: "conversation-view",
-      taskId,
-    });
-  } else {
-    threadGrouperRef.current ??= createIncrementalThreadGrouper();
-    threadGrouper = threadGrouperRef.current;
-  }
+  const threadGrouper = usePersistentThreadGrouper("conversation-view", taskId);
   const grouping = useMemo<ThreadGrouping>(
     () => threadGrouper.update(items, collapseMode, groupOverrides),
     [items, collapseMode, groupOverrides, threadGrouper],

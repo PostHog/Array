@@ -27,9 +27,9 @@ interface ChatThreadFooterProps {
  * thread, rendered UNDER the composer. The legacy `ConversationView` renders the same
  * `SessionFooter` at the bottom of the thread instead; here it lives under the input.
  *
- * Re-derives the turn / usage / queue state from `events` with the same hooks `ConversationView`
- * uses — `ChatThread` runs its own `useConversationItems`, so this is a second (incremental,
- * memoized) parse pass, acceptable for a flag-gated surface. Gated behind
+ * Both thread variants pass `footerState` from their own parse plus empty
+ * `footerEvents`, so the `useConversationItems` fallback below only ever sees
+ * an empty transcript and stays non-persistent. Gated behind
  * `settingsStore.useNewChatThread` at the call site.
  */
 export function ChatThreadFooter({
@@ -44,12 +44,9 @@ export function ChatThreadFooter({
   const showDebugLogs = useSettingsStore((s) => s.debugLogsCloudRuns);
   const eventContextUsage = useContextUsage(events);
   const contextUsage = usage === undefined ? eventContextUsage : usage;
-  const eventFooterState = useConversationItems(
-    events,
-    isPromptPending,
-    { showDebugLogs },
-    taskId ? { scope: "chat-thread-footer", taskId } : undefined,
-  );
+  const eventFooterState = useConversationItems(events, isPromptPending, {
+    showDebugLogs,
+  });
   const lastTurnInfo =
     footerState?.lastTurnInfo ?? eventFooterState.lastTurnInfo;
   const isCompacting =

@@ -100,6 +100,7 @@ import {
 } from "@posthog/ui/features/sessions/constants";
 import { DIFFS_HIGHLIGHTER_OPTIONS } from "@posthog/ui/features/sessions/diffHighlighterOptions";
 import { useAgentConversationItems } from "@posthog/ui/features/sessions/hooks/useAgentConversationItems";
+import { useContextUsage } from "@posthog/ui/features/sessions/hooks/useContextUsage";
 import { useConversationItems } from "@posthog/ui/features/sessions/hooks/useConversationItems";
 import {
   useOptimisticItemsForTask,
@@ -1086,19 +1087,24 @@ export function ChatThread({ events, ...props }: ChatThreadProps) {
 
 export function AcpChatThread({ events, ...props }: AcpChatThreadProps) {
   const showDebugLogs = useSettingsStore((state) => state.debugLogsCloudRuns);
-  const { items } = useConversationItems(
+  const { items, ...footerState } = useConversationItems(
     events,
     props.isPromptPending,
     { showDebugLogs },
-    props.taskId ? { scope: "chat-thread", taskId: props.taskId } : undefined,
+    { scope: "chat-thread", taskId: props.taskId },
   );
+  // Hand the footer this parse's turn state and the usage derived here, so it
+  // never runs a second full parse of the same transcript (see ChatThread).
+  const usage = useContextUsage(events);
 
   return (
     <ChatThreadRenderer
       key={props.taskId}
       {...props}
       conversationItems={items}
-      footerEvents={events}
+      footerEvents={[]}
+      footerState={footerState}
+      usage={props.usage === undefined ? usage : props.usage}
     />
   );
 }
