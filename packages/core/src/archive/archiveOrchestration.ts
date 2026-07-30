@@ -67,7 +67,7 @@ export async function archiveTask(
   }
 
   const optimistic = options?.optimistic ?? true;
-  let wasPinned = false;
+  let wasPinned: boolean | undefined;
   try {
     wasPinned = (await deps.getPinnedTaskIds()).includes(taskId);
   } catch (error) {
@@ -80,10 +80,12 @@ export async function archiveTask(
 
   const commandCenterSnapshot = deps.snapshotCommandCenter(taskId);
 
-  try {
-    await deps.unpin(taskId);
-  } catch (error) {
-    deps.logError("Failed to unpin task while archiving", error);
+  if (wasPinned) {
+    try {
+      await deps.unpin(taskId);
+    } catch (error) {
+      deps.logError("Failed to unpin task while archiving", error);
+    }
   }
   deps.removeFromCommandCenter(taskId);
 
