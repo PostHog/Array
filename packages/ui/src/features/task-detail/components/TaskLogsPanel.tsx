@@ -17,7 +17,10 @@ import { useRestoreTask } from "../../suspension/useRestoreTask";
 import { useSuspendedTaskIds } from "../../suspension/useSuspendedTaskIds";
 import { useBranchMismatchDialog } from "../../workspace/useBranchMismatchDialog";
 import { useWorkspaceLoaded } from "../../workspace/useWorkspace";
-import { useCreateWorkspace } from "../../workspace/useWorkspaceMutations";
+import {
+  useCreateWorkspace,
+  useEnsureScratchWorkspace,
+} from "../../workspace/useWorkspaceMutations";
 import { BranchMismatchDialog } from "../BranchMismatchDialog";
 import { WorkspaceSetupPrompt } from "./WorkspaceSetupPrompt";
 
@@ -102,6 +105,24 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     requestFocus(taskId);
   }, [taskId, requestFocus]);
 
+  // A repo-less task's workspace is a synthetic scratch dir. When it's
+  // missing (creation failed partway leaving the task row behind, opened on
+  // another machine, dir cleaned up), the folder picker is the wrong ask —
+  // provision the scratch dir the way creation does and let the session
+  // resolve it as cwd.
+  const scratchSetup = useEnsureScratchWorkspace();
+  const needsScratchWorkspace =
+    !!localWorkspaces &&
+    !repoKey &&
+    !repoPath &&
+    !isCloud &&
+    !isSuspended &&
+    isWorkspaceLoaded;
+  const ensureScratch = scratchSetup.ensure;
+  useEffect(() => {
+    if (needsScratchWorkspace) ensureScratch(taskId);
+  }, [needsScratchWorkspace, ensureScratch, taskId]);
+
   // Once a retry provisions a workspace, drop the stale provisioning error so
   // the guard in ensureWorkspaceForTask stops firing and the retry prompt hides.
   useEffect(() => {
@@ -140,13 +161,15 @@ export function TaskLogsPanel({ taskId, task, hideInput }: TaskLogsPanelProps) {
     );
   }
 
+  // Repo task with no local mapping → folder picker. Repo-less task → the
+  // scratch provisioning above; the picker is only its last-resort fallback.
   if (
     localWorkspaces &&
     !repoPath &&
     !isCloud &&
     !isSuspended &&
     isWorkspaceLoaded &&
-    !hasDirectoryMapping &&
+    (repoKey ? !hasDirectoryMapping : scratchSetup.isError) &&
     !isCreatingWorkspace
   ) {
     return (

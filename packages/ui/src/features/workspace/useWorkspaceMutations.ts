@@ -5,7 +5,7 @@ import {
 import { useHostTRPC } from "@posthog/host-router/react";
 import type { Workspace, WorkspaceMode } from "@posthog/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 function useInvalidateWorkspaceCaches() {
   const trpc = useHostTRPC();
@@ -43,6 +43,40 @@ export function useCreateWorkspace(): { isPending: boolean } {
   );
 
   return { isPending: mutation.isPending };
+}
+
+/**
+ * Provision the synthetic scratch workspace for a repo-less task (what task
+ * creation does via the saga). ensure() fires at most once per hook instance,
+ * so a mount effect can call it unconditionally without looping on failure.
+ */
+export function useEnsureScratchWorkspace(): {
+  ensure: (taskId: string) => void;
+  isError: boolean;
+} {
+  const trpc = useHostTRPC();
+  const invalidateCaches = useInvalidateWorkspaceCaches();
+  const firedRef = useRef(false);
+
+  const mutation = useMutation(
+    trpc.workspace.ensureScratchDir.mutationOptions({
+      onSuccess: () => {
+        void invalidateCaches();
+      },
+    }),
+  );
+
+  const { mutate } = mutation;
+  const ensure = useCallback(
+    (taskId: string) => {
+      if (firedRef.current) return;
+      firedRef.current = true;
+      mutate({ taskId });
+    },
+    [mutate],
+  );
+
+  return { ensure, isError: mutation.isError };
 }
 
 export function useDeleteWorkspace(): { isPending: boolean } {

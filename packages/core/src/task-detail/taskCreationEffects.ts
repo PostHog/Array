@@ -13,8 +13,9 @@ export interface TaskCreationEffects {
   onRunResumed(taskId: string, run: TaskRun): void;
   /**
    * The saga surfaced the task to the UI (onTaskReady) but a later step
-   * failed and rolled the task back — it no longer exists server-side, yet
-   * caches seeded at ready-time still hold it. Undo those seeds.
+   * failed and rolled the task back (best-effort server-side delete), while
+   * caches seeded at ready-time still hold it. Undo those seeds and refetch —
+   * if the delete itself failed, the refetch restores the surviving task.
    */
   onCreateRolledBack(task: Task): void;
 }

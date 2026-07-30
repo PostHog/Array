@@ -1,13 +1,16 @@
 import type { Workspace, WorkspaceInfo } from "@posthog/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const WORKSPACE_QUERY_KEY = ["workspace", "getAll"];
 const WORKTREES_FILTER = { queryKey: ["worktrees", "/repo"] };
 
-const createFn = vi.hoisted(() => vi.fn());
+const { createFn, scratchFn } = vi.hoisted(() => ({
+  createFn: vi.fn(),
+  scratchFn: vi.fn(),
+}));
 
 vi.mock("@posthog/host-router/react", () => ({
   useHostTRPC: () => ({
@@ -30,11 +33,20 @@ vi.mock("@posthog/host-router/react", () => ({
           ...options,
         }),
       },
+      ensureScratchDir: {
+        mutationOptions: (options: Record<string, unknown>) => ({
+          mutationFn: (input: unknown) => scratchFn(input),
+          ...options,
+        }),
+      },
     },
   }),
 }));
 
-import { useEnsureWorkspace } from "./useWorkspaceMutations";
+import {
+  useEnsureScratchWorkspace,
+  useEnsureWorkspace,
+} from "./useWorkspaceMutations";
 
 const created = { taskId: "t1", mode: "worktree" } as unknown as WorkspaceInfo;
 
@@ -87,5 +99,55 @@ describe("useWorkspaceMutations", () => {
       branch: undefined,
     });
     expect(invalidateSpy).toHaveBeenCalledWith(WORKTREES_FILTER);
+  });
+
+  it("useEnsureScratchWorkspace provisions the scratch dir and invalidates workspaces", async () => {
+    scratchFn.mockResolvedValue({ path: "/scratch/t1" });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useEnsureScratchWorkspace(), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.ensure("t1");
+    });
+
+    expect(scratchFn).toHaveBeenCalledExactlyOnceWith({ taskId: "t1" });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: WORKSPACE_QUERY_KEY,
+    });
+  });
+
+  it("useEnsureScratchWorkspace fires once — later ensure() calls no-op", async () => {
+    scratchFn.mockResolvedValue({ path: "/scratch/t1" });
+    const { result } = renderHook(() => useEnsureScratchWorkspace(), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.ensure("t1");
+    });
+    await act(async () => {
+      result.current.ensure("t1");
+    });
+
+    expect(scratchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("useEnsureScratchWorkspace reports failure without refiring", async () => {
+    scratchFn.mockRejectedValue(new Error("disk full"));
+    const { result } = renderHook(() => useEnsureScratchWorkspace(), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.ensure("t1");
+    });
+    await act(async () => {
+      result.current.ensure("t1");
+    });
+
+    expect(scratchFn).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });

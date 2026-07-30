@@ -127,6 +127,19 @@ export const navigationTaskBinder: NavigationTaskBinder = {
         mode: "cloud",
       });
       invalidateWorkspaces();
+    } else if (!repoKey) {
+      // Repo-less task with no scratch dir on this machine (creation failed
+      // partway leaving the task row behind, or created elsewhere): provision
+      // the scratch dir the way creation does so the task view resolves a cwd
+      // instead of asking for a repo folder it never wanted.
+      try {
+        await hostClient().workspace.ensureScratchDir.mutate({
+          taskId: task.id,
+        });
+        invalidateWorkspaces();
+      } catch (error) {
+        log.error("Failed to provision scratch dir on task open:", error);
+      }
     } else {
       log.warn("No directory resolved on task open, workspace not created", {
         taskId: task.id,

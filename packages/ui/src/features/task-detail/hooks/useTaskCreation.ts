@@ -111,8 +111,9 @@ interface UseTaskCreationOptions {
   onTaskCreatedEffect?: (task: Task) => void;
   /**
    * Called when creation failed after onTaskCreated already fired — the saga
-   * surfaced the task, then a later step failed and rolled it back, so the
-   * task no longer exists. Query caches are cleaned centrally
+   * surfaced the task, then a later step failed and rolled it back (the
+   * server-side delete is best-effort, so the task row may survive as a
+   * run-less draft). Query caches are cleaned centrally
    * (TaskCreationEffects.onCreateRolledBack); use this to undo caller-side
    * effects like navigation onto the dead task.
    */
