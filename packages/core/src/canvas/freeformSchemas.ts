@@ -131,6 +131,109 @@ export const canvasCaptureConfigSchema = z.object({
 export type CanvasCaptureConfig = z.infer<typeof canvasCaptureConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Live events avenue: a streaming counterpart to the request/response data
+// requests. A freeform canvas CANNOT hold the project's `live_events_token`
+// (a project-scoped credential, deliberately never shipped into the null-origin
+// iframe — same rule as the read token). Instead the canvas sends a subscribe
+// request; the HOST opens the SSE connection to the live-events service
+// (`live.{region}.posthog.com/events`) with the brokered JWT and fans each
+// event into the iframe as a `live-event` frame. The same brokered avenue serves
+// `live-stats` (the project's realtime `users_on_product` / `active_recordings`
+// counters from `/stats`) on demand. Only the region's public live HOST and the
+// (non-credential) subscription params cross into the iframe.
+// ---------------------------------------------------------------------------
+
+// The property-filter operators the live-events service supports. THIS LIST IS
+// AUTHORITATIVE over the frontend's richer `PropertyOperator` set (the
+// livestream service only compiles a fixed operator allowlist) — mirroring
+// `LIVE_EVENTS_SUPPORTED_OPERATORS` in the app's Activity → Live events logic,
+// and the canvas prompt tells the agent not to invent others. Values are the
+// operator ids as the service expects them.
+export const LIVE_EVENTS_SUPPORTED_OPERATORS = [
+  "exact",
+  "is_not",
+  "icontains",
+  "not_icontains",
+  "regex",
+  "not_regex",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "is_set",
+  "is_not_set",
+] as const;
+export type LiveEventsOperator =
+  (typeof LIVE_EVENTS_SUPPORTED_OPERATORS)[number];
+
+// A single property filter on the live stream: an event-property `key`
+// matched by `operator` against `value` (omit `value` for `is_set`/`is_not_set`).
+// `value` may be a scalar or an array of scalars (array => OR, same as the app).
+export const liveEventPropertyFilterSchema = z.object({
+  key: z.string().min(1),
+  operator: z.enum(LIVE_EVENTS_SUPPORTED_OPERATORS),
+  value: z
+    .union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.array(z.union([z.string(), z.number(), z.boolean()])),
+    ])
+    .optional(),
+});
+export type LiveEventPropertyFilter = z.infer<
+  typeof liveEventPropertyFilterSchema
+>;
+
+// What the canvas subscribes to. `eventType` filters to a single event name
+// (omit = all events); `properties` are AND-ed rich filters (same allowlist as
+// the app's live feed); `columns` is a properties whitelist (empty/absent = all);
+// `distinctId` restricts to one actor. Mirrors the app's live feed params.
+export const canvasLiveEventsSubscribeInput = z.object({
+  eventType: z.string().min(1).nullish(),
+  distinctId: z.string().min(1).nullish(),
+  columns: z.array(z.string()).nullish(),
+  properties: z.array(liveEventPropertyFilterSchema).nullish(),
+});
+export type CanvasLiveEventsSubscribeInput = z.infer<
+  typeof canvasLiveEventsSubscribeInput
+>;
+
+// A single live event delivered to the canvas. Shape matches the livestream
+// service's `ResponsePostHogEvent`; the canvas ALSO derives a client-side
+// "users online" sliding-window count from `distinct_id`s on these events.
+export const liveEventSchema = z.object({
+  id: z.string().optional(),
+  distinct_id: z.string(),
+  event: z.string(),
+  timestamp: z.string(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+});
+export type LiveEvent = z.infer<typeof liveEventSchema>;
+
+// The realtime counters the project's `/stats` endpoint returns — the same
+// "N users currently online" pill and active-recordings count the app shows.
+export const canvasLiveStatsSchema = z.object({
+  users_on_product: z.number().optional(),
+  active_recordings: z.number().optional(),
+});
+export type CanvasLiveStats = z.infer<typeof canvasLiveStatsSchema>;
+
+// The brokered connection details the host renderer uses to open the SSE
+// stream. `eventsUrl`/`statsUrl` are the live-events service endpoints;
+// `token` is the project-scoped live-events JWT (minted server-side by
+// Django as `team.live_events_token`). This object crosses renderer<->main
+// ONLY — it must never be forwarded into the sandboxed iframe.
+export const canvasLiveConnectionConfigSchema = z.object({
+  eventsUrl: z.string(),
+  statsUrl: z.string(),
+  token: z.string(),
+});
+export type CanvasLiveConnectionConfig = z.infer<
+  typeof canvasLiveConnectionConfigSchema
+>;
+
+// ---------------------------------------------------------------------------
 // Host <-> iframe postMessage protocol (Q10/Q11). The canvas runs in a
 // null-origin sandboxed iframe, so it CANNOT share JS objects with the host —
 // every interaction is a structured-clone message. The real PostHog token never
@@ -199,6 +302,25 @@ export const hostToCanvasMessageSchema = z.discriminatedUnion("type", [
     result: z.unknown().optional(),
     error: z.string().optional(),
   }),
+  // A single live event from the live-events SSE stream, fanned into the iframe.
+  // `subId` ties it to the canvas's subscribe request so a canvas can run
+  // several independent streams (e.g. one feed per event type).
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("live-event"),
+    subId: z.string(),
+    event: liveEventSchema,
+  }),
+  // A terminal live-stream state change (auth failure, network close, or a
+  // deliberate `live-unsubscribe` ack). `status` is "closed" (no more events,
+  // do not retry) or "error" (the stream dropped; the canvas MAY resubscribe).
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("live-stream-status"),
+    subId: z.string(),
+    status: z.enum(["closed", "error"]),
+    message: z.string().optional(),
+  }),
 ]);
 export type HostToCanvasMessage = z.infer<typeof hostToCanvasMessageSchema>;
 
@@ -261,5 +383,23 @@ export const canvasToHostMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("open-external"),
     url: z.string().refine(isSafePostHogUrl),
   }),
+  // Subscribe to the live-events stream. The host mints/brokers the scoped JWT
+  // (never sent to the iframe) and streams matching events back as `live-event`
+  // frames for this `subId` until the canvas unsubscribes or the stream ends.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("live-subscribe"),
+    subId: z.string(),
+    params: canvasLiveEventsSubscribeInput,
+  }),
+  // Cancel a live-events subscription the canvas no longer needs (component
+  // unmount, filter change). The host closes the upstream SSE connection.
+  z.object({
+    channel: z.literal(CANVAS_CHANNEL),
+    type: z.literal("live-unsubscribe"),
+    subId: z.string(),
+  }),
+  // NOTE: a live `liveStats` poll also rides the generic `data-request` frame
+  // above (method: "liveStats") — it's a one-shot read, not a stream.
 ]);
 export type CanvasToHostMessage = z.infer<typeof canvasToHostMessageSchema>;

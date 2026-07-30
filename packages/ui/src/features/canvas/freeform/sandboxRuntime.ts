@@ -215,6 +215,8 @@ export function buildSandboxDocument(
     // booted by init when analytics config is present; until then capture falls
     // back to the host-mediated path.
     let phClient = null;
+    let liveSubSeq = 0;
+    const liveSubs = new Map();
     window.ph = {
       // Run a named, server-stored query (the only shape allowed in view mode).
       run: (name, params) => call("run", { name, params: params ?? {} }),
@@ -257,6 +259,38 @@ export function buildSandboxDocument(
         toCanvas: (dashboardId) => post({ type: "navigate", nav: { target: "canvas", dashboardId } }),
         toNewCanvas: () => post({ type: "navigate", nav: { target: "new-canvas" } }),
       },
+      // LIVE EVENTS — subscribe to the project's real-time event stream. The
+      // canvas never sees a token: the HOST holds the scoped JWT, opens the SSE
+      // to the live-events service, and pushes each matching event into this
+      // sandbox as a message. params.eventType filters to one event name
+      // (omit = all); params.properties is an AND-ed list of rich filters —
+      // ONLY these operators, exactly as the PostHog live-feed supports:
+      // exact | is_not | icontains | not_icontains | regex | not_regex |
+      // gt | gte | lt | lte | is_set | is_not_set. params.columns is a
+      // comma-whitelist of property keys; params.distinctId pins one actor.
+      // Returns an object you MUST close: const sub = ph.subscribeLiveEvents(
+      //   params, (event) => {...}, (msg) => { stream ended/errored }); later
+      // sub.close(). Resubscribing with the same id replaces the old stream.
+      subscribeLiveEvents: (params, onEvent, onEnd) => {
+        const subId = "live-" + String(++liveSubSeq);
+        liveSubs.set(subId, { onEvent, onEnd });
+        post({ type: "live-subscribe", subId, params: params ?? {} });
+        return {
+          id: subId,
+          close: () => {
+            const sub = liveSubs.get(subId);
+            if (!sub) return;
+            liveSubs.delete(subId);
+            post({ type: "live-unsubscribe", subId });
+          },
+        };
+      },
+      // One-shot REALTIME COUNTERS for the project — { users_on_product,
+      // active_recordings } — the same "users online" pill the PostHog
+      // Activity page shows. Distinct from a stream: this is a single poll.
+      // Combine with the client-side sliding-window count you derive from
+      // ph.subscribeLiveEvents events for a live "users online" readout.
+      liveStats: () => call("liveStats", {}),
     };
 
     // Keep target="_blank" anchors working without popup permission. Capture
@@ -431,6 +465,35 @@ export function buildSandboxDocument(
         if (!p) return;
         pending.delete(d.id);
         d.ok ? p.resolve(d.result) : p.reject(new Error(d.error || "data error"));
+      } else if (d.type === "live-event") {
+        const sub = liveSubs.get(d.subId);
+        if (sub && sub.onEvent) {
+          try {
+            sub.onEvent(d.event);
+          } catch (err) {
+            reportError(
+              "live event handler failed: " + (err && err.message),
+              err && err.stack,
+            );
+          }
+        }
+      } else if (d.type === "live-stream-status") {
+        const sub = liveSubs.get(d.subId);
+        if (sub) {
+          // The stream ended (closed) or errored — drop the subscription and
+          // let the canvas decide whether to resubscribe.
+          liveSubs.delete(d.subId);
+          if (sub.onEnd) {
+            try {
+              sub.onEnd(d.status, d.message);
+            } catch (err) {
+              reportError(
+                "live stream end handler failed: " + (err && err.message),
+                err && err.stack,
+              );
+            }
+          }
+        }
       }
     });
 

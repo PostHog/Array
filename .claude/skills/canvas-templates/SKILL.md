@@ -103,6 +103,40 @@ iframe hold a token — it posts a request; the host runs the authenticated call
 > anonymous viewers, so publish converts validated query nodes → saved insights +
 > an allowlist and the canvas references them by id. Implement it there, not in edit.
 
+## Live / realtime (SSE)
+
+Two more `ph.*` methods cover **live** data — a streaming counterpart to the
+request/response reads. Use them when a canvas must update as events arrive
+(live event feed, users-online counter) instead of re-polling an insight:
+
+- **`ph.subscribeLiveEvents(params, onEvent, onEnd)`** — a live SSE subscription,
+  NOT request/response. The canvas posts a `live-subscribe` frame; the host
+  renderer asks the host for the brokered connection config
+  (`canvasData.liveConnectionConfig`: `{ eventsUrl, statsUrl, token }`), opens
+  the SSE to the **livestream service** (`live.{region}.posthog.com/events`)
+  itself (`openLiveEventsStream` in `freeformDataBridge.ts`), and fans each
+  event into the iframe as a `live-event` postMessage frame. The scoped JWT
+  lives only in the renderer — it never crosses into the sandbox. Extra
+  postMessage frame types (`live-subscribe` / `live-unsubscribe` from canvas,
+  `live-event` / `live-stream-status` from host) extend the protocol unions in
+  `freeformSchemas.ts`. `params.properties` filters only support the livestream
+  allowlist (`exact|is_not|icontains|not_icontains|regex|not_regex|gt|gte|lt|
+  lte|is_set|is_not_set`, the `LIVE_EVENTS_SUPPORTED_OPERATORS` const) — the
+  prompt tells the agent that; validation lives in `freeformSchemas.ts`.
+- **`await ph.liveStats()`** — a ONE-SHOT poll (rides the generic `data-request`
+  frame with `method: "liveStats"`) → `canvasData.liveStats` →
+  `CanvasDataService.liveStats()` → `GET <live host>/stats` with the JWT →
+  `{ users_on_product, active_recordings }`. Poll on an interval from the
+  canvas; NOT a stream. The derived **sliding-window "users online"** count
+  (60s window over `distinct_id`s from the event stream) is canvas-side JS —
+  no extra host method needed; the prompt spells out the map+prune pattern.
+
+The live host comes from the region: `getLiveEventsUrlFromRegion` in
+`packages/shared/src/urls.ts` (`us`→`live.us.posthog.com`, `eu`→
+`live.eu.posthog.com`, `dev`→`localhost:8666`). The JWT is the project's
+`live_events_token` (Django-minted, `aud=posthog:livestream`, ~24h TTL), fetched
+server-side by `CanvasDataService` and cached per project.
+
 ## Dates
 
 The freeform app owns its date control (the toolbar picker is hidden for freeform —

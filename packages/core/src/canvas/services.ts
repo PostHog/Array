@@ -6,6 +6,8 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
+  CanvasLiveConnectionConfig,
+  CanvasLiveStats,
   CanvasLoadInsightInput,
   FreeformVersion,
 } from "./freeformSchemas";
@@ -58,6 +60,21 @@ export interface ICanvasDataService {
   query(input: CanvasDataQueryInput): Promise<CanvasDataResult>;
   loadInsight(input: CanvasLoadInsightInput): Promise<CanvasDataResult>;
   capture(input: CanvasCaptureInput): Promise<CanvasCaptureResult>;
+  /**
+   * The brokered endpoint + JWT the live-events SSE stream authenticates with.
+   * The token NEVER enters the sandboxed iframe — the host renderer holds it
+   * only long enough to open the stream and fan events into the iframe as
+   * `live-event` postMessage frames.
+   */
+  liveConnectionConfig(): Promise<CanvasLiveConnectionConfig>;
+  /**
+   * The project's realtime counters (`users_on_product`, `active_recordings`)
+   * from the live-events `/stats` endpoint — the same "users online" pill the
+   * app's Activity page shows. A one-shot poll (not the sliding-window count
+   * the canvas derives from its own event stream).
+   */
+  liveStats(): Promise<CanvasLiveStats>;
+  captureConfig(): Promise<CanvasCaptureConfig>;
   captureConfig(): Promise<CanvasCaptureConfig>;
 }
 

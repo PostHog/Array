@@ -110,7 +110,152 @@ export async function handleFreeformDataRequest(
     case "run":
       // Named, server-stored insights land in Phase 3 (the live published tier).
       throw new Error("ph.run is not available yet (named queries: Phase 3)");
+    case "liveStats":
+      // The project's realtime counters (users online, active recordings).
+      // A one-shot poll — never cached. The canvas also derives its own
+      // sliding-window "users online" count from its live-events stream; this
+      // is the server's authoritative counter.
+      return hostClient().canvasData.liveStats.query();
     default:
       throw new Error(`Unknown data method "${method}"`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Live events — a streaming counterpart to the request/response reads above.
+//
+// The sandboxed iframe cannot hold the project's `live_events_token` (a
+// project-scoped JWT). So `ph.subscribeLiveEvents(params)` posts a
+// `live-subscribe` frame here; the renderer asks the host (via tRPC) for the
+// brokered connection config (eventsUrl + statsUrl + token), opens the SSE
+// stream itself, and fans each parsed event back into the iframe over
+// postMessage with `onEvent`. The token only ever lives in THIS renderer
+// process — it never crosses the postMessage boundary into the sandbox, and
+// it never reaches canvas code (the canvas only sees the event payloads).
+// ---------------------------------------------------------------------------
+export interface LiveEventsStreamHandle {
+  close: () => void;
+}
+
+// Builds the `/events` query string from the canvas's subscribe params.
+// Mirrors the app's live feed (`liveEventsLogic.tsx`): `eventType`, `distinctId`,
+// `columns`, and AND-ed rich `properties` filters (JSON) — the livestream
+// service compiles exactly the LIVE_EVENTS_SUPPORTED_OPERATORS allowlist.
+export function buildLiveEventsUrl(
+  eventsUrl: string,
+  params: {
+    eventType?: string | null;
+    distinctId?: string | null;
+    columns?: string[] | null;
+    properties?: Array<Record<string, unknown>> | null;
+  },
+): string {
+  const url = new URL(eventsUrl);
+  if (params.eventType) url.searchParams.set("eventType", params.eventType);
+  if (params.distinctId) url.searchParams.set("distinctId", params.distinctId);
+  if (params.columns && params.columns.length > 0) {
+    url.searchParams.set("columns", params.columns.join(","));
+  }
+  if (params.properties && params.properties.length > 0) {
+    url.searchParams.set("properties", JSON.stringify(params.properties));
+  }
+  return url.toString();
+}
+
+/**
+ * Parse one chunk of SSE wire text into complete `data:`-line payloads and the
+ * leftover (incomplete) tail. Pure so it's unit-testable: the stream loop feeds
+ * it decoded chunks and keeps the tail for the next chunk.
+ */
+export function parseSseChunk(chunk: string): {
+  payloads: string[];
+  tail: string;
+} {
+  const text = chunk;
+  const payloads: string[] = [];
+  const lastNewline = text.lastIndexOf("\n");
+  const complete = lastNewline === -1 ? "" : text.slice(0, lastNewline + 1);
+  const tail = lastNewline === -1 ? text : text.slice(lastNewline + 1);
+  for (const line of complete.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("data:")) {
+      const payload = trimmed.slice(5).trim();
+      if (payload && payload !== "[done]") {
+        payloads.push(payload);
+      }
+    }
+  }
+  return { payloads, tail };
+}
+
+/**
+ * Open a live-events SSE stream on behalf of a canvas and deliver each event
+ * to `onEvent`. The caller (FreeformCanvas) is responsible for invoking the
+ * returned `close()` when the canvas unsubscribes, unmounts, or its iframe
+ * reloads — the stream is a live connection, not a one-shot request.
+ *
+ * Returns a handle synchronously; the connection bootstrap (fetching config,
+ * opening the stream) is async and reports failure through `onError` so the
+ * canvas can resubscribe.
+ */
+export function openLiveEventsStream(
+  params: {
+    eventType?: string | null;
+    distinctId?: string | null;
+    columns?: string[] | null;
+    properties?: Array<Record<string, unknown>> | null;
+  },
+  onEvent: (event: unknown) => void,
+  onError: (message: string) => void,
+): LiveEventsStreamHandle {
+  const controller = new AbortController();
+
+  void (async () => {
+    try {
+      const config = await hostClient().canvasData.liveConnectionConfig.query();
+      const url = buildLiveEventsUrl(config.eventsUrl, params);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          Accept: "text/event-stream",
+        },
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(`Live events stream failed (${response.status})`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let tail = "";
+      // Parse the SSE wire format: lines of `data: <json>` separated by blank
+      // lines. We only consume the `data:` field (the service emits one JSON
+      // event per frame).
+      while (true) {
+        if (controller.signal.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        const { payloads, tail: nextTail } = parseSseChunk(
+          tail + decoder.decode(value, { stream: true }),
+        );
+        tail = nextTail;
+        for (const payload of payloads) {
+          try {
+            onEvent(JSON.parse(payload));
+          } catch {
+            // Ignore a malformed event rather than killing the stream.
+          }
+        }
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        onError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  })();
+
+  return {
+    close: () => controller.abort(),
+  };
 }

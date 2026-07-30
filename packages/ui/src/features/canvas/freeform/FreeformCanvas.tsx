@@ -4,6 +4,7 @@ import {
   type CanvasToHostMessage,
   canvasToHostMessageSchema,
   type HostToCanvasMessage,
+  type LiveEvent as LiveEventPayload,
 } from "@posthog/core/canvas/freeformSchemas";
 import { isSafePostHogUrl } from "@posthog/shared";
 import { logger } from "@posthog/ui/shell/logger";
@@ -16,6 +17,7 @@ import {
   useMemo,
   useRef,
 } from "react";
+import { openLiveEventsStream } from "./freeformDataBridge";
 import { buildSandboxDocument, type SandboxMode } from "./sandboxRuntime";
 
 const log = logger.scope("freeform-canvas");
@@ -73,6 +75,17 @@ export function FreeformCanvas({
   // shouldn't trigger re-renders.
   const readyRef = useRef(false);
   const lastExternalOpenRef = useRef(0);
+  // Active live-events SSE streams for this iframe, keyed by the canvas's subId.
+  // The renderer owns them (the canvas can't reach the network); we close them
+  // all on unmount/reload so a dead canvas never leaks a connection.
+  const liveStreamsRef = useRef<Map<string, { close: () => void }>>(new Map());
+
+  const closeAllLiveStreams = useCallback(() => {
+    for (const handle of liveStreamsRef.current.values()) {
+      handle.close();
+    }
+    liveStreamsRef.current.clear();
+  }, []);
 
   // The document is keyed on mode + the analytics host (which the CSP must open
   // for posthog-js), not on code: code is injected via `init`, so changing it
@@ -179,6 +192,39 @@ export function FreeformCanvas({
           // msg.nav is already allowlist-validated by safeParse below.
           latest.current.onNavigate?.(msg.nav);
           break;
+        case "live-subscribe": {
+          // One active stream per subId: a resubscribe (e.g. filter change)
+          // replaces the previous connection.
+          liveStreamsRef.current.get(msg.subId)?.close();
+          const handle = openLiveEventsStream(
+            msg.params,
+            // The bridge hands back opaque parsed JSON; the iframe validates
+            // inbound frames against `liveEventSchema`, so a malformed event is
+            // dropped inside the sandbox rather than crashing the canvas.
+            (event) =>
+              post({
+                channel: "posthog-canvas",
+                type: "live-event",
+                subId: msg.subId,
+                event: event as LiveEventPayload,
+              }),
+            (message) =>
+              post({
+                channel: "posthog-canvas",
+                type: "live-stream-status",
+                subId: msg.subId,
+                status: "error",
+                message,
+              }),
+          );
+          liveStreamsRef.current.set(msg.subId, handle);
+          break;
+        }
+        case "live-unsubscribe": {
+          liveStreamsRef.current.get(msg.subId)?.close();
+          liveStreamsRef.current.delete(msg.subId);
+          break;
+        }
         case "open-external":
           // Re-checks the schema's allowlist refine in case it ever drifts.
           if (!isSafePostHogUrl(msg.url)) {
@@ -214,8 +260,11 @@ export function FreeformCanvas({
     };
 
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [postInit]);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      closeAllLiveStreams();
+    };
+  }, [postInit, closeAllLiveStreams]);
 
   // Re-send init when the code / mode / analytics change, if the iframe is ready.
   // NB: reference code/mode/analytics DIRECTLY here (not via postInit, which

@@ -5,6 +5,7 @@ import {
   type RootLogger,
   type ScopedLogger,
 } from "@posthog/di/logger";
+import { getLiveEventsUrlFromRegion } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import type {
   CanvasCaptureConfig,
@@ -12,6 +13,8 @@ import type {
   CanvasCaptureResult,
   CanvasDataQueryInput,
   CanvasDataResult,
+  CanvasLiveConnectionConfig,
+  CanvasLiveStats,
   CanvasLoadInsightInput,
 } from "./freeformSchemas";
 import {
@@ -44,6 +47,10 @@ export class CanvasDataService {
   // projects in the same session doesn't reuse the previous project's key (this
   // is a singleton service).
   private readonly projectTokens = new Map<number, string>();
+  // Project-scoped live-events JWTs (Django-minted, aud=posthog:livestream).
+  // Keyed by project id like `projectTokens` — the host holds these only to
+  // open the livestream SSE; they never cross into the iframe.
+  private readonly liveEventsTokens = new Map<number, string>();
   // The signed-in user's distinct_id, the default attribution in edit mode.
   // Per-user (not per-project), so a single cached value is correct.
   private userDistinctId: string | undefined;
@@ -173,6 +180,45 @@ export class CanvasDataService {
     return { ok: true };
   }
 
+  // The brokered connection details for the live-events SSE stream. The token
+  // is the project's `live_events_token` (a scoped JWT minted by Django with
+  // `aud=posthog:livestream`, ~24h TTL) — the host renderer holds it just long
+  // enough to open `/events` and fan events into the canvas iframe; it never
+  // enters the sandbox. The live host is derived from the account's cloud
+  // region (us.eu → live.us.eu.posthog.com; dev → localhost:8666), mirroring
+  // the frontend's `liveEventsHostOrigin()`.
+  async liveConnectionConfig(): Promise<CanvasLiveConnectionConfig> {
+    const { apiHost } = await this.getAuthContext();
+    const origin = getLiveEventsUrlFromRegion(this.getRegion());
+    const token = await this.getLiveEventsToken(apiHost);
+    return {
+      eventsUrl: `${origin}/events`,
+      statsUrl: `${origin}/stats`,
+      token,
+    };
+  }
+
+  // The project's realtime counters (`users_on_product`, `active_recordings`)
+  // from the live-events `/stats` endpoint. The same authenticated fetch the
+  // app's "users online" pill makes — scoped JWT, no project id needed (the
+  // JWT itself identifies the project).
+  async liveStats(): Promise<CanvasLiveStats> {
+    const { apiHost } = await this.getAuthContext();
+    const origin = getLiveEventsUrlFromRegion(this.getRegion());
+    const token = await this.getLiveEventsToken(apiHost);
+    const response = await fetch(`${origin}/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const err = new Error(`Live stats request failed (${response.status})`);
+      this.log.warn("Canvas live stats failed", {
+        status: response.status,
+      });
+      throw err;
+    }
+    return (await response.json()) as CanvasLiveStats;
+  }
+
   // The project's public capture key. Fetched from the authenticated project
   // endpoint (which the user can already read) and cached; capture itself uses
   // the public key, not the bearer token.
@@ -195,6 +241,18 @@ export class CanvasDataService {
     return data.api_token;
   }
 
+  // Resolve the API host for server-side live calls (token validity is enforced
+  // by `getValidAccessToken`; we never need the raw token itself here since the
+  // livestream service uses the project-scoped JWT).
+  private async getAuthContext(): Promise<{ apiHost: string }> {
+    const { apiHost } = await this.authService.getValidAccessToken();
+    const projectId = this.authService.getState().currentProjectId;
+    if (projectId == null) {
+      throw new Error("No PostHog project selected");
+    }
+    return { apiHost };
+  }
+
   // The signed-in user's distinct_id (so edit-mode captures attribute to "me" in
   // PostHog, not a placeholder). Cached; returns undefined if unavailable.
   private async getUserDistinctId(): Promise<string | undefined> {
@@ -202,5 +260,44 @@ export class CanvasDataService {
     const user = await fetchCurrentUser(this.authService);
     this.userDistinctId = user?.distinctId;
     return this.userDistinctId;
+  }
+
+  // The account's cloud region ("us" | "eu" | "dev"), used to derive the
+  // live-events host. Direct session state (`getValidAccessToken` doesn't
+  // expose the region); defaults to "us" when the session is still resolving.
+  private getRegion(): "us" | "eu" | "dev" {
+    return (
+      (
+        this.authService.getState() as {
+          cloudRegion?: "us" | "eu" | "dev" | null;
+        }
+      ).cloudRegion ?? "us"
+    );
+  }
+
+  // The project's scoped `live_events_token` JWT (minted by Django, ~24h TTL).
+  // Fetched from the authenticated project endpoint and cached per project.
+  private async getLiveEventsToken(apiHost: string): Promise<string> {
+    const projectId = this.authService.getState().currentProjectId;
+    if (projectId == null) {
+      throw new Error("No PostHog project selected");
+    }
+    const cached = this.liveEventsTokens.get(projectId);
+    if (cached) return cached;
+    const response = await this.authService.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/environments/${projectId}/`,
+    );
+    if (!response.ok) {
+      throw new Error(`Couldn't read live events token (${response.status})`);
+    }
+    const data = (await response.json()) as {
+      live_events_token?: string | null;
+    };
+    if (!data.live_events_token) {
+      throw new Error("Project has no live events token");
+    }
+    this.liveEventsTokens.set(projectId, data.live_events_token);
+    return data.live_events_token;
   }
 }
