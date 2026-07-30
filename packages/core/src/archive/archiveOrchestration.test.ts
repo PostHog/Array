@@ -113,6 +113,26 @@ describe("archiveTask", () => {
     expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
   });
 
+  it("archives when reading task pins fails", async () => {
+    harness.deps.getPinnedTaskIds = vi
+      .fn()
+      .mockRejectedValue(new Error("pins unavailable"));
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("archives when unpinning fails", async () => {
+    harness.deps.unpin = vi
+      .fn()
+      .mockRejectedValue(new Error("pins unavailable"));
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
+  });
+
   it("destroys terminals only after the archive succeeds", async () => {
     let clearedWhenArchiveCalled = true;
     harness.deps.archive = vi.fn().mockImplementation(async () => {
