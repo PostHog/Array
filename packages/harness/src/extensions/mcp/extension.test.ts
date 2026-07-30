@@ -320,6 +320,30 @@ describe("createMcpExtension", () => {
     );
   });
 
+  it("starts runtime servers when loading file config fails", async () => {
+    const mock = createMockMcpServer([ECHO_TOOL]);
+    const { pi, emit, getActive } = fakePi();
+    createMcpExtension({
+      configLoader: vi.fn().mockRejectedValue(new Error("bad config")),
+      runtimeServers: {
+        runtime: { command: "unused", lifecycle: "eager", directTools: true },
+      },
+      transportFactory: mock.transportFactory,
+    })(pi);
+    const { ctx, notify } = fakeCtx();
+
+    await emit("session_start", { reason: "startup" }, ctx);
+
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("bad config"),
+      "error",
+    );
+    expect(getActive()).toContain("mcp_runtime_echo");
+
+    await emit("session_shutdown", { reason: "quit" }, ctx);
+    await mock.close();
+  });
+
   it("notifies when an eager server fails to start", async () => {
     const mock = createMockMcpServer([]);
     const { pi, emit } = fakePi();

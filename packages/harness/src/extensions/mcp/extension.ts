@@ -240,7 +240,11 @@ export function createMcpExtension(
         if (ctx.hasUI) {
           ctx.ui.notify(`mcp: config error — ${describeError(err)}`, "error");
         }
-        return;
+        const runtimeServers = options.runtimeServers ?? {};
+        if (Object.keys(runtimeServers).length === 0) {
+          return;
+        }
+        nextConfig = mergeRuntimeServers(emptyConfig(), runtimeServers);
       }
 
       currentCwd = ctx.cwd;

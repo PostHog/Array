@@ -51,6 +51,7 @@ const config: Configuration = {
     ".vite/build/grammars/**",
     ".vite/build/rpc-host.js",
     ".vite/build/rpc-host.js.map",
+    ".vite/build/mcp-server.js",
     ...asarUnpackGlobs,
   ],
 
