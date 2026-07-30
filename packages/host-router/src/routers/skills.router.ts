@@ -14,6 +14,8 @@ import {
   readSkillFileInput,
   readSkillFileOutput,
   renameSkillFileInput,
+  renderAlwaysOnSkillsInput,
+  renderAlwaysOnSkillsOutput,
   resolveSkillDependenciesInput,
   resolveSkillDependenciesOutput,
   saveSkillFileInput,
@@ -53,6 +55,14 @@ export const skillsRouter = router({
       ctx.container
         .get<SkillsService>(SKILLS_SERVICE)
         .resolveSkillBundleDependencies(input),
+    ),
+  renderAlwaysOn: publicProcedure
+    .input(renderAlwaysOnSkillsInput)
+    .output(renderAlwaysOnSkillsOutput)
+    .query(({ ctx, input }) =>
+      ctx.container
+        .get<SkillsService>(SKILLS_SERVICE)
+        .renderAlwaysOnSkillInstructions(input),
     ),
   contents: publicProcedure
     .input(skillContentsInput)

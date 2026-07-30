@@ -575,3 +575,26 @@ describe("feature settingsStore terminal font", () => {
     );
   });
 });
+
+describe("feature settingsStore always-on skills", () => {
+  it("persists enabled skills and removes them by source and path", async () => {
+    await resetPersistenceMocks();
+    useSettingsStore.setState({ alwaysOnSkills: [] });
+    const skill = {
+      name: "i-have-adhd",
+      source: "user" as const,
+      path: "/home/u/.claude/skills/i-have-adhd",
+    };
+
+    useSettingsStore.getState().setSkillAlwaysOn(skill, true);
+    useSettingsStore.getState().setSkillAlwaysOn(skill, true);
+    expect(useSettingsStore.getState().alwaysOnSkills).toEqual([skill]);
+
+    await waitForPersistedWrite();
+    const lastCall = setItem.mock.calls[setItem.mock.calls.length - 1];
+    expect(JSON.parse(lastCall[1]).state.alwaysOnSkills).toEqual([skill]);
+
+    useSettingsStore.getState().setSkillAlwaysOn(skill, false);
+    expect(useSettingsStore.getState().alwaysOnSkills).toEqual([]);
+  });
+});

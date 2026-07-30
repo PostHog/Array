@@ -509,6 +509,24 @@ export class SkillsService {
     });
   }
 
+  async renderAlwaysOnSkillInstructions(
+    refs: Array<SkillBundleRef & { order: number }>,
+  ): Promise<string> {
+    const blocks = await Promise.all(
+      [...refs]
+        .sort((left, right) => left.order - right.order)
+        .map(async (ref) => {
+          const skillDir = await this.resolveKnownSkillDir(ref.path);
+          const manifest = await fs.promises.readFile(
+            path.join(skillDir, "SKILL.md"),
+            "utf-8",
+          );
+          return `## ${ref.name}\n\nInstalled at: ${skillDir}\n\n${stripFrontmatter(manifest).trim()}`;
+        }),
+    );
+    return `Always-on skills apply for the entire session. Follow every skill below in the listed order. Supporting files are available at each installed path. Do not execute scripts unless the task requires them.\n\n${blocks.join("\n\n---\n\n")}`;
+  }
+
   /**
    * A repository can commit any ancestor of its skills (`.claude` or
    * `.claude/skills`) as a symlink pointing outside the repo, which passes the

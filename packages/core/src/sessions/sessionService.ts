@@ -404,6 +404,7 @@ export interface ConnectParams {
   reasoningLevel?: string;
   contextWindow?: "200k" | "1m";
   fastMode?: boolean;
+  alwaysOnSkillInstructions?: string;
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -1715,6 +1716,7 @@ export class SessionService {
     session.reasoningLevel = params.reasoningLevel;
     session.contextWindow = params.contextWindow;
     session.fastMode = params.fastMode;
+    session.alwaysOnSkillInstructions = params.alwaysOnSkillInstructions;
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
@@ -1732,6 +1734,7 @@ export class SessionService {
       contextWindow,
       fastMode,
       importedSessionId,
+      alwaysOnSkillInstructions,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -1820,6 +1823,7 @@ export class SessionService {
           repoPath,
           auth,
           logResult,
+          alwaysOnSkillInstructions,
         );
       } else {
         if (!this.d.getIsOnline()) {
@@ -1846,6 +1850,7 @@ export class SessionService {
           importedSessionId,
           contextWindow,
           fastMode,
+          alwaysOnSkillInstructions,
         );
       }
     } catch (error) {
@@ -1953,6 +1958,7 @@ export class SessionService {
       sessionId?: string;
       adapter?: Adapter;
     },
+    alwaysOnSkillInstructions?: string,
   ): Promise<boolean> {
     const { rawEntries, sessionId, adapter } =
       prefetchedLogs ?? (await this.fetchSessionLogs(logUrl, taskRunId));
@@ -2058,6 +2064,12 @@ export class SessionService {
 
       const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
         this.d.settings;
+      const effectiveCustomInstructions = [
+        customInstructions,
+        alwaysOnSkillInstructions ?? previous?.alwaysOnSkillInstructions,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join("\n\n");
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
@@ -2074,10 +2086,12 @@ export class SessionService {
         effort: persistedEffort,
         contextWindow: persistedContextWindow,
         fastMode: persistedFastMode,
-        customInstructions: customInstructions || undefined,
+        customInstructions: effectiveCustomInstructions || undefined,
       });
 
       if (result) {
+        session.alwaysOnSkillInstructions =
+          alwaysOnSkillInstructions ?? previous?.alwaysOnSkillInstructions;
         const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
@@ -2392,6 +2406,7 @@ export class SessionService {
     importedSessionId?: string,
     contextWindow?: "200k" | "1m",
     fastMode?: boolean,
+    alwaysOnSkillInstructions?: string,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2409,6 +2424,12 @@ export class SessionService {
       spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
+    const effectiveCustomInstructions = [
+      startCustomInstructions,
+      alwaysOnSkillInstructions,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join("\n\n");
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
@@ -2417,7 +2438,7 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
-      customInstructions: startCustomInstructions || undefined,
+      customInstructions: effectiveCustomInstructions || undefined,
       rtkEnabled: rtkEnabledLocal,
       spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
@@ -2438,6 +2459,7 @@ export class SessionService {
     session.reasoningLevel = reasoningLevel;
     session.contextWindow = contextWindow;
     session.fastMode = fastMode;
+    session.alwaysOnSkillInstructions = alwaysOnSkillInstructions;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.

@@ -266,6 +266,10 @@ export class CloudArtifactService {
               content_sha256: bundle.contentSha256,
               bundle_format: "zip",
               schema_version: 1,
+              activation: skillBundleRef.activation ?? "explicit",
+              ...(skillBundleRef.activationOrder !== undefined
+                ? { activation_order: skillBundleRef.activationOrder }
+                : {}),
             },
           },
         };

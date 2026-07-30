@@ -911,3 +911,21 @@ describe("resolveSkillBundleDependencies", () => {
     ).rejects.toThrow(/exceeds the 50-skill limit/);
   });
 });
+
+describe("renderAlwaysOnSkillInstructions", () => {
+  it("renders validated skills in configured order without frontmatter", async () => {
+    const first = await createSkill(repoSkillsDir, "first");
+    const second = await createSkill(repoSkillsDir, "second");
+
+    const rendered = await makeService().renderAlwaysOnSkillInstructions([
+      { name: "second", source: "repo", path: second, order: 1 },
+      { name: "first", source: "repo", path: first, order: 0 },
+    ]);
+
+    expect(rendered.indexOf("## first")).toBeLessThan(
+      rendered.indexOf("## second"),
+    );
+    expect(rendered).toContain(`Installed at: ${first}`);
+    expect(rendered).not.toContain("description: about first");
+  });
+});

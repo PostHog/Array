@@ -165,7 +165,15 @@ describe("CloudArtifactService", () => {
       "task-1",
       "run-1",
       [],
-      [{ name: "local-skill", source: "user", path: "/tmp/local-skill" }],
+      [
+        {
+          name: "local-skill",
+          source: "user",
+          path: "/tmp/local-skill",
+          activation: "always",
+          activationOrder: 2,
+        },
+      ],
     );
 
     expect(ids).toEqual(["skill-artifact-1"]);
@@ -182,6 +190,8 @@ describe("CloudArtifactService", () => {
             skill_source: "user",
             bundle_format: "zip",
             schema_version: 1,
+            activation: "always",
+            activation_order: 2,
           }),
         }),
       ],

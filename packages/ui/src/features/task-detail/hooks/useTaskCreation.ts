@@ -14,6 +14,7 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import {
   type Adapter,
   type AgentRuntime,
+  type AlwaysOnSkillRef,
   ANALYTICS_EVENTS,
   PROJECT_BLUEBIRD_FLAG,
   type TaskCreationInput,
@@ -59,6 +60,7 @@ import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
+import { useAlwaysOnSkillsFailureStore } from "../stores/alwaysOnSkillsFailureStore";
 import { useExistingWorktreeConfirmStore } from "../stores/existingWorktreeConfirmStore";
 import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
@@ -323,6 +325,34 @@ export function useTaskCreation({
       const plainPromptText = contentToPlainText(content).trim();
       const serializedContent = contentToXml(content).trim();
       const filePaths = extractFilePaths(content);
+      const settings = useSettingsStore.getState();
+      let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills.map(
+        (skill, order) => ({ ...skill, order }),
+      );
+      while (alwaysOnSkills.length > 0) {
+        try {
+          await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
+          break;
+        } catch (error) {
+          const action = await useAlwaysOnSkillsFailureStore
+            .getState()
+            .confirm(
+              error instanceof Error ? error.message : String(error),
+              alwaysOnSkills,
+            );
+          if (action === "retry") continue;
+          if (action === "cancel") {
+            setIsCreatingTask(false);
+            return false;
+          }
+          if (action === "disable") {
+            for (const skill of alwaysOnSkills) {
+              useSettingsStore.getState().setSkillAlwaysOn(skill, false);
+            }
+          }
+          alwaysOnSkills = [];
+        }
+      }
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
@@ -353,7 +383,6 @@ export function useTaskCreation({
           }
         }
 
-        const settings = useSettingsStore.getState();
         const defaultedChannelId =
           bluebirdEnabled && !channelId && !channelName
             ? personalChannel?.id
@@ -391,6 +420,7 @@ export function useTaskCreation({
           channelId: channelId ?? defaultedChannelId,
           channelContextId,
           customInstructions: getEffectiveCustomInstructions(settings),
+          alwaysOnSkills,
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,

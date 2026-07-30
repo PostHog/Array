@@ -14,6 +14,8 @@ import type { SkillInfo } from "@posthog/shared";
 import { stripFrontmatter } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
+import { ExternalAppsOpener } from "@posthog/ui/features/task-detail/components/ExternalAppsOpener";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   AlertDialog,
@@ -24,6 +26,7 @@ import {
   Dialog,
   Flex,
   ScrollArea,
+  Switch,
   Text,
   TextField,
   Tooltip,
@@ -84,6 +87,11 @@ export function SkillDetailPanel({
   const deleteSkill = useDeleteSkill();
   const publishSkill = usePublishSkill();
   const importCodexSkill = useImportCodexSkill();
+  const alwaysOnSkills = useSettingsStore((state) => state.alwaysOnSkills);
+  const setSkillAlwaysOn = useSettingsStore((state) => state.setSkillAlwaysOn);
+  const alwaysOn = alwaysOnSkills.some(
+    (item) => item.source === skill.source && item.path === skill.path,
+  );
 
   const files = contents?.files ?? [];
   const isSkillMd = selectedFile === "SKILL.md";
@@ -297,6 +305,42 @@ export function SkillDetailPanel({
               Import
             </Button>
           )}
+        </Flex>
+
+        <Flex align="center" justify="between" gap="3" py="1">
+          <Flex direction="column" gap="1">
+            <Text size="2" weight="medium">
+              Always on for new tasks
+            </Text>
+            <Text size="1" color="gray">
+              Apply this skill to every new local and cloud task
+            </Text>
+          </Flex>
+          <Tooltip
+            content={
+              skill.source === "bundled"
+                ? "Bundled skills cannot be always on"
+                : "Supporting files are available, but scripts never run automatically"
+            }
+          >
+            <Switch
+              checked={alwaysOn}
+              disabled={skill.source === "bundled"}
+              onCheckedChange={(checked) =>
+                setSkillAlwaysOn(
+                  {
+                    name: skill.name,
+                    source: skill.source as Exclude<
+                      typeof skill.source,
+                      "bundled"
+                    >,
+                    path: skill.path,
+                  },
+                  checked,
+                )
+              }
+            />
+          </Tooltip>
         </Flex>
 
         {issues.length > 0 && (
