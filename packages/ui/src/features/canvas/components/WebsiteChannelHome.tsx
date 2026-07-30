@@ -136,21 +136,17 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   const closeThread = useThreadPanelStore((s) => s.closeThread);
 
   // The open thread outlives the thread view, so the feed showing itself is
-  // the only signal that it's gone. Suppress an entry this mount inherited —
-  // one the user didn't open from this feed instance — and clear it from the
-  // store; threads opened from here paint normally. Clearing in an effect
-  // alone would paint the sidebar for a frame first.
-  const bornStaleRef = useRef<string | null>(null);
-  if (bornStaleRef.current === null) {
-    bornStaleRef.current =
-      useThreadPanelStore.getState().openByChannel[channelId] ?? "";
-  }
+  // the only signal an inherited thread is gone. Suppress it in render (an
+  // effect alone would paint the sidebar for a frame first) and clear the
+  // store; threads opened from this feed instance paint normally.
+  const [inheritedThreadTaskId] = useState(
+    () => useThreadPanelStore.getState().openByChannel[channelId] ?? null,
+  );
   useEffect(() => {
-    if (bornStaleRef.current) {
+    if (inheritedThreadTaskId) {
       useThreadPanelStore.getState().closeThread(channelId);
-      bornStaleRef.current = "";
     }
-  }, [channelId]);
+  }, [channelId, inheritedThreadTaskId]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
@@ -334,7 +330,7 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      {threadTaskId && threadTaskId !== bornStaleRef.current && (
+      {threadTaskId && threadTaskId !== inheritedThreadTaskId && (
         <ThreadSidebar
           taskId={threadTaskId}
           channelId={channelId}
