@@ -16,6 +16,7 @@ import {
   isModalModelId,
   isSupportedReasoningEffort,
   KIMI_MODEL_FLAG,
+  readPrUrls,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
   type Task,
@@ -696,7 +697,7 @@ export default function TaskDetailScreen() {
     [router],
   );
 
-  const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
+  const prUrl = readPrUrls(task?.latest_run?.output)[0];
 
   const activityPhase = getSessionActivityPhase({ retrying, session });
   const isConnecting = activityPhase === "connecting";

@@ -73,23 +73,53 @@ describe("TaskItem", () => {
     );
   }
 
-  it("shows the PR badge with the parsed number when a PR url is present", () => {
-    const renderer = render(
-      makeTask({
-        output: { pr_url: "https://github.com/PostHog/code/pull/2422" },
-      }),
+  function badgeNumber(renderer: ReturnType<typeof create>, label: string) {
+    return renderer.root.findAll(
+      (node) => String(node.type) === "Text" && node.props.children === label,
     );
+  }
+
+  it.each([
+    [
+      "pr_url is set",
+      { pr_url: "https://github.com/PostHog/code/pull/2422" },
+      "#2422",
+    ],
+    [
+      "pr_urls is set",
+      { pr_urls: ["https://github.com/PostHog/code/pull/2422"] },
+      "#2422",
+    ],
+    [
+      "both fields point at the same PR",
+      {
+        pr_url: "https://github.com/PostHog/code/pull/2422",
+        pr_urls: ["https://github.com/PostHog/code/pull/2422"],
+      },
+      "#2422",
+    ],
+    [
+      "pr_urls lists several PRs (shows the first)",
+      {
+        pr_urls: [
+          "https://github.com/PostHog/code/pull/2422",
+          "https://github.com/PostHog/code/pull/2423",
+        ],
+      },
+      "#2422",
+    ],
+  ])("shows the PR badge when %s", (_label, output, expected) => {
+    const renderer = render(makeTask({ output }));
 
     expect(prIcons(renderer)).toHaveLength(1);
-    const number = renderer.root.findAll(
-      (node) => String(node.type) === "Text" && node.props.children === "#2422",
-    );
-    expect(number).toHaveLength(1);
+    expect(badgeNumber(renderer, expected)).toHaveLength(1);
   });
 
   it.each([
     ["the task has no run", makeTask()],
     ["the run has no output", makeTask({ output: null })],
+    ["pr_urls is empty", makeTask({ output: { pr_urls: [] } })],
+    ["pr_url is an empty string", makeTask({ output: { pr_url: "" } })],
     [
       "the url is a GitHub issue, not a PR",
       makeTask({
