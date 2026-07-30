@@ -79,4 +79,21 @@ describe("ChannelNav", () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByText("Recent activity card")).not.toBeInTheDocument();
   });
+
+  it("does not resurface the hover card after the bell navigated to Activity", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ChannelNav />);
+
+    await user.click(screen.getByLabelText("Activity"));
+    mocks.view = { type: "activity" };
+    rerender(<ChannelNav />);
+    expect(screen.queryByText("Recent activity card")).not.toBeInTheDocument();
+
+    // Opening a notification from the Activity page navigates to its task.
+    mocks.view = { type: "task-detail" };
+    rerender(<ChannelNav />);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByText("Recent activity card")).not.toBeInTheDocument();
+  });
 });

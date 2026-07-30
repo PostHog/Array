@@ -39,7 +39,12 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
-import { type ComponentPropsWithRef, type ReactNode, useState } from "react";
+import {
+  type ComponentPropsWithRef,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
@@ -136,7 +141,6 @@ function NavButton({
 export function ChannelNav() {
   const view = useAppView();
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
-  const [activityOpen, setActivityOpen] = useState(false);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -157,6 +161,15 @@ export function ChannelNav() {
   const isInbox = view.type === "inbox";
   const isActivity = view.type === "activity";
   const isCommandCenter = view.type === "command-center";
+
+  // Clicking the bell navigates to Activity, but quill's trigger runs its own
+  // open after our handler and still inside the same click, so `isActivity` is
+  // false and the card records itself as open. The Activity page then only hides
+  // it, and it resurfaces over the next page you open. Swallowing that one open
+  // is what the ref is for — the sidebar's Activity row does the same.
+  const [activityOpen, setActivityOpen] = useState(false);
+  const suppressClickOpenRef = useRef(false);
+  const activityCardOpen = activityOpen && !isActivity;
 
   return (
     // One provider for the row: once any tooltip is up, moving to its
@@ -179,8 +192,13 @@ export function ChannelNav() {
           }
         />
         <Popover
-          open={!isActivity && activityOpen}
-          onOpenChange={(open) => setActivityOpen(!isActivity && open)}
+          open={activityCardOpen}
+          onOpenChange={(open) => {
+            const suppressed = open && suppressClickOpenRef.current;
+            suppressClickOpenRef.current = false;
+            if (suppressed) return;
+            setActivityOpen(!isActivity && open);
+          }}
         >
           <PopoverTrigger
             openOnHover
@@ -197,6 +215,7 @@ export function ChannelNav() {
                 label="Activity"
                 isActive={isActivity}
                 onClick={() => {
+                  suppressClickOpenRef.current = true;
                   setActivityOpen(false);
                   withTrack("activity", navigateToActivity)();
                 }}
@@ -209,7 +228,7 @@ export function ChannelNav() {
               />
             }
           />
-          {!isActivity && activityOpen && (
+          {activityCardOpen && (
             <ActivityHoverCard
               side="bottom"
               onClose={() => setActivityOpen(false)}
