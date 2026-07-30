@@ -117,6 +117,23 @@ describe("signed-commit tool handler", () => {
     });
   });
 
+  it("does not persist a branch created in a sibling repository", async () => {
+    await signedCommitTool.handler(
+      {
+        cwd: "/tmp/workspace/repos/posthog/code",
+        token: "ghs_x",
+        taskId: "task-1",
+        taskRunId: "run-1",
+      },
+      {
+        message: "chore: bump",
+        cwd: "/tmp/workspace/repos/posthog/grafana-dashboards",
+      },
+    );
+
+    expect(reportTaskRunBranch).not.toHaveBeenCalled();
+  });
+
   it("returns the no-token error without invoking createSignedCommit", async () => {
     const savedGh = process.env.GH_TOKEN;
     const savedGithub = process.env.GITHUB_TOKEN;

@@ -47,6 +47,7 @@ export function defineSignedGitTool<S extends z.ZodRawShape, R>(opts: {
       return opts.run(
         {
           cwd,
+          taskRepositoryCwd: ctx.cwd,
           token,
           taskId: ctx.taskId,
           taskRunId: ctx.taskRunId,
