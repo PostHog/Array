@@ -5,7 +5,12 @@ import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Logger } from "../../../utils/logger";
 import { SUBAGENT_REWRITES } from "../hooks";
-import { buildSessionOptions, buildSystemPrompt } from "./options";
+import {
+  buildSessionOptions,
+  buildSystemPrompt,
+  toEffortFlagSettings,
+  toSdkEffort,
+} from "./options";
 import { SettingsManager } from "./settings";
 
 const GIT_COMMIT_HOOK_INPUT = {
@@ -468,5 +473,37 @@ describe("buildSystemPrompt", () => {
       { spokenNarration: true },
     );
     expect(promptText(prompt)).toMatch(/^Custom append\./);
+  });
+});
+
+describe("toSdkEffort", () => {
+  it.each([
+    ["low", "low"],
+    ["medium", "medium"],
+    ["high", "high"],
+    ["xhigh", "xhigh"],
+    ["max", "max"],
+    ["ultracode", "xhigh"],
+  ] as const)("maps %s to %s", (effort, expected) => {
+    expect(toSdkEffort(effort)).toBe(expected);
+  });
+});
+
+describe("toEffortFlagSettings", () => {
+  it.each(["low", "medium", "high", "xhigh", "max"] as const)(
+    "passes %s through with the ultracode flag off",
+    (effort) => {
+      expect(toEffortFlagSettings(effort)).toEqual({
+        effortLevel: effort,
+        ultracode: false,
+      });
+    },
+  );
+
+  it("maps ultracode to xhigh plus the session flag", () => {
+    expect(toEffortFlagSettings("ultracode")).toEqual({
+      effortLevel: "xhigh",
+      ultracode: true,
+    });
   });
 });

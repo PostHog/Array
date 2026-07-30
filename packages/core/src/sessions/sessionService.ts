@@ -42,12 +42,17 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   type CloudTaskPermissionRequestUpdate,
   type CloudTaskUpdatePayload,
+  EFFORT_LEVEL_LABELS,
   type EffortLevel,
   effortLevelSchema,
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
 import type { SpeechKind, SpeechSource } from "../speech/identifiers";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "../task-detail/previewConfig";
 import {
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -396,6 +401,8 @@ export interface ConnectParams {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -1704,6 +1711,8 @@ export class SessionService {
     session.model = params.model;
     session.executionMode = params.executionMode;
     session.reasoningLevel = params.reasoningLevel;
+    session.contextWindow = params.contextWindow;
+    session.fastMode = params.fastMode;
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
@@ -1718,6 +1727,8 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      contextWindow,
+      fastMode,
       importedSessionId,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
@@ -1831,6 +1842,8 @@ export class SessionService {
           model,
           reasoningLevel,
           importedSessionId,
+          contextWindow,
+          fastMode,
         );
       }
     } catch (error) {
@@ -1994,6 +2007,33 @@ export class SessionService {
       const persistedModel =
         modelOpt?.type === "select" ? modelOpt.currentValue : undefined;
 
+      // Same for effort, context window and fast mode: the session's own
+      // persisted config is authoritative on resume.
+      const effortOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "thought_level",
+      );
+      const persistedEffort =
+        effortOpt?.type === "select" &&
+        effortLevelSchema.safeParse(effortOpt.currentValue).success
+          ? (effortOpt.currentValue as EffortLevel)
+          : undefined;
+      const contextOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        CONTEXT_WINDOW_OPTION_CATEGORY,
+      );
+      const persistedContextWindow =
+        contextOpt?.type === "select" &&
+        (contextOpt.currentValue === "200k" || contextOpt.currentValue === "1m")
+          ? contextOpt.currentValue
+          : undefined;
+      const fastOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        FAST_MODE_OPTION_CATEGORY,
+      );
+      const persistedFastMode =
+        fastOpt?.type === "select" ? fastOpt.currentValue === "on" : undefined;
+
       this.d.trpc.workspace.verify
         .query({ taskId })
         .then((workspaceResult) => {
@@ -2029,6 +2069,9 @@ export class SessionService {
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
         model: persistedModel,
+        effort: persistedEffort,
+        contextWindow: persistedContextWindow,
+        fastMode: persistedFastMode,
         customInstructions: customInstructions || undefined,
       });
 
@@ -2345,6 +2388,8 @@ export class SessionService {
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,
+    contextWindow?: "200k" | "1m",
+    fastMode?: boolean,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2376,6 +2421,8 @@ export class SessionService {
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
+      contextWindow,
+      fastMode,
       model: preferredModel,
       importedSessionId,
     });
@@ -2387,6 +2434,8 @@ export class SessionService {
     session.model = model;
     session.executionMode = executionMode;
     session.reasoningLevel = reasoningLevel;
+    session.contextWindow = contextWindow;
+    session.fastMode = fastMode;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.
@@ -5249,6 +5298,8 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        contextWindow,
+        fastMode,
       } = session;
       await this.teardownSession(session.taskRunId);
       const authStatus = await this.getAuthCredentialsStatus();
@@ -5270,6 +5321,9 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        undefined,
+        contextWindow,
+        fastMode,
       );
       return;
     }
@@ -5450,13 +5504,7 @@ export class SessionService {
         existingOption?.type === "select"
           ? flattenSelectOptions(existingOption.options)
           : [];
-      const reasoningLabels: Record<string, string> = {
-        low: "Low",
-        medium: "Medium",
-        high: "High",
-        xhigh: "Extra High",
-        max: "Max",
-      };
+      const reasoningLabels: Record<string, string> = EFFORT_LEVEL_LABELS;
       const selectedValue = existingValues.find(
         (value) => value.value === preferredValue,
       ) ?? {

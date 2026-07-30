@@ -12,6 +12,7 @@ import { useState } from "react";
 import {
   type AutoresearchModelOption,
   clampMaxIterations,
+  StageEffortDropdown,
   StageModelSelect,
 } from "./stageModels";
 
@@ -331,13 +332,12 @@ function StageRow({
           onChange={onModelChange}
         />
         {effortOptions.length > 0 && (
-          <StageModelSelect
-            id={`${idPrefix}-effort`}
-            ariaLabel={`${legend} effort`}
+          <StageEffortDropdown
+            label={`${legend} effort`}
             noneLabel="Default effort"
             value={effort}
             options={effortOptions}
-            className="w-32"
+            className="w-32 justify-between"
             onChange={onEffortChange}
           />
         )}

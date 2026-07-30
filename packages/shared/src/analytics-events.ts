@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { EffortLevel } from "./domain-types";
 import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
@@ -1152,7 +1153,7 @@ export interface AutoresearchRunStartedProperties {
 }
 
 // Loops events
-type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopReasoningEffort = EffortLevel;
 type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
 type LoopRunBlockedReason =
   | "deduped"

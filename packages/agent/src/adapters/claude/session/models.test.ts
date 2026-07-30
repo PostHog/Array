@@ -1,6 +1,8 @@
+import { isDefaultSelectOption, selectOptionDocsUrl } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EFFORT,
+  getContextWindowOptions,
   getEffortOptions,
   resolveEffortForModel,
   resolveModelPreference,
@@ -161,10 +163,35 @@ describe("getEffortOptions", () => {
 
   it.each([
     ["claude-sonnet-4-6", ["low", "medium", "high"]],
-    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max"]],
+    ["claude-opus-4-7", ["low", "medium", "high", "xhigh", "max", "ultracode"]],
     ["@cf/zai-org/glm-5.2", ["high", "max"]],
   ])("returns the exact effort levels for %s", (modelId, expected) => {
     expect(getEffortOptions(modelId)?.map((o) => o.value)).toEqual(expected);
+  });
+
+  it("marks the default level and links docs for ultracode", () => {
+    const options = getEffortOptions("claude-opus-5") ?? [];
+    const byValue = new Map(options.map((o) => [o.value, o]));
+    expect(isDefaultSelectOption(byValue.get("high")?._meta)).toBe(true);
+    expect(isDefaultSelectOption(byValue.get("max")?._meta)).toBe(false);
+    expect(selectOptionDocsUrl(byValue.get("ultracode")?._meta)).toContain(
+      "workflows",
+    );
+    expect(selectOptionDocsUrl(byValue.get("low")?._meta)).toBeUndefined();
+  });
+});
+
+describe("getContextWindowOptions", () => {
+  it("returns null for models without 1M support", () => {
+    expect(getContextWindowOptions("claude-haiku-4-5")).toBeNull();
+    expect(getContextWindowOptions("@cf/zai-org/glm-5.2")).toBeNull();
+  });
+
+  it("offers 200k and 1M with 1M as the default", () => {
+    const options = getContextWindowOptions("claude-opus-5") ?? [];
+    expect(options.map((o) => o.value)).toEqual(["200k", "1m"]);
+    expect(isDefaultSelectOption(options[1]?._meta)).toBe(true);
+    expect(isDefaultSelectOption(options[0]?._meta)).toBe(false);
   });
 });
 

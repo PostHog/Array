@@ -1,3 +1,11 @@
+import {
+  DEFAULT_OPTION_META_KEY,
+  OPTION_DOCS_URL_META_KEY,
+} from "@posthog/shared";
+import {
+  EFFORT_LEVEL_DOCS_URLS,
+  EFFORT_LEVEL_LABELS,
+} from "@posthog/shared/domain-types";
 import type { EffortLevel } from "../types";
 
 export const DEFAULT_MODEL = "opus";
@@ -34,6 +42,25 @@ export function supports1MContext(modelId: string): boolean {
   return MODELS_WITH_1M_CONTEXT.has(modelId);
 }
 
+export const CONTEXT_WINDOW_1M_BETA = "context-1m-2025-08-07";
+export const CONTEXT_WINDOW_200K_TOKENS = 200_000;
+
+interface ContextWindowOption {
+  value: string;
+  name: string;
+  _meta?: Record<string, unknown>;
+}
+
+export function getContextWindowOptions(
+  modelId: string,
+): ContextWindowOption[] | null {
+  if (!supports1MContext(modelId)) return null;
+  return [
+    { value: "200k", name: "200k" },
+    { value: "1m", name: "1M", _meta: { [DEFAULT_OPTION_META_KEY]: true } },
+  ];
+}
+
 const STANDARD_EFFORT_LEVELS: readonly EffortLevel[] = [
   "low",
   "medium",
@@ -43,6 +70,7 @@ const EXTENDED_EFFORT_LEVELS: readonly EffortLevel[] = [
   ...STANDARD_EFFORT_LEVELS,
   "xhigh",
   "max",
+  "ultracode",
 ];
 const MODEL_EFFORT_LEVELS: Readonly<Record<string, readonly EffortLevel[]>> = {
   "claude-opus-4-7": EXTENDED_EFFORT_LEVELS,
@@ -76,10 +104,24 @@ export function supportsMcpInjection(modelId: string): boolean {
   return !MODELS_TO_EXCLUDE_MCP_TOOLS.has(modelId);
 }
 
-const MODELS_WITH_FAST_MODE = new Set(["claude-opus-4-7", "claude-opus-4-8"]);
+const MODELS_WITH_FAST_MODE = new Set([
+  "claude-opus-4-7",
+  "claude-opus-4-8",
+  "claude-opus-5",
+]);
 
 export function supportsFastMode(modelId: string): boolean {
   return MODELS_WITH_FAST_MODE.has(modelId);
+}
+
+export function getFastModeOptions(
+  modelId: string,
+): { value: string; name: string }[] | null {
+  if (!supportsFastMode(modelId)) return null;
+  return [
+    { value: "on", name: "On" },
+    { value: "off", name: "Off" },
+  ];
 }
 
 // cooldown keeps the toggle on (user intent); only an explicit off clears it.
@@ -90,20 +132,28 @@ export function fastModeStateEnabled(state: string | undefined): boolean {
 interface EffortOption {
   value: EffortLevel;
   name: string;
+  _meta?: Record<string, unknown>;
 }
 
-const EFFORT_LABELS: Record<EffortLevel, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High",
-  max: "Max",
-};
+function effortOptionMeta(
+  value: EffortLevel,
+): Record<string, unknown> | undefined {
+  const docsUrl = EFFORT_LEVEL_DOCS_URLS[value];
+  const meta: Record<string, unknown> = {
+    ...(value === DEFAULT_EFFORT ? { [DEFAULT_OPTION_META_KEY]: true } : {}),
+    ...(docsUrl ? { [OPTION_DOCS_URL_META_KEY]: docsUrl } : {}),
+  };
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
 
 export function getEffortOptions(modelId: string): EffortOption[] | null {
   const levels = MODEL_EFFORT_LEVELS[modelId];
   return (
-    levels?.map((value) => ({ value, name: EFFORT_LABELS[value] })) ?? null
+    levels?.map((value) => ({
+      value,
+      name: EFFORT_LEVEL_LABELS[value],
+      _meta: effortOptionMeta(value),
+    })) ?? null
   );
 }
 

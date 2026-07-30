@@ -2,11 +2,20 @@ import { ArrowSquareOut } from "@phosphor-icons/react";
 import { buildPostHogUrl } from "@posthog/core/settings/posthogUrl";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { ANALYTICS_EVENTS } from "@posthog/shared";
+import {
+  EFFORT_LEVEL_DOCS_URLS,
+  EFFORT_LEVEL_LABELS,
+  EFFORT_LEVELS,
+} from "@posthog/shared/domain-types";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
 import {
   COLLAPSE_MODE_OPTIONS,
   type CollapseMode,
 } from "@posthog/ui/features/sessions/components/new-thread/conversationThreadConfig";
+import {
+  ReasoningLevelDropdown,
+  type ReasoningLevelOption,
+} from "@posthog/ui/features/sessions/components/ReasoningLevelDropdown";
 import { SettingRow } from "@posthog/ui/features/settings/SettingRow";
 import {
   type AutoConvertLongText,
@@ -24,6 +33,15 @@ import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { Button, Flex, Link, Select, Switch, Text } from "@radix-ui/themes";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
+
+const DEFAULT_EFFORT_OPTIONS: ReasoningLevelOption[] = [
+  { value: "last_used", label: "Last used" },
+  ...EFFORT_LEVELS.map((level) => ({
+    value: level,
+    label: EFFORT_LEVEL_LABELS[level],
+    docsUrl: EFFORT_LEVEL_DOCS_URLS[level],
+  })),
+];
 
 export function GeneralSettings() {
   const hostTRPC = useHostTRPC();
@@ -321,23 +339,16 @@ export function GeneralSettings() {
         label="Default effort level"
         description="Choose the default reasoning effort for new tasks, or remember your last-used level"
       >
-        <Select.Root
+        <ReasoningLevelDropdown
           value={defaultReasoningEffort}
-          onValueChange={(value) =>
+          options={DEFAULT_EFFORT_OPTIONS}
+          onChange={(value) =>
             handleDefaultReasoningEffortChange(value as DefaultReasoningEffort)
           }
-          size="1"
-        >
-          <Select.Trigger className="min-w-[100px]" />
-          <Select.Content>
-            <Select.Item value="last_used">Last used</Select.Item>
-            <Select.Item value="low">Low</Select.Item>
-            <Select.Item value="medium">Medium</Select.Item>
-            <Select.Item value="high">High</Select.Item>
-            <Select.Item value="xhigh">Extra High</Select.Item>
-            <Select.Item value="max">Max</Select.Item>
-          </Select.Content>
-        </Select.Root>
+          side="bottom"
+          triggerVariant="outline"
+          triggerClassName="min-w-[140px] justify-between"
+        />
       </SettingRow>
 
       <SettingRow

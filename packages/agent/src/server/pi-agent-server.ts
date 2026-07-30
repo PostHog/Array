@@ -444,7 +444,12 @@ export class PiAgentServer {
     });
     await client.start();
     if (this.config.reasoningEffort) {
-      await client.setThinkingLevel(this.config.reasoningEffort);
+      // Pi's ThinkingLevel has no ultracode notch; run it at its xhigh equivalent.
+      await client.setThinkingLevel(
+        this.config.reasoningEffort === "ultracode"
+          ? "xhigh"
+          : this.config.reasoningEffort,
+      );
     }
     const runtimeState = await client.getState();
     this.sessionFile = runtimeState.sessionFile ?? restoredSessionFile ?? null;
