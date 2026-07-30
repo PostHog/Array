@@ -1,7 +1,7 @@
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import { useCommentNavigationStore } from "@posthog/ui/features/sessions/commentNavigationStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
   artifactHtmlDocument,
@@ -371,6 +371,101 @@ describe("ArtifactPreview", () => {
     );
 
     expect(screen.queryByLabelText("Open comment thread")).toBeNull();
+  });
+
+  // Both directions of the cross-pane bridge, since the list and the artifact
+  // sit in sibling React trees and can only talk through the store. jsdom has
+  // no layout, so the highlight geometry and the scroll are stubbed.
+  describe("with the comment list in the sidebar", () => {
+    const rect = { left: 0, top: 0, width: 40, height: 12 } as DOMRect;
+    let scrollIntoView = vi.fn();
+
+    beforeEach(() => {
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      // jsdom has no range geometry at all, so the highlight rectangles have
+      // to be supplied outright rather than spied on.
+      Range.prototype.getClientRects = () => [rect] as unknown as DOMRectList;
+      artifactComments.data = [textComment()];
+      useQuery.mockReturnValue({
+        data: "# Report",
+        isLoading: false,
+        isError: false,
+      });
+    });
+
+    afterEach(() => {
+      Reflect.deleteProperty(Range.prototype, "getClientRects");
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+
+    it("hands a thread picked on the artifact over to the list", async () => {
+      render(
+        <ArtifactPreview
+          taskId="task-1"
+          runId="run-1"
+          artifactId="artifact-1"
+          name="report.md"
+        />,
+      );
+
+      fireEvent.click(await screen.findByLabelText("Open comment thread"));
+
+      expect(
+        useCommentNavigationStore.getState().focusByTask["task-1"],
+      ).toEqual({
+        target: { scope: "task_artifact", itemId: "artifact-1" },
+        threadId: "comment-1",
+        nonce: expect.any(Number),
+      });
+    });
+
+    it("scrolls to the anchor the list asks for", async () => {
+      useCommentNavigationStore
+        .getState()
+        .requestCommentFocus(
+          "task-1",
+          { scope: "task_artifact", itemId: "artifact-1" },
+          "comment-1",
+        );
+
+      render(
+        <ArtifactPreview
+          taskId="task-1"
+          runId="run-1"
+          artifactId="artifact-1"
+          name="report.md"
+        />,
+      );
+
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      // And the thread reads as the active one on the surface.
+      const highlight = await screen.findByLabelText("Open comment thread");
+      expect(highlight.className).toContain("ring-yellow-500");
+    });
+
+    // A thread from another artifact must not drag this one around.
+    it("ignores a focus request aimed at a different artifact", async () => {
+      useCommentNavigationStore
+        .getState()
+        .requestCommentFocus(
+          "task-1",
+          { scope: "task_artifact", itemId: "artifact-2" },
+          "comment-1",
+        );
+
+      render(
+        <ArtifactPreview
+          taskId="task-1"
+          runId="run-1"
+          artifactId="artifact-1"
+          name="report.md"
+        />,
+      );
+
+      await screen.findByLabelText("Open comment thread");
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 
   // The pane is the artifact: its threads are listed in the task's Comments
