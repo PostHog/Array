@@ -1,11 +1,7 @@
 import type { Adapter } from "./adapter";
+import { EFFORT_LEVEL_LABELS, type EffortLevel } from "./domain-types";
 
-export type SupportedReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max";
+export type SupportedReasoningEffort = EffortLevel;
 
 export const DEFAULT_REASONING_EFFORT: SupportedReasoningEffort = "high";
 
@@ -20,24 +16,28 @@ const BASE_OPTIONS: ReasoningEffortOption[] = [
   { value: "high", name: "High" },
 ];
 
+const STANDARD_EFFORTS: readonly SupportedReasoningEffort[] = [
+  "low",
+  "medium",
+  "high",
+];
+const EXTENDED_EFFORTS: readonly SupportedReasoningEffort[] = [
+  ...STANDARD_EFFORTS,
+  "xhigh",
+  "max",
+  "ultracode",
+];
+
 const CLAUDE_MODEL_EFFORTS: Readonly<
   Record<string, readonly SupportedReasoningEffort[]>
 > = {
-  "claude-opus-4-7": ["low", "medium", "high", "xhigh", "max"],
-  "claude-opus-4-8": ["low", "medium", "high", "xhigh", "max"],
-  "claude-sonnet-4-6": ["low", "medium", "high"],
-  "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
-  "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
+  "claude-opus-4-7": EXTENDED_EFFORTS,
+  "claude-opus-4-8": EXTENDED_EFFORTS,
+  "claude-sonnet-4-6": STANDARD_EFFORTS,
+  "claude-sonnet-5": EXTENDED_EFFORTS,
+  "claude-fable-5": EXTENDED_EFFORTS,
   "@cf/zai-org/glm-5.2": ["high", "max"],
-  "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
-};
-
-const EFFORT_NAMES: Record<SupportedReasoningEffort, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High",
-  max: "Max",
+  "claude-opus-5": EXTENDED_EFFORTS,
 };
 
 export function getReasoningEffortOptions(
@@ -47,7 +47,8 @@ export function getReasoningEffortOptions(
   if (adapter === "claude") {
     const efforts = CLAUDE_MODEL_EFFORTS[modelId];
     return (
-      efforts?.map((value) => ({ value, name: EFFORT_NAMES[value] })) ?? null
+      efforts?.map((value) => ({ value, name: EFFORT_LEVEL_LABELS[value] })) ??
+      null
     );
   }
 
