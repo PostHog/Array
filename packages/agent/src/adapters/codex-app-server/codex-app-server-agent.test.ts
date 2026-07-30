@@ -101,6 +101,45 @@ function makeFakeClient(
 const init = { protocolVersion: 1 } as unknown as InitializeRequest;
 
 describe("CodexAppServerAgent", () => {
+  it("logs session initialization diagnostics when thread setup fails", async () => {
+    const stub = makeStubRpc({
+      "thread/start": new Error("thread setup failed"),
+    });
+    const { client } = makeFakeClient();
+    const agent = new CodexAppServerAgent(client, {
+      processOptions: {
+        binaryPath: "/bundle/codex",
+        apiBaseUrl: "https://gateway.example.com",
+      },
+      model: "gpt-5.5",
+      rpcFactory: stub.factory,
+    });
+    const errorSpy = vi.spyOn(agent.logger, "error");
+
+    await expect(
+      agent.newSession({
+        cwd: "/repo",
+        _meta: { taskId: "task-1", taskRunId: "run-1" },
+      } as unknown as NewSessionRequest),
+    ).rejects.toThrow("thread setup failed");
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Codex app-server session initialization failed",
+      expect.objectContaining({
+        runtimeAdapter: "codex",
+        initializationPhase: "thread/start",
+        initMs: expect.any(Number),
+        requestedModel: "gpt-5.5",
+        gatewayConfigured: true,
+        taskId: "task-1",
+        taskRunId: "run-1",
+        errorDetail: expect.objectContaining({
+          message: "thread setup failed",
+        }),
+      }),
+    );
+  });
+
   it("runs initialize -> thread/start -> turn/start and streams agent text", async () => {
     const stub = makeStubRpc({
       initialize: {},

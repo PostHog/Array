@@ -2197,10 +2197,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const initPromise = !isResume
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
+    const requestedModel =
+      meta?.model || settingsManager.getSettings().model || undefined;
 
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
-        meta?.model || settingsManager.getSettings().model || undefined,
+        requestedModel,
         this.options?.gatewayEnv?.anthropicBaseUrl,
         this.options?.gatewayEnv?.anthropicAuthToken,
       ),
@@ -2252,12 +2254,19 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       } catch (err) {
         settingsManager.dispose();
         this.terminateQuery(q, abortController);
+        const initMs = Date.now() - initStartedAt;
         this.logger.error("Session initialization failed", {
           sessionId,
           taskId,
           taskRunId: meta?.taskRunId,
+          initializationPhase: "sdk_initialization",
+          timeoutMs: SESSION_VALIDATION_TIMEOUT_MS,
           modelConfigMs,
-          initMs: Date.now() - initStartedAt,
+          initMs,
+          requestedModel: requestedModel ?? null,
+          gatewayConfigured: Boolean(
+            this.options?.gatewayEnv?.anthropicBaseUrl,
+          ),
           errorDetail: serializeError(err),
         });
         throw err;
