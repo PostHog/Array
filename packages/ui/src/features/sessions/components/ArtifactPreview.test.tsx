@@ -203,6 +203,17 @@ describe("ArtifactPreview", () => {
     expect(blob.type).toBe(mimeType);
   });
 
+  // Kept out of the <img> path for safety, but the sandboxed iframe needs a
+  // typed blob to draw it rather than offer a download.
+  it("types an SVG blob so the sandboxed iframe can render it", async () => {
+    const blob = await artifactPreviewBlob(
+      new Blob(["<svg/>"], { type: "" }),
+      "diagram.svg",
+    );
+
+    expect(blob.type).toBe("image/svg+xml");
+  });
+
   it("shows working image controls instead of an iframe", () => {
     useQuery.mockReturnValue({
       data: new Blob(["image"], { type: "image/png" }),

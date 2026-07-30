@@ -26,5 +26,12 @@ export async function artifactPreviewBlob(
   if (isAllowedImageMimeType(imageMimeType)) {
     return new Blob([blob], { type: imageMimeType });
   }
+  // SVG is kept out of the <img> allowlist because its scripts would run from a
+  // data URL, but the generic preview renders it in an opaque-origin iframe
+  // with scripts already blocked — so it's safe there and just needs the right
+  // type, or the browser offers a download instead of drawing it.
+  if (filenameMimeType === "image/svg+xml") {
+    return new Blob([blob], { type: "image/svg+xml" });
+  }
   return blob;
 }
