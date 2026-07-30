@@ -160,17 +160,17 @@ export function AnnotatedArtifactImage({
           // circle makes the teardrop, and that corner is the anchor point, so
           // the pin hangs off the spot rather than covering it.
           //
-          // The shell doesn't follow the theme: it sits on someone's artwork,
-          // which has a palette of its own, and has to read on both black and
-          // white pixels. Fully opaque, both the shell and the disc behind the
-          // avatar, so artwork can't show through an avatar's own transparency.
+          // Shell and ring are opposite ends of the grey scale, so the pin
+          // carries its own contrast onto artwork of any colour, and both steps
+          // are opaque — an avatar with transparency in it (plenty of Gravatars
+          // have) must not let the picture bleed through.
           <button
             key={comment.id}
             type="button"
             aria-label={`Open comment from ${authorName(comment)}`}
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute flex size-7 items-center justify-center rounded-full rounded-bl-none bg-black p-0.5 ring-white transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-1 ${
+            className={`pointer-events-auto absolute flex size-8 items-center justify-center rounded-full rounded-bl-none bg-(--gray-12) p-1 ring-(--gray-1) transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-(--gray-1) focus-visible:outline-offset-1 ${
               comment.id === activeThreadId ? "ring-2" : "ring-1"
             }`}
             style={{
@@ -184,7 +184,7 @@ export function AnnotatedArtifactImage({
             <UserAvatar
               user={comment.created_by}
               size="sm"
-              className="rounded-full bg-white"
+              className="rounded-full bg-(--gray-1)"
             />
           </button>
         ))}
