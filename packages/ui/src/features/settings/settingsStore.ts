@@ -123,7 +123,9 @@ interface SettingsStore {
   lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
+  defaultCloudMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
+  setDefaultCloudMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -320,6 +322,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
+      defaultCloudMessagingMode: "steer",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -369,6 +372,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
+      setDefaultCloudMessagingMode: (mode) =>
+        set({ defaultCloudMessagingMode: mode }),
 
       // Notifications
       ...NOTIFICATION_DEFAULTS,
@@ -568,6 +573,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastPlanApprovalMode: state.lastPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
+        defaultCloudMessagingMode: state.defaultCloudMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,

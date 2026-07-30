@@ -95,6 +95,7 @@ export function GeneralSettings() {
     autoConvertLongText,
     defaultInitialTaskMode,
     defaultMessagingMode,
+    defaultCloudMessagingMode,
     defaultReasoningEffort,
     diffOpenMode,
     sendMessagesWith,
@@ -105,6 +106,7 @@ export function GeneralSettings() {
     setAutoConvertLongText,
     setDefaultInitialTaskMode,
     setDefaultMessagingMode,
+    setDefaultCloudMessagingMode,
     setDefaultReasoningEffort,
     setDiffOpenMode,
     setSendMessagesWith,
@@ -174,6 +176,18 @@ export function GeneralSettings() {
       setDefaultMessagingMode(value);
     },
     [defaultMessagingMode, setDefaultMessagingMode],
+  );
+
+  const handleDefaultCloudMessagingModeChange = useCallback(
+    (value: DefaultMessagingMode) => {
+      track(ANALYTICS_EVENTS.SETTING_CHANGED, {
+        setting_name: "default_cloud_messaging_mode",
+        new_value: value,
+        old_value: defaultCloudMessagingMode,
+      });
+      setDefaultCloudMessagingMode(value);
+    },
+    [defaultCloudMessagingMode, setDefaultCloudMessagingMode],
   );
 
   const handleDefaultReasoningEffortChange = useCallback(
@@ -318,12 +332,31 @@ export function GeneralSettings() {
 
       <SettingRow
         label="Default messaging mode"
-        description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
+        description="Mode new local sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
       >
         <Select.Root
           value={defaultMessagingMode}
           onValueChange={(value) =>
             handleDefaultMessagingModeChange(value as DefaultMessagingMode)
+          }
+          size="1"
+        >
+          <Select.Trigger className="min-w-[100px]" />
+          <Select.Content>
+            <Select.Item value="queue">Queue</Select.Item>
+            <Select.Item value="steer">Steer</Select.Item>
+          </Select.Content>
+        </Select.Root>
+      </SettingRow>
+
+      <SettingRow
+        label="Default cloud messaging mode"
+        description="Mode new cloud sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
+      >
+        <Select.Root
+          value={defaultCloudMessagingMode}
+          onValueChange={(value) =>
+            handleDefaultCloudMessagingModeChange(value as DefaultMessagingMode)
           }
           size="1"
         >
