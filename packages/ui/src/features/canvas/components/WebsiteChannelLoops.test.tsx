@@ -1,17 +1,24 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  channels: [{ id: "personal-space", name: "me", path: "/me" }],
+  channelsLoading: false,
+  useLoops: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+}));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
   useChannels: () => ({
-    channels: [{ id: "personal-space", name: "me", path: "/me" }],
-    isLoading: false,
+    channels: mocks.channels,
+    isLoading: mocks.channelsLoading,
   }),
 }));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelsLayout", () => ({
   useChannelsLayout: () => true,
 }));
 vi.mock("@posthog/ui/features/canvas/components/ChannelHeader", () => ({
-  ChannelHeader: () => null,
+  ChannelHeader: () => <div>Personal space header</div>,
 }));
 vi.mock("@posthog/ui/hooks/useSetHeaderContent", () => ({
   useSetHeaderContent: () => {},
@@ -28,7 +35,7 @@ vi.mock("@posthog/ui/features/canvas/hooks/useOrgMembers", () => ({
   }),
 }));
 vi.mock("@posthog/ui/features/loops/hooks/useLoops", () => ({
-  useLoops: () => ({ data: [], isLoading: false, isError: false }),
+  useLoops: mocks.useLoops,
   useLoopLimits: () => null,
 }));
 vi.mock("@posthog/ui/features/loops/components/LoopBuilderComposer", () => ({
@@ -36,7 +43,7 @@ vi.mock("@posthog/ui/features/loops/components/LoopBuilderComposer", () => ({
 }));
 vi.mock("@posthog/ui/features/loops/components/LoopFallbacks", () => ({
   LoopsEmptyNotice: () => null,
-  LoopsSkeleton: () => null,
+  LoopsSkeleton: () => <div>Loading loops</div>,
 }));
 vi.mock("@posthog/ui/features/loops/components/LoopRow", () => ({
   LoopRow: () => null,
@@ -51,15 +58,40 @@ vi.mock("@posthog/ui/features/canvas/hooks/useTaskChannels", () => ({
   PERSONAL_CHANNEL_NAME: "me",
 }));
 vi.mock("@posthog/ui/features/loops/components/LoopsListView", () => ({
-  LoopsListView: () => <div>Project loops registry</div>,
+  LoopsListView: ({ headerContent }: { headerContent?: ReactNode }) => (
+    <div>
+      {headerContent}
+      Project loops registry
+    </div>
+  ),
 }));
 
 import { WebsiteChannelLoops } from "./WebsiteChannelLoops";
 
 describe("WebsiteChannelLoops", () => {
+  beforeEach(() => {
+    mocks.channels = [{ id: "personal-space", name: "me", path: "/me" }];
+    mocks.channelsLoading = false;
+    mocks.useLoops.mockClear();
+  });
+
   it("shows the project loops registry in the Personal space", () => {
     render(<WebsiteChannelLoops channelId="personal-space" />);
 
     expect(screen.getByText("Project loops registry")).toBeInTheDocument();
+    expect(screen.getByText("Personal space header")).toBeInTheDocument();
+  });
+
+  it("waits for the Personal space to resolve before choosing a list", () => {
+    mocks.channels = [];
+    mocks.channelsLoading = true;
+
+    render(<WebsiteChannelLoops channelId="personal-space" />);
+
+    expect(screen.getByText("Loading loops")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Project loops registry"),
+    ).not.toBeInTheDocument();
+    expect(mocks.useLoops).not.toHaveBeenCalled();
   });
 });

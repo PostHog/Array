@@ -14,7 +14,7 @@ import {
 } from "@posthog/ui/primitives/PageHeader";
 import { navigateToNewLoop } from "@posthog/ui/router/navigationBridge";
 import { Flex, Heading, Text } from "@radix-ui/themes";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { LoopBuilderComposer } from "../../loops/components/LoopBuilderComposer";
 import {
   LoopsEmptyNotice,
@@ -57,15 +57,26 @@ function contextQuickStarts(name: string): { label: string; prompt: string }[] {
  * composer pinned at the bottom), but the build surface is tuned to automations that feed
  * this context. `channelId` is the desktop folder id, matching `context_target.folder_id`. */
 export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
-  const { channels } = useChannels();
+  const { channels, isLoading } = useChannels();
   const channel = channels.find((candidate) => candidate.id === channelId);
+  const headerContent = useMemo(
+    () => <ChannelHeader channelId={channelId} page="loops" />,
+    [channelId],
+  );
+
+  // Don't mount the scoped scene while the route's space is unresolved. In
+  // particular, that would flash a raw-id empty state for Personal before the
+  // channel query identifies it as the project-level loops registry.
+  if (isLoading && !channel) {
+    return <ChannelLoopsLoading headerContent={headerContent} />;
+  }
 
   // The Personal space is the project-level home for loops in the spaces
   // layout. API-created and other unattached loops have no context_target, so
   // rendering the space-scoped list here incorrectly produces the global
   // "Create your first loop" empty state while those loops already exist.
   if (channel?.name === PERSONAL_CHANNEL_NAME) {
-    return <LoopsListView />;
+    return <LoopsListView headerContent={headerContent} />;
   }
 
   return (
@@ -73,6 +84,15 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
       channelId={channelId}
       contextName={channel?.name ?? channelId}
     />
+  );
+}
+
+function ChannelLoopsLoading({ headerContent }: { headerContent: ReactNode }) {
+  useSetHeaderContent(headerContent);
+  return (
+    <div className="mx-auto w-full max-w-5xl px-8 py-8">
+      <LoopsSkeleton />
+    </div>
   );
 }
 
