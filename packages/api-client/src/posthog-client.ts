@@ -3086,6 +3086,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    context_window?: "200k" | "1m" | null;
+    fast_mode?: boolean | null;
     sandbox_environment_id?: string | null;
     custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
@@ -3104,6 +3106,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.context_window
+            ? { context_window: options.context_window }
+            : {}),
+          ...(options.fast_mode != null
+            ? { fast_mode: options.fast_mode }
+            : {}),
           ...(options.sandbox_environment_id
             ? { sandbox_environment_id: options.sandbox_environment_id }
             : {}),
