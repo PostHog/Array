@@ -1,7 +1,6 @@
 import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import type { RegionCommentAnchor } from "@posthog/core/comments/anchors";
-import { Button } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
@@ -146,15 +145,17 @@ export function AnnotatedArtifactImage({
       )}
       <div className="pointer-events-none absolute inset-0 z-30">
         {regionComments.map(({ comment, anchor }) => (
-          <Button
+          // A marker, not a quill Button: that one nudges itself down on press
+          // and keeps a dark focus ring afterwards, both of which read as a
+          // glitch on something pinned to a picture.
+          <button
             key={comment.id}
-            size="icon-sm"
-            variant="primary"
+            type="button"
             aria-label="Open image comment thread"
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute rounded-full ring-1 ring-white/70 ${
-              comment.id === activeThreadId ? "ring-2 ring-white" : ""
+            className={`pointer-events-auto absolute flex size-6 items-center justify-center rounded-full bg-(--yellow-9) text-(--gray-12) ring-(--gray-a7) transition-[box-shadow] hover:bg-(--yellow-10) focus-visible:outline-2 focus-visible:outline-(--yellow-11) focus-visible:outline-offset-1 ${
+              comment.id === activeThreadId ? "ring-2" : "ring-1"
             }`}
             style={{
               left: `${(anchor.x + anchor.width / 2) * 100}%`,
@@ -163,8 +164,8 @@ export function AnnotatedArtifactImage({
             }}
             onClick={() => onActivateThread(comment.id)}
           >
-            <ChatCircleIcon weight="fill" />
-          </Button>
+            <ChatCircleIcon size={13} weight="fill" />
+          </button>
         ))}
       </div>
     </>
