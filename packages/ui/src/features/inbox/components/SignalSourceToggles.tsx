@@ -16,7 +16,7 @@ import {
 } from "@posthog/shared";
 import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { memo, useCallback } from "react";
 
 export type SignalSourceValues = Record<ToggleableSourceProduct, boolean>;
@@ -233,9 +233,6 @@ export const EvaluationsSection = memo(function EvaluationsSection({
               <Text className="font-medium text-gray-12 text-sm">
                 AI observability
               </Text>
-              <Tooltip content="This is only visible to staff users of PostHog">
-                <Badge color="blue">Internal</Badge>
-              </Tooltip>
             </Flex>
             <Text className="text-[13px] text-gray-11">
               Monitor how your AI features are performing

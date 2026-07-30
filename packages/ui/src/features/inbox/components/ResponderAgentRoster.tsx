@@ -14,7 +14,7 @@ import type { SignalSourceValues } from "@posthog/ui/features/inbox/components/S
 import { InboxBadge } from "@posthog/ui/features/inbox/components/utils/InboxBadge";
 import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { type ComponentType, memo, useCallback } from "react";
 
 type AgentRosterStatus = "standby" | "watching" | "syncing" | "sync_failed";
@@ -289,11 +289,6 @@ const EvaluationsAgentCard = memo(function EvaluationsAgentCard({
               <Text className="font-medium text-[13px] text-gray-12">
                 AI Observability
               </Text>
-              <Tooltip content="This is only visible to staff users of PostHog">
-                <Badge color="blue" className="text-[11px]">
-                  Internal
-                </Badge>
-              </Tooltip>
             </Flex>
             <Text className="text-[13px] text-gray-11 leading-snug">
               Quality problems in your AI features.
