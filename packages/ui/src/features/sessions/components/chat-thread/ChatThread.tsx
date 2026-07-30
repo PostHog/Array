@@ -520,7 +520,7 @@ function MessageContextMenu({
   const { setShowRawLogs } = useSessionViewActions();
   return (
     <ContextMenu>
-      <ContextMenuTrigger render={children} />
+      <ContextMenuTrigger className="select-text" render={children} />
       <ContextMenuContent>
         <ContextMenuItem
           onClick={() =>
