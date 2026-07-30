@@ -413,16 +413,27 @@ export const ChannelHomeComposer = forwardRef<
           and the trigger's own fill is translucent, so it carries an opaque
           backdrop at the button's radius to stop messages showing through. */}
       {!canvasArmed && (
-        <div className="absolute bottom-full left-0 mb-2 flex items-center gap-2 rounded-sm bg-card">
-          <WorkspaceModeSelect
-            value={workspaceMode}
-            onChange={setWorkspaceMode}
-            overrideModes={["local", "cloud"]}
-            selectedCloudEnvironmentId={selectedCloudEnvId}
-            onCloudEnvironmentChange={setSelectedCloudEnvId}
-            size="1"
-            disabled={isBusy}
-          />
+        <div className="absolute bottom-full left-0 mb-2 flex max-w-full items-center gap-2">
+          <div className="shrink-0 rounded-sm bg-card">
+            <WorkspaceModeSelect
+              value={workspaceMode}
+              onChange={setWorkspaceMode}
+              overrideModes={["local", "cloud"]}
+              selectedCloudEnvironmentId={selectedCloudEnvId}
+              onCloudEnvironmentChange={setSelectedCloudEnvId}
+              size="1"
+              disabled={isBusy}
+            />
+          </div>
+          {includedAlwaysOnSkills.length > 0 && (
+            <div className="flex min-w-0 select-none flex-wrap items-center gap-1.5 rounded-sm bg-card px-1 py-0.5 text-[12px] text-gray-11">
+              <span className="shrink-0 text-gray-10">Using:</span>
+              <AlwaysOnSkillChips
+                skills={includedAlwaysOnSkills}
+                onExclude={excludeAlwaysOnSkill}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -473,15 +484,6 @@ export const ChannelHomeComposer = forwardRef<
           if (canvasArmed || canSubmit) void submitComposer();
         }}
       />
-      {!canvasArmed && includedAlwaysOnSkills.length > 0 && (
-        <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
-          <span className="shrink-0 text-gray-10">Using:</span>
-          <AlwaysOnSkillChips
-            skills={includedAlwaysOnSkills}
-            onExclude={excludeAlwaysOnSkill}
-          />
-        </div>
-      )}
     </div>
   );
 });
