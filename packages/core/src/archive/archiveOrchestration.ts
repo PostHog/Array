@@ -67,8 +67,12 @@ export async function archiveTask(
   }
 
   const optimistic = options?.optimistic ?? true;
-  const pinnedTaskIds = await deps.getPinnedTaskIds();
-  const wasPinned = pinnedTaskIds.includes(taskId);
+  let wasPinned: boolean | undefined;
+  try {
+    wasPinned = (await deps.getPinnedTaskIds()).includes(taskId);
+  } catch (error) {
+    deps.logError("Failed to read task pin state while archiving", error);
+  }
 
   if (!options?.skipNavigate) {
     deps.navigateAwayFromTaskIfActive(taskId);
@@ -76,7 +80,13 @@ export async function archiveTask(
 
   const commandCenterSnapshot = deps.snapshotCommandCenter(taskId);
 
-  await deps.unpin(taskId);
+  if (wasPinned) {
+    try {
+      await deps.unpin(taskId);
+    } catch (error) {
+      deps.logError("Failed to unpin task while archiving", error);
+    }
+  }
   deps.removeFromCommandCenter(taskId);
 
   await deps.cache.cancelPathFilter();
@@ -118,7 +128,14 @@ export async function archiveTask(
     deps.cache.setArchivedTaskIds((old) => removeArchivedTaskId(old, taskId));
     deps.cache.setArchiveList((old) => removeArchivedTask(old, taskId));
     if (wasPinned) {
-      await deps.togglePin(taskId);
+      try {
+        await deps.togglePin(taskId);
+      } catch (pinError) {
+        deps.logError(
+          "Failed to restore task pin after archive failure",
+          pinError,
+        );
+      }
     }
     if (commandCenterSnapshot.index !== -1) {
       deps.restoreCommandCenter(taskId, commandCenterSnapshot);
