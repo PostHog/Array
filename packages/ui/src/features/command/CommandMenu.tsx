@@ -3,6 +3,7 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
+  GitDiffIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -341,9 +342,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             {
               id: "open-review-panel",
               label: "Open diff view",
-              icon: (
-                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
-              ),
+              icon: <GitDiffIcon className="h-3 w-3 text-gray-11" />,
               action: "open-review-panel" as CommandMenuAction,
               shortcut: SHORTCUTS.TOGGLE_REVIEW_PANEL,
               onRun: openReviewPanel,
