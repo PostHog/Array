@@ -2644,6 +2644,7 @@ export class PostHogAPIClient {
 
   async createSignalReportTask(
     options: Record<string, unknown> & {
+      description: string;
       signal_report: string;
       signal_report_task_relationship: "implementation" | "discussion";
     },
@@ -2655,7 +2656,19 @@ export class PostHogAPIClient {
       path,
       url: new URL(`${this.api.baseUrl}${path}`),
       overrides: { body: JSON.stringify(options) },
+      throwOnStatusError: false,
     });
+    if (response.status === 404) {
+      return this.createTask({
+        ...options,
+        origin_product: "signal_report",
+      } as Parameters<PostHogAPIClient["createTask"]>[0]);
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to create signal report task: ${response.statusText}`,
+      );
+    }
     return normalizeTaskResponse(
       (await response.json()) as Parameters<typeof normalizeTaskResponse>[0],
       { teamId },
