@@ -340,6 +340,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     <ChannelItemRow
       key={item.key}
       item={item}
+      channelId={channelId}
       isActive={item.key === activeKey}
       actions={actions}
       isEditing={item.kind === "task" && editingTaskId === item.id}

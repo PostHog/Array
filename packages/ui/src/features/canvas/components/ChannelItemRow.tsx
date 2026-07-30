@@ -53,7 +53,7 @@ import {
   taskDot,
 } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 
 /**
  * What a row can do. One object per channel rather than closures per item, so
@@ -169,6 +169,7 @@ function CanvasBadgeStack({
 
 export function ChannelItemRow({
   item,
+  channelId,
   isActive,
   actions,
   isEditing = false,
@@ -178,6 +179,8 @@ export function ChannelItemRow({
   onEditCancel,
 }: {
   item: ChannelItemModel;
+  /** The space this row is listed under, ticked in the menu's "File to…". */
+  channelId?: string;
   isActive: boolean;
   actions: ChannelItemActions;
   isEditing?: boolean;
@@ -194,7 +197,11 @@ export function ChannelItemRow({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   // A canvas inside its undo window stays in the list rather than vanishing and
   // reappearing on Undo, so the row has to say what's happening to it.
-  const deleting = useIsCanvasPendingDelete(item.id);
+  const pendingDelete = useIsCanvasPendingDelete(item.id);
+  const deleting = item.kind === "canvas" && pendingDelete;
+  // Stable: `TaskRowMenuList` builds its item components from these, so a new
+  // identity each render would remount every button in the card.
+  const closeCard = useCallback(() => setCardOpen(false), []);
   const statusLabel = runStatusLabel(item.rawStatus);
   const author = authorLabel(item);
   // The row's leading mark is always the task-list state vocabulary. Canvases
@@ -225,6 +232,7 @@ export function ChannelItemRow({
           id: item.id,
           title: item.title,
           isPinned: item.pinned,
+          channelId,
           onAddToCommandCenter,
           onRename,
           onTogglePin: () => actions.togglePin(item),
@@ -363,7 +371,7 @@ export function ChannelItemRow({
               <div className="p-1">
                 <TaskRowMenuList
                   menu={menu}
-                  onAction={() => setCardOpen(false)}
+                  onAction={closeCard}
                   onSubmenuOpenChange={setSubmenuOpen}
                 />
               </div>
