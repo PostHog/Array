@@ -1,8 +1,5 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path, { join } from "node:path";
-import { promisify } from "node:util";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeHandoffArtifact,
@@ -14,13 +11,6 @@ import {
   type TestRepo,
 } from "./sagas/test-fixtures";
 import type { HandoffLocalGitState } from "./types";
-
-const execFileAsync = promisify(execFile);
-
-async function git(cwd: string, args: string[]): Promise<string> {
-  const result = await execFileAsync("git", args, { cwd });
-  return result.stdout.trim();
-}
 
 interface BundleStore {
   artifacts: Record<string, Buffer>;
@@ -264,73 +254,6 @@ describe("HandoffCheckpointTracker", () => {
     expect(status).toContain(" M unstaged.txt");
     expect(status).toContain("?? untracked.txt");
     expect(localRepo.exists(".posthog/tmp")).toBe(false);
-  });
-
-  it("restores missing sibling repositories from a workspace manifest", async () => {
-    const primaryRemote = await createTestRepo("manifest-primary-remote");
-    const siblingRemote = await createTestRepo("manifest-sibling-remote");
-    cleanups.push(primaryRemote.cleanup, siblingRemote.cleanup);
-    await seedCloudRepo(primaryRemote);
-    await seedCloudRepo(siblingRemote);
-
-    const sourceWorkspace = await mkdtemp(join(tmpdir(), "manifest-source-"));
-    const targetWorkspace = await mkdtemp(join(tmpdir(), "manifest-target-"));
-    cleanups.push(
-      () => rm(sourceWorkspace, { recursive: true, force: true }),
-      () => rm(targetWorkspace, { recursive: true, force: true }),
-    );
-    const sourcePrimary = join(sourceWorkspace, "repos/acme/primary");
-    const sourceSibling = join(sourceWorkspace, "repos/acme/sibling");
-    await execFileAsync("git", ["clone", primaryRemote.path, sourcePrimary]);
-    await execFileAsync("git", ["clone", siblingRemote.path, sourceSibling]);
-
-    await git(sourceSibling, ["checkout", "-b", "feature/resume-me"]);
-    await writeFile(join(sourceSibling, "feature.txt"), "feature commit\n");
-    await git(sourceSibling, ["add", "feature.txt"]);
-    await git(sourceSibling, ["commit", "-m", "Add sibling feature"]);
-    await git(sourceSibling, ["push", "-u", "origin", "feature/resume-me"]);
-    await writeFile(join(sourceSibling, "unstaged.txt"), "sibling resumed\n");
-    await writeFile(
-      join(sourceSibling, "untracked.txt"),
-      "untracked sibling\n",
-    );
-
-    const store = createBundleStore();
-    const apiClient = createMockApi(store);
-    const captureTracker = createTracker(sourcePrimary, apiClient);
-    const checkpoint =
-      await captureTracker.captureWorkspaceForHandoff(sourceWorkspace);
-    expect(checkpoint?.repositories).toHaveLength(2);
-    if (!checkpoint) throw new Error("Workspace checkpoint was not captured");
-
-    // The manifest must not depend on a feature branch continuing to exist remotely.
-    await git(siblingRemote.path, [
-      "update-ref",
-      "-d",
-      "refs/heads/feature/resume-me",
-    ]);
-
-    const targetPrimary = join(targetWorkspace, "repos/acme/primary");
-    await execFileAsync("git", ["clone", primaryRemote.path, targetPrimary]);
-    const applyTracker = createTracker(targetPrimary, apiClient);
-    await applyTracker.applyWorkspaceFromHandoff(checkpoint, targetWorkspace);
-
-    const targetSibling = join(targetWorkspace, "repos/acme/sibling");
-    expect(await readFile(join(targetSibling, "unstaged.txt"), "utf8")).toBe(
-      "sibling resumed\n",
-    );
-    expect(await readFile(join(targetSibling, "untracked.txt"), "utf8")).toBe(
-      "untracked sibling\n",
-    );
-    expect(await readFile(join(targetSibling, "feature.txt"), "utf8")).toBe(
-      "feature commit\n",
-    );
-    expect(await git(targetSibling, ["branch", "--show-current"])).toBe(
-      "feature/resume-me",
-    );
-    expect(await git(targetSibling, ["status", "--short"])).toContain(
-      "?? untracked.txt",
-    );
   });
 
   it("round-trips a cloud capture without local git state via direct-to-storage uploads", async () => {

@@ -259,7 +259,7 @@ ACP defines standard methods like `session/prompt`, `session/update`, and `sessi
 **State synchronization** — events that keep the client's view of the agent's state in sync. These are essential for the cloud↔local handoff flow and for the client to render accurate UI.
 
 - `_posthog/branch_created` — `{ branch }` — agent created a git branch (client can update branch display)
-- `_posthog/git_checkpoint` — `{ checkpointId, checkpointRef, branch, head, indexTree, worktreeTree, repositories?, ... }` — git checkpoint captured for resume and handoff. Cloud workspace checkpoints include a versioned `repositories` manifest with independent artifacts and workspace-relative paths for every cloned repository. The top-level fields remain the primary repository checkpoint for compatibility with older agents.
+- `_posthog/git_checkpoint` — `{ checkpointId, checkpointRef, branch, head, indexTree, worktreeTree, ... }` — git checkpoint captured for resume and handoff. This is the key event for session resume — the resume saga scans backwards for the latest checkpoint to restore files
 - `_posthog/mode_change` — `{ mode, previous_mode }` — permission mode changed (client updates mode selector)
 - `_posthog/compact_boundary` — `{ sessionId, timestamp }` — marks where context compaction occurred, so the client knows the conversation was summarized at this point
 - `_posthog/task_notification` — `{ sessionId, type, message?, data? }` — generic extensible notification for adapter-specific events

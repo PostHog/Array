@@ -137,10 +137,6 @@ program
   )
   .option("--repositoryPath <path>", "Path to the repository")
   .option(
-    "--workspacePath <path>",
-    "Workspace root containing all repositories to checkpoint",
-  )
-  .option(
     "--repoReadyFile <path>",
     "Sentinel file; session creation blocks until it exists (set while cloning concurrently)",
   )
@@ -259,7 +255,6 @@ program
       otelLogsToken: env.POSTHOG_AGENT_OTEL_LOGS_TOKEN,
       otelTracesUrl: env.POSTHOG_AGENT_OTEL_TRACES_URL,
       repositoryPath: options.repositoryPath,
-      workspacePath: options.workspacePath,
       repoReadyFile: options.repoReadyFile,
       apiUrl: env.POSTHOG_API_URL,
       apiKey: env.POSTHOG_PERSONAL_API_KEY,

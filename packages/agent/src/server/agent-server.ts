@@ -2499,26 +2499,17 @@ export class AgentServer {
         apiClient: this.posthogAPI,
         logger: this.logger.child("HandoffCheckpoint"),
       });
-      const workspacePath = this.getCheckpointWorkspacePath();
-      const metrics = workspacePath
-        ? await checkpointTracker.applyWorkspaceFromHandoff(
-            this.resumeState.latestGitCheckpoint,
-            workspacePath,
-          )
-        : await checkpointTracker.applyFromHandoff(
-            this.resumeState.latestGitCheckpoint,
-          );
+      const metrics = await checkpointTracker.applyFromHandoff(
+        this.resumeState.latestGitCheckpoint,
+      );
       this.logger.debug("Git checkpoint applied", {
         branch: this.resumeState.latestGitCheckpoint.branch,
         head: this.resumeState.latestGitCheckpoint.head,
+        packBytes: metrics.packBytes,
+        indexBytes: metrics.indexBytes,
         totalBytes: metrics.totalBytes,
-        repositories: "repositories" in metrics ? metrics.repositories : 1,
-        failedRepositories:
-          "failedRepositories" in metrics ? metrics.failedRepositories : 0,
       });
-      return !(
-        "failedRepositories" in metrics && metrics.failedRepositories > 0
-      );
+      return true;
     } catch (error) {
       this.logger.warn("Failed to apply git checkpoint", {
         error: error instanceof Error ? error.message : String(error),
@@ -4692,10 +4683,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       logger: this.logger.child("HandoffCheckpoint"),
     });
 
-    const workspacePath = this.getCheckpointWorkspacePath();
-    const checkpoint = workspacePath
-      ? await tracker.captureWorkspaceForHandoff(workspacePath, localGitState)
-      : await tracker.captureForHandoff(localGitState);
+    const checkpoint = await tracker.captureForHandoff(localGitState);
     if (!checkpoint) return;
 
     const checkpointWithDevice: GitCheckpointEvent = {
@@ -4719,15 +4707,6 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       this.session.payload.run_id,
       JSON.stringify(notification),
     );
-  }
-
-  private getCheckpointWorkspacePath(): string | undefined {
-    if (this.config.workspacePath) return this.config.workspacePath;
-    if (!this.config.repositoryPath) return undefined;
-    const reposDirectory = dirname(dirname(this.config.repositoryPath));
-    return basename(reposDirectory) === "repos"
-      ? dirname(reposDirectory)
-      : undefined;
   }
 
   private extractHandoffLocalGitState(

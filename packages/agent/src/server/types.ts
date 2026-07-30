@@ -15,7 +15,6 @@ export interface AgentServerConfig {
   port: number;
   agentStateDir?: string;
   repositoryPath?: string;
-  workspacePath?: string;
   repoReadyFile?: string;
   apiUrl: string;
   apiKey: string;
