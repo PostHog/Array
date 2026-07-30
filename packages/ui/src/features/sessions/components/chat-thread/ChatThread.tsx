@@ -35,7 +35,6 @@ import {
   TooltipTrigger,
   useChatMessageScroller,
   useChatMessageScrollerScrollable,
-  useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import type { AcpMessage, AgentConversationEvent } from "@posthog/shared";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -67,10 +66,12 @@ import {
   type AgentTurn,
   CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
   completedTurnTimestamp,
+  computeStickyAnchor,
   countFlatRows,
   type FlatThreadRow,
   flattenTurnRows,
   SCROLL_PREVIOUS_ITEM_PEEK,
+  type StickyAnchorEntry,
   type ThreadItem,
   type ThreadScrollResume,
   type TurnRow,
@@ -623,7 +624,13 @@ function ThreadItemBody({
  * non-virtualized thread stays cheap. The pinned header is the separate overlay, not the rows.
  *
  * An {@link AgentTurn} renders as a single muted card wrapping its items with tight spacing; a user
- * message stays a standalone anchored row.
+ * message stays a standalone row.
+ *
+ * No row is a `scrollAnchor`: the engine treats an anchored row as one it owns the scroll position
+ * for and pins every anchor it has not pinned before to the top of the viewport on the next content
+ * change — so a single row swap anywhere in a settled thread scrolls it back to an earlier prompt,
+ * one prompt per swap. {@link ThreadTurnAnchor} tracks the current turn without handing the engine
+ * that control.
  */
 const ThreadRow = memo(function ThreadRow({
   item,
@@ -675,7 +682,7 @@ const ThreadRow = memo(function ThreadRow({
   return (
     <ChatMessageScrollerItem
       messageId={item.id}
-      scrollAnchor={item.type === "user_message"}
+      scrollAnchor={false}
       className="mx-auto w-full py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
@@ -687,6 +694,17 @@ const ThreadRow = memo(function ThreadRow({
     </ChatMessageScrollerItem>
   );
 });
+
+/** The scroll viewport owning `node`, found from any element rendered inside the scroller. */
+function findScrollerViewport(node: Element | null): HTMLElement | null {
+  return (
+    node
+      ?.closest('[data-slot="chat-message-scroller"]')
+      ?.querySelector<HTMLElement>(
+        '[data-slot="chat-message-scroller-viewport"]',
+      ) ?? null
+  );
+}
 
 /**
  * Keeps the view pinned to the bottom from prompt submit until the user scrolls away.
@@ -701,9 +719,17 @@ const ThreadRow = memo(function ThreadRow({
  *   commit that leaves content below the fold re-issues `scrollToEnd` to recapture follow.
  *
  * User scroll intent (wheel, touch, pointer, keys — same signals the engine listens to) disarms
- * the pin; the next submit or the scroll-to-bottom button re-engages following.
+ * the pin; the next submit or the scroll-to-bottom button re-engages following. Arming is owned by
+ * the caller so the button can re-engage it — reaching the bottom once is worthless while a reply is
+ * still streaming rows in below.
  */
-function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
+function ThreadAutoFollow({
+  items,
+  armedRef,
+}: {
+  items: ConversationItem[];
+  armedRef: RefObject<boolean>;
+}) {
   const { scrollToEnd } = useChatMessageScroller();
   const { end } = useChatMessageScrollerScrollable();
   const lastItem = items.at(-1);
@@ -713,7 +739,6 @@ function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
     [items],
   );
   const prevCountRef = useRef(userMessageCount);
-  const armedRef = useRef(false);
   const probeRef = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
@@ -723,12 +748,10 @@ function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
     if (lastItem?.type !== "user_message") return;
     armedRef.current = true;
     scrollToEnd({ behavior: "auto" });
-  }, [userMessageCount, lastItem, scrollToEnd]);
+  }, [userMessageCount, lastItem, scrollToEnd, armedRef]);
 
   useEffect(() => {
-    const viewport = probeRef.current
-      ?.closest('[data-slot="chat-message-scroller"]')
-      ?.querySelector('[data-slot="chat-message-scroller-viewport"]');
+    const viewport = findScrollerViewport(probeRef.current);
     if (!viewport) return;
     const disarm = () => {
       armedRef.current = false;
@@ -742,7 +765,7 @@ function ThreadAutoFollow({ items }: { items: ConversationItem[] }) {
         viewport.removeEventListener(event, disarm);
       }
     };
-  }, []);
+  }, [armedRef]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-check on every streamed change — `end` alone doesn't re-notify while it stays true across commits.
   useEffect(() => {
@@ -871,12 +894,11 @@ function ThreadKeyboardNav({
 }
 
 /**
- * Keeps {@link ThreadScrollResume} current while the non-virtualized body is mounted, so the
- * windowed body can pick up where this one left off if the thread crosses the threshold
- * mid-session. Both values come from engine state the scroller already tracks — at-bottom from
- * `scrollable.end` (true while content extends below the fold), and the anchored user message from
- * the same visibility state the sticky header reads — so nothing here listens to scroll. Writes go
- * to a ref: the recorder must never make the thread re-render.
+ * Records at-bottom into {@link ThreadScrollResume} while the non-virtualized body is mounted, so the
+ * windowed body can pick up where this one left off if the thread crosses the threshold mid-session.
+ * It reads engine state the scroller already tracks (`scrollable.end` is true while content extends
+ * below the fold), so nothing here listens to scroll; {@link ThreadTurnAnchor} fills in the anchor
+ * half. Writes go to a ref: the recorder must never make the thread re-render.
  */
 function ThreadScrollStateRecorder({
   stateRef,
@@ -884,13 +906,102 @@ function ThreadScrollStateRecorder({
   stateRef: RefObject<ThreadScrollResume>;
 }) {
   const { end } = useChatMessageScrollerScrollable();
-  const { currentAnchorId } = useChatMessageScrollerVisibility();
 
   useEffect(() => {
-    stateRef.current = { atBottom: !end, anchorId: currentAnchorId ?? null };
-  }, [end, currentAnchorId, stateRef]);
+    stateRef.current = { ...stateRef.current, atBottom: !end };
+  }, [end, stateRef]);
 
   return null;
+}
+
+/**
+ * Tracks the user turn the reader is parked on — the last prompt whose top has passed the peek line,
+ * matching how the windowed body derives its own sticky anchor — and renders the minimap with it.
+ *
+ * The engine reports this for rows marked `scrollAnchor`, but marking a row also hands the engine the
+ * scroll position for it (see {@link ThreadRow}), so the anchor is measured here instead. Only this
+ * component re-renders as the reader moves; the rows never do.
+ */
+function ThreadTurnAnchor({
+  items,
+  resumeStateRef,
+}: {
+  items: ConversationItem[];
+  resumeStateRef: RefObject<ThreadScrollResume>;
+}) {
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const probeRef = useRef<HTMLSpanElement>(null);
+  const measureRef = useRef<(() => void) | null>(null);
+  const promptIds = useMemo(
+    () =>
+      new Set(
+        items
+          .filter((item) => item.type === "user_message")
+          .map((item) => item.id),
+      ),
+    [items],
+  );
+  const promptIdsRef = useRef(promptIds);
+  useEffect(() => {
+    promptIdsRef.current = promptIds;
+  }, [promptIds]);
+
+  useEffect(() => {
+    const viewport = findScrollerViewport(probeRef.current);
+    if (!viewport) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const viewportTop = viewport.getBoundingClientRect().top;
+      const { scrollTop } = viewport;
+      const entries: StickyAnchorEntry[] = [];
+      for (const row of viewport.querySelectorAll<HTMLElement>(
+        "[data-message-id]",
+      )) {
+        const id = row.dataset.messageId;
+        if (!id || !promptIdsRef.current.has(id)) continue;
+        const rect = row.getBoundingClientRect();
+        // A collapsed row (`empty:hidden`) measures as a zero rect at the origin, which would read
+        // as a row sitting above the peek line.
+        if (rect.height === 0) continue;
+        entries.push({
+          id,
+          start: rect.top - viewportTop + scrollTop,
+          end: rect.bottom - viewportTop + scrollTop,
+        });
+      }
+      const { anchorId: current } = computeStickyAnchor(
+        entries,
+        scrollTop,
+        SCROLL_PREVIOUS_ITEM_PEEK,
+      );
+      setAnchorId(current);
+      resumeStateRef.current = { ...resumeStateRef.current, anchorId: current };
+    };
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(measure);
+    };
+    measureRef.current = schedule;
+    measure();
+    viewport.addEventListener("scroll", schedule, { passive: true });
+    return () => {
+      measureRef.current = null;
+      cancelAnimationFrame(frame);
+      viewport.removeEventListener("scroll", schedule);
+    };
+  }, [resumeStateRef]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: appended rows move every row below them, so the anchor is stale until it is re-measured.
+  useEffect(() => {
+    measureRef.current?.();
+  }, [items]);
+
+  return (
+    <>
+      <span ref={probeRef} className="hidden" aria-hidden="true" />
+      <MessageMinimap items={items} anchorId={anchorId} />
+    </>
+  );
 }
 
 /** The scroll body, under the Provider so the overlay + scroll-button hooks can read engine state. */
@@ -922,6 +1033,11 @@ function ThreadScrollBody({
     }));
   }, [rows]);
 
+  const followArmedRef = useRef(false);
+  const armFollow = useCallback(() => {
+    followArmedRef.current = true;
+  }, []);
+
   // `group/thread` so the footer's hover-reveal (opacity-50 → 100 on group-hover) tracks the thread,
   // mirroring the legacy ConversationView container.
   return (
@@ -929,8 +1045,8 @@ function ThreadScrollBody({
       className="group/thread"
       onPointerDownCapture={onUserInteract}
     >
-      <MessageMinimap items={items} />
-      <ThreadAutoFollow items={items} />
+      <ThreadTurnAnchor items={items} resumeStateRef={resumeStateRef} />
+      <ThreadAutoFollow items={items} armedRef={followArmedRef} />
       <ThreadScrollStateRecorder stateRef={resumeStateRef} />
       <ChatMessageScrollerViewport>
         <ChatMessageScrollerContent
@@ -956,7 +1072,9 @@ function ThreadScrollBody({
           )}
         </ChatMessageScrollerContent>
       </ChatMessageScrollerViewport>
-      <ChatMessageScrollerButton />
+      {/* Re-arms auto-follow as well as scrolling: without it the button lands you at the bottom of
+          a reply that is still streaming, and the next row pushes the bottom back out of reach. */}
+      <ChatMessageScrollerButton onClick={armFollow} />
     </ChatMessageScroller>
   );
 }

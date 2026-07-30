@@ -5,7 +5,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   useChatMessageScroller,
-  useChatMessageScrollerVisibility,
 } from "@posthog/quill";
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
 import {
@@ -91,8 +90,8 @@ function MinimapMenuItem({
  * into view and leaves the list open to jump again. Replaces the floating "jump to your message"
  * pill, which only ever offered the single anchored turn.
  *
- * Only this component subscribes to the scroller's per-scroll visibility state, so the message rows
- * never re-render as the highlight moves.
+ * Each body tracks the current turn itself and passes it in, so this component re-renders as the
+ * highlight moves while the message rows never do.
  */
 export function MessageMinimap({
   items,
@@ -105,16 +104,11 @@ export function MessageMinimap({
    * `scrollToMessage` only reaches rows that exist in the DOM. Omitted for the plain body.
    */
   onJump?: (id: string) => void;
-  /**
-   * Current turn for the windowed body, which tracks its own anchor — the engine's visibility state
-   * only sees mounted rows. Omitted for the plain body.
-   */
-  anchorId?: string | null;
+  /** The turn the reader is parked on, highlighted in the rail and the list. */
+  anchorId: string | null;
 }) {
-  const visibility = useChatMessageScrollerVisibility();
   const { scrollToMessage } = useChatMessageScroller();
   const jump = onJump ?? scrollToMessage;
-  const currentAnchorId = anchorId ?? visibility.currentAnchorId;
   const [open, setOpen] = useState(false);
   // Base UI returns focus to the trigger when the menu closes. Without this guard the resulting
   // focus event would immediately re-open the menu the user just dismissed or selected from.
@@ -183,9 +177,7 @@ export function MessageMinimap({
               style={{ width: `${entry.widthPct}%` }}
               className={cn(
                 "h-[2px] shrink-0 rounded-full transition-colors duration-150 ease-out motion-reduce:transition-none",
-                entry.id === currentAnchorId
-                  ? "bg-(--accent-9)"
-                  : "bg-(--gray-8)",
+                entry.id === anchorId ? "bg-(--accent-9)" : "bg-(--gray-8)",
               )}
             />
           ))}
@@ -207,8 +199,8 @@ export function MessageMinimap({
             <MinimapMenuItem
               key={entry.id}
               entry={entry}
-              isCurrent={entry.id === currentAnchorId}
-              itemRef={entry.id === currentAnchorId ? activeItemRef : undefined}
+              isCurrent={entry.id === anchorId}
+              itemRef={entry.id === anchorId ? activeItemRef : undefined}
               onSelect={jump}
             />
           ))}
