@@ -430,10 +430,10 @@ export function TaskCommentsList({
               </Button>
             }
           />
-          {/* Wide enough, and wrapping rather than truncating, so a long PR
-              title is legible — the whole point of the filter is telling the
-              sources apart. Count pinned right with the shared ml-auto idiom. */}
-          <DropdownMenuContent align="end" sideOffset={6} className="w-72">
+          {/* Wide, single-line rows: the label truncates at the end (with the
+              full name on hover) and the count is pinned right with the shared
+              ml-auto idiom, so a long PR title stays legible and aligned. */}
+          <DropdownMenuContent align="end" sideOffset={6} className="w-80">
             <DropdownMenuRadioGroup
               value={sourceFilter}
               onValueChange={(value) => {
@@ -442,17 +442,19 @@ export function TaskCommentsList({
               }}
             >
               <DropdownMenuRadioItem value={ALL_SOURCES}>
-                <span className="min-w-0 flex-1">All sources</span>
-                <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
+                <span className="min-w-0 truncate">All sources</span>
+                <span className="ml-auto shrink-0 pl-3 text-muted-foreground tabular-nums">
                   {threads.length}
                 </span>
               </DropdownMenuRadioItem>
               {sourceOptions.map((option) => (
-                <DropdownMenuRadioItem key={option.key} value={option.key}>
-                  <span className="min-w-0 flex-1 whitespace-normal break-words">
-                    {option.label}
-                  </span>
-                  <span className="ml-auto shrink-0 self-start text-muted-foreground tabular-nums">
+                <DropdownMenuRadioItem
+                  key={option.key}
+                  value={option.key}
+                  title={option.label}
+                >
+                  <span className="min-w-0 truncate">{option.label}</span>
+                  <span className="ml-auto shrink-0 pl-3 text-muted-foreground tabular-nums">
                     {
                       threads.filter(
                         (thread) => thread.sourceKey === option.key,
