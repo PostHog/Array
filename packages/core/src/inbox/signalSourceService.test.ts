@@ -67,6 +67,20 @@ describe("computeSourceValues", () => {
     ]);
     expect(values.health_checks).toBe(true);
   });
+
+  it("scopes llm_analytics to evaluation_report, ignoring per-evaluation evaluation configs", () => {
+    // A per-evaluation `evaluation` config must not light up the source-level toggle.
+    const onlyEvaluation = computeSourceValues([
+      config("llm_analytics", "evaluation", true),
+    ]);
+    expect(onlyEvaluation.llm_analytics).toBe(false);
+
+    const withReport = computeSourceValues([
+      config("llm_analytics", "evaluation", true),
+      config("llm_analytics", "evaluation_report", true),
+    ]);
+    expect(withReport.llm_analytics).toBe(true);
+  });
 });
 
 describe("deriveSourceStates", () => {
@@ -122,6 +136,33 @@ describe("SignalSourceService.toggleSource", () => {
       source_type: "health_issue",
       enabled: true,
     });
+  });
+
+  it("creates an llm_analytics config with the evaluation_report source type", async () => {
+    const client = fakeClient();
+    const service = new SignalSourceService();
+    await service.toggleSource(client, 1, "llm_analytics", true, [], []);
+    expect(client.createSignalSourceConfig).toHaveBeenCalledWith(1, {
+      source_product: "llm_analytics",
+      source_type: "evaluation_report",
+      enabled: true,
+    });
+  });
+
+  it("toggles the evaluation_report config off without touching a co-existing evaluation config", async () => {
+    const client = fakeClient();
+    const service = new SignalSourceService();
+    const configs = [
+      config("llm_analytics", "evaluation", true),
+      config("llm_analytics", "evaluation_report", true),
+    ];
+    await service.toggleSource(client, 1, "llm_analytics", false, configs, []);
+    expect(client.updateSignalSourceConfig).toHaveBeenCalledTimes(1);
+    expect(client.updateSignalSourceConfig).toHaveBeenCalledWith(
+      1,
+      "llm_analytics-evaluation_report",
+      { enabled: false },
+    );
   });
 
   it("ensures the issues table syncs with full_refresh for github before enabling", async () => {

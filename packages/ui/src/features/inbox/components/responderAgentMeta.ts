@@ -56,6 +56,14 @@ export const RESPONDER_AGENT_GROUPS: ResponderAgentGroup[] = [
         docsLabel: "Session Replay",
         alpha: true,
       },
+      {
+        source: "llm_analytics",
+        sourceProduct: "llm_analytics",
+        label: "AI observability",
+        description: "Quality problems in your AI features.",
+        docsUrl: "https://posthog.com/docs/ai-observability",
+        docsLabel: "AI observability",
+      },
     ],
   },
   {
