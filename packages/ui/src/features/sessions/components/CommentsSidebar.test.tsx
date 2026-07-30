@@ -1,9 +1,10 @@
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactCommentsSidebar } from "./ArtifactCommentsSidebar";
+import { CommentsSidebar } from "./CommentsSidebar";
+import { buildCommentThreads } from "./commentViewTypes";
 
-const comment: ArtifactComment = {
+const comment: ResourceComment = {
   id: "comment-1",
   created_by: {
     id: 1,
@@ -29,11 +30,11 @@ const comment: ArtifactComment = {
   completed_at: null,
 };
 
-describe("ArtifactCommentsSidebar", () => {
+describe("CommentsSidebar", () => {
   it("keeps the new-comment composer below the thread list", () => {
     const { container } = render(
-      <ArtifactCommentsSidebar
-        comments={[comment]}
+      <CommentsSidebar
+        threads={buildCommentThreads([comment])}
         members={[]}
         selectedThreadId={null}
         pulseThreadId={null}
@@ -59,7 +60,7 @@ describe("ArtifactCommentsSidebar", () => {
   });
 
   it("derives resolved state from PAT-compatible thread events", () => {
-    const stateEvent: ArtifactComment = {
+    const stateEvent: ResourceComment = {
       ...comment,
       id: "state-1",
       content: "Resolved this thread",
@@ -70,8 +71,8 @@ describe("ArtifactCommentsSidebar", () => {
       },
     };
     render(
-      <ArtifactCommentsSidebar
-        comments={[comment, stateEvent]}
+      <CommentsSidebar
+        threads={buildCommentThreads([comment, stateEvent])}
         members={[]}
         selectedThreadId={null}
         pulseThreadId={null}
@@ -96,8 +97,8 @@ describe("ArtifactCommentsSidebar", () => {
 
   it("pulses a thread selected from highlighted artifact content", () => {
     const { container } = render(
-      <ArtifactCommentsSidebar
-        comments={[comment]}
+      <CommentsSidebar
+        threads={buildCommentThreads([comment])}
         members={[]}
         selectedThreadId="comment-1"
         pulseThreadId="comment-1"
@@ -120,8 +121,8 @@ describe("ArtifactCommentsSidebar", () => {
   it("selects a thread when its comment body is clicked", () => {
     const onSelectThread = vi.fn();
     render(
-      <ArtifactCommentsSidebar
-        comments={[comment]}
+      <CommentsSidebar
+        threads={buildCommentThreads([comment])}
         members={[]}
         selectedThreadId={null}
         pulseThreadId={null}

@@ -3,7 +3,7 @@ import { Button } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { CommentAnnotation } from "@posthog/ui/features/code-review/components/CommentAnnotation";
-import { ArtifactCommentComposer } from "@posthog/ui/features/sessions/components/ArtifactCommentComposer";
+import { CommentComposer } from "@posthog/ui/features/sessions/components/CommentComposer";
 import { Tooltip } from "@radix-ui/themes";
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
@@ -143,7 +143,7 @@ function SelectionComposerCard({
     >
       {members ? (
         <div className="p-2">
-          <ArtifactCommentComposer
+          <CommentComposer
             value={draft}
             onValueChange={setDraft}
             onSubmit={(content, mentions) => {

@@ -1,7 +1,7 @@
 import { formatMention } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { describe, expect, it } from "vitest";
-import { mentionIdsFromContent } from "./artifactCommentMentions";
+import { mentionIdsFromContent } from "./commentMentions";
 
 const members = [
   { id: 1, uuid: "user-1", email: "abe@posthog.com", first_name: "Abe" },

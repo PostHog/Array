@@ -33,12 +33,33 @@ vi.mock("@posthog/ui/features/pr-review/usePrComments", () => ({
 vi.mock("@posthog/ui/features/pr-review/usePrReviewThreads", () => ({
   usePrReviewThreads: () => ({ data: undefined }),
 }));
-vi.mock("@posthog/ui/features/sessions/components/useArtifactComments", () => ({
-  useArtifactCommentsQuery: () => ({
+vi.mock("@posthog/ui/features/sessions/components/useComments", () => ({
+  useCommentsForTargetsQuery: () => ({
     data: [
-      { id: "comment-1", source_comment: null },
-      { id: "reply-1", source_comment: "comment-1" },
-      { id: "comment-2", source_comment: null },
+      {
+        id: "comment-1",
+        source_comment: null,
+        item_id: "a",
+        content: "Tighten this summary",
+        created_at: "2024-01-01T00:00:00Z",
+        item_context: { anchor: { kind: "document" } },
+      },
+      {
+        id: "reply-1",
+        source_comment: "comment-1",
+        item_id: "a",
+        content: "Agreed",
+        created_at: "2024-01-01T00:01:00Z",
+        item_context: { anchor: { kind: "document" } },
+      },
+      {
+        id: "comment-2",
+        source_comment: null,
+        item_id: "a",
+        content: "Second thread",
+        created_at: "2024-01-01T00:02:00Z",
+        item_context: { anchor: { kind: "document" } },
+      },
     ],
   }),
 }));
@@ -139,10 +160,37 @@ describe("TaskArtifactsList", () => {
 
     render(<TaskArtifactsList task={task} timeline={[]} />);
 
-    const row = screen.getByText("report.md").closest("button");
+    // The artifact rows render above the comment list, which repeats the file
+    // name as each thread's source label.
+    const row = screen.getAllByText("report.md")[0].closest("button");
     expect(row).not.toBeNull();
     expect(within(row as HTMLElement).getByText("2")).toBeTruthy();
     expect(within(row as HTMLElement).queryByText(/File|KB/)).toBeNull();
+  });
+
+  // The pane is the one place to see every thread the task produced, so each
+  // row has to say which artifact it came from and open that artifact on it.
+  it("lists comments from every artifact and opens the one clicked", () => {
+    mocks.runs = [
+      run("run-1", { artifacts: [outputFile({ id: "a", size: 16861 })] }),
+    ];
+
+    render(<TaskArtifactsList task={task} timeline={[]} />);
+
+    const comments = within(screen.getByLabelText("Artifact comments"));
+    // Both roots, newest first; the resolved-state reply is not its own row.
+    expect(comments.getByText("Second thread")).toBeTruthy();
+    expect(comments.getByText("Tighten this summary")).toBeTruthy();
+    expect(comments.getAllByText("report.md")).toHaveLength(2);
+    expect(comments.getByText(/1 reply/)).toBeTruthy();
+
+    fireEvent.click(comments.getByText("Tighten this summary"));
+    expect(mocks.openArtifactTab).toHaveBeenCalledWith("task-1", {
+      runId: "run-1",
+      artifactId: "a",
+      name: "report.md",
+      commentId: "comment-1",
+    });
   });
 
   // The row should read like the chat's file list: markdown looks like

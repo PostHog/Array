@@ -1,18 +1,18 @@
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import {
-  artifactAnchorSchema,
-  type TextArtifactAnchor,
-} from "@posthog/core/artifact-comments/anchors";
+  commentAnchorSchema,
+  type TextCommentAnchor,
+} from "@posthog/core/comments/anchors";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  type ArtifactLocateRequest,
-  type HighlightResolution,
-  readArtifactCommentContext,
-} from "./artifactCommentViewTypes";
 import { artifactHtmlDocument } from "./artifactPreviewDocument";
+import {
+  type CommentLocateRequest,
+  type HighlightResolution,
+  readCommentContext,
+} from "./commentViewTypes";
 
 const BRIDGE_MARKER = "__POSTHOG_ARTIFACT_COMMENT_BRIDGE__";
 
@@ -46,13 +46,13 @@ export function AnnotatedArtifactHtml({
 }: {
   html: string;
   name: string;
-  comments: ArtifactComment[];
+  comments: ResourceComment[];
   activeThreadId: string | null;
-  locateRequest: ArtifactLocateRequest | null;
+  locateRequest: CommentLocateRequest | null;
   members: UserBasic[];
   onActivateThread: (id: string) => void;
   onCreate: (
-    anchor: TextArtifactAnchor,
+    anchor: TextCommentAnchor,
     content: string,
     mentions?: number[],
   ) => void;
@@ -60,7 +60,7 @@ export function AnnotatedArtifactHtml({
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const channelRef = useRef(`artifact-comments-${crypto.randomUUID()}`);
-  const [pendingAnchor, setPendingAnchor] = useState<TextArtifactAnchor | null>(
+  const [pendingAnchor, setPendingAnchor] = useState<TextCommentAnchor | null>(
     null,
   );
   const [selection, setSelection] = useState<EditorSelection | null>(null);
@@ -75,7 +75,7 @@ export function AnnotatedArtifactHtml({
     () =>
       comments.flatMap((comment) => {
         if (comment.source_comment) return [];
-        const context = readArtifactCommentContext(comment);
+        const context = readCommentContext(comment);
         return context?.anchor.kind === "text"
           ? [
               {
@@ -169,7 +169,7 @@ export function AnnotatedArtifactHtml({
         return;
       }
       if (data.type !== "selection" || !isFrameRect(data.triggerRect)) return;
-      const parsed = artifactAnchorSchema.safeParse(data.anchor);
+      const parsed = commentAnchorSchema.safeParse(data.anchor);
       if (!parsed.success || parsed.data.kind !== "text") return;
       const frameBox = iframeRef.current?.getBoundingClientRect();
       if (!frameBox) return;

@@ -1,6 +1,6 @@
 import { ChatCircleIcon } from "@phosphor-icons/react";
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
-import type { RegionArtifactAnchor } from "@posthog/core/artifact-comments/anchors";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
+import type { RegionCommentAnchor } from "@posthog/core/comments/anchors";
 import { Button } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
@@ -8,9 +8,9 @@ import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/compon
 import { ZoomableImage } from "@posthog/ui/primitives/SafeImagePreview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  type ArtifactLocateRequest,
-  readArtifactCommentContext,
-} from "./artifactCommentViewTypes";
+  type CommentLocateRequest,
+  readCommentContext,
+} from "./commentViewTypes";
 
 function ImageCommentCreationLayer({
   name,
@@ -21,14 +21,14 @@ function ImageCommentCreationLayer({
   name: string;
   members: UserBasic[];
   onCreate: (
-    anchor: RegionArtifactAnchor,
+    anchor: RegionCommentAnchor,
     content: string,
     mentions?: number[],
   ) => void;
   onCancel: () => void;
 }) {
   const [pendingAnchor, setPendingAnchor] =
-    useState<RegionArtifactAnchor | null>(null);
+    useState<RegionCommentAnchor | null>(null);
   const [selection, setSelection] = useState<EditorSelection | null>(null);
 
   return (
@@ -96,15 +96,15 @@ export function AnnotatedArtifactImage({
 }: {
   src: string;
   name: string;
-  comments: ArtifactComment[];
+  comments: ResourceComment[];
   activeThreadId: string | null;
-  locateRequest: ArtifactLocateRequest | null;
+  locateRequest: CommentLocateRequest | null;
   commenting: boolean;
   members: UserBasic[];
   onCommentingChange: (commenting: boolean) => void;
   onActivateThread: (id: string) => void;
   onCreate: (
-    anchor: RegionArtifactAnchor,
+    anchor: RegionCommentAnchor,
     content: string,
     mentions?: number[],
   ) => void;
@@ -124,7 +124,7 @@ export function AnnotatedArtifactImage({
   const regionComments = useMemo(
     () =>
       comments.flatMap((comment) => {
-        const context = readArtifactCommentContext(comment);
+        const context = readCommentContext(comment);
         return context?.anchor.kind === "region"
           ? [{ comment, anchor: context.anchor }]
           : [];

@@ -1,8 +1,26 @@
+import type { CommentScope } from "@posthog/api-client/posthog-client";
 import { z } from "zod";
 
 const CONTEXT_LENGTH = 32;
 
-export const textArtifactAnchorSchema = z.object({
+/**
+ * Addresses one commentable thing. `itemId` must be the resource's STABLE id
+ * (an artifact id, a canvas row id) — never a name or a version, so comments
+ * survive renames and reverts.
+ */
+export type CommentTarget = {
+  scope: CommentScope;
+  itemId: string;
+};
+
+export function isSameCommentTarget(
+  a: CommentTarget | null,
+  b: CommentTarget | null,
+): boolean {
+  return a?.scope === b?.scope && a?.itemId === b?.itemId;
+}
+
+export const textCommentAnchorSchema = z.object({
   kind: z.literal("text"),
   quote: z.string().min(1),
   prefix: z.string(),
@@ -11,7 +29,7 @@ export const textArtifactAnchorSchema = z.object({
   end: z.number().int().positive(),
 });
 
-export const regionArtifactAnchorSchema = z.object({
+export const regionCommentAnchorSchema = z.object({
   kind: z.literal("region"),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
@@ -19,49 +37,45 @@ export const regionArtifactAnchorSchema = z.object({
   height: z.number().min(0).max(1),
 });
 
-export const documentArtifactAnchorSchema = z.object({
+export const documentCommentAnchorSchema = z.object({
   kind: z.literal("document"),
 });
 
-export const artifactAnchorSchema = z.discriminatedUnion("kind", [
-  textArtifactAnchorSchema,
-  regionArtifactAnchorSchema,
-  documentArtifactAnchorSchema,
+export const commentAnchorSchema = z.discriminatedUnion("kind", [
+  textCommentAnchorSchema,
+  regionCommentAnchorSchema,
+  documentCommentAnchorSchema,
 ]);
 
-export type TextArtifactAnchor = z.infer<typeof textArtifactAnchorSchema>;
-export type RegionArtifactAnchor = z.infer<typeof regionArtifactAnchorSchema>;
-export type ArtifactAnchor = z.infer<typeof artifactAnchorSchema>;
+export type TextCommentAnchor = z.infer<typeof textCommentAnchorSchema>;
+export type RegionCommentAnchor = z.infer<typeof regionCommentAnchorSchema>;
+export type CommentAnchor = z.infer<typeof commentAnchorSchema>;
 
-export const artifactCommentContextSchema = z.object({
-  anchor: artifactAnchorSchema,
+export const commentContextSchema = z.object({
+  anchor: commentAnchorSchema,
   threadState: z.enum(["resolved", "open"]).optional(),
 });
 
-export type ArtifactCommentContext = z.infer<
-  typeof artifactCommentContextSchema
->;
+export type CommentContext = z.infer<typeof commentContextSchema>;
 
-export function parseArtifactCommentContext(
-  value: unknown,
-): ArtifactCommentContext | null {
-  const parsed = artifactCommentContextSchema.safeParse(value);
+export function parseCommentContext(value: unknown): CommentContext | null {
+  const parsed = commentContextSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 
-export type ArtifactThreadStateComment = {
+export type ThreadStateComment = {
   created_at: string;
   item_context: unknown;
 };
 
-export function isArtifactThreadResolved(
+export function isThreadResolved(
   root: { completed_at?: string | null },
-  replies: ArtifactThreadStateComment[],
+  replies: ThreadStateComment[],
 ): boolean {
   const latestState = replies
     .map((comment) => ({
       createdAt: comment.created_at,
-      state: parseArtifactCommentContext(comment.item_context)?.threadState,
+      state: parseCommentContext(comment.item_context)?.threadState,
     }))
     .filter(
       (
@@ -82,11 +96,11 @@ export type ResolvedTextAnchor = {
   status: "exact" | "reanchored";
 };
 
-export function createTextArtifactAnchor(
+export function createTextCommentAnchor(
   text: string,
   start: number,
   end: number,
-): TextArtifactAnchor | null {
+): TextCommentAnchor | null {
   const safeStart = Math.max(0, Math.min(start, text.length));
   const safeEnd = Math.max(safeStart, Math.min(end, text.length));
   const quote = text.slice(safeStart, safeEnd);
@@ -105,7 +119,7 @@ export function createTextArtifactAnchor(
 function candidateScore(
   text: string,
   start: number,
-  anchor: TextArtifactAnchor,
+  anchor: TextCommentAnchor,
 ): number {
   const prefix = text.slice(Math.max(0, start - anchor.prefix.length), start);
   const end = start + anchor.quote.length;
@@ -121,9 +135,9 @@ function candidateScore(
  * verified first. If content moved, prefix/suffix disambiguate quote matches;
  * ties are deliberately treated as orphaned.
  */
-export function resolveTextArtifactAnchor(
+export function resolveTextCommentAnchor(
   text: string,
-  anchor: TextArtifactAnchor,
+  anchor: TextCommentAnchor,
 ): ResolvedTextAnchor | null {
   if (text.slice(anchor.start, anchor.end) === anchor.quote) {
     return { start: anchor.start, end: anchor.end, status: "exact" };

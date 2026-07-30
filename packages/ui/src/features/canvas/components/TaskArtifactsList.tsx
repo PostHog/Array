@@ -4,12 +4,14 @@ import {
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import {
   OUTPUT_ARTIFACT_TYPES,
   parseRunArtifacts,
   type RunArtifact,
 } from "@posthog/core/canvas/runArtifactSchemas";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
+import type { CommentTarget } from "@posthog/core/comments/anchors";
 import {
   Badge,
   Empty,
@@ -31,7 +33,8 @@ import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifac
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
-import { useArtifactCommentsQuery } from "@posthog/ui/features/sessions/components/useArtifactComments";
+import { buildCommentThreads } from "@posthog/ui/features/sessions/components/commentViewTypes";
+import { useCommentsForTargetsQuery } from "@posthog/ui/features/sessions/components/useComments";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
@@ -39,9 +42,18 @@ import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { type ReactNode, useMemo, useState } from "react";
 
+const EMPTY_COMMENTS: ResourceComment[] = [];
+
 type ArtifactRow =
   | { kind: "pr"; key: string; url: string }
-  | { kind: "canvas"; key: string; name: string; url: string | null }
+  | {
+      kind: "canvas";
+      key: string;
+      name: string;
+      url: string | null;
+      /** The canvas row id, the stable comment target (never the name). */
+      dashboardId: string | null;
+    }
   | {
       kind: "file";
       key: string;
@@ -50,6 +62,51 @@ type ArtifactRow =
       runId: string | null;
     }
   | { kind: "slack"; key: string; url: string };
+
+/** The row kinds that can carry comments. */
+type CommentSourceRow = Extract<ArtifactRow, { kind: "file" | "canvas" }>;
+
+/** The canvas's stable row id, recovered from its share link. */
+function canvasDashboardId(url: string | null): string | null {
+  if (!url) return null;
+  const parsed = parseHttpsUrl(url);
+  const target = parsed ? parseShareLink(parsed.href) : null;
+  return target?.kind === "canvas" ? target.dashboardId : null;
+}
+
+function openCanvasFromUrl(url: string | null): (() => void) | undefined {
+  const parsed = url ? parseHttpsUrl(url) : null;
+  const target = parsed ? parseShareLink(parsed.href) : null;
+  if (!parsed || !target) return undefined;
+  return () => {
+    const currentPostHogUrl = getPostHogUrl("/");
+    const currentPostHogOrigin = currentPostHogUrl
+      ? parseHttpsUrl(currentPostHogUrl)?.origin
+      : null;
+    if (parsed.origin === currentPostHogOrigin) {
+      navigateToShareTarget(target);
+    } else {
+      openExternalUrl(parsed.href);
+    }
+  };
+}
+
+/**
+ * Every commentable resource this task produced. Artifacts and canvases share
+ * the generic comments API, differing only by scope, so the pane can hold one
+ * query over all of them.
+ */
+function commentTargets(rows: ArtifactRow[]): CommentTarget[] {
+  const targets: CommentTarget[] = [];
+  for (const row of rows) {
+    if (row.kind === "file" && row.artifactId) {
+      targets.push({ scope: "task_artifact", itemId: row.artifactId });
+    } else if (row.kind === "canvas" && row.dashboardId) {
+      targets.push({ scope: "desktop_canvas", itemId: row.dashboardId });
+    }
+  }
+  return targets;
+}
 
 function readRunOutputs(run: TaskRun): RunArtifact[] {
   return parseRunArtifacts(
@@ -77,11 +134,13 @@ function buildRows(
     if (row.artifact.kind === "pr") {
       addPr(row.artifact.url, row.message.id);
     } else {
+      const url = row.artifact.url;
       rows.push({
         kind: "canvas",
         key: row.message.id,
         name: row.artifact.name,
-        url: row.artifact.url,
+        url,
+        dashboardId: canvasDashboardId(url),
       });
     }
   }
@@ -229,30 +288,134 @@ function PrRow({
   );
 }
 
-function CanvasRow({ name, url }: { name: string; url: string | null }) {
-  const parsed = url ? parseHttpsUrl(url) : null;
-  const target = parsed ? parseShareLink(parsed.href) : null;
-  const open =
-    parsed && target
-      ? () => {
-          const currentPostHogUrl = getPostHogUrl("/");
-          const currentPostHogOrigin = currentPostHogUrl
-            ? parseHttpsUrl(currentPostHogUrl)?.origin
-            : null;
-          if (parsed.origin === currentPostHogOrigin) {
-            navigateToShareTarget(target);
-          } else {
-            openExternalUrl(parsed.href);
-          }
-        }
-      : undefined;
+function CanvasRow({
+  name,
+  url,
+  commentCount,
+}: {
+  name: string;
+  url: string | null;
+  commentCount: number;
+}) {
   return (
     <ArtifactListRow
       icon={iconForTemplate("", { size: 14, className: "text-violet-9" })}
       title={name}
-      detail="Canvas"
-      onOpen={open}
+      detail={
+        commentCount > 0 ? (
+          <Badge>
+            <ChatCircleIcon />
+            {commentCount}
+          </Badge>
+        ) : (
+          "Canvas"
+        )
+      }
+      onOpen={openCanvasFromUrl(url)}
     />
+  );
+}
+
+/**
+ * Every open thread across the task's artifacts and canvases, in one list.
+ * Each row names the resource it came from, and opening one jumps straight to
+ * that thread inside the resource.
+ */
+function TaskCommentsSection({
+  taskId,
+  rows,
+  comments,
+}: {
+  taskId: string;
+  rows: ArtifactRow[];
+  comments: ResourceComment[];
+}) {
+  const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
+
+  const sourced = useMemo(() => {
+    const sources = new Map<string, CommentSourceRow>();
+    for (const row of rows) {
+      if (row.kind === "file" && row.artifactId)
+        sources.set(row.artifactId, row);
+      else if (row.kind === "canvas" && row.dashboardId)
+        sources.set(row.dashboardId, row);
+    }
+    // One shared thread model, then attach each thread's originating resource.
+    // Resolved threads drop out here, as they do on the artifact surfaces.
+    return buildCommentThreads(comments)
+      .flatMap((thread) => {
+        if (thread.resolved) return [];
+        const row = thread.root.item_id
+          ? sources.get(thread.root.item_id)
+          : undefined;
+        return row ? [{ thread, row }] : [];
+      })
+      .sort((a, b) =>
+        (
+          b.thread.replies.at(-1)?.created_at ?? b.thread.root.created_at
+        ).localeCompare(
+          a.thread.replies.at(-1)?.created_at ?? a.thread.root.created_at,
+        ),
+      );
+  }, [comments, rows]);
+
+  if (sourced.length === 0) return null;
+
+  return (
+    <section aria-label="Artifact comments" className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 px-0.5 pt-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+        <ChatCircleIcon size={12} />
+        Comments
+        <Badge>{sourced.length}</Badge>
+      </div>
+      {sourced.map(({ thread, row }) => {
+        const canOpen =
+          row.kind === "file"
+            ? !!row.runId && !!row.artifactId
+            : !!openCanvasFromUrl(row.url);
+        return (
+          <button
+            key={thread.root.id}
+            type="button"
+            disabled={!canOpen}
+            onClick={() => {
+              if (row.kind === "canvas") {
+                // Canvas comment surfaces land with the canvas work; until then
+                // this opens the canvas itself rather than a dead deep link.
+                openCanvasFromUrl(row.url)?.();
+                return;
+              }
+              if (!row.runId || !row.artifactId) return;
+              openArtifactTab(taskId, {
+                runId: row.runId,
+                artifactId: row.artifactId,
+                name: row.name,
+                commentId: thread.root.id,
+              });
+            }}
+            className="flex w-full flex-col gap-1 rounded-md border border-border bg-muted px-2.5 py-2 text-left text-[13px] transition-colors enabled:hover:bg-gray-3"
+          >
+            <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+              {row.kind === "file" ? (
+                <FileIcon filename={row.name} size={12} />
+              ) : (
+                iconForTemplate("", { size: 12, className: "text-violet-9" })
+              )}
+              <span className="min-w-0 truncate">{row.name}</span>
+              {thread.replies.length > 0 && (
+                <span className="shrink-0">
+                  · {thread.replies.length}{" "}
+                  {thread.replies.length === 1 ? "reply" : "replies"}
+                </span>
+              )}
+            </span>
+            <span className="line-clamp-2 break-words">
+              {thread.root.content ?? ""}
+            </span>
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -261,16 +424,16 @@ function FileRow({
   runId,
   artifactId,
   name,
+  commentCount,
 }: {
   taskId: string;
   runId: string | null;
   artifactId: string | null;
   name: string;
+  /** Supplied by the pane's single comments query so each row doesn't fetch. */
+  commentCount: number;
 }) {
   const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
-  const comments = useArtifactCommentsQuery(artifactId, { live: false });
-  const commentCount =
-    comments.data?.filter((comment) => !comment.source_comment).length ?? 0;
   const canOpen = !!runId && !!artifactId;
   const onOpen = canOpen
     ? () => {
@@ -312,6 +475,19 @@ export function TaskArtifactsList({
     () => buildRows(task, timeline, runs),
     [task, timeline, runs],
   );
+  // One query for the whole pane: row badges and the comment list read the same
+  // result, so N resources cost one request rather than one poll each.
+  const targets = useMemo(() => commentTargets(rows), [rows]);
+  const commentsQuery = useCommentsForTargetsQuery(targets);
+  const comments = commentsQuery.data ?? EMPTY_COMMENTS;
+  const rootCountByItem = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments) {
+      if (comment.source_comment || !comment.item_id) continue;
+      counts.set(comment.item_id, (counts.get(comment.item_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
 
   if (rows.length === 0) {
     return (
@@ -340,7 +516,14 @@ export function TaskArtifactsList({
             openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
           />
         ) : row.kind === "canvas" ? (
-          <CanvasRow key={row.key} name={row.name} url={row.url} />
+          <CanvasRow
+            key={row.key}
+            name={row.name}
+            url={row.url}
+            commentCount={
+              row.dashboardId ? (rootCountByItem.get(row.dashboardId) ?? 0) : 0
+            }
+          />
         ) : row.kind === "file" ? (
           <FileRow
             key={row.key}
@@ -348,6 +531,9 @@ export function TaskArtifactsList({
             runId={row.runId}
             artifactId={row.artifactId}
             name={row.name}
+            commentCount={
+              row.artifactId ? (rootCountByItem.get(row.artifactId) ?? 0) : 0
+            }
           />
         ) : (
           <ArtifactListRow
@@ -360,6 +546,7 @@ export function TaskArtifactsList({
           />
         ),
       )}
+      <TaskCommentsSection taskId={task.id} rows={rows} comments={comments} />
     </div>
   );
 }

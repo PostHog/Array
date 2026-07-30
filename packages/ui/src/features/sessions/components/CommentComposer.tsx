@@ -2,9 +2,9 @@ import { PaperPlaneRightIcon, XIcon } from "@phosphor-icons/react";
 import { InputGroupAddon, InputGroupButton } from "@posthog/quill";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { MentionComposer } from "@posthog/ui/features/canvas/components/MentionComposer";
-import { mentionIdsFromContent } from "./artifactCommentMentions";
+import { mentionIdsFromContent } from "./commentMentions";
 
-export function ArtifactCommentComposer({
+export function CommentComposer({
   value,
   onValueChange,
   onSubmit,

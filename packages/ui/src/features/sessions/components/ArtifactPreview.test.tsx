@@ -1,4 +1,4 @@
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
@@ -12,7 +12,7 @@ const previewBlob = new Blob(["<h1>Artifact content</h1>"], {
 });
 const auth = vi.hoisted(() => ({ identity: "auth-1" as string | null }));
 const artifactComments = vi.hoisted(() => ({
-  data: [] as ArtifactComment[],
+  data: [] as ResourceComment[],
 }));
 const useQuery = vi.hoisted(() => vi.fn());
 
@@ -41,13 +41,13 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery,
 }));
 
-vi.mock("./useArtifactComments", () => ({
-  useArtifactCommentsQuery: () => ({
+vi.mock("./useComments", () => ({
+  useCommentsQuery: () => ({
     data: artifactComments.data,
     isLoading: false,
   }),
-  useCreateArtifactComment: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetArtifactCommentResolved: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetCommentResolved: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
@@ -294,7 +294,7 @@ describe("ArtifactPreview", () => {
   });
 
   it("does not render resolved comment highlights", () => {
-    const root: ArtifactComment = {
+    const root: ResourceComment = {
       id: "comment-1",
       created_by: null,
       content: "Review this",
@@ -344,6 +344,44 @@ describe("ArtifactPreview", () => {
     );
 
     expect(screen.queryByLabelText("Open comment thread")).toBeNull();
+  });
+
+  // Opening an artifact from the task's centralized comment list has to land on
+  // the thread that was clicked, even though comments load after the preview.
+  it("selects the thread it was opened from", async () => {
+    artifactComments.data = [
+      {
+        id: "comment-1",
+        created_by: null,
+        content: "Tighten this summary",
+        created_at: "2026-01-01T00:00:00Z",
+        item_id: "artifact-1",
+        item_context: { anchor: { kind: "document" } },
+        scope: "task_artifact",
+        source_comment: null,
+        completed_at: null,
+      },
+    ];
+    useQuery.mockReturnValue({
+      data: "# Report",
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="report.md"
+        initialCommentId="comment-1"
+      />,
+    );
+
+    // The sidebar opens itself on the deep-linked thread.
+    await waitFor(() =>
+      expect(screen.getByText("Tighten this summary")).toBeTruthy(),
+    );
   });
 
   it("preserves authored styles and injects the inline-comment bridge", () => {

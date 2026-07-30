@@ -1,9 +1,9 @@
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import {
-  createTextArtifactAnchor,
-  resolveTextArtifactAnchor,
-  type TextArtifactAnchor,
-} from "@posthog/core/artifact-comments/anchors";
+  createTextCommentAnchor,
+  resolveTextCommentAnchor,
+  type TextCommentAnchor,
+} from "@posthog/core/comments/anchors";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
@@ -16,10 +16,10 @@ import {
   useState,
 } from "react";
 import {
-  type ArtifactLocateRequest,
+  type CommentLocateRequest,
   type HighlightResolution,
-  readArtifactCommentContext,
-} from "./artifactCommentViewTypes";
+  readCommentContext,
+} from "./commentViewTypes";
 
 type HighlightRect = {
   id: string;
@@ -76,13 +76,13 @@ interface ArtifactTextAnnotationsProps {
   artifactName: string;
   rootRef: RefObject<HTMLElement | null>;
   containerRef: RefObject<HTMLElement | null>;
-  comments: ArtifactComment[];
+  comments: ResourceComment[];
   activeThreadId: string | null;
-  locateRequest: ArtifactLocateRequest | null;
+  locateRequest: CommentLocateRequest | null;
   members: UserBasic[];
   onActivateThread: (id: string) => void;
   onCreate: (
-    anchor: TextArtifactAnchor,
+    anchor: TextCommentAnchor,
     content: string,
     mentions?: number[],
   ) => void;
@@ -102,7 +102,7 @@ export function ArtifactTextAnnotations({
   onResolutionsChange,
 }: ArtifactTextAnnotationsProps) {
   const [selection, setSelection] = useState<EditorSelection | null>(null);
-  const [pendingAnchor, setPendingAnchor] = useState<TextArtifactAnchor | null>(
+  const [pendingAnchor, setPendingAnchor] = useState<TextCommentAnchor | null>(
     null,
   );
   const [rects, setRects] = useState<HighlightRect[]>([]);
@@ -122,9 +122,9 @@ export function ArtifactTextAnnotations({
     const resolutions = new Map<string, HighlightResolution>();
 
     for (const comment of rootComments) {
-      const context = readArtifactCommentContext(comment);
+      const context = readCommentContext(comment);
       if (!context || context.anchor.kind !== "text") continue;
-      const resolved = resolveTextArtifactAnchor(text, context.anchor);
+      const resolved = resolveTextCommentAnchor(text, context.anchor);
       if (!resolved) {
         resolutions.set(comment.id, "orphaned");
         continue;
@@ -177,9 +177,9 @@ export function ArtifactTextAnnotations({
     if (!locateRequest) return;
     const root = rootRef.current;
     const comment = rootComments.find(({ id }) => id === locateRequest.id);
-    const context = comment ? readArtifactCommentContext(comment) : null;
+    const context = comment ? readCommentContext(comment) : null;
     if (!root || context?.anchor.kind !== "text") return;
-    const resolved = resolveTextArtifactAnchor(
+    const resolved = resolveTextCommentAnchor(
       root.textContent ?? "",
       context.anchor,
     );
@@ -210,7 +210,7 @@ export function ArtifactTextAnnotations({
         return;
       }
       const offsets = selectionOffsets(root, range);
-      const anchor = createTextArtifactAnchor(
+      const anchor = createTextCommentAnchor(
         root.textContent ?? "",
         offsets.start,
         offsets.end,

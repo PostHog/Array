@@ -6,7 +6,7 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import {
   Avatar,
   AvatarFallback,
@@ -30,15 +30,15 @@ import {
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
-import { useMemo, useState } from "react";
-import { ArtifactCommentComposer } from "./ArtifactCommentComposer";
+import { useState } from "react";
+import { CommentComposer } from "./CommentComposer";
 import {
-  buildArtifactCommentThreads,
+  type CommentThread,
   type HighlightResolution,
-  readArtifactCommentContext,
-} from "./artifactCommentViewTypes";
+  readCommentContext,
+} from "./commentViewTypes";
 
-function authorName(comment: ArtifactComment): string {
+function authorName(comment: ResourceComment): string {
   const user = comment.created_by;
   if (!user) return "You";
   return (
@@ -54,7 +54,7 @@ function initials(name: string): string {
     .join("");
 }
 
-function CommentBody({ comment }: { comment: ArtifactComment }) {
+function CommentBody({ comment }: { comment: ResourceComment }) {
   const name = authorName(comment);
   return (
     <div className="flex gap-2 py-2">
@@ -90,8 +90,8 @@ function Thread({
   onReply,
   onResolve,
 }: {
-  root: ArtifactComment;
-  replies: ArtifactComment[];
+  root: ResourceComment;
+  replies: ResourceComment[];
   selected: boolean;
   pulsing: boolean;
   resolved: boolean;
@@ -105,7 +105,7 @@ function Thread({
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const visibleReplies = replies.filter(
-    (comment) => !readArtifactCommentContext(comment)?.threadState,
+    (comment) => !readCommentContext(comment)?.threadState,
   );
 
   return (
@@ -134,7 +134,7 @@ function Thread({
         )}
         <Separator className="my-2" />
         {replying ? (
-          <ArtifactCommentComposer
+          <CommentComposer
             value={reply}
             onValueChange={setReply}
             onSubmit={(content, mentions) => {
@@ -170,8 +170,8 @@ function Thread({
   );
 }
 
-export function ArtifactCommentsSidebar({
-  comments,
+export function CommentsSidebar({
+  threads,
   members,
   selectedThreadId,
   pulseThreadId,
@@ -184,7 +184,9 @@ export function ArtifactCommentsSidebar({
   onReply,
   onResolve,
 }: {
-  comments: ArtifactComment[];
+  /** Built by the caller so the sidebar and the artifact renderers share one
+   *  thread model (and so a caller can pass threads from several resources). */
+  threads: CommentThread[];
   members: UserBasic[];
   selectedThreadId: string | null;
   pulseThreadId: string | null;
@@ -194,15 +196,11 @@ export function ArtifactCommentsSidebar({
   onClose: () => void;
   onSelectThread: (id: string) => void;
   onCreateDocumentComment: (content: string, mentions: number[]) => void;
-  onReply: (root: ArtifactComment, content: string, mentions: number[]) => void;
-  onResolve: (root: ArtifactComment, resolved: boolean) => void;
+  onReply: (root: ResourceComment, content: string, mentions: number[]) => void;
+  onResolve: (root: ResourceComment, resolved: boolean) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [filter, setFilter] = useState<"open" | "resolved">("open");
-  const threads = useMemo(
-    () => buildArtifactCommentThreads(comments),
-    [comments],
-  );
   const openCount = threads.filter((thread) => !thread.resolved).length;
   const resolvedCount = threads.length - openCount;
   const visibleThreads = threads.filter(
@@ -214,7 +212,7 @@ export function ArtifactCommentsSidebar({
       <header className="flex h-11 shrink-0 items-center justify-between border-border border-b px-3">
         <div className="flex items-center gap-2 font-medium text-sm">
           Comments
-          {comments.length > 0 && <Badge>{visibleThreads.length}</Badge>}
+          {threads.length > 0 && <Badge>{visibleThreads.length}</Badge>}
         </div>
         <div className="flex items-center gap-1">
           <DropdownMenu>
@@ -293,7 +291,7 @@ export function ArtifactCommentsSidebar({
         )}
       </div>
       <footer className="shrink-0 border-border border-t bg-background p-3">
-        <ArtifactCommentComposer
+        <CommentComposer
           value={draft}
           onValueChange={setDraft}
           onSubmit={(content, mentions) => {

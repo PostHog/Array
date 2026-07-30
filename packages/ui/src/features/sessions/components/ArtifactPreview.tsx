@@ -1,6 +1,9 @@
 import { ChatCircle, CrosshairSimpleIcon, XIcon } from "@phosphor-icons/react";
-import type { ArtifactComment } from "@posthog/api-client/posthog-client";
-import type { ArtifactAnchor } from "@posthog/core/artifact-comments/anchors";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
+import type {
+  CommentAnchor,
+  CommentTarget,
+} from "@posthog/core/comments/anchors";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -28,24 +31,24 @@ import { DocumentPreviewHeader } from "../../code-editor/components/DocumentPrev
 import { MarkdownDocumentPreview } from "../../code-editor/components/MarkdownDocumentPreview";
 import { AnnotatedArtifactHtml } from "./AnnotatedArtifactHtml";
 import { AnnotatedArtifactImage } from "./AnnotatedArtifactImage";
-import { ArtifactCommentsSidebar } from "./ArtifactCommentsSidebar";
 import { ArtifactTextAnnotations } from "./ArtifactTextAnnotations";
-import {
-  type ArtifactLocateRequest,
-  buildArtifactCommentThreads,
-  type HighlightResolution,
-  readArtifactCommentContext,
-} from "./artifactCommentViewTypes";
 import { artifactPreviewBlob } from "./artifactPreviewDocument";
+import { CommentsSidebar } from "./CommentsSidebar";
 import {
-  useArtifactCommentsQuery,
-  useCreateArtifactComment,
-  useSetArtifactCommentResolved,
-} from "./useArtifactComments";
+  buildCommentThreads,
+  type CommentLocateRequest,
+  type HighlightResolution,
+  readCommentContext,
+} from "./commentViewTypes";
+import {
+  useCommentsQuery,
+  useCreateComment,
+  useSetCommentResolved,
+} from "./useComments";
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
 const HTML_EXTENSIONS = new Set(["html", "htm"]);
-const EMPTY_COMMENTS: ArtifactComment[] = [];
+const EMPTY_COMMENTS: ResourceComment[] = [];
 
 type HtmlPreview = { kind: "html"; html: string };
 type PreviewData = string | Blob | HtmlPreview;
@@ -126,11 +129,15 @@ export function ArtifactPreview({
   runId,
   artifactId,
   name,
+  initialCommentId,
 }: {
   taskId: string;
   runId: string;
   artifactId: string;
   name: string;
+  /** Opened from a comment elsewhere: select and scroll to that thread once the
+   *  comments have loaded. */
+  initialCommentId?: string;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const [showRendered, setShowRendered] = useState(true);
@@ -139,7 +146,7 @@ export function ArtifactPreview({
   const [pulseThreadId, setPulseThreadId] = useState<string | null>(null);
   const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locateRequest, setLocateRequest] =
-    useState<ArtifactLocateRequest | null>(null);
+    useState<CommentLocateRequest | null>(null);
   const locateNonceRef = useRef(0);
   const [resolutions, setResolutions] = useState(
     new Map<string, HighlightResolution>(),
@@ -149,10 +156,14 @@ export function ArtifactPreview({
   const [imageError, setImageError] = useState(false);
   const [imageCommenting, setImageCommenting] = useState(false);
   const authIdentity = useAuthStateValue(getAuthIdentity);
-  const commentsQuery = useArtifactCommentsQuery(artifactId);
+  const commentTarget = useMemo<CommentTarget>(
+    () => ({ scope: "task_artifact", itemId: artifactId }),
+    [artifactId],
+  );
+  const commentsQuery = useCommentsQuery(commentTarget);
   const { members } = useOrgMembers();
-  const createComment = useCreateArtifactComment(artifactId);
-  const setResolved = useSetArtifactCommentResolved(artifactId);
+  const createComment = useCreateComment(commentTarget);
+  const setResolved = useSetCommentResolved(commentTarget);
   const { data, isLoading, isError } = useQuery<PreviewData>({
     queryKey: ["artifactPreview", authIdentity, taskId, runId, artifactId],
     queryFn: async () => {
@@ -182,10 +193,7 @@ export function ArtifactPreview({
     [data],
   );
   const comments = commentsQuery.data ?? EMPTY_COMMENTS;
-  const threads = useMemo(
-    () => buildArtifactCommentThreads(comments),
-    [comments],
-  );
+  const threads = useMemo(() => buildCommentThreads(comments), [comments]);
   const openRootComments = useMemo(
     () => threads.flatMap((thread) => (thread.resolved ? [] : [thread.root])),
     [threads],
@@ -214,6 +222,16 @@ export function ArtifactPreview({
     pulseTimerRef.current = setTimeout(() => setPulseThreadId(null), 1_200);
   }, []);
 
+  // Deep link from a centralized comment list. Runs once per requested id, and
+  // only after the thread exists, so it survives the comments arriving late.
+  const deepLinkedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialCommentId || deepLinkedRef.current === initialCommentId) return;
+    if (!threads.some((thread) => thread.root.id === initialCommentId)) return;
+    deepLinkedRef.current = initialCommentId;
+    activateThread(initialCommentId, true);
+  }, [initialCommentId, threads, activateThread]);
+
   useEffect(
     () => () => {
       if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
@@ -222,7 +240,7 @@ export function ArtifactPreview({
   );
 
   const createAnchoredComment = useCallback(
-    (anchor: ArtifactAnchor, content: string, mentions: number[] = []) => {
+    (anchor: CommentAnchor, content: string, mentions: number[] = []) => {
       createComment.mutate({
         content,
         context: { anchor },
@@ -242,8 +260,8 @@ export function ArtifactPreview({
   );
 
   const sidebar = commentsOpen ? (
-    <ArtifactCommentsSidebar
-      comments={comments}
+    <CommentsSidebar
+      threads={threads}
       members={members}
       selectedThreadId={selectedThreadId}
       pulseThreadId={pulseThreadId}
@@ -255,8 +273,8 @@ export function ArtifactPreview({
       onCreateDocumentComment={(content, mentions) =>
         createAnchoredComment({ kind: "document" }, content, mentions)
       }
-      onReply={(root: ArtifactComment, content, mentions) => {
-        const rootContext = readArtifactCommentContext(root);
+      onReply={(root: ResourceComment, content, mentions) => {
+        const rootContext = readCommentContext(root);
         createComment.mutate({
           content,
           sourceCommentId: root.id,

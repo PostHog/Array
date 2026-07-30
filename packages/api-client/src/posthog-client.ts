@@ -179,7 +179,7 @@ export interface TaskSessionStorageAccess {
   content_sha256: string | null;
 }
 
-export interface ArtifactCommentUser {
+export interface ResourceCommentUser {
   id: number;
   uuid: string;
   first_name?: string;
@@ -187,9 +187,18 @@ export interface ArtifactCommentUser {
   email: string;
 }
 
-export interface ArtifactComment {
+/**
+ * The commentable resources this client knows how to address. `scope` is a
+ * free-form column on the backend `Comment` model, so adding a resource is a
+ * new member here plus a caller — no migration and no endpoint.
+ */
+export type CommentScope = "task_artifact" | "desktop_canvas";
+
+/** A row from the generic comments API. Named `Resource*` so it never collides
+ *  with the DOM's global `Comment` type. */
+export interface ResourceComment {
   id: string;
-  created_by: ArtifactCommentUser | null;
+  created_by: ResourceCommentUser | null;
   content: string | null;
   created_at: string;
   item_id: string | null;
@@ -199,8 +208,9 @@ export interface ArtifactComment {
   completed_at?: string | null;
 }
 
-export interface CreateArtifactCommentRequest {
-  artifactId: string;
+export interface CreateResourceCommentRequest {
+  scope: CommentScope;
+  itemId: string;
   content: string;
   context: unknown;
   sourceCommentId?: string;
@@ -3321,16 +3331,19 @@ export class PostHogAPIClient {
     return data.url;
   }
 
-  async getArtifactComments(artifactId: string): Promise<ArtifactComment[]> {
+  async getResourceComments(
+    scope: CommentScope,
+    itemId: string,
+  ): Promise<ResourceComment[]> {
     const teamId = await this.getTeamId();
-    const comments: ArtifactComment[] = [];
+    const comments: ResourceComment[] = [];
     let cursor: string | undefined;
     do {
       const page = await this.api.get("/api/projects/{project_id}/comments/", {
         path: { project_id: String(teamId) },
-        query: { scope: "task_artifact", item_id: artifactId, cursor },
+        query: { scope, item_id: itemId, cursor },
       });
-      comments.push(...(page.results as unknown as ArtifactComment[]));
+      comments.push(...(page.results as unknown as ResourceComment[]));
       cursor = page.next
         ? (new URL(page.next).searchParams.get("cursor") ?? undefined)
         : undefined;
@@ -3338,14 +3351,14 @@ export class PostHogAPIClient {
     return comments;
   }
 
-  async createArtifactComment(
-    request: CreateArtifactCommentRequest,
-  ): Promise<ArtifactComment> {
+  async createResourceComment(
+    request: CreateResourceCommentRequest,
+  ): Promise<ResourceComment> {
     const teamId = await this.getTeamId();
     const payload = {
       content: request.content,
-      scope: "task_artifact",
-      item_id: request.artifactId,
+      scope: request.scope,
+      item_id: request.itemId,
       item_context: request.context,
       source_comment: request.sourceCommentId ?? null,
       mentions: request.mentions ?? [],
@@ -3356,7 +3369,7 @@ export class PostHogAPIClient {
     return (await this.api.post("/api/projects/{project_id}/comments/", {
       path: { project_id: String(teamId) },
       body: payload as unknown as Schemas.Comment,
-    })) as unknown as ArtifactComment;
+    })) as unknown as ResourceComment;
   }
 
   async getTaskSessionStorageAccess(
