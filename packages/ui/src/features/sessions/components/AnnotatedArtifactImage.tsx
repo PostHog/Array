@@ -1,7 +1,7 @@
-import { ChatCircleIcon } from "@phosphor-icons/react";
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import type { RegionCommentAnchor } from "@posthog/core/comments/anchors";
 import type { UserBasic } from "@posthog/shared/domain-types";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import type { EditorSelection } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { SelectionCommentOverlay } from "@posthog/ui/features/code-editor/components/SelectionCommentOverlay";
 import { ZoomableImage } from "@posthog/ui/primitives/SafeImagePreview";
@@ -10,6 +10,15 @@ import {
   type CommentLocateRequest,
   readCommentContext,
 } from "./commentViewTypes";
+
+/** Whose pin it is, for the marker's label. */
+function authorName(comment: ResourceComment): string {
+  const user = comment.created_by;
+  if (!user) return "you";
+  return (
+    [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email
+  );
+}
 
 function ImageCommentCreationLayer({
   name,
@@ -147,24 +156,35 @@ export function AnnotatedArtifactImage({
         {regionComments.map(({ comment, anchor }) => (
           // A marker, not a quill Button: that one nudges itself down on press
           // and keeps a dark focus ring afterwards, both of which read as a
-          // glitch on something pinned to a picture.
+          // glitch on something pinned to a picture. Squaring one corner of a
+          // circle makes the teardrop, and that corner is the anchor point, so
+          // the pin hangs off the spot rather than covering it.
+          //
+          // The shell doesn't follow the theme: it sits on someone's artwork,
+          // which has a palette of its own, and has to read on both black and
+          // white pixels.
           <button
             key={comment.id}
             type="button"
-            aria-label="Open image comment thread"
+            aria-label={`Open comment from ${authorName(comment)}`}
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute flex size-6 items-center justify-center rounded-full bg-(--yellow-9) text-(--gray-12) ring-(--gray-a7) transition-[box-shadow] hover:bg-(--yellow-10) focus-visible:outline-2 focus-visible:outline-(--yellow-11) focus-visible:outline-offset-1 ${
+            className={`pointer-events-auto absolute flex size-7 items-center justify-center rounded-full rounded-bl-none bg-black/85 p-0.5 ring-white/70 transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-1 ${
               comment.id === activeThreadId ? "ring-2" : "ring-1"
             }`}
             style={{
-              left: `${(anchor.x + anchor.width / 2) * 100}%`,
-              top: `${(anchor.y + anchor.height / 2) * 100}%`,
-              transform: `translate(-50%, -50%) scale(${1 / scale})`,
+              left: `${anchor.x * 100}%`,
+              top: `${(anchor.y + anchor.height) * 100}%`,
+              transform: `translate(0, -100%) scale(${1 / scale})`,
+              transformOrigin: "bottom left",
             }}
             onClick={() => onActivateThread(comment.id)}
           >
-            <ChatCircleIcon size={13} weight="fill" />
+            <UserAvatar
+              user={comment.created_by}
+              size="sm"
+              className="rounded-full"
+            />
           </button>
         ))}
       </div>
