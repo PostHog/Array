@@ -42,6 +42,9 @@ vi.mock("@posthog/ui/features/pr-review/usePrReviewThreadsForUrls", () => ({
     isLoading: false,
   }),
 }));
+vi.mock("@posthog/ui/features/git-interaction/usePrDetails", () => ({
+  usePrTitles: () => ({}),
+}));
 vi.mock("@posthog/ui/features/code-review/openPrInReview", () => ({
   openPrInReview: (taskId: string, url: string) =>
     mocks.openPrInReview(taskId, url),

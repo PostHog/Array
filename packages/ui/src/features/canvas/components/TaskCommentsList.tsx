@@ -45,6 +45,7 @@ import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
 import { usePrCommentActions } from "@posthog/ui/features/code-review/hooks/usePrCommentActions";
 import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
+import { usePrTitles } from "@posthog/ui/features/git-interaction/usePrDetails";
 import {
   useActiveArtifactId,
   usePanelLayoutStore,
@@ -88,7 +89,9 @@ function SourceLabel({ thread }: { thread: TaskCommentThread }) {
   return (
     <span className="mb-1 flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
       {icon}
-      <span className="min-w-0 truncate">{thread.sourceLabel}</span>
+      <span className="min-w-0 truncate" title={thread.sourceLabel}>
+        {thread.sourceLabel}
+      </span>
       {thread.origin.kind === "pr-review" && (
         <span className="min-w-0 truncate">
           · {thread.origin.filePath.split("/").at(-1)}
@@ -261,6 +264,7 @@ export function TaskCommentsList({
   );
   const prConversation = usePrCommentsForUrls(prUrls);
   const prReviews = usePrReviewThreadsForUrls(prUrls);
+  const prTitles = usePrTitles(prUrls);
 
   const taskTarget = useMemo(() => taskCommentTarget(task.id), [task.id]);
   const taskSourceKey = commentTargetKey(taskTarget);
@@ -276,7 +280,7 @@ export function TaskCommentsList({
     const prThreads = prUrls.flatMap((prUrl) =>
       prCommentThreads(
         prUrl,
-        `PR #${prUrl.split("/").at(-1)}`,
+        prTitles[prUrl] ?? `PR #${prUrl.split("/").at(-1)}`,
         reviewByUrl.get(prUrl) ?? [],
         conversationByUrl.get(prUrl) ?? [],
       ),
@@ -286,11 +290,17 @@ export function TaskCommentsList({
     commentsQuery.data,
     sources,
     prUrls,
+    prTitles,
     prReviews.byUrl,
     prConversation.byUrl,
   ]);
 
   const sourceOptions = useMemo(() => threadSourceOptions(threads), [threads]);
+  const sourceLabel =
+    sourceFilter === ALL_SOURCES
+      ? "All sources"
+      : (sourceOptions.find((option) => option.key === sourceFilter)?.label ??
+        "All sources");
   // Every source that could ever hold a thread, whether or not it has one yet.
   // Validating against this rather than the loaded threads lets the filter
   // follow an artifact whose comments haven't arrived, and lets the task and
@@ -409,16 +419,17 @@ export function TaskCommentsList({
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button size="sm" aria-label="Filter by source">
-                {sourceFilter === ALL_SOURCES
-                  ? "All sources"
-                  : (sourceOptions.find((option) => option.key === sourceFilter)
-                      ?.label ?? "All sources")}
+              <Button
+                size="sm"
+                aria-label="Filter by source"
+                title={sourceLabel}
+              >
+                <span className="max-w-40 truncate">{sourceLabel}</span>
                 <CaretDownIcon />
               </Button>
             }
           />
-          <DropdownMenuContent align="end" sideOffset={6}>
+          <DropdownMenuContent align="end" sideOffset={6} className="max-w-80">
             <DropdownMenuRadioGroup
               value={sourceFilter}
               onValueChange={(value) => {
@@ -430,8 +441,12 @@ export function TaskCommentsList({
                 All sources ({threads.length})
               </DropdownMenuRadioItem>
               {sourceOptions.map((option) => (
-                <DropdownMenuRadioItem key={option.key} value={option.key}>
-                  {option.label} (
+                <DropdownMenuRadioItem
+                  key={option.key}
+                  value={option.key}
+                  title={option.label}
+                >
+                  <span className="truncate">{option.label}</span> (
                   {
                     threads.filter((thread) => thread.sourceKey === option.key)
                       .length
@@ -466,7 +481,7 @@ export function TaskCommentsList({
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      <div className="flex-1 space-y-2 p-2">
+      <div className="flex-1 space-y-2 px-2 pt-3 pb-2">
         {loading && threads.length === 0 ? (
           <div className="flex justify-center py-8">
             <Spinner />
