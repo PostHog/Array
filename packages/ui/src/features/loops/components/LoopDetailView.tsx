@@ -1,4 +1,4 @@
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { isUploadableSkillSource } from "@posthog/core/message-editor/skillTags";
 import { useHostTRPC } from "@posthog/host-router/react";
@@ -589,8 +589,31 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
   const updateLoop = useUpdateLoop(loop.id);
   const primarySkill = primaryLoopSkillBundle(loop);
   const [draft, setDraft] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const draftRef = useRef<string | null>(null);
+  const savedInstructionsRef = useRef(loop.instructions);
+  const saveInFlightRef = useRef(false);
   // Escape reverts and blurs; skip the resulting onBlur save.
   const skipCommit = useRef(false);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAutosave = () => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = null;
+  };
+
+  useEffect(
+    () => () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    savedInstructionsRef.current = loop.instructions;
+  }, [loop.instructions]);
 
   const commit = (value: string) => {
     if (skipCommit.current) {
@@ -599,22 +622,42 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
     }
     const trimmed = value.trim();
     if (!trimmed) {
+      draftRef.current = null;
       setDraft(null);
       return;
     }
-    if (updateLoop.isPending) return;
-    if (trimmed === loop.instructions.trim()) {
-      setDraft(null);
+    if (saveInFlightRef.current) return;
+    if (trimmed === savedInstructionsRef.current.trim()) {
+      if (draftRef.current?.trim() === trimmed) {
+        draftRef.current = null;
+        setDraft(null);
+      }
       return;
     }
+    saveInFlightRef.current = true;
     updateLoop.mutate(
       { instructions: trimmed },
       {
-        onSuccess: () => {
+        onSuccess: (savedLoop) => {
+          saveInFlightRef.current = false;
+          savedInstructionsRef.current = savedLoop.instructions;
+          const latestDraft = draftRef.current;
+          if (
+            latestDraft !== null &&
+            latestDraft.trim() !== savedInstructionsRef.current.trim()
+          ) {
+            commit(latestDraft);
+            return;
+          }
+          draftRef.current = null;
           setDraft(null);
-          toast.success("Instructions updated");
+          setJustSaved(true);
+          if (savedTimer.current) clearTimeout(savedTimer.current);
+          savedTimer.current = setTimeout(() => setJustSaved(false), 2000);
         },
         onError: (error) => {
+          saveInFlightRef.current = false;
+          draftRef.current = null;
           setDraft(null);
           toast.error("Failed to update instructions", {
             description: error.message,
@@ -622,6 +665,12 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
         },
       },
     );
+  };
+
+  const queueAutosave = (value: string) => {
+    clearAutosave();
+    setJustSaved(false);
+    autosaveTimer.current = setTimeout(() => commit(value), 750);
   };
 
   return (
@@ -632,18 +681,31 @@ function InstructionsSection({ loop }: { loop: LoopSchemas.Loop }) {
         </Text>
         {updateLoop.isPending ? (
           <Text className="text-[11px] text-gray-10">Saving…</Text>
+        ) : justSaved ? (
+          <Flex align="center" gap="1" className="text-(--green-11)">
+            <CheckCircleIcon size={13} />
+            <Text className="text-[11px]">Saved</Text>
+          </Flex>
         ) : null}
       </Flex>
       <Textarea
         value={draft ?? loop.instructions}
-        disabled={updateLoop.isPending}
         aria-label="Loop instructions"
         className="max-h-[400px] min-h-[200px] bg-(--color-panel-solid) text-[12.5px] leading-relaxed"
-        onChange={(e) => setDraft(e.currentTarget.value)}
-        onBlur={(e) => commit(e.currentTarget.value)}
+        onChange={(e) => {
+          const value = e.currentTarget.value;
+          draftRef.current = value;
+          setDraft(value);
+          queueAutosave(value);
+        }}
+        onBlur={(e) => {
+          clearAutosave();
+          commit(e.currentTarget.value);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             skipCommit.current = true;
+            draftRef.current = null;
             setDraft(null);
             e.currentTarget.blur();
           }
