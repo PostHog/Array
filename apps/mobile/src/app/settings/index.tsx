@@ -418,7 +418,7 @@ export default function SettingsScreen() {
           />
           <SettingsRow
             label="Messaging mode"
-            description="What happens when you send while a turn is running"
+            description="Mode new sessions start in. Steer applies messages mid-turn. Queue holds them until the turn ends."
             onPress={() => setMessagingModeSheetOpen(true)}
             rightSlot={
               <>
