@@ -20,6 +20,7 @@ import {
   getBackoffDelay,
   getCloudUrlFromRegion,
   getConfigOptionByCategory,
+  getReasoningEffortOptions,
   isFatalSessionError,
   isJsonRpcNotification,
   isJsonRpcRequest,
@@ -5550,10 +5551,15 @@ export class SessionService {
         ],
       };
     };
+    const modelEffortOptions = preferredModel
+      ? getReasoningEffortOptions(adapter, preferredModel)
+      : undefined;
     const extras = previewOptions
-      .filter(
-        (opt) => opt.category === "model" || opt.category === "thought_level",
-      )
+      .filter((opt) => {
+        if (opt.category === "model") return true;
+        if (opt.category !== "thought_level") return false;
+        return modelEffortOptions !== null;
+      })
       .map((opt) => {
         if (opt.category === "model") {
           return applyPreferredValue(opt, preferredModel, existingModelOption);
@@ -5571,6 +5577,12 @@ export class SessionService {
     if (extras.length === 0) return;
 
     const previewCategories = new Set(extras.map((option) => option.category));
+    // The preview endpoint describes its default model. When the run uses an
+    // effort-less model, explicitly replace (and therefore remove) any stale
+    // thought-level option instead of inheriting the default model's choices.
+    if (preferredModel && modelEffortOptions === null) {
+      previewCategories.add("thought_level");
+    }
     const merged = [
       ...existingOptions.filter(
         (option) => !previewCategories.has(option.category),
