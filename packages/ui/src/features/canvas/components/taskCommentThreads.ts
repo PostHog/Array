@@ -188,7 +188,11 @@ export type ThreadSourceOption = {
   kind: SourceKind;
 };
 
-/** The sources present in a set of threads, for the source filter. */
+/**
+ * The sources present in a set of threads, for the source filter. Newest-first
+ * like the list, except the task itself sits at the top (just under "All
+ * sources") since it's the one source every task has.
+ */
 export function threadSourceOptions(
   threads: TaskCommentThread[],
 ): ThreadSourceOption[] {
@@ -202,5 +206,7 @@ export function threadSourceOptions(
       });
     }
   }
-  return [...byKey.values()];
+  return [...byKey.values()].sort(
+    (a, b) => Number(b.kind === "task") - Number(a.kind === "task"),
+  );
 }

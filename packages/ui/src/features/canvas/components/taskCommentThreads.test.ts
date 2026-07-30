@@ -193,4 +193,34 @@ describe("threadSourceOptions / byNewestActivity", () => {
       ["report.md", "file"],
     ]);
   });
+
+  // The task is the one source every task has, so it sits at the top of the
+  // filter regardless of when it was last touched.
+  it("pins the task source first, keeping the rest newest-first", () => {
+    const threads = [
+      ...resourceCommentThreads(
+        [
+          comment({
+            id: "f1",
+            item_id: "a",
+            content: "file",
+            created_at: "2025-01-01T00:00:00Z",
+          }),
+          comment({
+            id: "t1",
+            item_id: "task-1",
+            scope: "task",
+            content: "task",
+            created_at: "2024-01-01T00:00:00Z",
+          }),
+        ],
+        [fileSource, taskSource],
+      ),
+    ].sort(byNewestActivity);
+
+    expect(threadSourceOptions(threads).map((option) => option.kind)).toEqual([
+      "task",
+      "file",
+    ]);
+  });
 });
