@@ -95,7 +95,6 @@ describe("WebsiteChannelHome", () => {
     );
 
     expect(screen.getByTestId("feed")).toBeTruthy();
-    // The feed and the task sidebar are mutually exclusive.
     expect(screen.queryByTestId("task-sidebar")).toBeNull();
     expect(useThreadPanelStore.getState().openByChannel["chan-1"]).toBeNull();
   });
