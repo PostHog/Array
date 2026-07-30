@@ -6,7 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   runs: [] as TaskRun[],
   comments: [] as unknown[],
+  activeArtifactId: null as string | null,
+  prConversation: [] as unknown[],
+  prReviewThreads: [] as unknown[],
   openArtifactTab: vi.fn(),
+  openPrInReview: vi.fn(),
+  requestScrollToFile: vi.fn(),
+  prReply: vi.fn(async () => true),
+  prResolve: vi.fn(async () => true),
   createComment: vi.fn(),
   setResolved: vi.fn(),
   createdFor: [] as unknown[],
@@ -21,6 +28,49 @@ vi.mock("@posthog/ui/features/canvas/hooks/useOrgMembers", () => ({
 }));
 vi.mock("@posthog/ui/features/panels/panelLayoutStore", () => ({
   usePanelLayoutStore: () => mocks.openArtifactTab,
+  useActiveArtifactId: () => mocks.activeArtifactId,
+}));
+vi.mock("@posthog/ui/features/pr-review/usePrCommentsForUrls", () => ({
+  usePrCommentsForUrls: (urls: string[]) => ({
+    byUrl: new Map(urls.map((url) => [url, mocks.prConversation])),
+    isLoading: false,
+  }),
+}));
+vi.mock("@posthog/ui/features/pr-review/usePrReviewThreadsForUrls", () => ({
+  usePrReviewThreadsForUrls: (urls: string[]) => ({
+    byUrl: new Map(urls.map((url) => [url, mocks.prReviewThreads])),
+    isLoading: false,
+  }),
+}));
+vi.mock("@posthog/ui/features/code-review/openPrInReview", () => ({
+  openPrInReview: (taskId: string, url: string) =>
+    mocks.openPrInReview(taskId, url),
+}));
+vi.mock("@posthog/ui/features/code-review/reviewNavigationStore", () => ({
+  useReviewNavigationStore: {
+    getState: () => ({ requestScrollToFile: mocks.requestScrollToFile }),
+  },
+}));
+// Tiptap's editor renders no placeholder attribute and drags a lot of DOM into
+// jsdom; the wiring under test is which target a composed comment posts to.
+vi.mock("@posthog/ui/features/sessions/components/CommentComposer", () => ({
+  CommentComposer: ({
+    placeholder,
+    onSubmit,
+  }: {
+    placeholder: string;
+    onSubmit: (content: string, mentions: number[]) => void;
+  }) => (
+    <button type="button" onClick={() => onSubmit("Composed comment", [])}>
+      {placeholder}
+    </button>
+  ),
+}));
+vi.mock("@posthog/ui/features/code-review/hooks/usePrCommentActions", () => ({
+  usePrCommentActions: () => ({
+    reply: mocks.prReply,
+    resolve: mocks.prResolve,
+  }),
 }));
 vi.mock("@posthog/ui/features/sessions/components/useComments", () => ({
   useCommentsForTargetsQuery: () => ({
@@ -53,6 +103,34 @@ function outputFile(
     type: "output",
     name: "report.md",
     storage_path: "runs/1/report.md",
+    ...overrides,
+  };
+}
+
+function prRun(url: string): TaskRun {
+  return {
+    id: "run-pr",
+    output: { pr_url: url },
+    artifacts: [],
+  } as unknown as TaskRun;
+}
+
+function reviewThread(overrides: Record<string, unknown> = {}) {
+  return {
+    nodeId: "node-1",
+    isResolved: false,
+    rootId: 501,
+    filePath: "packages/ui/src/App.tsx",
+    comments: [
+      {
+        id: 501,
+        body: "This needs a guard",
+        path: "packages/ui/src/App.tsx",
+        line: 12,
+        user: { login: "octocat", avatar_url: "" },
+        created_at: "2024-01-02T00:00:00Z",
+      },
+    ],
     ...overrides,
   };
 }
@@ -98,7 +176,14 @@ describe("TaskCommentsList", () => {
         created_at: "2024-01-01T00:02:00Z",
       }),
     ];
+    mocks.activeArtifactId = null;
+    mocks.prConversation = [];
+    mocks.prReviewThreads = [];
     mocks.openArtifactTab.mockReset();
+    mocks.openPrInReview.mockReset();
+    mocks.requestScrollToFile.mockReset();
+    mocks.prReply.mockClear();
+    mocks.prResolve.mockClear();
     mocks.createComment.mockReset();
     mocks.setResolved.mockReset();
     mocks.createdFor = [];
@@ -224,6 +309,105 @@ describe("TaskCommentsList", () => {
       root: expect.objectContaining({ id: "comment-1" }),
       resolved: true,
     });
+  });
+
+  // The pane follows what's on screen, but a reader who picks a source owns the
+  // filter from then on.
+  it("narrows to the artifact open in the main pane", () => {
+    mocks.activeArtifactId = "b";
+
+    render(<TaskCommentsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("Second thread")).toBeTruthy();
+    expect(screen.queryByText("Tighten this summary")).toBeNull();
+  });
+
+  it("stops following the main pane once a source is picked by hand", () => {
+    mocks.activeArtifactId = "b";
+    const { rerender } = render(<TaskCommentsList task={task} timeline={[]} />);
+
+    fireEvent.click(screen.getByLabelText("Filter by source"));
+    fireEvent.click(screen.getByText(/^All sources/));
+    mocks.activeArtifactId = "a";
+    rerender(<TaskCommentsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("Second thread")).toBeTruthy();
+    expect(screen.getByText("Tighten this summary")).toBeTruthy();
+  });
+
+  it("lists a PR's review threads and conversation comments", () => {
+    mocks.runs = [prRun("https://github.com/acme/repo/pull/7")];
+    mocks.comments = [];
+    mocks.prReviewThreads = [reviewThread()];
+    mocks.prConversation = [
+      {
+        id: 900,
+        author: "octocat",
+        avatarUrl: null,
+        body: "Shipping this",
+        createdAt: "2024-01-03T00:00:00Z",
+        url: "https://github.com/acme/repo/pull/7#issuecomment-900",
+      },
+    ];
+
+    render(<TaskCommentsList task={task} timeline={[]} />);
+
+    expect(screen.getByText("This needs a guard")).toBeTruthy();
+    expect(screen.getByText("Shipping this")).toBeTruthy();
+    expect(screen.getAllByText("PR #7").length).toBe(2);
+    // Only the file-anchored thread can be resolved on GitHub.
+    expect(screen.getAllByText("Resolve")).toHaveLength(1);
+  });
+
+  it("opens a PR thread in the review pane at its file", () => {
+    mocks.runs = [prRun("https://github.com/acme/repo/pull/7")];
+    mocks.comments = [];
+    mocks.prReviewThreads = [reviewThread()];
+
+    render(<TaskCommentsList task={task} timeline={[]} />);
+    fireEvent.click(screen.getByText("This needs a guard"));
+
+    expect(mocks.openPrInReview).toHaveBeenCalledWith(
+      "task-1",
+      "https://github.com/acme/repo/pull/7",
+    );
+    expect(mocks.requestScrollToFile).toHaveBeenCalledWith(
+      "task-1",
+      "packages/ui/src/App.tsx",
+    );
+  });
+
+  it("replies and resolves a PR thread on GitHub", () => {
+    mocks.runs = [prRun("https://github.com/acme/repo/pull/7")];
+    mocks.comments = [];
+    mocks.prReviewThreads = [reviewThread()];
+
+    render(<TaskCommentsList task={task} timeline={[]} />);
+    const thread = screen
+      .getByText("This needs a guard")
+      .closest("[data-comment-thread-id]") as HTMLElement;
+    fireEvent.click(within(thread).getByText("Resolve"));
+
+    expect(mocks.prResolve).toHaveBeenCalledWith("node-1", true);
+    expect(mocks.setResolved).not.toHaveBeenCalled();
+  });
+
+  // Not every comment belongs to a deliverable; some are about the work.
+  it("posts a comment on the task itself", () => {
+    render(<TaskCommentsList task={task} timeline={[]} />);
+
+    fireEvent.click(screen.getByText(/Comment on this task/));
+
+    expect(mocks.createdFor).toContainEqual({
+      scope: "task",
+      itemId: "task-1",
+    });
+    expect(mocks.createComment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Composed comment",
+        context: { anchor: { kind: "document" } },
+      }),
+    );
   });
 
   it("shows an empty state pointing at the artifact surfaces", () => {

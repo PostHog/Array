@@ -192,7 +192,7 @@ export interface ResourceCommentUser {
  * free-form column on the backend `Comment` model, so adding a resource is a
  * new member here plus a caller — no migration and no endpoint.
  */
-export type CommentScope = "task_artifact" | "desktop_canvas";
+export type CommentScope = "task_artifact" | "desktop_canvas" | "task";
 
 /** A row from the generic comments API. Named `Resource*` so it never collides
  *  with the DOM's global `Comment` type. */

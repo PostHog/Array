@@ -4,10 +4,10 @@ import {
   CheckCircle,
   WarningCircle,
 } from "@phosphor-icons/react";
-import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import {
   Avatar,
   AvatarFallback,
+  AvatarImage,
   Button,
   Card,
   CardContent,
@@ -16,20 +16,11 @@ import {
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
+import type { CommentEntry } from "@posthog/ui/features/canvas/components/taskCommentThreads";
+import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { type ReactNode, useState } from "react";
 import { CommentComposer } from "./CommentComposer";
-import {
-  type HighlightResolution,
-  readCommentContext,
-} from "./commentViewTypes";
-
-function authorName(comment: ResourceComment): string {
-  const user = comment.created_by;
-  if (!user) return "You";
-  return (
-    [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email
-  );
-}
+import type { HighlightResolution } from "./commentViewTypes";
 
 function initials(name: string): string {
   return name
@@ -39,24 +30,32 @@ function initials(name: string): string {
     .join("");
 }
 
-function CommentBody({ comment }: { comment: ResourceComment }) {
-  const name = authorName(comment);
+function CommentBody({ entry }: { entry: CommentEntry }) {
   return (
     <div className="flex gap-2 py-2">
       <Avatar size="sm">
-        <AvatarFallback>{initials(name) || "?"}</AvatarFallback>
+        {entry.avatarUrl && <AvatarImage src={entry.avatarUrl} alt="" />}
+        <AvatarFallback>{initials(entry.authorName) || "?"}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="truncate font-medium text-xs">{name}</span>
+          <span className="truncate font-medium text-xs">
+            {entry.authorName}
+          </span>
           <span className="shrink-0 text-muted-foreground text-xs">
-            {formatRelativeTimeShort(comment.created_at)}
+            {formatRelativeTimeShort(entry.createdAt)}
           </span>
         </div>
-        <MentionText
-          content={comment.content ?? ""}
-          className="mt-1 block whitespace-pre-wrap break-words text-[13px] leading-relaxed"
-        />
+        {entry.format === "markdown" ? (
+          <div className="mt-1 break-words text-[13px] leading-relaxed">
+            <MarkdownRenderer content={entry.body} />
+          </div>
+        ) : (
+          <MentionText
+            content={entry.body}
+            className="mt-1 block whitespace-pre-wrap break-words text-[13px] leading-relaxed"
+          />
+        )}
       </div>
     </div>
   );
@@ -68,8 +67,8 @@ function CommentBody({ comment }: { comment: ResourceComment }) {
  * opening the resource and locating the anchor.
  */
 export function CommentThreadCard({
-  root,
-  replies,
+  threadId,
+  entries,
   selected,
   pulsing,
   resolved,
@@ -77,12 +76,15 @@ export function CommentThreadCard({
   resolution,
   busy,
   source,
+  canReply = true,
+  canResolve = true,
   onSelect,
   onReply,
   onResolve,
 }: {
-  root: ResourceComment;
-  replies: ResourceComment[];
+  threadId: string;
+  /** Root first, then replies. */
+  entries: CommentEntry[];
   selected: boolean;
   pulsing: boolean;
   resolved: boolean;
@@ -91,22 +93,27 @@ export function CommentThreadCard({
   busy: boolean;
   /** Names the resource the thread lives on, for cross-resource lists. */
   source?: ReactNode;
+  /** GitHub conversation comments take neither replies nor resolution. */
+  canReply?: boolean;
+  canResolve?: boolean;
   onSelect: () => void;
   onReply: (content: string, mentions: number[]) => void;
   onResolve: (resolved: boolean) => void;
 }) {
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
-  const visibleReplies = replies.filter(
-    (comment) => !readCommentContext(comment)?.threadState,
-  );
+  const [root, ...replies] = entries;
+  if (!root) return null;
 
   return (
     <Card
       className={`gap-0 p-0 transition-all duration-300 ${
         selected ? "border-accent bg-accent/5" : ""
-      } ${pulsing ? "ring-2 ring-accent ring-offset-2 ring-offset-background" : ""} ${resolved ? "opacity-70" : ""}`}
-      data-comment-thread-id={root.id}
+      } ${
+        // Inset, so a pane that clips its overflow can't shave the highlight.
+        pulsing ? "ring-2 ring-accent ring-inset" : ""
+      } ${resolved ? "opacity-70" : ""}`}
+      data-comment-thread-id={threadId}
     >
       <CardContent className="p-3">
         <button type="button" className="w-full text-left" onClick={onSelect}>
@@ -117,16 +124,16 @@ export function CommentThreadCard({
               The highlighted text changed
             </div>
           )}
-          <CommentBody comment={root} />
+          <CommentBody entry={root} />
         </button>
-        {visibleReplies.length > 0 && (
-          <div className="ml-3 border-border border-l pl-3">
-            {visibleReplies.map((comment) => (
-              <CommentBody key={comment.id} comment={comment} />
-            ))}
-          </div>
-        )}
-        <Separator className="my-2" />
+        {/* Replies sit at the root's indentation: a thread this narrow reads as
+            one conversation, and nesting only stole width from the text. */}
+        {replies.map((entry) => (
+          <CommentBody key={entry.id} entry={entry} />
+        ))}
+        {/* A conversation comment can only be read here and acted on in GitHub;
+            dead Reply/Resolve buttons would just discard whatever was typed. */}
+        {(canReply || canResolve) && <Separator className="my-2" />}
         {replying ? (
           <CommentComposer
             value={reply}
@@ -138,26 +145,34 @@ export function CommentThreadCard({
             }}
             onCancel={() => setReplying(false)}
             members={members}
-            placeholder="Reply… Type @ to mention someone"
+            placeholder={
+              members.length > 0 ? "Reply… Type @ to mention someone" : "Reply…"
+            }
             rows={2}
             disabled={busy}
             submitLabel="Reply"
           />
         ) : (
-          <div className="flex gap-1">
-            <Button size="sm" onClick={() => setReplying(true)}>
-              <ChatCircle />
-              Reply
-            </Button>
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => onResolve(!resolved)}
-            >
-              {resolved ? <ArrowCounterClockwise /> : <CheckCircle />}
-              {resolved ? "Reopen" : "Resolve"}
-            </Button>
-          </div>
+          (canReply || canResolve) && (
+            <div className="flex gap-1">
+              {canReply && (
+                <Button size="sm" onClick={() => setReplying(true)}>
+                  <ChatCircle />
+                  Reply
+                </Button>
+              )}
+              {canResolve && (
+                <Button
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onResolve(!resolved)}
+                >
+                  {resolved ? <ArrowCounterClockwise /> : <CheckCircle />}
+                  {resolved ? "Reopen" : "Resolve"}
+                </Button>
+              )}
+            </div>
+          )
         )}
       </CardContent>
     </Card>

@@ -44,6 +44,41 @@ export type CommentSourceRow = Extract<
   { kind: "file" | "canvas" }
 >;
 
+/**
+ * Somewhere a task's comment threads live. Artifacts and canvases come from the
+ * task's rows; the task itself is always one, holding the threads that belong
+ * to the work rather than to any single deliverable.
+ */
+export type CommentSource =
+  | { kind: "file"; target: CommentTarget; name: string; runId: string | null }
+  | { kind: "canvas"; target: CommentTarget; name: string; url: string | null }
+  | { kind: "task"; target: CommentTarget; name: string };
+
+export function taskCommentTarget(taskId: string): CommentTarget {
+  return { scope: "task", itemId: taskId };
+}
+
+export function commentSources(
+  taskId: string,
+  rows: ArtifactRow[],
+): CommentSource[] {
+  const sources: CommentSource[] = [
+    { kind: "task", target: taskCommentTarget(taskId), name: "This task" },
+  ];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const target = targetForRow(row);
+    if (!target || seen.has(commentTargetKey(target))) continue;
+    seen.add(commentTargetKey(target));
+    if (row.kind === "file") {
+      sources.push({ kind: "file", target, name: row.name, runId: row.runId });
+    } else if (row.kind === "canvas") {
+      sources.push({ kind: "canvas", target, name: row.name, url: row.url });
+    }
+  }
+  return sources;
+}
+
 /** The canvas's stable row id, recovered from its share link. */
 function canvasDashboardId(url: string | null): string | null {
   if (!url) return null;
