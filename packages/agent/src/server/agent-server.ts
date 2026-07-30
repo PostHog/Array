@@ -401,6 +401,7 @@ export class AgentServer {
   // often arrives while newSession() is still awaited (this.session is still null),
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
+  private initializingTelemetry: OtelRunTelemetry | undefined;
   private pendingEvents: Record<string, unknown>[] = [];
   /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
   private preSessionEvents: Record<string, unknown>[] = [];
@@ -1496,9 +1497,36 @@ export class AgentServer {
       payload,
       sseController,
     );
+    const initStartedAt = Date.now();
     try {
       await this.initializationPromise;
+    } catch (error) {
+      const telemetry = this.initializingTelemetry;
+      telemetry?.append(payload.run_id, {
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED,
+          params: {
+            runtimeAdapter: this.getRuntimeAdapter(),
+            initializationPhase: "session_setup",
+            initMs: Date.now() - initStartedAt,
+            requestedModel: this.config.model,
+            gatewayConfigured: Boolean(
+              process.env.LLM_GATEWAY_URL || this.config.apiUrl,
+            ),
+            errorType:
+              error instanceof Error && error.name === "TimeoutError"
+                ? "timeout"
+                : "error",
+          },
+        },
+      });
+      await telemetry?.shutdown();
+      throw error;
     } finally {
+      this.initializingTelemetry = undefined;
       this.initializationPromise = null;
     }
   }
@@ -1612,6 +1640,7 @@ export class AgentServer {
       deviceInfo,
       runtimeAdapter,
     );
+    this.initializingTelemetry = telemetry;
 
     const logWriter = new SessionLogWriter({
       posthogAPI,
@@ -1847,6 +1876,7 @@ export class AgentServer {
       pendingHandoffGitState: undefined,
       sessionMeta: effectiveSessionMeta,
     };
+    this.initializingTelemetry = undefined;
     this.flushPreSessionEvents();
 
     this.logger = new Logger({

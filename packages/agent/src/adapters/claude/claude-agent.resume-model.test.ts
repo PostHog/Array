@@ -1,7 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import {
+  type AgentSideConnection,
+  RequestError,
+} from "@agentclientprotocol/sdk";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GATEWAY_MODEL } from "../../gateway-models";
@@ -451,6 +454,50 @@ describe("ClaudeAcpAgent session creation", () => {
     ).rejects.toThrow(/init boom/);
 
     expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs diagnostics and closes the query when new-session init times out", async () => {
+    vi.useFakeTimers();
+    try {
+      nextInitPromise = new Promise(() => {});
+      const agent = makeAgent();
+      const errorSpy = vi.spyOn(agent.logger, "error");
+
+      const promise = agent.newSession({
+        cwd,
+        mcpServers: [],
+        _meta: {
+          taskRunId: "run-init-timeout-new",
+          model: "claude-opus-5",
+        },
+      });
+      promise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(createdQueries[0]?.initializationResult).toHaveBeenCalledTimes(
+          1,
+        );
+      });
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      await expect(promise).rejects.toBeInstanceOf(RequestError);
+      expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Session initialization failed",
+        expect.objectContaining({
+          initializationPhase: "sdk_initialization",
+          timeoutMs: 30_000,
+          initMs: expect.any(Number),
+          requestedModel: "claude-opus-5",
+          gatewayConfigured: false,
+          errorDetail: expect.objectContaining({
+            message: "Session initialization timed out after 30000ms",
+          }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("closes the query and rethrows when resume init fails", async () => {
