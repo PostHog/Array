@@ -424,13 +424,10 @@ export type SourceProduct =
   | ExternalInboxSourceProduct;
 
 /**
- * Products that render as a toggle in the Self-driving sources modal. Excludes non-toggle
- * products (`llm_analytics`, `signals_scout`) that appear only as signal origins.
+ * Products that render as a toggle in the Self-driving sources modal. Excludes `signals_scout`,
+ * which appears only as a signal origin and is always on rather than user-toggled.
  */
-export type ToggleableSourceProduct = Exclude<
-  SourceProduct,
-  "llm_analytics" | "signals_scout"
->;
+export type ToggleableSourceProduct = Exclude<SourceProduct, "signals_scout">;
 
 /**
  * Every backend signal `source_type`: the PostHog-native types (alphabetical) plus the
@@ -439,6 +436,7 @@ export type ToggleableSourceProduct = Exclude<
 export type SourceType =
   | "cross_source_issue"
   | "evaluation"
+  | "evaluation_report"
   | "health_issue"
   | "issue_created"
   | "issue_reopened"
