@@ -24,9 +24,7 @@ const SOURCE_TYPE_MAP: Partial<Record<SourceKey, SourceType>> = {
   conversations: "ticket",
   health_checks: "health_issue",
   session_replay: "session_analysis_cluster",
-  // `llm_analytics` also emits per-evaluation `evaluation` signals configured on the
-  // evaluations page; this toggle only governs the project-level `evaluation_report` source,
-  // matching the web app's AI observability source card.
+  // AI observability signals are always emitted per evaluation report.
   llm_analytics: "evaluation_report",
   ...Object.fromEntries(
     EXTERNAL_INBOX_SOURCES.map((s) => [s.product, s.recordKind]),
@@ -73,13 +71,6 @@ const ALL_SOURCE_PRODUCTS: SourceKey[] = [
   ...EXTERNAL_INBOX_SOURCES.map((s) => s.product),
 ];
 
-// Products whose enabled state must match a single, specific `source_type` rather than any
-// config under the product — `llm_analytics` also carries per-evaluation `evaluation` configs
-// that this toggle must ignore.
-const TYPE_SCOPED_SOURCES: Partial<Record<SourceKey, SourceType>> = {
-  llm_analytics: "evaluation_report",
-};
-
 function isSetupSourceProduct(product: SourceKey): boolean {
   return product in DATA_WAREHOUSE_SOURCES;
 }
@@ -102,12 +93,8 @@ function computeValues(
         ),
       );
     } else {
-      const scopedType = TYPE_SCOPED_SOURCES[product];
       result[product] = configs.some(
-        (c) =>
-          c.source_product === product &&
-          (!scopedType || c.source_type === scopedType) &&
-          c.enabled,
+        (c) => c.source_product === product && c.enabled,
       );
     }
   }
@@ -311,13 +298,8 @@ export function useSignalSourceToggles() {
             }
           }
         } else {
+          const existing = configs?.find((c) => c.source_product === product);
           const sourceType = SOURCE_TYPE_MAP[product];
-          const scopedType = TYPE_SCOPED_SOURCES[product];
-          const existing = configs?.find(
-            (c) =>
-              c.source_product === product &&
-              (!scopedType || c.source_type === scopedType),
-          );
           if (existing) {
             await client.updateSignalSourceConfig(projectId, existing.id, {
               enabled,
