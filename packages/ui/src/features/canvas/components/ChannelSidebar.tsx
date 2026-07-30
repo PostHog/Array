@@ -4,15 +4,11 @@ import {
   MagnifyingGlass,
   PackageIcon,
 } from "@phosphor-icons/react";
-import type {
-  ChannelItemModel,
-  CreatedByFilter,
-} from "@posthog/core/canvas/channelItems";
+import type { CreatedByFilter } from "@posthog/core/canvas/channelItems";
 import { filterChannelItems } from "@posthog/core/canvas/channelItems";
 import { RUN_STATUS_FILTER_OPTIONS } from "@posthog/core/canvas/runStatus";
 import {
-  ChatMarker,
-  ChatMarkerContent,
+  Button,
   cn,
   DropdownMenu,
   DropdownMenuContent,
@@ -30,21 +26,18 @@ import {
   Skeleton,
   SkeletonText,
 } from "@posthog/quill";
-import {
-  formatDaySeparatorLabel,
-  getLocalDayKey,
-  LOOPS_FLAG,
-} from "@posthog/shared";
+import { LOOPS_FLAG } from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
 import {
   type ChannelPageKey,
-  channelPageIcon,
   channelPageLabel,
 } from "@posthog/ui/features/canvas/components/channelPages";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
@@ -53,7 +46,7 @@ import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   [
@@ -62,11 +55,11 @@ const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
     { value: "others", label: "Other people" },
   ] as const;
 
-const HEADER_ICON_BUTTON_CLASS =
-  "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
-
+// The header's icon buttons are quill's ghost button at the 20px scale; only the
+// sticky state is ours, because quill styles the transient open state (hover,
+// popup) but has no notion of "search is showing" or "a filter is applied".
 const cnHeaderButton = (active: boolean) =>
-  cn(HEADER_ICON_BUTTON_CLASS, active && "bg-fill-selected text-foreground");
+  cn("text-muted-foreground", active && "bg-fill-selected text-foreground");
 
 const RECENTS_CAP = 30;
 const log = logger.scope("channel-sidebar");
@@ -78,6 +71,7 @@ function RecentSectionHeader({
   onQueryChange,
   createdByFilter,
   onCreatedByChange,
+  showCreatedBy,
   statusFilter,
   onStatusChange,
   filtersActive,
@@ -88,35 +82,39 @@ function RecentSectionHeader({
   onQueryChange: (value: string) => void;
   createdByFilter: CreatedByFilter;
   onCreatedByChange: (value: CreatedByFilter) => void;
+  /** False in #me, where every session is yours and the filter says nothing. */
+  showCreatedBy: boolean;
   statusFilter: TaskRunStatus | null;
   onStatusChange: (value: TaskRunStatus | null) => void;
   filtersActive: boolean;
 }) {
   return (
     <>
-      <div className="flex items-center gap-0.5 pr-1">
+      <div className="flex items-center gap-0.5">
         <div className="min-w-0 flex-1">
-          <MenuLabel>Recent</MenuLabel>
+          <MenuLabel>Sessions</MenuLabel>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="default"
+          size="icon-xs"
           aria-label="Search"
           aria-pressed={searchOpen}
           onClick={onToggleSearch}
           className={cnHeaderButton(searchOpen)}
         >
           <MagnifyingGlass size={12} />
-        </button>
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <button
-                type="button"
+              <Button
+                variant="default"
+                size="icon-xs"
                 aria-label="Filter"
                 className={cnHeaderButton(filtersActive)}
               >
                 <FunnelSimpleIcon size={12} />
-              </button>
+              </Button>
             }
           />
           <DropdownMenuContent
@@ -125,20 +123,30 @@ function RecentSectionHeader({
             sideOffset={6}
             className="min-w-fit"
           >
-            <MenuLabel>Created by</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={createdByFilter}
-              onValueChange={(value) =>
-                onCreatedByChange(value as CreatedByFilter)
-              }
-            >
-              {CREATED_BY_OPTIONS.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
+            {/* #me holds only your own sessions, so "created by" can only ever
+                answer "you" — the whole group is dropped rather than shown with
+                two options that empty the list. */}
+            {showCreatedBy && (
+              <>
+                <MenuLabel>Created by</MenuLabel>
+                <DropdownMenuRadioGroup
+                  value={createdByFilter}
+                  onValueChange={(value) =>
+                    onCreatedByChange(value as CreatedByFilter)
+                  }
+                >
+                  {CREATED_BY_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <MenuLabel>Status</MenuLabel>
             <DropdownMenuRadioGroup
               value={statusFilter ?? "any"}
@@ -167,7 +175,7 @@ function RecentSectionHeader({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search…"
-            aria-label="Search recent items"
+            aria-label="Search sessions"
             className="h-6 text-[12px]"
           />
         </div>
@@ -183,7 +191,7 @@ const SKELETON_ROW_WIDTHS = [60, 80, 40, 75, 50, 66] as const;
 function ChannelItemsSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-px">
-      {/* Stands in for the "Recent" MenuLabel, so it carries that label's scale. */}
+      {/* Stands in for the "Sessions" MenuLabel, so it carries that label's scale. */}
       <SkeletonText
         lines={1}
         maxWidth={100}
@@ -265,7 +273,17 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const [createdByFilter, setCreatedByFilter] =
     useState<CreatedByFilter>("anyone");
   const [statusFilter, setStatusFilter] = useState<TaskRunStatus | null>(null);
-  const filtersActive = createdByFilter !== "anyone" || statusFilter !== null;
+  // Every session in #me is yours, so the author filter has nothing to sort by.
+  // The state survives a space switch, so the value is neutralised here as well
+  // as hidden — otherwise "Other people" carried in from a shared space would
+  // empty this list with no visible control to undo it.
+  const { channels } = useChannels();
+  const isPersonalChannel =
+    channels.find((c) => c.id === channelId)?.name === PERSONAL_CHANNEL_NAME;
+  const createdBy: CreatedByFilter = isPersonalChannel
+    ? "anyone"
+    : createdByFilter;
+  const filtersActive = createdBy !== "anyone" || statusFilter !== null;
 
   const base = `/website/${channelId}`;
   // Activeness is a key comparison rather than a flag baked into each item, so
@@ -277,39 +295,22 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     return task ? `task:${task[1]}` : null;
   }, [pathname]);
 
-  const pinnedItems = useMemo(() => items.filter((i) => i.pinned), [items]);
-  const recentItems = useMemo(
-    () =>
-      filterChannelItems(
-        items.filter((i) => !i.pinned),
-        { query, createdBy: createdByFilter, status: statusFilter, me },
-      ).slice(0, RECENTS_CAP),
-    [items, query, createdByFilter, statusFilter, me],
-  );
-
-  // Recents are already newest-first, so grouping is a single pass that breaks
-  // whenever the calendar day changes. Pinned items are deliberately left
-  // ungrouped: that list is a shelf you put things on, not a timeline, and its
-  // order says nothing about when anything happened.
-  const recentDays = useMemo(() => {
-    const groups: { key: string; label: string; items: ChannelItemModel[] }[] =
-      [];
-    const now = new Date();
-    for (const item of recentItems) {
-      const key = getLocalDayKey(item.ts);
-      const last = groups.at(-1);
-      if (last && last.key === key) {
-        last.items.push(item);
-      } else {
-        groups.push({
-          key,
-          label: formatDaySeparatorLabel(item.ts, now),
-          items: [item],
-        });
-      }
-    }
-    return groups;
-  }, [recentItems]);
+  // One list, pins included — a pin is a mark on a session, not a different kind
+  // of thing, and the row's own badge says so. They sort to the top because a pin
+  // is a request not to lose the thing: below the recency order it would fall off
+  // the end of the cap.
+  const recentItems = useMemo(() => {
+    const matching = filterChannelItems(items, {
+      query,
+      createdBy,
+      status: statusFilter,
+      me,
+    });
+    return [
+      ...matching.filter((i) => i.pinned),
+      ...matching.filter((i) => !i.pinned),
+    ].slice(0, RECENTS_CAP);
+  }, [items, query, createdBy, statusFilter, me]);
 
   const narrowed = filtersActive || searchOpen;
   const listState = listStateOf({
@@ -318,12 +319,9 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     itemCount: items.length,
     narrowed,
   });
-  // The list's two sections, which only exist once there are items. With
-  // everything pinned there's nothing left to list — but keep the header while
-  // it's narrowed, so you can undo whatever emptied it.
-  const showPinned = listState === "ready" && pinnedItems.length > 0;
-  const showRecent =
-    listState === "ready" && (items.some((i) => !i.pinned) || narrowed);
+  // The one section, which only exists once there are items — but its header
+  // stays while the list is narrowed, so you can undo whatever emptied it.
+  const showRecent = listState === "ready";
 
   // The first free command-centre cell, or nothing if every cell is taken by a
   // task that still exists.
@@ -376,8 +374,10 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     />
   );
 
-  // Label and icon come from the shared space-page table, so a sidebar row and
-  // the header breadcrumb for the same page can never disagree.
+  // Label comes from the shared space-page table, so a sidebar row and the
+  // header breadcrumb for the same page can never disagree. No icon: this is a
+  // four-row list of words, and glyphs here only compete with the status dots
+  // in the sessions list below for the eye's attention.
   const sectionRow = (
     page: ChannelPageKey,
     to: string,
@@ -385,7 +385,6 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   ) => (
     <SidebarItem
       depth={0}
-      icon={channelPageIcon(page, { size: 16 })}
       label={channelPageLabel(page)}
       isActive={pathname === to}
       onClick={onClick}
@@ -397,6 +396,19 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
       <ChannelBackRow channelId={channelId} />
 
       <div className="flex flex-col gap-px px-2 pt-2">
+        {/* Starting a session is what you came here to do, so it leads the
+            pane's list of places rather than hiding behind one of them. */}
+        <SidebarItem
+          depth={0}
+          label="New session"
+          isActive={pathname === `${base}/new`}
+          onClick={() =>
+            void navigate({
+              to: "/website/$channelId/new",
+              params: { channelId },
+            })
+          }
+        />
         {sectionRow(
           "home",
           base,
@@ -455,15 +467,6 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </Empty>
           )}
 
-          {showPinned && (
-            <>
-              <MenuLabel>Pinned</MenuLabel>
-              <div className="flex flex-col gap-px">
-                {pinnedItems.map(taskRow)}
-              </div>
-            </>
-          )}
-
           {showRecent && (
             <>
               <RecentSectionHeader
@@ -474,24 +477,16 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
                 }}
                 query={query}
                 onQueryChange={setQuery}
-                createdByFilter={createdByFilter}
+                createdByFilter={createdBy}
                 onCreatedByChange={setCreatedByFilter}
+                showCreatedBy={!isPersonalChannel}
                 statusFilter={statusFilter}
                 onStatusChange={setStatusFilter}
                 filtersActive={filtersActive}
               />
               {recentItems.length > 0 ? (
                 <div className="flex flex-col gap-px">
-                  {recentDays.map((day) => (
-                    <Fragment key={day.key}>
-                      {/* The same separator the space feed uses for its day
-                          breaks, so one window never names a day two ways. */}
-                      <ChatMarker variant="separator" className="px-2 py-1">
-                        <ChatMarkerContent>{day.label}</ChatMarkerContent>
-                      </ChatMarker>
-                      {day.items.map(taskRow)}
-                    </Fragment>
-                  ))}
+                  {recentItems.map(taskRow)}
                 </div>
               ) : (
                 <Empty className="border-0 py-6">

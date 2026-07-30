@@ -99,18 +99,18 @@ describe("ChannelSidebar", () => {
       what: "nothing has arrived yet",
       state: { items: [], isLoading: true },
       shown: [] as string[],
-      hidden: ["Recent", "No matches", "Nothing here yet"],
+      hidden: ["Sessions", "No matches", "Nothing here yet"],
     },
     {
       what: "the space is settled and genuinely empty",
       state: { items: [], isLoading: false },
       shown: ["Nothing here yet"],
-      hidden: ["Recent", "No matches"],
+      hidden: ["Sessions", "No matches"],
     },
     {
       what: "the space is settled with items",
       state: { items: [item()], isLoading: false },
-      shown: ["Recent", "Investigate signup drop-off"],
+      shown: ["Sessions", "Investigate signup drop-off"],
       hidden: ["No matches", "Nothing here yet"],
     },
   ])("shows one state when $what", ({ state, shown, hidden }) => {
@@ -164,8 +164,7 @@ describe("ChannelSidebar", () => {
   });
 });
 
-describe("ChannelSidebar recents grouping", () => {
-  // A fixed clock, so "Today" and "Yesterday" mean the same thing on every run.
+describe("ChannelSidebar recents list", () => {
   const NOW = new Date(2026, 6, 29, 12);
 
   beforeEach(() => {
@@ -179,7 +178,7 @@ describe("ChannelSidebar recents grouping", () => {
     vi.useRealTimers();
   });
 
-  it("splits recents into day sections, newest first", () => {
+  it("lists recents newest first without day separators", () => {
     mocks.items = [
       item({
         key: "task:a",
@@ -209,12 +208,16 @@ describe("ChannelSidebar recents grouping", () => {
 
     renderSidebar();
 
-    expect(screen.getByText("Today")).not.toBeNull();
-    expect(screen.getByText("Yesterday")).not.toBeNull();
-    expect(screen.getByText("Monday, July 20th")).not.toBeNull();
+    expect(screen.getByText("Today's work")).not.toBeNull();
+    expect(screen.getByText("Also today")).not.toBeNull();
+    expect(screen.getByText("Yesterday's work")).not.toBeNull();
+    expect(screen.getByText("Older work")).not.toBeNull();
+    expect(screen.queryByText("Today")).toBeNull();
+    expect(screen.queryByText("Yesterday")).toBeNull();
+    expect(screen.queryByText("Monday, July 20th")).toBeNull();
   });
 
-  it("gives one day a single heading however many items it holds", () => {
+  it("keeps items from the same day as plain rows", () => {
     mocks.items = [
       item({ key: "task:a", id: "a", ts: new Date(2026, 6, 29, 9).getTime() }),
       item({ key: "task:b", id: "b", ts: new Date(2026, 6, 29, 8).getTime() }),
@@ -223,11 +226,18 @@ describe("ChannelSidebar recents grouping", () => {
 
     renderSidebar();
 
-    expect(screen.getAllByText("Today")).toHaveLength(1);
+    expect(screen.getAllByText("Investigate signup drop-off")).toHaveLength(3);
+    expect(screen.queryByText("Today")).toBeNull();
   });
 
-  it("leaves pinned items ungrouped — that list is a shelf, not a timeline", () => {
+  it("lists pins in the one session list, ahead of newer items", () => {
     mocks.items = [
+      item({
+        key: "task:newer",
+        id: "newer",
+        title: "Filed this morning",
+        ts: new Date(2026, 6, 30, 9).getTime(),
+      }),
       item({
         key: "task:pinned",
         id: "pinned",
@@ -239,9 +249,14 @@ describe("ChannelSidebar recents grouping", () => {
 
     renderSidebar();
 
-    // The pinned item is listed, but no day heading is drawn for it.
-    expect(screen.getByText("Kept at hand")).not.toBeNull();
-    expect(screen.queryByText("Monday, July 20th")).toBeNull();
-    expect(screen.queryByText("Today")).toBeNull();
+    // No section of its own — a pin is a mark on a session, and the row's badge
+    // is what says so.
+    expect(screen.queryByText("Pinned")).toBeNull();
+    const titles = screen
+      .getAllByText(/Kept at hand|Filed this morning/)
+      .map((el) => el.textContent);
+    // Older, but pinned: it sorts above the newer row rather than risking the
+    // recents cap.
+    expect(titles).toEqual(["Kept at hand", "Filed this morning"]);
   });
 });

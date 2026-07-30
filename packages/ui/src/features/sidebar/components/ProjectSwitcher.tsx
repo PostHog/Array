@@ -25,7 +25,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Item,
-  ItemActions,
   ItemContent,
   ItemDescription,
   ItemTitle,
@@ -55,7 +54,6 @@ import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { isMac } from "@posthog/ui/utils/platform";
 import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { Avatar, Box } from "@radix-ui/themes";
-import { ChevronRightIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 /** The account / project / org menu at the bottom of the sidebar. */
@@ -207,14 +205,10 @@ export function ProjectSwitcher() {
                 {currentProject?.name ?? "No project selected"}
               </ItemTitle>
               <ItemDescription className="text-[11px]">
-                {impersonationExpiry
-                  ? `Impersonating until ${impersonationExpiry}`
-                  : (currentUser?.email ?? "No email")}
+                {impersonationExpiry &&
+                  `Impersonating until ${impersonationExpiry}`}
               </ItemDescription>
             </ItemContent>
-            <ItemActions>
-              <ChevronRightIcon className="size-4 rotate-270 group-aria-expanded/item:rotate-90" />
-            </ItemActions>
           </Item>
         }
       />

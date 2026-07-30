@@ -18,8 +18,6 @@ import {
   Badge,
   Card,
   CardContent,
-  ChatMarker,
-  ChatMarkerContent,
   ChatMessageScroller,
   ChatMessageScrollerButton,
   ChatMessageScrollerContent,
@@ -42,11 +40,7 @@ import {
   ThreadItemTimestamp,
   useChatMessageScroller,
 } from "@posthog/quill";
-import {
-  formatDaySeparatorLabel,
-  formatRelativeTimeShort,
-  getLocalDayKey,
-} from "@posthog/shared";
+import { formatRelativeTimeShort } from "@posthog/shared";
 import type {
   Task,
   TaskRunStatus,
@@ -69,7 +63,6 @@ import { useInView } from "@posthog/ui/primitives/hooks/useInView";
 import { Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import {
-  Fragment,
   memo,
   type ReactNode,
   useCallback,
@@ -832,34 +825,19 @@ export function ChannelFeedView({
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
             {intro}
-            {entries.map((entry, index) => {
-              const previous = entries[index - 1];
-              const showDayMarker =
-                !previous ||
-                getLocalDayKey(previous.createdAt) !==
-                  getLocalDayKey(entry.createdAt);
-              return (
-                <Fragment key={entry.id}>
-                  {showDayMarker && (
-                    <ChatMarker variant="separator">
-                      <ChatMarkerContent>
-                        {formatDaySeparatorLabel(entry.createdAt, now)}
-                      </ChatMarkerContent>
-                    </ChatMarker>
-                  )}
-                  {entry.kind === "task" ? (
-                    <FeedRow
-                      task={entry.task}
-                      channelId={channelId}
-                      onOpenTask={onOpenTask}
-                      onOpenThread={onOpenThread}
-                    />
-                  ) : (
-                    <SystemFeedRow message={entry.message} />
-                  )}
-                </Fragment>
-              );
-            })}
+            {entries.map((entry) =>
+              entry.kind === "task" ? (
+                <FeedRow
+                  key={entry.id}
+                  task={entry.task}
+                  channelId={channelId}
+                  onOpenTask={onOpenTask}
+                  onOpenThread={onOpenThread}
+                />
+              ) : (
+                <SystemFeedRow key={entry.id} message={entry.message} />
+              ),
+            )}
             {pending.map((p) => (
               <PendingFeedRow
                 key={p.id}

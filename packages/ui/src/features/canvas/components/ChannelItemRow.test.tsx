@@ -30,6 +30,7 @@ const actions = {
   open: () => {},
   togglePin: () => {},
   archive: () => {},
+  remove: () => {},
 };
 
 function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
@@ -145,7 +146,7 @@ describe("ChannelItemRow", () => {
     expect(screen.queryByText(formatRelativeTimeShort(item().ts))).toBeNull();
   });
 
-  it("leaves a canvas its template glyph and timestamp, having no run", () => {
+  it("renders a canvas like a quiet task with its glyph in the badge stack", () => {
     renderRow(
       item({
         key: "canvas:canvas-1",
@@ -157,12 +158,28 @@ describe("ChannelItemRow", () => {
     );
 
     expect(
-      screen.queryByRole("img", { name: "Nothing owed to you" }),
-    ).toBeNull();
-    expect(screen.getByText(formatRelativeTimeShort(item().ts))).not.toBeNull();
+      screen.getByRole("img", { name: "Nothing owed to you" }),
+    ).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Canvas" })).not.toBeNull();
+    expect(screen.queryByText(formatRelativeTimeShort(item().ts))).toBeNull();
   });
 
-  // The "…" button and right-click render the same item list from one
+  it("marks a pinned row with the pin badge, alongside its status badges", () => {
+    mocks.status = { workspaceMode: "cloud" };
+
+    renderRow(item({ pinned: true }));
+
+    expect(screen.getByRole("img", { name: "Pinned" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Cloud run" })).not.toBeNull();
+  });
+
+  it("leaves an unpinned row without one", () => {
+    renderRow(item());
+
+    expect(screen.queryByRole("img", { name: "Pinned" })).toBeNull();
+  });
+
+  // The hover card and right-click render the same item list from one
   // definition, so both are asserted against the same expectations.
   const MENU_ITEMS = [
     "Pin",
@@ -189,15 +206,19 @@ describe("ChannelItemRow", () => {
     );
   }
 
-  it("opens the row menu from the … button", async () => {
+  /** Hovers the row and waits for its preview card, which opens on a delay. */
+  async function openCard() {
+    await userEvent.hover(screen.getByText("Investigate signup drop-off"));
+    return screen.findByRole("button", { name: "Pin" }, { timeout: 2000 });
+  }
+
+  it("puts the row's actions in the hover card", async () => {
     renderWithMenu({});
 
-    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
+    await openCard();
 
-    // The popup mounts in a portal a tick later, so the first assertion waits.
-    expect(await screen.findByRole("menuitem", { name: "Pin" })).not.toBeNull();
     for (const label of MENU_ITEMS) {
-      expect(screen.getByRole("menuitem", { name: label })).not.toBeNull();
+      expect(screen.getByRole("button", { name: label })).not.toBeNull();
     }
   });
 
@@ -214,36 +235,74 @@ describe("ChannelItemRow", () => {
   it("disables Add to Command Center when there is nowhere to put the task", async () => {
     renderWithMenu({ onAddToCommandCenter: undefined });
 
-    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
+    await openCard();
 
+    // Quill keeps a disabled button focusable, so the state is aria-disabled
+    // rather than the native attribute.
     expect(
-      await screen.findByRole("menuitem", { name: "Add to Command Center" }),
-    ).toHaveAttribute("data-disabled");
+      screen.getByRole("button", { name: "Add to Command Center" }),
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("renames from the menu", async () => {
+  it("renames from the hover card", async () => {
     const onRename = vi.fn();
     renderWithMenu({ onRename });
 
-    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Rename" }),
-    );
+    await openCard();
+    await userEvent.click(screen.getByRole("button", { name: "Rename" }));
 
     expect(onRename).toHaveBeenCalledOnce();
   });
 
-  it("gives a canvas no menu — it can't be archived, filed, or pinned to a cell", () => {
+  it("gives a canvas the actions it has: pin and delete, not archive or filing", async () => {
+    const canvas = item({
+      key: "canvas:c1",
+      kind: "canvas",
+      id: "c1",
+      title: "Web analytics overview",
+    });
+    render(
+      <Theme>
+        <ChannelItemRow actions={actions} isActive={false} item={canvas} />
+      </Theme>,
+    );
+
+    await userEvent.hover(screen.getByText("Web analytics overview"));
+
+    expect(
+      await screen.findByRole("button", { name: "Pin" }, { timeout: 2000 }),
+    ).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Delete" })).not.toBeNull();
+    // A canvas can't be archived, filed to a space, or given a command-centre
+    // cell, so those items aren't drawn at all rather than drawn dead.
+    for (const absent of ["Archive", "File to…", "Add to Command Center"]) {
+      expect(screen.queryByRole("button", { name: absent })).toBeNull();
+    }
+  });
+
+  it("deletes a canvas from its menu", async () => {
+    const remove = vi.fn();
+    const canvas = item({
+      key: "canvas:c1",
+      kind: "canvas",
+      id: "c1",
+      title: "Web analytics overview",
+    });
     render(
       <Theme>
         <ChannelItemRow
-          actions={actions}
+          actions={{ ...actions, remove }}
           isActive={false}
-          item={item({ key: "canvas:c1", kind: "canvas", id: "c1" })}
+          item={canvas}
         />
       </Theme>,
     );
 
-    expect(screen.queryByRole("button", { name: "Task actions" })).toBeNull();
+    await userEvent.hover(screen.getByText("Web analytics overview"));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete" }, { timeout: 2000 }),
+    );
+
+    expect(remove).toHaveBeenCalledWith(canvas);
   });
 });

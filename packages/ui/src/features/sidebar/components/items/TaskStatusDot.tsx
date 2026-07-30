@@ -1,3 +1,4 @@
+import { PushPin } from "@phosphor-icons/react";
 import {
   Avatar,
   AvatarFallback,
@@ -104,10 +105,38 @@ export function TaskStatusDot({ dot }: { dot: TaskDot }) {
   );
 }
 
-/** A task's identity as stacked avatars: source, cloud, and PR/branch. */
-export function TaskBadgeStack({ status }: { status: TaskStatusInput }) {
+/**
+ * The pin, in the vocabulary's yellow: this row was put here on purpose. Lives
+ * with the badges because it belongs in their stack — pinned rows sit in the one
+ * list with everything else, so the badge is what says a row is pinned.
+ */
+export function PinnedBadge() {
+  return (
+    <RowTooltip label="Pinned" side="top">
+      <Avatar size="xs" aria-label="Pinned" role="img">
+        <AvatarFallback className="bg-transparent">
+          <PushPin size={9} weight="fill" color={TONE_ICON_VAR.yellow} />
+        </AvatarFallback>
+      </Avatar>
+    </RowTooltip>
+  );
+}
+
+/**
+ * A task's identity as stacked avatars: the pin, then source, cloud, and
+ * PR/branch. The pin goes first, which in a reversed stack puts it leftmost and
+ * underneath — it says how the row got here, not what came out of it.
+ */
+export function TaskBadgeStack({
+  status,
+  pinned,
+}: {
+  status: TaskStatusInput;
+  pinned?: boolean;
+}) {
   return (
     <AvatarGroup stacked reverse size="xs" className="shrink-0">
+      {pinned ? <PinnedBadge /> : null}
       {taskBadges(status).map(({ key, Icon, label, tone }) => (
         <RowTooltip key={key} label={label} side="top">
           {/* The tooltip names the badge on hover; `aria-label` is what names it

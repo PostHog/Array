@@ -1,5 +1,6 @@
-import { DotsThreeIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import {
+  Button,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -8,41 +9,45 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
   DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  Separator,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useFileTaskToChannel } from "@posthog/ui/features/canvas/hooks/useFileTaskToChannel";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
-import { NestedButton } from "@posthog/ui/primitives/NestedButton";
 import {
   type MenuFlyoutItem,
   MenuSubFlyout,
   SearchableMenuFlyout,
 } from "@posthog/ui/primitives/SearchableMenuFlyout";
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, type ReactNode, useMemo } from "react";
 
 /**
- * What a task row's menu can do. The row owns the handlers because they're the
- * same ones its list already has (pin, archive, rename inline); only filing —
+ * What a row's menu can do. The row owns the handlers because they're the same
+ * ones its list already has (pin, archive, delete, rename inline); only filing —
  * which needs the channel list and a mutation — belongs to the menu.
+ *
+ * Canvases share this menu but not all of it: they can be pinned and deleted,
+ * and they can't be filed to a space or given a command-centre cell, both of
+ * which are task-shaped. `kind` is what decides, so a canvas gets a menu of the
+ * actions it has rather than a full one with half its items dead.
  */
 export interface TaskRowMenuProps {
-  taskId: string;
-  taskTitle: string;
+  kind: "task" | "canvas";
+  id: string;
+  title: string;
   isPinned: boolean;
   /** The channel this task is already filed to, ticked in "File to…". */
   channelId?: string;
   /** Absent when the command centre is full, which disables the item. */
   onAddToCommandCenter?: () => void;
-  onRename: () => void;
+  /** Absent where there's no inline rename to open — canvases, for now. */
+  onRename?: () => void;
   onTogglePin: () => void;
-  onArchive: () => void;
+  /** Tasks are archived; canvases are deleted (with an undo window). */
+  onArchive?: () => void;
+  onDelete?: () => void;
 }
 
 // The two menus differ only in which primitives draw them, so the item list is
@@ -60,13 +65,6 @@ interface MenuParts {
   SubTrigger: ComponentType<{ children: ReactNode }>;
 }
 
-const DROPDOWN_PARTS: MenuParts = {
-  Item: DropdownMenuItem,
-  Separator: DropdownMenuSeparator,
-  Sub: DropdownMenuSub,
-  SubTrigger: DropdownMenuSubTrigger,
-};
-
 const CONTEXT_PARTS: MenuParts = {
   Item: ContextMenuItem,
   Separator: ContextMenuSeparator,
@@ -75,8 +73,8 @@ const CONTEXT_PARTS: MenuParts = {
 };
 
 /**
- * The task row's actions, in the order the native menu used: the two edits, then
- * the two places a task can be sent, then the destructive one last.
+ * The row's actions, in the order the native menu used: the edits, then the
+ * places a task can be sent, then the destructive one last.
  */
 function TaskRowMenuItems({
   parts,
@@ -92,7 +90,8 @@ function TaskRowMenuItems({
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
   );
-  const { channels } = useChannels({ enabled: bluebirdEnabled });
+  const isTask = menu.kind === "task";
+  const { channels } = useChannels({ enabled: bluebirdEnabled && isTask });
   const fileToChannel = useFileTaskToChannel();
 
   const channelItems: MenuFlyoutItem[] = channels.map((channel) => ({
@@ -104,15 +103,19 @@ function TaskRowMenuItems({
   return (
     <>
       <Item onClick={menu.onTogglePin}>{menu.isPinned ? "Unpin" : "Pin"}</Item>
-      <Item onClick={menu.onRename}>Rename</Item>
-      <Separator />
-      <Item
-        disabled={!menu.onAddToCommandCenter}
-        onClick={menu.onAddToCommandCenter}
-      >
-        Add to Command Center
-      </Item>
-      {channelItems.length > 0 && (
+      {menu.onRename && <Item onClick={menu.onRename}>Rename</Item>}
+      {isTask && (
+        <>
+          <Separator />
+          <Item
+            disabled={!menu.onAddToCommandCenter}
+            onClick={menu.onAddToCommandCenter}
+          >
+            Add to Command Center
+          </Item>
+        </>
+      )}
+      {isTask && channelItems.length > 0 && (
         <>
           <Separator />
           <Sub>
@@ -123,53 +126,90 @@ function TaskRowMenuItems({
                 placeholder="Search spaces…"
                 emptyLabel="No spaces"
                 onSelect={(channelId) =>
-                  fileToChannel(channelId, menu.taskId, menu.taskTitle)
+                  fileToChannel(channelId, menu.id, menu.title)
                 }
               />
             </MenuSubFlyout>
           </Sub>
         </>
       )}
-      <Separator />
-      <Item onClick={menu.onArchive}>Archive</Item>
+      {menu.onArchive && (
+        <>
+          <Separator />
+          <Item onClick={menu.onArchive}>Archive</Item>
+        </>
+      )}
+      {menu.onDelete && (
+        <>
+          <Separator />
+          <Item onClick={menu.onDelete}>Delete</Item>
+        </>
+      )}
     </>
   );
 }
 
 /**
- * The row's "…" button. Only rendered on hover by the row, so it's a button that
- * appears rather than one that dims — a row at rest shows its status, not its
- * controls.
+ * The same actions as a plain list, for a surface that is already open — the
+ * row's hover card. Rows are quill buttons rather than menu items because
+ * nothing here is a popup: there's no menu root to give `DropdownMenuItem` its
+ * keyboard handling, and a button is what quill offers for a click target in a
+ * card.
  *
- * A `NestedButton` rather than a `<button>`: rows are real buttons and HTML
- * forbids nesting one inside another. It composes the trigger's injected
- * handlers and stops the click from reaching the row, which would otherwise open
- * the task behind the menu.
+ * `onAction` closes the surface once something has been chosen, and
+ * `onSubmenuOpenChange` reports the one thing that *is* a popup ("File to…"), so
+ * a hover surface can stay open while the pointer is inside it.
  */
-export function TaskRowMenuButton({
+export function TaskRowMenuList({
   menu,
-  className,
+  onAction,
+  onSubmenuOpenChange,
 }: {
   menu: TaskRowMenuProps;
-  className?: string;
+  onAction: () => void;
+  onSubmenuOpenChange: (open: boolean) => void;
 }) {
+  const parts: MenuParts = useMemo(
+    () => ({
+      Item: ({ children, disabled, onClick }) => (
+        <Button
+          variant="default"
+          size="sm"
+          left
+          disabled={disabled}
+          className="w-full"
+          onClick={() => {
+            onClick?.();
+            onAction();
+          }}
+        >
+          {children}
+        </Button>
+      ),
+      Separator: () => <Separator />,
+      Sub: ({ children }) => (
+        <DropdownMenu onOpenChange={onSubmenuOpenChange}>
+          {children}
+        </DropdownMenu>
+      ),
+      SubTrigger: ({ children }) => (
+        <DropdownMenuTrigger
+          render={
+            <Button variant="default" size="sm" left className="w-full">
+              <span className="flex-1 text-left">{children}</span>
+              <CaretRightIcon size={12} />
+            </Button>
+          }
+        />
+      ),
+    }),
+    [onAction, onSubmenuOpenChange],
+  );
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <NestedButton
-            aria-label="Task actions"
-            className={className}
-            onActivate={() => {}}
-          >
-            <DotsThreeIcon size={14} weight="bold" />
-          </NestedButton>
-        }
-      />
-      <DropdownMenuContent align="end" side="bottom" className="w-56">
-        <TaskRowMenuItems parts={DROPDOWN_PARTS} menu={menu} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="flex flex-col">
+      <TaskRowMenuItems parts={parts} menu={menu} />
+    </div>
   );
 }
 

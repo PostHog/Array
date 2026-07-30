@@ -1,6 +1,10 @@
 import { cn } from "@posthog/quill";
 
-/** Unread counts read red; ambient "how much is parked here" counts stay grey. */
+/**
+ * Unread counts read yellow — the same amber the status dots use for "something
+ * is owed to you". Red is reserved for failure. Ambient "how much is parked
+ * here" counts stay grey.
+ */
 export type CountBadgeTone = "notification" | "neutral";
 
 interface CountBadgeProps {
@@ -22,7 +26,9 @@ function countBadgeSizeClass(label: string): string {
 }
 
 const TONE_CLASS: Record<CountBadgeTone, string> = {
-  notification: "bg-(--red-9) text-(--gray-contrast)",
+  // `--amber-contrast` rather than the grey one: amber-9 is a light fill, so its
+  // readable foreground is dark in both themes.
+  notification: "bg-(--amber-9) text-(--amber-contrast)",
   // Theme tokens, not the absolute gray scale: these sit on chrome whose
   // lightness relationship to gray-N inverts between light and dark.
   neutral: "bg-muted text-muted-foreground",
