@@ -1,6 +1,6 @@
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { useMessagingModeStore } from "../messagingModeStore";
 import {
   type AgentSession,
