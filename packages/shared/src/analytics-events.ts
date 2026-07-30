@@ -42,7 +42,6 @@ export type SkillButtonId =
   | "add-error-tracking"
   | "instrument-llm-calls"
   | "add-logging";
-type SkillButtonSource = "primary" | "dropdown";
 export type CommandMenuAction =
   | "home"
   | "new-task"
@@ -287,12 +286,6 @@ export interface BrainrotActivatedProperties {
   layout: string;
   /** Cells already holding a task when Brainrot was chosen. */
   filled_cells: number;
-}
-
-export interface SkillButtonTriggeredProperties {
-  task_id: string;
-  button_id: SkillButtonId;
-  source: SkillButtonSource;
 }
 
 // Settings events
@@ -1319,7 +1312,6 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
   BRAINROT_ACTIVATED: "Brainrot activated",
-  SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
   SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
   SIDEBAR_CUSTOMIZED: "Sidebar customized",
@@ -1498,7 +1490,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
   [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
-  [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
   [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
   [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
