@@ -2,13 +2,13 @@ import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChannelItemRow } from "./ChannelItemRow";
 
 const actions = {
   open: () => {},
   togglePin: () => {},
-  archive: () => {},
+  archive: vi.fn(),
 };
 
 function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
@@ -37,6 +37,10 @@ function renderRow(model: ChannelItemModel) {
 }
 
 describe("ChannelItemRow", () => {
+  beforeEach(() => {
+    actions.archive.mockClear();
+  });
+
   it.each([
     ["queued" as const, true],
     ["in_progress" as const, true],
@@ -73,6 +77,21 @@ describe("ChannelItemRow", () => {
     expect(running).toHaveClass("ph-shimmer");
     // The glyph is wrapped, not replaced — no spinner swapped in its place.
     expect(running.querySelector("svg")).not.toBeNull();
+  });
+
+  it("archives the task from the row's own icon", () => {
+    const model = item();
+    renderRow(model);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive task" }));
+
+    expect(actions.archive).toHaveBeenCalledWith(model);
+  });
+
+  it("offers no archive on a canvas, which cannot be archived", () => {
+    renderRow(item({ key: "canvas:c1", kind: "canvas", id: "c1" }));
+
+    expect(screen.queryByRole("button", { name: "Archive task" })).toBeNull();
   });
 
   it("opens the task context menu from the row", () => {

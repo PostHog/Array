@@ -1,4 +1,5 @@
 import type { Task } from "@posthog/shared/domain-types";
+import { useArchivedTaskIds } from "@posthog/ui/features/archive/useArchivedTaskIds";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { useMemo } from "react";
 import {
@@ -18,6 +19,11 @@ export function channelFeedQueryKey(channelId: string | undefined) {
 /**
  * A channel's task feed, oldest first (Slack ordering — the composer sits at
  * the bottom and new cards land above it).
+ *
+ * Archived tasks are dropped here rather than in each view. Archiving is a
+ * local, per-device record, so the cloud feed keeps returning an archived task
+ * forever: any surface that renders this list raw shows a card the user has
+ * already archived, which reads as the archive having done nothing.
  */
 export function useChannelFeed(channelId: string | undefined): {
   tasks: Task[];
@@ -34,12 +40,13 @@ export function useChannelFeed(channelId: string | undefined): {
       staleTime: SPACE_QUERY_STALE_TIME_MS,
     },
   );
+  const archivedTaskIds = useArchivedTaskIds();
   const tasks = useMemo(
     () =>
-      [...(query.data ?? [])].sort((a, b) =>
-        a.created_at.localeCompare(b.created_at),
-      ),
-    [query.data],
+      (query.data ?? [])
+        .filter((task) => !archivedTaskIds.has(task.id))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    [query.data, archivedTaskIds],
   );
   return { tasks, isLoading: query.isLoading };
 }

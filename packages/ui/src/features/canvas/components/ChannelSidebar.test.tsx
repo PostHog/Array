@@ -1,6 +1,6 @@
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,12 +8,14 @@ const mocks = vi.hoisted(() => ({
   items: [] as ChannelItemModel[],
   isLoading: false,
   channelMissing: false,
+  archive: vi.fn(),
+  showContextMenu: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelItems", () => ({
   useChannelItems: () => ({
     items: mocks.items,
-    actions: { open: vi.fn(), togglePin: vi.fn(), archive: vi.fn() },
+    actions: { open: vi.fn(), togglePin: vi.fn(), archive: mocks.archive },
     me: { uuid: "me-uuid" },
     isLoading: mocks.isLoading,
     channelMissing: mocks.channelMissing,
@@ -41,7 +43,7 @@ vi.mock("@posthog/ui/features/canvas/components/ChannelsFab", () => ({
 // WebsiteLayout.test.tsx does for the same reason.
 vi.mock("@posthog/ui/features/tasks/useTaskContextMenu", () => ({
   useTaskContextMenu: () => ({
-    showContextMenu: vi.fn(),
+    showContextMenu: mocks.showContextMenu,
     editingTaskId: null,
     setEditingTaskId: vi.fn(),
   }),
@@ -91,6 +93,22 @@ describe("ChannelSidebar", () => {
     mocks.items = [];
     mocks.isLoading = false;
     mocks.channelMissing = false;
+    mocks.archive.mockClear();
+    mocks.showContextMenu.mockClear();
+  });
+
+  // The row's second archive entry point: the native context menu hands its
+  // "Archive" click back through onArchive.
+  it("archives the task from the row context menu", () => {
+    mocks.items = [item()];
+    renderSidebar();
+
+    fireEvent.contextMenu(screen.getByText("Investigate signup drop-off"));
+
+    const [menuItem, , options] = mocks.showContextMenu.mock.calls[0] ?? [];
+    expect(menuItem).toMatchObject({ id: "task-1" });
+    options?.onArchive?.();
+    expect(mocks.archive).toHaveBeenCalledWith(mocks.items[0]);
   });
 
   it.each([

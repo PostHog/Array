@@ -140,8 +140,13 @@ export function useChannelItems(channelId: string): {
           toast.error("Couldn't update pin");
         });
       },
+      // An archive that rejects (a cloud run that won't stop, a task already
+      // archived) has no other tell: the row stays put and the success toast
+      // never fires, so without this the click looks like it did nothing.
       archive: (item) => {
-        void archiveTask({ taskId: item.id });
+        archiveTask({ taskId: item.id }).catch(() => {
+          toast.error("Couldn't archive task");
+        });
       },
     }),
     [channelId, navigate, setCanvasPinned, togglePin, archiveTask],

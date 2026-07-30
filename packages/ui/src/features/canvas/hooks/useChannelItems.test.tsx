@@ -20,6 +20,11 @@ const mocks = vi.hoisted(() => ({
   togglePin: vi.fn(),
   archiveTask: vi.fn(),
   navigate: vi.fn(),
+  toastError: vi.fn(),
+}));
+
+vi.mock("@posthog/ui/primitives/toast", () => ({
+  toast: { error: mocks.toastError },
 }));
 
 vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
@@ -213,5 +218,37 @@ describe("useChannelItems", () => {
     mocks.feed = { tasks: [filedTask], isLoading: false };
     rerender();
     expect(result.current.items.map((item) => item.id)).toEqual(["task-1"]);
+  });
+
+  // A rejected archive used to be swallowed by a bare `void`: the row stayed
+  // put, no toast fired, and the click looked like it did nothing.
+  it("says so when archiving fails", async () => {
+    mocks.channels = {
+      channels: [{ id: "c1", name: "eng", path: "/eng" }],
+      isLoading: false,
+    };
+    mocks.archiveTask.mockRejectedValueOnce(
+      new Error("Couldn't stop the task"),
+    );
+
+    const { result } = renderHook(() => useChannelItems("c1"));
+    result.current.actions.archive({ id: "task-1" } as never);
+    await vi.waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith("Couldn't archive task"),
+    );
+  });
+
+  it("stays quiet when archiving succeeds", async () => {
+    mocks.channels = {
+      channels: [{ id: "c1", name: "eng", path: "/eng" }],
+      isLoading: false,
+    };
+    mocks.archiveTask.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useChannelItems("c1"));
+    result.current.actions.archive({ id: "task-1" } as never);
+    await vi.waitFor(() => expect(mocks.archiveTask).toHaveBeenCalled());
+
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 });
