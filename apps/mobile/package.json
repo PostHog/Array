@@ -24,6 +24,13 @@
     "clean": "node ../../scripts/rimraf.mjs .turbo .expo"
   },
   "expo": {
+    "autolinking": {
+      "ios": {
+        "buildFromSource": [
+          "react-native-worklets"
+        ]
+      }
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [
