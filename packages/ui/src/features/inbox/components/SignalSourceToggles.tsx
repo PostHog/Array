@@ -326,12 +326,12 @@ export function SignalSourceToggles({
           <SignalSourceToggleCard
             icon={<BrainIcon size={20} />}
             label="AI observability"
-            description="Quality problems in your AI features"
+            description="Quality problems in your AI features. Set up evaluations to start getting signals."
             checked={value.llm_analytics}
             onCheckedChange={toggleLlmAnalytics}
             disabled={disabled}
-            docsUrl="https://posthog.com/docs/ai-observability"
-            docsLabel="AI observability"
+            docsUrl="https://posthog.com/docs/ai-evals"
+            docsLabel="evaluations"
           />
         </Flex>
       </Flex>
