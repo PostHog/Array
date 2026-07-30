@@ -170,8 +170,10 @@ export function AnnotatedArtifactImage({
             aria-label={`Open comment from ${authorName(comment)}`}
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute flex size-8 items-center justify-center rounded-full rounded-bl-none bg-(--gray-12) p-1 ring-(--gray-1) transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-(--gray-1) focus-visible:outline-offset-1 ${
-              comment.id === activeThreadId ? "ring-2" : "ring-1"
+            className={`pointer-events-auto absolute flex size-8 items-center justify-center rounded-full rounded-bl-none p-1 ring-1 transition-all focus-visible:outline-(--gray-1) focus-visible:outline-2 focus-visible:outline-offset-1 ${
+              comment.id === activeThreadId
+                ? "bg-(--blue-12) ring-(--blue-10)"
+                : "bg-(--gray-12) ring-(--gray-10)"
             }`}
             style={{
               left: `${anchor.x * 100}%`,
