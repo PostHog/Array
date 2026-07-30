@@ -37,6 +37,7 @@ export interface TaskCreationApiClient {
   getTask(taskId: string): Promise<Task>;
   getTaskRun(taskId: string, runId: string): Promise<TaskRun>;
   createTask(options: Record<string, unknown>): Promise<unknown>;
+  createSignalReportTask(options: Record<string, unknown>): Promise<unknown>;
   deleteTask(taskId: string): Promise<void>;
   createTaskRun(
     taskId: string,

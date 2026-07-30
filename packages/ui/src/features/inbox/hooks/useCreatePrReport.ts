@@ -93,6 +93,7 @@ export function useCreatePrReport({
         cloudPrAuthorshipMode: "user",
         cloudRunSource: "signal_report",
         signalReportId: reportId,
+        signalReportTaskRelationship: "implementation",
       };
     },
     [baseBranchOverrides, reportId, cloudRegion, projectId],

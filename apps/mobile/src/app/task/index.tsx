@@ -96,10 +96,12 @@ export default function NewTaskScreen() {
     prompt: initialPrompt,
     repo: initialRepo,
     signalReport,
+    signalReportRelationship,
   } = useLocalSearchParams<{
     prompt?: string;
     repo?: string;
     signalReport?: string;
+    signalReportRelationship?: "implementation" | "discussion";
   }>();
   const router = useRouter();
   const themeColors = useThemeColors();
@@ -320,7 +322,7 @@ export default function NewTaskScreen() {
           : `Attached ${attachments.length} files`);
 
       const client = getPostHogApiClient();
-      const task = await client.createTask({
+      const taskOptions = {
         description: descriptionText,
         title: descriptionText.slice(0, 100),
         repository: selection.repository ?? undefined,
@@ -329,14 +331,15 @@ export default function NewTaskScreen() {
         // UUID the API expects. The backend also auto-resolves this from the
         // repository for user-created tasks, so it's a best-effort hint.
         github_user_integration: getUserIntegrationId(selection.integrationId),
-        ...(signalReport
-          ? {
-              origin_product: "signal_report",
-              signal_report: signalReport,
-              signal_report_task_relationship: "implementation",
-            }
-          : {}),
-      } as CreateTaskOptions);
+      };
+      const task = signalReport
+        ? await client.createSignalReportTask({
+            ...taskOptions,
+            signal_report: signalReport,
+            signal_report_task_relationship:
+              signalReportRelationship ?? "implementation",
+          })
+        : await client.createTask(taskOptions as CreateTaskOptions);
 
       pendingTaskPromptStoreApi.move(pendingKey, task.id);
       currentPendingKey = task.id;
@@ -387,6 +390,7 @@ export default function NewTaskScreen() {
     router,
     selection,
     signalReport,
+    signalReportRelationship,
     getUserIntegrationId,
     setComposerConfig,
   ]);

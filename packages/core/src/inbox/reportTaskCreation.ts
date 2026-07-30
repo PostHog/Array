@@ -76,6 +76,7 @@ export interface BuildSignalReportTaskInput {
   model: string;
   reasoningLevel?: string;
   baseBranch?: string | null;
+  relationship: "implementation" | "discussion";
 }
 
 /** Build the `TaskCreationInput` for an inbox direct-create (Discuss / Create-PR) flow. */
@@ -91,6 +92,7 @@ export function buildSignalReportTaskInput(
     model,
     reasoningLevel,
     baseBranch,
+    relationship,
   } = args;
   return {
     content: prompt,
@@ -106,5 +108,6 @@ export function buildSignalReportTaskInput(
     cloudPrAuthorshipMode: "user",
     cloudRunSource: "signal_report",
     signalReportId: reportId,
+    signalReportTaskRelationship: relationship,
   };
 }

@@ -28,10 +28,7 @@ import { MarkdownText } from "@/features/chat/components/MarkdownText";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { getModelConfigOption } from "@/features/tasks/composer/options";
 import { useCloudTaskConfigOptions } from "@/features/tasks/hooks/useCloudTaskConfigOptions";
-import type {
-  CreateTaskOptions,
-  RepositoryOption,
-} from "@/features/tasks/types";
+import type { RepositoryOption } from "@/features/tasks/types";
 import {
   ANALYTICS_EVENTS,
   computeReportAgeHours,
@@ -246,15 +243,14 @@ export function TinderView({
         // 3. Create the task
         const prompt = `Act on this signal report. Investigate the root cause, implement the fix, and open a PR if appropriate.\n\n${report.summary ?? ""}`;
         const client = getPostHogApiClient();
-        const task = await client.createTask({
+        const task = await client.createSignalReportTask({
           description: prompt,
           title: prompt.slice(0, 255),
           repository: match?.repository ?? repo ?? undefined,
           github_integration: match?.integrationId ?? undefined,
-          origin_product: "signal_report",
           signal_report: report.id,
           signal_report_task_relationship: "implementation",
-        } as CreateTaskOptions);
+        });
 
         // 4. Run it
         await client.runTaskInCloud(task.id, undefined, {

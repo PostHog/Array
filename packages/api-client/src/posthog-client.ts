@@ -2642,6 +2642,26 @@ export class PostHogAPIClient {
     return normalizeTaskResponse(data, { teamId });
   }
 
+  async createSignalReportTask(
+    options: Record<string, unknown> & {
+      signal_report: string;
+      signal_report_task_relationship: "implementation" | "discussion";
+    },
+  ): Promise<Task> {
+    const teamId = await this.getTeamId();
+    const path = `/api/projects/${teamId}/tasks/signal_report/`;
+    const response = await this.api.fetcher.fetch({
+      method: "post",
+      path,
+      url: new URL(`${this.api.baseUrl}${path}`),
+      overrides: { body: JSON.stringify(options) },
+    });
+    return normalizeTaskResponse(
+      (await response.json()) as Parameters<typeof normalizeTaskResponse>[0],
+      { teamId },
+    );
+  }
+
   async updateTask(
     taskId: string,
     updates: Partial<Schemas.Task>,

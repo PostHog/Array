@@ -115,6 +115,7 @@ export class SignalReportTaskService {
       model,
       reasoningLevel: input.reasoningLevel,
       baseBranch: input.baseBranch,
+      relationship: input.kind === "discuss" ? "discussion" : "implementation",
     });
 
     let result: CreateTaskResult;

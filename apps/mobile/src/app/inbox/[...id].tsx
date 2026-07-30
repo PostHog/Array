@@ -312,6 +312,7 @@ export default function ReportDetailScreen() {
           prompt,
           ...(reportRepo ? { repo: reportRepo } : {}),
           signalReport: report.id,
+          signalReportRelationship: "discussion",
         },
       });
     },

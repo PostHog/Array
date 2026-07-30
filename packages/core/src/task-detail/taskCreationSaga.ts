@@ -790,7 +790,12 @@ export class TaskCreationSaga extends Saga<
         const description = input.taskDescription ?? input.content ?? "";
         const canActivateWarmRun =
           input.runtime !== "pi" && !warmPayload?.suppressWarmReuse;
-        const result = await this.deps.posthogClient.createTask({
+        const createTask = input.signalReportId
+          ? this.deps.posthogClient.createSignalReportTask.bind(
+              this.deps.posthogClient,
+            )
+          : this.deps.posthogClient.createTask.bind(this.deps.posthogClient);
+        const result = await createTask({
           description,
           repository: repository ?? undefined,
           github_integration:
@@ -803,11 +808,7 @@ export class TaskCreationSaga extends Saga<
             input.cloudRunSource !== "signal_report"
               ? input.githubUserIntegrationId
               : undefined,
-          origin_product: input.signalReportId
-            ? "signal_report"
-            : "user_created",
-          // The server associates the task with the report and records the implementation
-          // task_run artefact — no relationship label is sent (associations are unlabelled).
+          origin_product: input.signalReportId ? undefined : "user_created",
           branch:
             input.workspaceMode === "cloud" && canActivateWarmRun
               ? (input.branch ?? null)
@@ -839,6 +840,8 @@ export class TaskCreationSaga extends Saga<
               ? input.customImageId
               : undefined,
           signal_report: input.signalReportId ?? undefined,
+          signal_report_task_relationship:
+            input.signalReportTaskRelationship ?? undefined,
           channel: input.channelId ?? undefined,
           runtime: input.runtime ?? "acp",
           pending_user_message: warmPayload?.pendingUserMessage,

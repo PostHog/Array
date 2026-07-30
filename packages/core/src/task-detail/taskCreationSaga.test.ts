@@ -92,6 +92,7 @@ function makeSaga(
   return new TaskCreationSaga({
     posthogClient: {
       createTask: vi.fn(),
+      createSignalReportTask: vi.fn(),
       deleteTask: vi.fn(),
       getTask: vi.fn(),
       createTaskRun: vi.fn(),
@@ -943,11 +944,13 @@ describe("TaskCreationSaga", () => {
       latest_run: createRun(),
     });
     const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createSignalReportTaskMock = vi.fn().mockResolvedValue(createdTask);
     const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
     const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
 
     const saga = makeSaga({
       createTask: createTaskMock,
+      createSignalReportTask: createSignalReportTaskMock,
       createTaskRun: createTaskRunMock,
       startTaskRun: startTaskRunMock,
     });
@@ -959,15 +962,18 @@ describe("TaskCreationSaga", () => {
       branch: "main",
       cloudRunSource: "signal_report",
       signalReportId: "report-123",
+      signalReportTaskRelationship: "implementation",
       githubIntegrationId: 123,
     });
 
     expect(result.success).toBe(true);
-    expect(createTaskMock).toHaveBeenCalledWith(
+    expect(createTaskMock).not.toHaveBeenCalled();
+    expect(createSignalReportTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
         github_integration: 123,
         github_user_integration: undefined,
-        origin_product: "signal_report",
+        origin_product: undefined,
+        signal_report_task_relationship: "implementation",
       }),
     );
     expect(createTaskRunMock).toHaveBeenCalledWith(

@@ -49,6 +49,7 @@ export function useDiscussReport({
         cloudPrAuthorshipMode: "user",
         cloudRunSource: "signal_report",
         signalReportId: reportId,
+        signalReportTaskRelationship: "discussion",
       };
     },
     [reportId, reportTitle],
