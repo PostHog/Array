@@ -322,23 +322,25 @@ export function SkillDetailPanel({
                 : "Supporting files are available, but scripts never run automatically"
             }
           >
-            <Switch
-              checked={alwaysOn}
-              disabled={skill.source === "bundled"}
-              onCheckedChange={(checked) =>
-                setSkillAlwaysOn(
-                  {
-                    name: skill.name,
-                    source: skill.source as Exclude<
-                      typeof skill.source,
-                      "bundled"
-                    >,
-                    path: skill.path,
-                  },
-                  checked,
-                )
-              }
-            />
+            <Box>
+              <Switch
+                checked={alwaysOn}
+                disabled={skill.source === "bundled"}
+                onCheckedChange={(checked) =>
+                  setSkillAlwaysOn(
+                    {
+                      name: skill.name,
+                      source: skill.source as Exclude<
+                        typeof skill.source,
+                        "bundled"
+                      >,
+                      path: skill.path,
+                    },
+                    checked,
+                  )
+                }
+              />
+            </Box>
           </Tooltip>
         </Flex>
 
