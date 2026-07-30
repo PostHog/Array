@@ -4,9 +4,9 @@ import {
 } from "@posthog/ui/shell/rendererStorage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  getPersistedAlwaysOnSkillInstructions,
-  removePersistedAlwaysOnSkillInstructions,
-  setPersistedAlwaysOnSkillInstructions,
+  getPersistedAlwaysOnSkills,
+  removePersistedAlwaysOnSkills,
+  setPersistedAlwaysOnSkills,
   useSessionConfigStore,
 } from "./sessionConfigStore";
 
@@ -16,7 +16,7 @@ const removeItem = vi.fn();
 
 registerRendererStateStorage({ getItem, setItem, removeItem });
 
-describe("sessionConfigStore always-on skill instructions", () => {
+describe("sessionConfigStore always-on skills", () => {
   beforeEach(async () => {
     await flushRendererStateWrites();
     getItem.mockReset();
@@ -27,23 +27,22 @@ describe("sessionConfigStore always-on skill instructions", () => {
     removeItem.mockResolvedValue(undefined);
     useSessionConfigStore.setState({
       configsByRunId: {},
-      alwaysOnSkillInstructionsByRunId: {},
+      alwaysOnSkillsByRunId: {},
     });
   });
 
-  it("persists instructions by task run until they are removed", async () => {
-    setPersistedAlwaysOnSkillInstructions("run-1", "Follow this skill");
+  it("persists skill references by task run until they are removed", async () => {
+    const skills = [{ name: "test", source: "user" as const, path: "/test" }];
+    setPersistedAlwaysOnSkills("run-1", skills);
 
-    expect(getPersistedAlwaysOnSkillInstructions("run-1")).toBe(
-      "Follow this skill",
-    );
+    expect(getPersistedAlwaysOnSkills("run-1")).toEqual(skills);
     await flushRendererStateWrites();
     expect(setItem).toHaveBeenCalledWith(
       "session-config-storage",
-      expect.stringContaining("Follow this skill"),
+      expect.stringContaining('"name":"test"'),
     );
 
-    removePersistedAlwaysOnSkillInstructions("run-1");
-    expect(getPersistedAlwaysOnSkillInstructions("run-1")).toBeUndefined();
+    removePersistedAlwaysOnSkills("run-1");
+    expect(getPersistedAlwaysOnSkills("run-1")).toBeUndefined();
   });
 });

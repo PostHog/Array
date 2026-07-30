@@ -13,6 +13,7 @@ import {
   type AcpMessage,
   type Adapter,
   type AgentSession,
+  type AlwaysOnSkillRef,
   type CloudRegion,
   classifyGatewayLimitError,
   type ExecutionMode,
@@ -356,14 +357,14 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  getPersistedAlwaysOnSkillInstructions?: (
+  getPersistedAlwaysOnSkills?: (
     taskRunId: string,
-  ) => string | undefined;
-  setPersistedAlwaysOnSkillInstructions?: (
+  ) => AlwaysOnSkillRef[] | undefined;
+  setPersistedAlwaysOnSkills?: (
     taskRunId: string,
-    instructions: string,
+    skills: AlwaysOnSkillRef[],
   ) => void;
-  removePersistedAlwaysOnSkillInstructions?: (taskRunId: string) => void;
+  removePersistedAlwaysOnSkills?: (taskRunId: string) => void;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -412,7 +413,7 @@ export interface ConnectParams {
   reasoningLevel?: string;
   contextWindow?: "200k" | "1m";
   fastMode?: boolean;
-  alwaysOnSkillInstructions?: string;
+  alwaysOnSkills?: AlwaysOnSkillRef[];
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -1724,7 +1725,6 @@ export class SessionService {
     session.reasoningLevel = params.reasoningLevel;
     session.contextWindow = params.contextWindow;
     session.fastMode = params.fastMode;
-    session.alwaysOnSkillInstructions = params.alwaysOnSkillInstructions;
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
@@ -1742,7 +1742,7 @@ export class SessionService {
       contextWindow,
       fastMode,
       importedSessionId,
-      alwaysOnSkillInstructions,
+      alwaysOnSkills,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -1831,7 +1831,7 @@ export class SessionService {
           repoPath,
           auth,
           logResult,
-          alwaysOnSkillInstructions,
+          alwaysOnSkills,
         );
       } else {
         if (!this.d.getIsOnline()) {
@@ -1858,7 +1858,7 @@ export class SessionService {
           importedSessionId,
           contextWindow,
           fastMode,
-          alwaysOnSkillInstructions,
+          alwaysOnSkills,
         );
       }
     } catch (error) {
@@ -1966,7 +1966,7 @@ export class SessionService {
       sessionId?: string;
       adapter?: Adapter;
     },
-    alwaysOnSkillInstructions?: string,
+    alwaysOnSkills?: AlwaysOnSkillRef[],
   ): Promise<boolean> {
     const { rawEntries, sessionId, adapter } =
       prefetchedLogs ?? (await this.fetchSessionLogs(logUrl, taskRunId));
@@ -1977,10 +1977,8 @@ export class SessionService {
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
 
     const previous = this.d.store.getSessions()[taskRunId];
-    const resolvedAlwaysOnSkillInstructions =
-      alwaysOnSkillInstructions ??
-      previous?.alwaysOnSkillInstructions ??
-      this.d.getPersistedAlwaysOnSkillInstructions?.(taskRunId);
+    const resolvedAlwaysOnSkills =
+      alwaysOnSkills ?? this.d.getPersistedAlwaysOnSkills?.(taskRunId);
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
     // Repainting from the log must not blank a transcript we already hold:
@@ -2076,12 +2074,6 @@ export class SessionService {
 
       const { customInstructions, rtkEnabledLocal, spokenNarrationEnabled } =
         this.d.settings;
-      const effectiveCustomInstructions = [
-        customInstructions,
-        resolvedAlwaysOnSkillInstructions,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join("\n\n");
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
@@ -2098,11 +2090,11 @@ export class SessionService {
         effort: persistedEffort,
         contextWindow: persistedContextWindow,
         fastMode: persistedFastMode,
-        customInstructions: effectiveCustomInstructions || undefined,
+        customInstructions: customInstructions || undefined,
+        alwaysOnSkills: resolvedAlwaysOnSkills,
       });
 
       if (result) {
-        session.alwaysOnSkillInstructions = resolvedAlwaysOnSkillInstructions;
         const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
@@ -2227,7 +2219,7 @@ export class SessionService {
       // permanent disconnect (archive, delete, fresh session) may drop them.
       this.d.adapterStore.removeAdapter(taskRunId);
       this.d.removePersistedConfigOptions(taskRunId);
-      this.d.removePersistedAlwaysOnSkillInstructions?.(taskRunId);
+      this.d.removePersistedAlwaysOnSkills?.(taskRunId);
     }
   }
 
@@ -2418,7 +2410,7 @@ export class SessionService {
     importedSessionId?: string,
     contextWindow?: "200k" | "1m",
     fastMode?: boolean,
-    alwaysOnSkillInstructions?: string,
+    alwaysOnSkills?: AlwaysOnSkillRef[],
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2436,12 +2428,6 @@ export class SessionService {
       spokenNarrationEnabled,
     } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
-    const effectiveCustomInstructions = [
-      startCustomInstructions,
-      alwaysOnSkillInstructions,
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join("\n\n");
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
       taskRunId: taskRun.id,
@@ -2450,7 +2436,8 @@ export class SessionService {
       projectId: auth.projectId,
       permissionMode: executionMode,
       adapter,
-      customInstructions: effectiveCustomInstructions || undefined,
+      customInstructions: startCustomInstructions || undefined,
+      alwaysOnSkills,
       rtkEnabled: rtkEnabledLocal,
       spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
@@ -2471,12 +2458,8 @@ export class SessionService {
     session.reasoningLevel = reasoningLevel;
     session.contextWindow = contextWindow;
     session.fastMode = fastMode;
-    session.alwaysOnSkillInstructions = alwaysOnSkillInstructions;
-    if (alwaysOnSkillInstructions) {
-      this.d.setPersistedAlwaysOnSkillInstructions?.(
-        taskRun.id,
-        alwaysOnSkillInstructions,
-      );
+    if (alwaysOnSkills?.length) {
+      this.d.setPersistedAlwaysOnSkills?.(taskRun.id, alwaysOnSkills);
     }
 
     // An imported CLI session had its history replayed during agent.start;

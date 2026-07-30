@@ -5,6 +5,7 @@ import type {
 import { effortLevelSchema } from "@posthog/shared/domain-types";
 import { z } from "zod";
 import { USER_AGENT_INSTRUCTIONS_MAX_LENGTH } from "../os/schemas";
+import { bundleLocalSkillInput } from "../skills/schemas";
 
 export { effortLevelSchema };
 export type { EffortLevel } from "@posthog/shared/domain-types";
@@ -65,6 +66,7 @@ export const startSessionInput = z.object({
   adapter: z.enum(["claude", "codex"]).optional(),
   additionalDirectories: z.array(z.string()).optional(),
   customInstructions: customInstructionsField,
+  alwaysOnSkills: z.array(bundleLocalSkillInput).optional(),
   /**
    * Replaces the PostHog system prompt entirely for this session. Used by
    * constrained, single-purpose surfaces (e.g. the canvas generator) that drive
@@ -233,6 +235,7 @@ export const reconnectSessionInput = z.object({
   permissionMode: z.string().optional(),
   model: z.string().optional(),
   customInstructions: customInstructionsField,
+  alwaysOnSkills: z.array(bundleLocalSkillInput).optional(),
   effort: effortLevelSchema.optional(),
   contextWindow: z.enum(["200k", "1m"]).optional(),
   fastMode: z.boolean().optional(),

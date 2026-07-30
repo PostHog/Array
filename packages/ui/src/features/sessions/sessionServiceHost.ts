@@ -31,11 +31,11 @@ import { NotificationBus } from "@posthog/ui/features/notifications/notification
 import { SpeechNotifier } from "@posthog/ui/features/notifications/speechNotifier";
 import { useSessionAdapterStore } from "@posthog/ui/features/sessions/sessionAdapterStore";
 import {
-  getPersistedAlwaysOnSkillInstructions,
+  getPersistedAlwaysOnSkills,
   getPersistedConfigOptions,
-  removePersistedAlwaysOnSkillInstructions,
+  removePersistedAlwaysOnSkills,
   removePersistedConfigOptions,
-  setPersistedAlwaysOnSkillInstructions,
+  setPersistedAlwaysOnSkills,
   setPersistedConfigOptions,
 } from "@posthog/ui/features/sessions/sessionConfigStore";
 import { sessionStoreSetters } from "@posthog/ui/features/sessions/sessionStore";
@@ -120,9 +120,9 @@ function buildSessionServiceDeps(): SessionServiceDeps {
       getPersistedConfigOptions(taskRunId) ?? undefined,
     setPersistedConfigOptions,
     removePersistedConfigOptions,
-    getPersistedAlwaysOnSkillInstructions,
-    setPersistedAlwaysOnSkillInstructions,
-    removePersistedAlwaysOnSkillInstructions,
+    getPersistedAlwaysOnSkills,
+    setPersistedAlwaysOnSkills,
+    removePersistedAlwaysOnSkills,
     adapterStore: {
       getAdapter: (taskRunId) =>
         useSessionAdapterStore.getState().getAdapter(taskRunId),

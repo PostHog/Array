@@ -573,9 +573,8 @@ export class TaskCreationSaga extends Saga<
             connectParams.contextWindow = input.contextWindow;
           if (input.fastMode !== undefined)
             connectParams.fastMode = input.fastMode;
-          if (input.alwaysOnSkillInstructions)
-            connectParams.alwaysOnSkillInstructions =
-              input.alwaysOnSkillInstructions;
+          if (input.alwaysOnSkills?.length)
+            connectParams.alwaysOnSkills = input.alwaysOnSkills;
           if (importedClaude) {
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";

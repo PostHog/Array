@@ -26,6 +26,10 @@ import {
   useSettingsStore,
 } from "../../settings/settingsStore";
 import {
+  AlwaysOnSkillChips,
+  useAlwaysOnSkillSelection,
+} from "../../task-detail/components/AlwaysOnSkillChips";
+import {
   type WorkspaceMode,
   WorkspaceModeSelect,
 } from "../../task-detail/components/WorkspaceModeSelect";
@@ -277,6 +281,12 @@ export const ChannelHomeComposer = forwardRef<
   // task-ready callback matches create order and keeps adds/removes balanced —
   // no row is ever orphaned, even if two creates briefly overlap.
   const pendingIdsRef = useRef<string[]>([]);
+  const {
+    includedSkills: includedAlwaysOnSkills,
+    excludedKeys: excludedAlwaysOnSkillKeys,
+    exclude: excludeAlwaysOnSkill,
+    reset: resetAlwaysOnSkillSelection,
+  } = useAlwaysOnSkillSelection();
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -310,6 +320,7 @@ export const ChannelHomeComposer = forwardRef<
     channelName,
     channelId: backendChannelId,
     channelContextId: channelId,
+    excludedAlwaysOnSkillKeys,
     onTaskCreated: handleTaskCreated,
   });
 
@@ -332,6 +343,7 @@ export const ChannelHomeComposer = forwardRef<
     onPendingStart({ id, prompt });
 
     const created = await handleSubmit(content);
+    if (created) resetAlwaysOnSkillSelection();
     if (!created) {
       // Creation failed — onTaskCreated never fired, so this id is still
       // queued. Pull its row and give the full structured prompt (chips and
@@ -340,7 +352,13 @@ export const ChannelHomeComposer = forwardRef<
       onPendingEnd(id);
       editor.insertEditorContent(content);
     }
-  }, [canSubmit, handleSubmit, onPendingStart, onPendingEnd]);
+  }, [
+    canSubmit,
+    handleSubmit,
+    onPendingStart,
+    onPendingEnd,
+    resetAlwaysOnSkillSelection,
+  ]);
 
   const handleModeChange = useCallback(
     (value: string) => {
@@ -455,6 +473,15 @@ export const ChannelHomeComposer = forwardRef<
           if (canvasArmed || canSubmit) void submitComposer();
         }}
       />
+      {!canvasArmed && includedAlwaysOnSkills.length > 0 && (
+        <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
+          <span className="shrink-0 text-gray-10">Using:</span>
+          <AlwaysOnSkillChips
+            skills={includedAlwaysOnSkills}
+            onExclude={excludeAlwaysOnSkill}
+          />
+        </div>
+      )}
     </div>
   );
 });

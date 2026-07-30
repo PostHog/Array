@@ -1,11 +1,12 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { AlwaysOnSkillRef } from "@posthog/shared";
 import { electronStorage } from "@posthog/ui/shell/rendererStorage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 interface SessionConfigState {
   configsByRunId: Record<string, SessionConfigOption[]>;
-  alwaysOnSkillInstructionsByRunId: Record<string, string>;
+  alwaysOnSkillsByRunId: Record<string, AlwaysOnSkillRef[]>;
 }
 
 interface SessionConfigActions {
@@ -15,12 +16,9 @@ interface SessionConfigActions {
   getConfigOptions: (taskRunId: string) => SessionConfigOption[] | undefined;
   /** Remove config options for a task run */
   removeConfigOptions: (taskRunId: string) => void;
-  setAlwaysOnSkillInstructions: (
-    taskRunId: string,
-    instructions: string,
-  ) => void;
-  getAlwaysOnSkillInstructions: (taskRunId: string) => string | undefined;
-  removeAlwaysOnSkillInstructions: (taskRunId: string) => void;
+  setAlwaysOnSkills: (taskRunId: string, skills: AlwaysOnSkillRef[]) => void;
+  getAlwaysOnSkills: (taskRunId: string) => AlwaysOnSkillRef[] | undefined;
+  removeAlwaysOnSkills: (taskRunId: string) => void;
 }
 
 type SessionConfigStore = SessionConfigState & SessionConfigActions;
@@ -29,7 +27,7 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
   persist(
     (set, get) => ({
       configsByRunId: {},
-      alwaysOnSkillInstructionsByRunId: {},
+      alwaysOnSkillsByRunId: {},
 
       setConfigOptions: (taskRunId, options) =>
         set((state) => ({
@@ -43,20 +41,19 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
           const { [taskRunId]: _removed, ...rest } = state.configsByRunId;
           return { configsByRunId: rest };
         }),
-      setAlwaysOnSkillInstructions: (taskRunId, instructions) =>
+      setAlwaysOnSkills: (taskRunId, skills) =>
         set((state) => ({
-          alwaysOnSkillInstructionsByRunId: {
-            ...state.alwaysOnSkillInstructionsByRunId,
-            [taskRunId]: instructions,
+          alwaysOnSkillsByRunId: {
+            ...state.alwaysOnSkillsByRunId,
+            [taskRunId]: skills,
           },
         })),
-      getAlwaysOnSkillInstructions: (taskRunId) =>
-        get().alwaysOnSkillInstructionsByRunId[taskRunId],
-      removeAlwaysOnSkillInstructions: (taskRunId) =>
+      getAlwaysOnSkills: (taskRunId) => get().alwaysOnSkillsByRunId[taskRunId],
+      removeAlwaysOnSkills: (taskRunId) =>
         set((state) => {
           const { [taskRunId]: _removed, ...rest } =
-            state.alwaysOnSkillInstructionsByRunId;
-          return { alwaysOnSkillInstructionsByRunId: rest };
+            state.alwaysOnSkillsByRunId;
+          return { alwaysOnSkillsByRunId: rest };
         }),
     }),
     {
@@ -64,8 +61,7 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
       storage: electronStorage,
       partialize: (state) => ({
         configsByRunId: state.configsByRunId,
-        alwaysOnSkillInstructionsByRunId:
-          state.alwaysOnSkillInstructionsByRunId,
+        alwaysOnSkillsByRunId: state.alwaysOnSkillsByRunId,
       }),
     },
   ),
@@ -91,25 +87,19 @@ export function removePersistedConfigOptions(taskRunId: string): void {
   useSessionConfigStore.getState().removeConfigOptions(taskRunId);
 }
 
-export function getPersistedAlwaysOnSkillInstructions(
+export function getPersistedAlwaysOnSkills(
   taskRunId: string,
-): string | undefined {
-  return useSessionConfigStore
-    .getState()
-    .getAlwaysOnSkillInstructions(taskRunId);
+): AlwaysOnSkillRef[] | undefined {
+  return useSessionConfigStore.getState().getAlwaysOnSkills(taskRunId);
 }
 
-export function setPersistedAlwaysOnSkillInstructions(
+export function setPersistedAlwaysOnSkills(
   taskRunId: string,
-  instructions: string,
+  skills: AlwaysOnSkillRef[],
 ): void {
-  useSessionConfigStore
-    .getState()
-    .setAlwaysOnSkillInstructions(taskRunId, instructions);
+  useSessionConfigStore.getState().setAlwaysOnSkills(taskRunId, skills);
 }
 
-export function removePersistedAlwaysOnSkillInstructions(
-  taskRunId: string,
-): void {
-  useSessionConfigStore.getState().removeAlwaysOnSkillInstructions(taskRunId);
+export function removePersistedAlwaysOnSkills(taskRunId: string): void {
+  useSessionConfigStore.getState().removeAlwaysOnSkills(taskRunId);
 }

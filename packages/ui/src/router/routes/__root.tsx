@@ -54,7 +54,6 @@ import {
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useSidebarData } from "@posthog/ui/features/sidebar/useSidebarData";
 import { useVisualTaskOrder } from "@posthog/ui/features/sidebar/useVisualTaskOrder";
-import { AlwaysOnSkillsFailureDialog } from "@posthog/ui/features/task-detail/components/AlwaysOnSkillsFailureDialog";
 import { ExistingWorktreeDialog } from "@posthog/ui/features/task-detail/components/ExistingWorktreeDialog";
 import { RemoteBranchCheckoutDialog } from "@posthog/ui/features/task-detail/components/RemoteBranchCheckoutDialog";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
@@ -333,7 +332,6 @@ function RootLayout() {
         <UpdateAvailableModal />
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
-        <AlwaysOnSkillsFailureDialog />
         <ExistingWorktreeDialog />
       </Flex>
     );
@@ -519,7 +517,6 @@ function RootLayout() {
         <UpdateAvailableModal />
         <WhatsNewModal />
         <RemoteBranchCheckoutDialog />
-        <AlwaysOnSkillsFailureDialog />
         <FeedbackModal
           mode={feedbackMode}
           onFinished={handleFeedbackFinished}
