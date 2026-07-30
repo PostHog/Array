@@ -6,6 +6,7 @@ import {
   type SessionState,
   useSessionStore,
 } from "@posthog/ui/features/sessions/sessionStore";
+import { LRUCache } from "lru-cache";
 
 export interface ConversationBuildCache {
   impl: ReturnType<typeof createIncrementalConversationBuilder>;
@@ -28,7 +29,6 @@ export interface ConversationCacheKey {
 }
 
 interface Entry<T> {
-  taskId: string;
   /**
    * Entries are swept when their session's events are evicted, but only if
    * the session was ever seen in the store. Surfaces that render transcripts
@@ -51,11 +51,10 @@ interface Entry<T> {
  */
 const MAX_CACHED_TASKS = 8;
 
-const buildCaches = new Map<
-  string,
-  Map<string, Entry<ConversationBuildCache>>
->();
-const threadGroupers = new Map<string, Map<string, Entry<ThreadGrouper>>>();
+type ScopeCache<T> = LRUCache<string, Entry<T>>;
+
+const buildCaches = new Map<string, ScopeCache<ConversationBuildCache>>();
+const threadGroupers = new Map<string, ScopeCache<ThreadGrouper>>();
 
 export function getConversationBuildCache(
   key: ConversationCacheKey,
@@ -75,30 +74,23 @@ export function getPersistentThreadGrouper(
   return getEntry(threadGroupers, key, createIncrementalThreadGrouper);
 }
 
-function getEntry<T>(
-  map: Map<string, Map<string, Entry<T>>>,
+function getEntry<T extends {}>(
+  map: Map<string, ScopeCache<T>>,
   key: ConversationCacheKey,
   create: () => T,
 ): T {
   watchStoreForEviction();
-  let scopeMap = map.get(key.scope);
-  if (!scopeMap) {
-    scopeMap = new Map();
-    map.set(key.scope, scopeMap);
+  let scopeCache = map.get(key.scope);
+  if (!scopeCache) {
+    scopeCache = new LRUCache({ max: MAX_CACHED_TASKS });
+    map.set(key.scope, scopeCache);
   }
-  let entry = scopeMap.get(key.taskId);
-  if (entry) {
-    // Re-insert to refresh LRU recency (Map preserves insertion order).
-    scopeMap.delete(key.taskId);
-  } else {
-    entry = { taskId: key.taskId, hadSession: false, value: create() };
+  let entry = scopeCache.get(key.taskId);
+  if (!entry) {
+    entry = { hadSession: false, value: create() };
+    scopeCache.set(key.taskId, entry);
   }
   entry.hadSession ||= hasSession(useSessionStore.getState(), key.taskId);
-  scopeMap.set(key.taskId, entry);
-  for (const oldest of scopeMap.keys()) {
-    if (scopeMap.size <= MAX_CACHED_TASKS) break;
-    scopeMap.delete(oldest);
-  }
   return entry.value;
 }
 
@@ -121,19 +113,24 @@ function watchStoreForEviction(): void {
   });
 }
 
-function sweepEvicted<T>(
-  map: Map<string, Map<string, Entry<T>>>,
+function sweepEvicted<T extends {}>(
+  map: Map<string, ScopeCache<T>>,
   state: SessionState,
 ): void {
-  for (const scopeMap of map.values()) {
-    for (const [taskId, entry] of scopeMap) {
+  for (const scopeCache of map.values()) {
+    // Collect first: deleting while iterating an LRUCache is not guaranteed safe.
+    const evicted: string[] = [];
+    for (const [taskId, entry] of scopeCache.entries()) {
       if (!entry.hadSession) continue;
-      const taskRunId = state.taskIdIndex[entry.taskId];
+      const taskRunId = state.taskIdIndex[taskId];
       const session =
         taskRunId === undefined ? undefined : state.sessions[taskRunId];
       if (!session || session.events.length === 0) {
-        scopeMap.delete(taskId);
+        evicted.push(taskId);
       }
+    }
+    for (const taskId of evicted) {
+      scopeCache.delete(taskId);
     }
   }
 }
