@@ -466,7 +466,7 @@ export function TaskCommentsList({
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      <div className="flex-1 space-y-2 px-2 pb-2">
+      <div className="flex-1 space-y-2 p-2">
         {loading && threads.length === 0 ? (
           <div className="flex justify-center py-8">
             <Spinner />
