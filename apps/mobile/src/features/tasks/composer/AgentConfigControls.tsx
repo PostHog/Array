@@ -1,48 +1,57 @@
 import { getAvailableModesForAdapter } from "@posthog/core/sessions/executionModes";
-import {
-  type CloudComposerSelection,
-  resolveCloudComposerAdapterChange,
-  resolveCloudComposerModelChange,
-} from "@posthog/core/task-detail/composerModelPolicy";
+import type { CloudComposerSelection } from "@posthog/core/task-detail/composerModelPolicy";
 import {
   type Adapter,
   type CloudTaskConfigOption,
   type ExecutionMode,
+  FAST_MODE_FLAG,
   getReasoningEffortOptions,
   type SupportedReasoningEffort,
+  supports1MContext,
+  supportsFastMode,
 } from "@posthog/shared";
 import {
-  BrainIcon,
   Cpu,
+  Lightning,
   PauseIcon,
   PencilIcon,
   Robot,
   ShieldCheck,
   Sparkle,
 } from "phosphor-react-native";
+import { useFeatureFlag } from "posthog-react-native";
 import { type ReactNode, useState } from "react";
 import { useThemeColors } from "@/lib/theme";
+import { AgentConfigSheet } from "./AgentConfigSheet";
 import {
+  type AgentPreset,
+  type ContextWindow,
+  DEFAULT_CONTEXT_WINDOW,
+  getAgentPresets,
   getComposerModelOptions,
   getConfigOptionLabel,
+  getMiddlePreset,
   getMobileExecutionModes,
   getModelConfigOption,
+  resolveHarnessSwitchSelection,
 } from "./options";
 import { Pill } from "./Pill";
 import { SelectSheet } from "./SelectSheet";
-
-const SWITCH_ADAPTER_VALUE = "__switch_adapter__";
 
 interface AgentConfigControlsProps {
   adapter: Adapter;
   mode: ExecutionMode;
   model: string;
   reasoning: SupportedReasoningEffort;
+  contextWindow: ContextWindow;
+  fastMode: boolean;
   configOptions: readonly CloudTaskConfigOption[];
   onAdapterChange: (selection: CloudComposerSelection) => void;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
+  onContextWindowChange: (contextWindow: ContextWindow) => void;
+  onFastModeChange: (enabled: boolean) => void;
   canChangeAdapter?: boolean;
 }
 
@@ -69,23 +78,56 @@ export function AgentConfigControls({
   mode,
   model,
   reasoning,
+  contextWindow,
+  fastMode,
   configOptions,
   onAdapterChange,
   onModeChange,
   onModelChange,
   onReasoningChange,
+  onContextWindowChange,
+  onFastModeChange,
   canChangeAdapter = true,
 }: AgentConfigControlsProps) {
   const themeColors = useThemeColors();
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [modelSheetOpen, setModelSheetOpen] = useState(false);
-  const [reasoningSheetOpen, setReasoningSheetOpen] = useState(false);
+  const [configSheetOpen, setConfigSheetOpen] = useState(false);
+  const fastModeFlagEnabled = !!useFeatureFlag(FAST_MODE_FLAG);
+
   const executionModes = getMobileExecutionModes(
     getAvailableModesForAdapter(adapter),
   );
   const modelConfigOption = getModelConfigOption(configOptions);
   const modelOptions = getComposerModelOptions(modelConfigOption);
   const reasoningOptions = getReasoningEffortOptions(adapter, model) ?? [];
+  const presets = getAgentPresets(adapter, modelConfigOption);
+
+  const modelLabel =
+    getConfigOptionLabel(modelConfigOption.options, model) ?? model;
+  const effortLabel =
+    reasoningOptions.find((option) => option.value === reasoning)?.name ??
+    reasoning;
+  const configLabel =
+    reasoningOptions.length > 0 ? `${modelLabel} · ${effortLabel}` : modelLabel;
+
+  const fastModeAvailable =
+    fastModeFlagEnabled && adapter === "claude" && supportsFastMode(model);
+  const fastActive = fastModeAvailable && fastMode;
+  const contextWindowAvailable = supports1MContext(model);
+
+  const applyPreset = (preset: AgentPreset) => {
+    if (preset.model !== model) onModelChange(preset.model);
+    if (preset.effort !== reasoning) onReasoningChange(preset.effort);
+  };
+
+  const handleReset = () => {
+    const middle = getMiddlePreset(presets);
+    if (middle) applyPreset(middle);
+    if (contextWindow !== DEFAULT_CONTEXT_WINDOW) {
+      onContextWindowChange(DEFAULT_CONTEXT_WINDOW);
+    }
+    if (fastMode) onFastModeChange(false);
+  };
 
   return (
     <>
@@ -103,26 +145,21 @@ export function AgentConfigControls({
 
       <Pill
         icon={
-          adapter === "codex" ? (
+          fastActive ? (
+            <Lightning
+              size={14}
+              color={themeColors.status.warning}
+              weight="fill"
+            />
+          ) : adapter === "codex" ? (
             <Cpu size={14} color={themeColors.gray[11]} />
           ) : (
             <Robot size={14} color={themeColors.gray[11]} />
           )
         }
-        label={getConfigOptionLabel(modelConfigOption.options, model) ?? model}
-        onPress={() => setModelSheetOpen(true)}
+        label={configLabel}
+        onPress={() => setConfigSheetOpen(true)}
       />
-
-      {reasoningOptions.length > 0 ? (
-        <Pill
-          icon={<BrainIcon size={14} color={themeColors.gray[11]} />}
-          label={
-            reasoningOptions.find((option) => option.value === reasoning)
-              ?.name ?? reasoning
-          }
-          onPress={() => setReasoningSheetOpen(true)}
-        />
-      ) : null}
 
       <SelectSheet
         open={modeSheetOpen}
@@ -144,70 +181,31 @@ export function AgentConfigControls({
         }))}
       />
 
-      <SelectSheet
-        open={modelSheetOpen}
-        title="Model"
-        value={model}
-        onChange={(value) => {
-          if (value === SWITCH_ADAPTER_VALUE) {
-            onAdapterChange(resolveCloudComposerAdapterChange(adapter));
-            return;
+      <AgentConfigSheet
+        open={configSheetOpen}
+        onClose={() => setConfigSheetOpen(false)}
+        adapter={adapter}
+        model={model}
+        reasoning={reasoning}
+        contextWindow={contextWindow}
+        fastMode={fastActive}
+        presets={presets}
+        reasoningOptions={reasoningOptions}
+        modelOptions={modelOptions}
+        fastModeAvailable={fastModeAvailable}
+        contextWindowAvailable={contextWindowAvailable}
+        canChangeAdapter={canChangeAdapter}
+        onSelectPreset={applyPreset}
+        onModelChange={onModelChange}
+        onReasoningChange={onReasoningChange}
+        onAdapterSelect={(next) => {
+          if (next !== adapter) {
+            onAdapterChange(resolveHarnessSwitchSelection(adapter));
           }
-          const next = resolveCloudComposerModelChange({
-            adapter,
-            modelOption: modelConfigOption,
-            requestedModel: value,
-            reasoning,
-          });
-          onModelChange(next.model);
-          onReasoningChange(next.reasoning);
         }}
-        onClose={() => setModelSheetOpen(false)}
-        options={[
-          ...modelOptions.map((option) => ({
-            value: option.value,
-            label: option.label,
-            description: option.description,
-            disabled: option.disabled,
-            icon:
-              adapter === "codex" ? (
-                <Cpu size={16} color={themeColors.gray[11]} />
-              ) : (
-                <Robot size={16} color={themeColors.gray[11]} />
-              ),
-          })),
-          ...(canChangeAdapter
-            ? [
-                {
-                  value: SWITCH_ADAPTER_VALUE,
-                  label: `Switch to ${adapter === "claude" ? "Codex" : "Claude Code"}`,
-                  description: "Change coding agent",
-                  disabled: false,
-                  icon:
-                    adapter === "claude" ? (
-                      <Cpu size={16} color={themeColors.accent[11]} />
-                    ) : (
-                      <Robot size={16} color={themeColors.accent[11]} />
-                    ),
-                },
-              ]
-            : []),
-        ]}
-      />
-
-      <SelectSheet
-        open={reasoningSheetOpen}
-        title="Reasoning"
-        value={reasoning}
-        onChange={(value) =>
-          onReasoningChange(value as SupportedReasoningEffort)
-        }
-        onClose={() => setReasoningSheetOpen(false)}
-        options={reasoningOptions.map((option) => ({
-          value: option.value,
-          label: option.name,
-          icon: <BrainIcon size={16} color={themeColors.gray[11]} />,
-        }))}
+        onFastModeChange={onFastModeChange}
+        onContextWindowChange={onContextWindowChange}
+        onReset={handleReset}
       />
     </>
   );

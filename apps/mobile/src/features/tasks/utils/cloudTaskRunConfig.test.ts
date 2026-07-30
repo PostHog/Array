@@ -28,4 +28,50 @@ describe("buildCloudTaskRunConfig", () => {
       }).reasoningLevel,
     ).toBeUndefined();
   });
+
+  it("sends context window and fast mode for a supporting model", () => {
+    expect(
+      buildCloudTaskRunConfig({
+        adapter: "claude",
+        mode: "plan",
+        model: "claude-opus-4-8",
+        reasoning: "high",
+        contextWindow: "200k",
+        fastMode: true,
+      }),
+    ).toEqual({
+      adapter: "claude",
+      model: "claude-opus-4-8",
+      reasoningLevel: "high",
+      initialPermissionMode: "plan",
+      contextWindow: "200k",
+      fastMode: true,
+    });
+  });
+
+  it("omits fast mode for a model that supports 1M context but not fast mode", () => {
+    const config = buildCloudTaskRunConfig({
+      adapter: "claude",
+      mode: "plan",
+      model: "claude-sonnet-5",
+      reasoning: "high",
+      contextWindow: "1m",
+      fastMode: true,
+    });
+    expect(config).toMatchObject({ contextWindow: "1m" });
+    expect(config).not.toHaveProperty("fastMode");
+  });
+
+  it("omits context window for a model without the 1M beta", () => {
+    const config = buildCloudTaskRunConfig({
+      adapter: "claude",
+      mode: "plan",
+      model: "claude-haiku-4-5",
+      reasoning: "high",
+      contextWindow: "1m",
+      fastMode: true,
+    });
+    expect(config).not.toHaveProperty("contextWindow");
+    expect(config).not.toHaveProperty("fastMode");
+  });
 });

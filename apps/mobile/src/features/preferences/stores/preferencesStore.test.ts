@@ -55,6 +55,63 @@ describe("preferencesStore reasoning effort", () => {
   });
 });
 
+describe("preferencesStore agent config", () => {
+  it("defaults context window to 1m and fast mode off", () => {
+    const state = usePreferencesStore.getState();
+    expect(state.lastUsedContextWindow).toBe("1m");
+    expect(state.lastUsedFastMode).toBe(false);
+  });
+
+  it.each(["200k", "1m"] as const)(
+    "updates lastUsedContextWindow to %s via setter",
+    (value) => {
+      usePreferencesStore.getState().setLastUsedContextWindow(value);
+      expect(usePreferencesStore.getState().lastUsedContextWindow).toBe(value);
+    },
+  );
+
+  it.each([true, false])(
+    "updates lastUsedFastMode to %s via setter",
+    (enabled) => {
+      usePreferencesStore.getState().setLastUsedFastMode(enabled);
+      expect(usePreferencesStore.getState().lastUsedFastMode).toBe(enabled);
+    },
+  );
+
+  it("resets the last-used agent config to a harness's mode and effort", () => {
+    usePreferencesStore.getState().setLastUsedContextWindow("200k");
+    usePreferencesStore.getState().setLastUsedFastMode(true);
+
+    usePreferencesStore.getState().resetLastUsedAgentConfig("auto", "medium");
+
+    const state = usePreferencesStore.getState();
+    expect(state.lastNewTaskMode).toBe("auto");
+    expect(state.lastUsedReasoningEffort).toBe("medium");
+    expect(state.lastUsedContextWindow).toBe("1m");
+    expect(state.lastUsedFastMode).toBe(false);
+  });
+
+  it("resets the stale agent selection when migrating a pre-versioned install", () => {
+    const migrate = usePreferencesStore.persist.getOptions().migrate;
+    const migrated = migrate?.(
+      {
+        theme: "dark",
+        lastUsedReasoningEffort: "ultracode",
+        defaultReasoningEffort: "low",
+      },
+      0,
+    ) as Record<string, unknown>;
+
+    expect(migrated).toMatchObject({
+      theme: "dark",
+      defaultReasoningEffort: "low",
+      lastUsedReasoningEffort: "high",
+      lastUsedContextWindow: "1m",
+      lastUsedFastMode: false,
+    });
+  });
+});
+
 describe("preferencesStore scale sound with task length", () => {
   it("defaults to false", () => {
     expect(usePreferencesStore.getState().scaleSoundWithTaskLength).toBe(false);

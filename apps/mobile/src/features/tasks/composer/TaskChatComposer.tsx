@@ -50,6 +50,7 @@ import {
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
 import {
+  type ContextWindow,
   filterKimiModelConfigOptions,
   getModelConfigOption,
   resolveComposerPrimaryAction,
@@ -77,11 +78,15 @@ interface TaskChatComposerProps {
   mode: ExecutionMode;
   model: string;
   reasoning: SupportedReasoningEffort;
+  contextWindow: ContextWindow;
+  fastMode: boolean;
   onAdapterChange: (selection: CloudComposerSelection) => void;
   canChangeAdapter?: boolean;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
+  onContextWindowChange: (contextWindow: ContextWindow) => void;
+  onFastModeChange: (enabled: boolean) => void;
   /** Steer vs Queue behaviour for messages sent while a turn is running. */
   messagingMode: MessagingMode;
   queuedCount: number;
@@ -104,11 +109,15 @@ export function TaskChatComposer({
   mode,
   model,
   reasoning,
+  contextWindow,
+  fastMode,
   onAdapterChange,
   canChangeAdapter = true,
   onModeChange,
   onModelChange,
   onReasoningChange,
+  onContextWindowChange,
+  onFastModeChange,
   messagingMode,
   queuedCount,
   onToggleMessagingMode,
@@ -405,11 +414,15 @@ export function TaskChatComposer({
                   mode={mode}
                   model={model}
                   reasoning={reasoning}
+                  contextWindow={contextWindow}
+                  fastMode={fastMode}
                   configOptions={configOptions}
                   onAdapterChange={onAdapterChange}
                   onModeChange={onModeChange}
                   onModelChange={onModelChange}
                   onReasoningChange={onReasoningChange}
+                  onContextWindowChange={onContextWindowChange}
+                  onFastModeChange={onFastModeChange}
                   canChangeAdapter={canChangeAdapter}
                 />
 
