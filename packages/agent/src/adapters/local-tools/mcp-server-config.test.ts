@@ -17,8 +17,7 @@ describe("buildLocalToolsServer", () => {
   };
 
   beforeEach(() => {
-    // The signed-git gate reads IS_SANDBOX and the token vars; clear them so each
-    // case controls the cloud signal (meta.environment) and token explicitly.
+    // Clear credential state so each case controls the cloud signal explicitly.
     delete process.env.IS_SANDBOX;
     delete process.env.GH_TOKEN;
     delete process.env.GITHUB_TOKEN;
@@ -60,9 +59,8 @@ describe("buildLocalToolsServer", () => {
     const envNames = server?.env.map((e) => e.name) ?? [];
     expect(envNames).toContain("POSTHOG_LOCAL_TOOLS_CTX");
     expect(envNames).toContain("POSTHOG_LOCAL_TOOLS_ENABLED");
-    // Token is forwarded to the child so its own git remote ops authenticate.
-    expect(envNames).toContain("GH_TOKEN");
-    expect(envNames).toContain("GITHUB_TOKEN");
+    expect(envNames).not.toContain("GH_TOKEN");
+    expect(envNames).not.toContain("GITHUB_TOKEN");
     // Codex strips ELECTRON_RUN_AS_NODE from its own env, and process.execPath
     // is the app binary in packaged installs; without this the server boots
     // the full desktop app instead of running the script.
@@ -78,13 +76,14 @@ describe("buildLocalToolsServer", () => {
       Buffer.from(ctxEntry?.value ?? "", "base64").toString("utf-8"),
     );
     expect(ctx.cwd).toBe("/repo");
-    expect(ctx.token).toBe("ghs_test");
+    expect(ctx.token).toBeUndefined();
     expect(ctx.taskId).toBe("task-1");
     expect(ctx.taskRunId).toBe("run-1");
     expect(ctx.baseBranch).toBe("master");
   });
 
-  it("returns a server but omits token env vars when no token is present", () => {
+  it("does not serialize a parent GitHub token into the child config", () => {
+    process.env.GH_TOKEN = "ghs_test";
     const server = buildLocalToolsServer(
       { cwd: "/repo" },
       { environment: "cloud" },

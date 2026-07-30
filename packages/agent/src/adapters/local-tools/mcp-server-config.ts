@@ -4,8 +4,6 @@
  */
 
 import type { McpServerStdio } from "@agentclientprotocol/sdk";
-import { ghTokenEnv } from "@posthog/git/signed-commit";
-import { resolveGithubToken } from "../../utils/github-token";
 import { resolveBundledMcpScript } from "../../utils/resolve-bundled-script";
 import { resolveTaskId } from "../session-meta";
 import {
@@ -43,15 +41,6 @@ function toMcpServerStdio(
     // binary, which boots the full app without this var. Inert on real node.
     { name: "ELECTRON_RUN_AS_NODE", value: "1" },
   ];
-  if (ctx.token) {
-    // Token also on the child env so its own git remote ops authenticate.
-    env.push(
-      ...Object.entries(ghTokenEnv(ctx.token)).map(([name, value]) => ({
-        name,
-        value,
-      })),
-    );
-  }
   return {
     name: LOCAL_TOOLS_MCP_NAME,
     command: process.execPath,
@@ -75,7 +64,6 @@ export function buildLocalToolsServer(
   }
   const toolCtx: LocalToolCtx = {
     cwd,
-    token: resolveGithubToken(),
     taskId: resolveTaskId(meta),
     taskRunId: meta?.taskRunId,
     baseBranch: meta?.baseBranch,

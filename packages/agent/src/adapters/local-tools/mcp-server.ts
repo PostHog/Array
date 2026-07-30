@@ -11,7 +11,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readGithubTokenFromEnv } from "@posthog/git/signed-commit";
+import { resolveGithubToken } from "../../utils/github-token";
 import { LOCAL_TOOLS, LOCAL_TOOLS_MCP_NAME, type LocalToolCtx } from "./index";
 
 function die(message: string): never {
@@ -28,7 +28,6 @@ let parsed: {
   cwd: string;
   taskId?: string;
   taskRunId?: string;
-  token?: string;
   baseBranch?: string;
 };
 try {
@@ -43,7 +42,7 @@ if (!parsed.cwd) {
 
 const ctx: LocalToolCtx = {
   cwd: parsed.cwd,
-  token: parsed.token ?? readGithubTokenFromEnv(),
+  token: resolveGithubToken(),
   taskId: parsed.taskId,
   taskRunId: parsed.taskRunId,
   baseBranch: parsed.baseBranch,
