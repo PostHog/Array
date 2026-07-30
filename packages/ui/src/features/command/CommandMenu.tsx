@@ -35,6 +35,7 @@ import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyp
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
+import { getDefaultReviewMode } from "@posthog/ui/features/code-review/getDefaultReviewMode";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
 import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
@@ -191,7 +192,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (!reviewTaskId) return;
     const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(reviewTaskId, "split");
+      setReviewMode(reviewTaskId, getDefaultReviewMode());
     }
   }, [reviewTaskId, getReviewMode, setReviewMode]);
 

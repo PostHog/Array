@@ -23,11 +23,11 @@ vi.mock("@posthog/ui/primitives/Tooltip", () => ({
 import { DiffStatsChip } from "./DiffStatsChip";
 
 describe("DiffStatsChip", () => {
-  it("opens the diff view in split mode", () => {
+  it("uses the shared responsive diff-view toggle", () => {
     const task = { id: "task-1" } as Task;
 
     render(<DiffStatsChip task={task} />);
 
-    expect(useDiffStatsToggle).toHaveBeenCalledWith(task, "split");
+    expect(useDiffStatsToggle).toHaveBeenCalledWith(task);
   });
 });

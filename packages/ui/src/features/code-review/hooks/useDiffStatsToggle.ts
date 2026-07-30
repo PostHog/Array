@@ -1,6 +1,6 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { useCallback } from "react";
-import type { ReviewMode } from "../reviewNavigationStore";
+import { getDefaultReviewMode } from "../getDefaultReviewMode";
 import { useReviewNavigationStore } from "../reviewNavigationStore";
 import { useTaskDiffSummaryStats } from "./useTaskDiffSummaryStats";
 
@@ -13,10 +13,7 @@ interface DiffStatsToggleResult {
   toggle: () => void;
 }
 
-export function useDiffStatsToggle(
-  task: Task,
-  openMode: ReviewMode = "split",
-): DiffStatsToggleResult {
+export function useDiffStatsToggle(task: Task): DiffStatsToggleResult {
   const taskId = task.id;
   const { filesChanged, linesAdded, linesRemoved } =
     useTaskDiffSummaryStats(task);
@@ -28,8 +25,9 @@ export function useDiffStatsToggle(
 
   const isOpen = reviewMode !== "closed";
   const toggle = useCallback(
-    () => setReviewMode(taskId, isOpen ? "closed" : openMode),
-    [setReviewMode, taskId, isOpen, openMode],
+    () =>
+      setReviewMode(taskId, isOpen ? "closed" : getDefaultReviewMode()),
+    [setReviewMode, taskId, isOpen],
   );
 
   return {
