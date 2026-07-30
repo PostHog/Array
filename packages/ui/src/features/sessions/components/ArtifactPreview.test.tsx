@@ -1,7 +1,15 @@
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import { useCommentNavigationStore } from "@posthog/ui/features/sessions/commentNavigationStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
   artifactHtmlDocument,
@@ -378,13 +386,12 @@ describe("ArtifactPreview", () => {
   // no layout, so the highlight geometry and the scroll are stubbed.
   describe("with the comment list in the sidebar", () => {
     const rect = { left: 0, top: 0, width: 40, height: 12 } as DOMRect;
-    let scrollIntoView = vi.fn();
+    let scrollIntoView: MockInstance;
 
     beforeEach(() => {
-      scrollIntoView = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoView;
-      // jsdom has no range geometry at all, so the highlight rectangles have
-      // to be supplied outright rather than spied on.
+      scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+      // jsdom has no range geometry at all, so unlike the scroll (stubbed in
+      // the shared setup) the highlight rectangles have to be supplied.
       Range.prototype.getClientRects = () => [rect] as unknown as DOMRectList;
       artifactComments.data = [textComment()];
       useQuery.mockReturnValue({
@@ -396,7 +403,7 @@ describe("ArtifactPreview", () => {
 
     afterEach(() => {
       Reflect.deleteProperty(Range.prototype, "getClientRects");
-      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+      scrollIntoView.mockRestore();
     });
 
     it("hands a thread picked on the artifact over to the list", async () => {

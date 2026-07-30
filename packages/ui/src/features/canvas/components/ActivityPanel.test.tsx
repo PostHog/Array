@@ -1,6 +1,14 @@
 import type { Task } from "@posthog/shared/domain-types";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from "vitest";
 
 vi.mock("@posthog/ui/features/canvas/hooks/useThreadConversation", () => ({
   useThreadConversation: () => ({
@@ -64,11 +72,10 @@ function renderPanel(taskId = "task-1") {
 }
 
 describe("ActivityPanel", () => {
-  let scrollTo: ReturnType<typeof vi.fn>;
+  let scrollTo: MockInstance;
 
   beforeEach(() => {
-    scrollTo = vi.fn();
-    Element.prototype.scrollTo = scrollTo as unknown as Element["scrollTo"];
+    scrollTo = vi.spyOn(Element.prototype, "scrollTo");
     useCommentNavigationStore.setState({
       focusByTask: {},
       resolutionsByTarget: {},
@@ -76,7 +83,7 @@ describe("ActivityPanel", () => {
   });
 
   afterEach(() => {
-    Reflect.deleteProperty(Element.prototype, "scrollTo");
+    scrollTo.mockRestore();
   });
 
   it("offers comments as a third tab beside the timeline and artifacts", () => {
