@@ -24,7 +24,7 @@ export function RecentsHoverCard({
   onClose: () => void;
   side?: "bottom" | "right";
 }) {
-  const { data: items = [], isLoading } = useRecents();
+  const { data: items = [], error, isLoading } = useRecents();
   return (
     <PopoverContent
       side={side}
@@ -40,6 +40,18 @@ export function RecentsHoverCard({
           <div className="flex justify-center py-10">
             <Spinner />
           </div>
+        ) : error ? (
+          <Empty className="border-0 py-8">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ClockCounterClockwiseIcon />
+              </EmptyMedia>
+              <EmptyTitle>Couldn't load recents</EmptyTitle>
+              <EmptyDescription>
+                Check your connection and try again.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : items.length === 0 ? (
           <Empty className="border-0 py-8">
             <EmptyHeader>

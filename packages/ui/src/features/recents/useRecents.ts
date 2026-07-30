@@ -3,18 +3,24 @@ import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { logger } from "@posthog/ui/shell/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 const log = logger.scope("recents");
 
 export function useRecents() {
   const trpc = useHostTRPC();
-  return useQuery(
+  const query = useQuery(
     trpc.recents.list.queryOptions(undefined, {
       meta: AUTH_SCOPED_QUERY_META,
       staleTime: 30_000,
     }),
   );
+  useEffect(() => {
+    if (query.error) {
+      log.warn("Failed to load recents", { error: query.error });
+    }
+  }, [query.error]);
+  return query;
 }
 
 export function useRecordRecentEngagement(): (
