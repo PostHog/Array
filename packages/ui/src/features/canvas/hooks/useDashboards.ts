@@ -58,23 +58,6 @@ export function useDashboards(
   return { dashboards: data ?? [], isLoading };
 }
 
-export function useRecentDashboards(limit = 100): {
-  dashboards: DashboardSummary[];
-  isLoading: boolean;
-} {
-  const trpc = useHostTRPC();
-  const { data, isLoading } = useQuery(
-    trpc.dashboards.listRecent.queryOptions(
-      { limit },
-      {
-        meta: AUTH_SCOPED_QUERY_META,
-        staleTime: SPACE_QUERY_STALE_TIME_MS,
-      },
-    ),
-  );
-  return { dashboards: data ?? [], isLoading };
-}
-
 /**
  * Warm the dashboards-list cache for a channel ahead of opening it (e.g. on
  * hover), so expanding the channel shows its canvases without a cold fetch.

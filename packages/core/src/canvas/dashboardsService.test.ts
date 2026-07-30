@@ -95,30 +95,6 @@ describe("DashboardsService.list", () => {
   });
 });
 
-describe("DashboardsService.listRecent", () => {
-  it("fetches dashboards across channels and caps them newest first", async () => {
-    const rows = Array.from({ length: 24 }, (_, index) =>
-      dashboardRow(
-        `canvas-${index}`,
-        `Canvas ${index}`,
-        `chan-${index % 2}`,
-        index,
-      ),
-    );
-    const { fs, listByQuery } = fakeFs(rows);
-
-    const result = await new DashboardsService(fs, {} as never).listRecent(20);
-
-    expect(listByQuery).toHaveBeenCalledWith(
-      "type=dashboard",
-      "recent dashboards",
-    );
-    expect(result).toHaveLength(20);
-    expect(result[0].id).toBe("canvas-23");
-    expect(result.at(-1)?.id).toBe("canvas-4");
-  });
-});
-
 // Fake exposing getEntry (resolves the row to rename) + fetch (the PATCH).
 function fakeFsForRename(entry: FsEntryBase) {
   const fetch = vi.fn(async (_path: string, init?: RequestInit) => ({

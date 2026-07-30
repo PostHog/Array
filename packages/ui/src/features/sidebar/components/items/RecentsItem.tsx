@@ -1,6 +1,6 @@
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react";
 import { Popover, PopoverTrigger } from "@posthog/quill";
-import { RecentsHoverCard } from "@posthog/ui/features/canvas/components/RecentsHoverCard";
+import { RecentsHoverCard } from "@posthog/ui/features/recents/RecentsHoverCard";
 import { useState } from "react";
 import { SidebarItem } from "../SidebarItem";
 

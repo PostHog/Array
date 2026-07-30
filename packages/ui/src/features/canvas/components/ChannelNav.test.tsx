@@ -31,7 +31,7 @@ vi.mock("@posthog/ui/shell/analytics", () => ({ track: vi.fn() }));
 vi.mock("./ActivityHoverCard", () => ({
   ActivityHoverCard: () => <div>Recent activity card</div>,
 }));
-vi.mock("./RecentsHoverCard", () => ({
+vi.mock("@posthog/ui/features/recents/RecentsHoverCard", () => ({
   RecentsHoverCard: () => <div>Recent items card</div>,
 }));
 

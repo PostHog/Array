@@ -89,10 +89,6 @@ export const dashboardSummarySchema = z.object({
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
 
 export const listDashboardsInput = z.object({ channelId: z.string().min(1) });
-export const listRecentDashboardsInput = z.object({
-  limit: z.number().int().min(1).max(100).default(20),
-});
-
 export const createDashboardInput = z.object({
   channelId: z.string().min(1),
   name: z.string().min(1),

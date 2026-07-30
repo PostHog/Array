@@ -10,12 +10,12 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
-import { useRecentItems } from "@posthog/ui/features/canvas/hooks/useRecentItems";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
 import {
   navigateToChannelDashboard,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
+import { useRecents } from "./useRecents";
 
 export function RecentsHoverCard({
   onClose,
@@ -24,7 +24,7 @@ export function RecentsHoverCard({
   onClose: () => void;
   side?: "bottom" | "right";
 }) {
-  const { items, isLoading } = useRecentItems();
+  const { data: items = [], isLoading } = useRecents();
   return (
     <PopoverContent
       side={side}

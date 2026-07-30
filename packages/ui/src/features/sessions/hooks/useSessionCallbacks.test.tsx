@@ -41,6 +41,10 @@ const taskViewed = vi.hoisted(() => ({
 vi.mock("@posthog/ui/features/sidebar/useTaskViewed", () => ({
   useTaskViewed: () => taskViewed,
 }));
+const recordEngagement = vi.hoisted(() => vi.fn());
+vi.mock("@posthog/ui/features/recents/useRecents", () => ({
+  useRecordRecentEngagement: () => recordEngagement,
+}));
 
 vi.mock("@posthog/ui/features/sessions/hooks/useMessagingMode", () => ({
   useMessagingMode: () => "queue",
@@ -143,6 +147,7 @@ describe("useSessionCallbacks.handleSendPrompt while editing a queued message", 
     expect(sessionService.sendPrompt).toHaveBeenCalledWith(TASK, "my edit", {
       steer: false,
     });
+    expect(recordEngagement).toHaveBeenCalledWith({ kind: "task", id: TASK });
   });
 
   it("updates in place and never sends when the edit saves", async () => {

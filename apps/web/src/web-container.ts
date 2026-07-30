@@ -99,6 +99,7 @@ import {
   type PiSessionFactory,
   type PiSessionProvider,
 } from "@posthog/core/pi-runtime/piSessionController";
+import { recentsCoreModule } from "@posthog/core/recents/recents.module";
 import {
   type BundleLocalSkill,
   CLOUD_ARTIFACT_BUNDLE_LOCAL_SKILL,
@@ -488,6 +489,7 @@ container.bind(CLOUD_TASK_AUTH).toDynamicValue((ctx) => ({
 // API), so the web host binds them by loading the same core module desktop does;
 // the web host router forwards its canvas routers to these.
 container.load(canvasCoreModule);
+container.load(recentsCoreModule);
 container.load(taskThreadCoreModule);
 
 // SessionService is built from host-agnostic deps (host tRPC client + UI

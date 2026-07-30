@@ -27,7 +27,6 @@ export interface ICanvasTemplatesService {
 
 export interface IDashboardsService {
   list(channelId: string): Promise<DashboardSummary[]>;
-  listRecent(limit: number): Promise<DashboardSummary[]>;
   get(id: string): Promise<DashboardRecord | null>;
   create(input: {
     channelId: string;

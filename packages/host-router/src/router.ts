@@ -39,6 +39,7 @@ import { osRouter } from "./routers/os.router";
 import { piSessionRouter } from "./routers/pi-session.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
 import { provisioningRouter } from "./routers/provisioning.router";
+import { recentsRouter } from "./routers/recents.router";
 import { releaseFeedRouter } from "./routers/release-feed.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
 import { shellRouter } from "./routers/shell.router";
@@ -67,6 +68,7 @@ export const hostRouter = router({
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,
   dashboards: dashboardsRouter,
+  recents: recentsRouter,
   deepLink: deepLinkRouter,
   enrichment: enrichmentRouter,
   environment: environmentRouter,

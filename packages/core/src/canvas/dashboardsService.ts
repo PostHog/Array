@@ -109,42 +109,6 @@ export class DashboardsService {
       );
   }
 
-  async listRecent(limit: number): Promise<DashboardSummary[]> {
-    const entries = await this.fs.listByQuery<FsEntry>(
-      `type=${DASHBOARD_TYPE}`,
-      "recent dashboards",
-    );
-    return entries
-      .map((entry) => toRecord(entry))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, limit)
-      .map(
-        ({
-          id,
-          channelId,
-          name,
-          templateId,
-          createdBy,
-          createdByUuid,
-          updatedAt,
-          code,
-          generationTaskId,
-          pinnedAt,
-        }) => ({
-          id,
-          channelId,
-          name,
-          templateId,
-          createdBy,
-          createdByUuid,
-          updatedAt,
-          code,
-          generationTaskId,
-          pinnedAt,
-        }),
-      );
-  }
-
   async get(id: string): Promise<DashboardRecord | null> {
     const entry = await this.getEntry(id);
     return entry ? toRecord(entry) : null;

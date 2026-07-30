@@ -20,6 +20,7 @@ import {
   tryExecuteCodeCommand,
 } from "@posthog/ui/features/message-editor/commands";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
+import { useRecordRecentEngagement } from "@posthog/ui/features/recents/useRecents";
 import { useMessagingMode } from "@posthog/ui/features/sessions/hooks/useMessagingMode";
 import {
   type AgentSession,
@@ -54,6 +55,7 @@ export function useSessionCallbacks({
   const shellClient = useService<ShellClient>(SHELL_CLIENT);
   const hostClient = useHostTRPCClient();
   const { markActivity, markAsViewed } = useTaskViewed();
+  const recordEngagement = useRecordRecentEngagement();
   const { requestFocus, setPendingContent } = useDraftStore((s) => s.actions);
 
   const sessionRef = useRef(session);
@@ -132,6 +134,7 @@ export function useSessionCallbacks({
       }
 
       try {
+        recordEngagement({ kind: "task", id: taskId });
         markAsViewed(taskId);
         markActivity(taskId);
         await sessionService.sendPrompt(taskId, promptText ?? text, {
@@ -164,6 +167,7 @@ export function useSessionCallbacks({
       messagingMode,
       setPendingContent,
       requestFocus,
+      recordEngagement,
     ],
   );
 

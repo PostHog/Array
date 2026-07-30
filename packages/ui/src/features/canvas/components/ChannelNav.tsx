@@ -29,6 +29,7 @@ import {
 import { useCommandCenterActiveCount } from "@posthog/ui/features/command-center/useCommandCenterActiveCount";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
+import { RecentsHoverCard } from "@posthog/ui/features/recents/RecentsHoverCard";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { CountBadge } from "@posthog/ui/primitives/CountBadge";
 import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
@@ -42,7 +43,6 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { type ComponentPropsWithRef, type ReactNode, useState } from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
-import { RecentsHoverCard } from "./RecentsHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 

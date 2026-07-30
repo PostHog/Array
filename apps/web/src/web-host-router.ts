@@ -12,6 +12,7 @@ import { canvasTemplatesRouter } from "@posthog/host-router/routers/canvas-templ
 import { channelTasksRouter } from "@posthog/host-router/routers/channel-tasks.router";
 import { cloudTaskRouter } from "@posthog/host-router/routers/cloud-task.router";
 import { dashboardsRouter } from "@posthog/host-router/routers/dashboards.router";
+import { recentsRouter } from "@posthog/host-router/routers/recents.router";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
 import {
   type CloudRegion,
@@ -494,6 +495,7 @@ export const webHostRouter = router({
   channelTasks: channelTasksRouter,
   cloudTask: cloudTaskRouter,
   dashboards: dashboardsRouter,
+  recents: recentsRouter,
   deepLink: deepLinkStubRouter,
   folders: foldersStubRouter,
   fs: fsStubRouter,

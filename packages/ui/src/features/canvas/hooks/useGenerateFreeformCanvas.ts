@@ -25,6 +25,7 @@ import {
 import { useFolderInstructions } from "@posthog/ui/features/canvas/hooks/useFolderInstructions";
 import { useCanvasGenerationTrackerStore } from "@posthog/ui/features/canvas/stores/canvasGenerationTrackerStore";
 import { toastError } from "@posthog/ui/features/notifications/errorDetails";
+import { useRecordRecentEngagement } from "@posthog/ui/features/recents/useRecents";
 import { useCreateTask } from "@posthog/ui/features/tasks/useTaskCrudMutations";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,6 +62,7 @@ export function useGenerateFreeformCanvas(args: {
   const { invalidateTasks } = useCreateTask();
   const { fileTask } = useChannelTaskMutations();
   const { setGenerationTask, renameDashboard } = useDashboardMutations();
+  const recordEngagement = useRecordRecentEngagement();
   // The channel's CONTEXT.md, passed to the agent as optional background so the
   // generated canvas starts with the shared context. Absent/empty is fine.
   const callerOwnsContext = "channelContext" in args;
@@ -113,6 +115,7 @@ export function useGenerateFreeformCanvas(args: {
         // local build of these features before merging.
         workspaceMode = "cloud",
       } = opts;
+      recordEngagement({ kind: "canvas", id: dashboardId });
       setIsStarting(true);
       try {
         // A cloud run requires an explicit adapter + model (the API rejects a
@@ -221,6 +224,7 @@ export function useGenerateFreeformCanvas(args: {
       fileTask,
       setGenerationTask,
       renameDashboard,
+      recordEngagement,
       channelId,
       channelName,
       channelContext,

@@ -81,6 +81,7 @@ import {
 import { oauthModule } from "@posthog/core/oauth/oauth.module";
 import { PROVISIONING_SERVICE } from "@posthog/core/provisioning/identifiers";
 import { ProvisioningService } from "@posthog/core/provisioning/provisioning";
+import { recentsCoreModule } from "@posthog/core/recents/recents.module";
 import { SLEEP_SERVICE } from "@posthog/core/sleep/identifiers";
 import { SleepService } from "@posthog/core/sleep/sleep";
 import { UI_AUTH } from "@posthog/core/ui/identifiers";
@@ -808,6 +809,7 @@ container.bind(MAIN_DISCORD_PRESENCE_SERVICE).to(DiscordPresenceService);
 // live in @posthog/core (bound via canvasCoreModule) and resolve through
 // ctx.container in the host-router routers.
 container.load(canvasCoreModule);
+container.load(recentsCoreModule);
 
 // Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
 // service in the main process; resolved by the host-router browserTabs router.

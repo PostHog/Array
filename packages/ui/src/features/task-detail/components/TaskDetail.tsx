@@ -19,6 +19,7 @@ import { PanelLayout } from "../../panels/components/PanelLayout";
 import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
 import { getLeafPanel, parseTabId } from "../../panels/panelStoreHelpers";
 import { PiSessionView } from "../../pi-sessions/PiSessionView";
+import { useRecordRecentEngagement } from "../../recents/useRecents";
 import { MIN_CHAT_WIDTH } from "../../sessions/constants";
 import { useCwd } from "../../sidebar/useCwd";
 import { useRenameTask } from "../../tasks/useTaskMutations";
@@ -51,9 +52,14 @@ export function TaskDetail({
   channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
+  const recordEngagement = useRecordRecentEngagement();
   const { task } = useTaskData({ taskId, initialTask });
   const runtime = task.runtime === "pi" ? "pi" : "acp";
   const selectedTaskRunId = task.latest_run?.id;
+
+  useEffect(() => {
+    recordEngagement({ kind: "task", id: taskId });
+  }, [recordEngagement, taskId]);
 
   const effectiveRepoPath = useCwd(taskId);
 

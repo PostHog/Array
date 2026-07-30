@@ -40,6 +40,7 @@ import { osRouter } from "@posthog/host-router/routers/os.router";
 import { piSessionRouter } from "@posthog/host-router/routers/pi-session.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
+import { recentsRouter } from "@posthog/host-router/routers/recents.router";
 import { releaseFeedRouter } from "@posthog/host-router/routers/release-feed.router";
 import { secureStoreRouter } from "@posthog/host-router/routers/secure-store.router";
 import { shellRouter } from "@posthog/host-router/routers/shell.router";
@@ -71,6 +72,7 @@ export const trpcRouter = router({
   channelTasks: channelTasksRouter,
   claudeCliSessions: claudeCliSessionsRouter,
   dashboards: dashboardsRouter,
+  recents: recentsRouter,
   cloudTask: cloudTaskRouter,
   connectivity: connectivityRouter,
   contextMenu: contextMenuRouter,

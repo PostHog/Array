@@ -5,7 +5,6 @@ import {
   dashboardSummarySchema,
   ensureHomeCanvasInput,
   listDashboardsInput,
-  listRecentDashboardsInput,
   renameDashboardInput,
   saveFreeformInput,
   setGenerationTaskInput,
@@ -24,14 +23,6 @@ export const dashboardsRouter = router({
       ctx.container
         .get<IDashboardsService>(DASHBOARDS_SERVICE)
         .list(input.channelId),
-    ),
-  listRecent: publicProcedure
-    .input(listRecentDashboardsInput)
-    .output(z.array(dashboardSummarySchema))
-    .query(({ ctx, input }) =>
-      ctx.container
-        .get<IDashboardsService>(DASHBOARDS_SERVICE)
-        .listRecent(input.limit),
     ),
   get: publicProcedure
     .input(dashboardIdInput)
