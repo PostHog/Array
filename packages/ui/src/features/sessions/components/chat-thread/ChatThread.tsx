@@ -66,12 +66,10 @@ import {
   type AgentTurn,
   CHAT_THREAD_VIRTUALIZATION_THRESHOLD,
   completedTurnTimestamp,
-  computeStickyAnchor,
   countFlatRows,
   type FlatThreadRow,
   flattenTurnRows,
   SCROLL_PREVIOUS_ITEM_PEEK,
-  type StickyAnchorEntry,
   type ThreadItem,
   type ThreadScrollResume,
   type TurnRow,
@@ -916,7 +914,8 @@ function ThreadScrollStateRecorder({
 
 /**
  * Tracks the user turn the reader is parked on — the last prompt whose top has passed the peek line,
- * matching how the windowed body derives its own sticky anchor — and renders the minimap with it.
+ * the same rule {@link computeStickyAnchor} applies to the windowed body's measured rows — and
+ * renders the minimap with it.
  *
  * The engine reports this for rows marked `scrollAnchor`, but marking a row also hands the engine the
  * scroll position for it (see {@link ThreadRow}), so the anchor is measured here instead. Only this
@@ -948,33 +947,32 @@ function ThreadTurnAnchor({
 
   useEffect(() => {
     const viewport = findScrollerViewport(probeRef.current);
-    if (!viewport) return;
+    const rows = viewport?.querySelector<HTMLElement>(
+      '[data-slot="chat-message-scroller-content"]',
+    );
+    if (!viewport || !rows) return;
     let frame = 0;
     const measure = () => {
       frame = 0;
-      const viewportTop = viewport.getBoundingClientRect().top;
-      const { scrollTop } = viewport;
-      const entries: StickyAnchorEntry[] = [];
-      for (const row of viewport.querySelectorAll<HTMLElement>(
-        "[data-message-id]",
-      )) {
+      const line =
+        viewport.getBoundingClientRect().top + SCROLL_PREVIOUS_ITEM_PEEK;
+      let current: string | null = null;
+      // Rows are content's direct children (walking the subtree would visit every node inside every
+      // turn card) and sit in ascending vertical order, so scanning back from the newest one finds
+      // the anchor without measuring the thread above it — at the live tail that is the first read.
+      for (let i = rows.children.length - 1; i >= 0; i--) {
+        const row = rows.children[i];
+        if (!(row instanceof HTMLElement)) continue;
         const id = row.dataset.messageId;
         if (!id || !promptIdsRef.current.has(id)) continue;
         const rect = row.getBoundingClientRect();
         // A collapsed row (`empty:hidden`) measures as a zero rect at the origin, which would read
-        // as a row sitting above the peek line.
+        // as a row sitting above the line.
         if (rect.height === 0) continue;
-        entries.push({
-          id,
-          start: rect.top - viewportTop + scrollTop,
-          end: rect.bottom - viewportTop + scrollTop,
-        });
+        if (rect.top > line) continue;
+        current = id;
+        break;
       }
-      const { anchorId: current } = computeStickyAnchor(
-        entries,
-        scrollTop,
-        SCROLL_PREVIOUS_ITEM_PEEK,
-      );
       setAnchorId(current);
       resumeStateRef.current = { ...resumeStateRef.current, anchorId: current };
     };
