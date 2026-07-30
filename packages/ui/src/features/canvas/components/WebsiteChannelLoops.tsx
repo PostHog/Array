@@ -22,6 +22,7 @@ import {
 } from "../../loops/components/LoopFallbacks";
 import { LoopRow } from "../../loops/components/LoopRow";
 import { LoopsEmptyState } from "../../loops/components/LoopsEmptyState";
+import { LoopsListView } from "../../loops/components/LoopsListView";
 import { LoopTemplatesSection } from "../../loops/components/LoopTemplatesSection";
 import { useLoopLimits, useLoops } from "../../loops/hooks/useLoops";
 import { useLoopDraftStore } from "../../loops/loopDraftStore";
@@ -56,6 +57,32 @@ function contextQuickStarts(name: string): { label: string; prompt: string }[] {
  * composer pinned at the bottom), but the build surface is tuned to automations that feed
  * this context. `channelId` is the desktop folder id, matching `context_target.folder_id`. */
 export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
+  const { channels } = useChannels();
+  const channel = channels.find((candidate) => candidate.id === channelId);
+
+  // The Personal space is the project-level home for loops in the spaces
+  // layout. API-created and other unattached loops have no context_target, so
+  // rendering the space-scoped list here incorrectly produces the global
+  // "Create your first loop" empty state while those loops already exist.
+  if (channel?.name === PERSONAL_CHANNEL_NAME) {
+    return <LoopsListView />;
+  }
+
+  return (
+    <SpaceAttachedLoops
+      channelId={channelId}
+      contextName={channel?.name ?? channelId}
+    />
+  );
+}
+
+function SpaceAttachedLoops({
+  channelId,
+  contextName,
+}: {
+  channelId: string;
+  contextName: string;
+}) {
   const { data: loops, isLoading, isError } = useLoops();
   const spacesLayout = useChannelsLayout();
   const limits = useLoopLimits();
@@ -63,10 +90,6 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
     limits?.atLimit === true
       ? `You've reached the limit of ${limits.max} loops for this project. Delete one to add another.`
       : null;
-  const { channels } = useChannels();
-  const channel = channels.find((c) => c.id === channelId);
-  const contextName = channel?.name ?? channelId;
-  const isPersonal = contextName === PERSONAL_CHANNEL_NAME;
 
   useSetHeaderContent(
     useMemo(
@@ -113,7 +136,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
     navigateToNewLoop();
   };
 
-  const title = isPersonal ? "Loops" : `Automate #${contextName}`;
+  const title = `Automate #${contextName}`;
   const description =
     "Put your work on autopilot. Loops run on a schedule, on an API call, or when something happens on GitHub. You can finally close the laptop!";
   const createButton = (
@@ -214,9 +237,7 @@ export function WebsiteChannelLoops({ channelId }: { channelId: string }) {
               </Flex>
             </Flex>
           ) : (
-            <LoopsEmptyState
-              contextName={isPersonal ? undefined : contextName}
-            />
+            <LoopsEmptyState contextName={contextName} />
           )}
 
           <LoopTemplatesSection onSelect={startFromTemplate} />
