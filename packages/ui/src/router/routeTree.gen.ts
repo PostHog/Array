@@ -13,7 +13,6 @@ import { Route as WebsiteRouteImport } from './routes/website'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
-import { Route as DesignSystemRouteImport } from './routes/design-system'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
@@ -99,11 +98,6 @@ const SkillsRoute = SkillsRouteImport.update({
 const McpServersRoute = McpServersRouteImport.update({
   id: '/mcp-servers',
   path: '/mcp-servers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DesignSystemRoute = DesignSystemRouteImport.update({
-  id: '/design-system',
-  path: '/design-system',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CommandCenterRoute = CommandCenterRouteImport.update({
@@ -462,7 +456,6 @@ const CodeAgentsApplicationsIdOrSlugSessionsSessionIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/design-system': typeof DesignSystemRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -535,7 +528,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/design-system': typeof DesignSystemRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -597,7 +589,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
-  '/design-system': typeof DesignSystemRoute
   '/mcp-servers': typeof McpServersRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
@@ -672,7 +663,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/command-center'
-    | '/design-system'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -745,7 +735,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/command-center'
-    | '/design-system'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -806,7 +795,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/command-center'
-    | '/design-system'
     | '/mcp-servers'
     | '/skills'
     | '/usage'
@@ -880,7 +868,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CommandCenterRoute: typeof CommandCenterRoute
-  DesignSystemRoute: typeof DesignSystemRoute
   McpServersRoute: typeof McpServersRoute
   SkillsRoute: typeof SkillsRoute
   UsageRoute: typeof UsageRoute
@@ -928,13 +915,6 @@ declare module '@tanstack/react-router' {
       path: '/mcp-servers'
       fullPath: '/mcp-servers'
       preLoaderRoute: typeof McpServersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/design-system': {
-      id: '/design-system'
-      path: '/design-system'
-      fullPath: '/design-system'
-      preLoaderRoute: typeof DesignSystemRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/command-center': {
@@ -1640,7 +1620,6 @@ const CodeLoopsLoopIdRouteWithChildren = CodeLoopsLoopIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
-  DesignSystemRoute: DesignSystemRoute,
   McpServersRoute: McpServersRoute,
   SkillsRoute: SkillsRoute,
   UsageRoute: UsageRoute,

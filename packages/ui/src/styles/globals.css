@@ -423,7 +423,7 @@ body:has(.rt-DialogOverlay[data-state="open"]) [data-quill-portal] {
    this composites without repainting — and unlike the braille spinner it isn't
    a font glyph, so it stays circular at any size and in any typeface.
    `ph-dot-ring 900ms` must stay in step with RING_DURATION_MS in
-   features/design-system/DotRingSpinner.tsx, which spaces the delays. */
+   primitives/DotRingSpinner.tsx, which spaces the delays. */
 @keyframes ph-dot-ring {
   0%,
   100% {

@@ -195,10 +195,6 @@ export function navigateToCommandCenter(): void {
   track(ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED);
 }
 
-export function navigateToDesignSystem(): void {
-  void getRouterOrNull()?.navigate({ to: "/design-system" });
-}
-
 export function navigateToSkills(): void {
   void getRouterOrNull()?.navigate({ to: "/skills" });
 }

@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowsClockwise,
   Bell,
-  Bug,
   CaretRight,
   Code,
   CreditCard,
@@ -247,9 +246,7 @@ export function SettingsPanel({
                   return (
                     <SidebarNavItem
                       key={item.id}
-                      label={item.label}
-                      icon={item.icon}
-                      hasChevron={item.hasChevron}
+                      item={item}
                       isActive={isActive}
                       onClick={() => setCategory(item.id)}
                     />
@@ -257,19 +254,6 @@ export function SettingsPanel({
                 })}
               </div>
             ))}
-
-            {/* Debug surfaces are their own routes rather than settings
-                categories — they're app pages that happen to be reachable from
-                here, so they leave the settings shell instead of swapping the
-                pane. */}
-            <div>
-              <MenuLabel className="px-3 pb-1 text-gray-9">Debug</MenuLabel>
-              <SidebarNavItem
-                label="Design system"
-                icon={<Bug size={16} />}
-                onClick={nav.navigateToDesignSystem}
-              />
-            </div>
           </div>
         </ScrollArea>
 
@@ -333,20 +317,12 @@ export function SettingsPanel({
 }
 
 interface SidebarNavItemProps {
-  label: string;
-  icon: ReactNode;
-  hasChevron?: boolean;
-  isActive?: boolean;
+  item: SidebarItem;
+  isActive: boolean;
   onClick: () => void;
 }
 
-function SidebarNavItem({
-  label,
-  icon,
-  hasChevron,
-  isActive,
-  onClick,
-}: SidebarNavItemProps) {
+function SidebarNavItem({ item, isActive, onClick }: SidebarNavItemProps) {
   return (
     <button
       type="button"
@@ -355,10 +331,10 @@ function SidebarNavItem({
       onClick={onClick}
     >
       <span className="flex items-center gap-2">
-        <span className="text-gray-10">{icon}</span>
-        <span>{label}</span>
+        <span className="text-gray-10">{item.icon}</span>
+        <span>{item.label}</span>
       </span>
-      {hasChevron && <CaretRight size={12} className="text-gray-9" />}
+      {item.hasChevron && <CaretRight size={12} className="text-gray-9" />}
     </button>
   );
 }
