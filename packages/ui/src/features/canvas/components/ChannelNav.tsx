@@ -41,8 +41,8 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import {
   type ComponentPropsWithRef,
+  type ReactElement,
   type ReactNode,
-  useRef,
   useState,
 } from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
@@ -138,6 +138,54 @@ function NavButton({
   );
 }
 
+// Only mounted off the Activity page, so the card's open state is born fresh on
+// every visit. That matters because refusing an open is not free: quill's
+// trigger applies it internally before we see it, so a `false` we hand back
+// leaves the trigger stuck in its pressed state with hover-open dead until it
+// remounts. Nothing here refuses one — the click prevents the trigger's own
+// open, and the Activity page renders the bell without a popover at all.
+function ActivityHoverPopover({ trigger }: { trigger: ReactElement }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        openOnHover
+        delay={300}
+        closeDelay={100}
+        onClick={(event) => event.preventBaseUIHandler()}
+        render={trigger}
+      />
+      {open && (
+        <ActivityHoverCard side="bottom" onClose={() => setOpen(false)} />
+      )}
+    </Popover>
+  );
+}
+
+function ActivityNavItem({
+  isActive,
+  unreadCount,
+  onNavigate,
+}: {
+  isActive: boolean;
+  unreadCount: number;
+  onNavigate: () => void;
+}) {
+  const bell = (
+    <NavButton
+      icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
+      label="Activity"
+      isActive={isActive}
+      onClick={onNavigate}
+      badge={<CountBadge count={unreadCount} className={ICON_BADGE_CLASS} />}
+    />
+  );
+
+  if (isActive) return bell;
+  return <ActivityHoverPopover trigger={bell} />;
+}
+
 export function ChannelNav() {
   const view = useAppView();
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
@@ -162,15 +210,6 @@ export function ChannelNav() {
   const isActivity = view.type === "activity";
   const isCommandCenter = view.type === "command-center";
 
-  // Clicking the bell navigates to Activity, but quill's trigger runs its own
-  // open after our handler and still inside the same click, so `isActivity` is
-  // false and the card records itself as open. The Activity page then only hides
-  // it, and it resurfaces over the next page you open. Swallowing that one open
-  // is what the ref is for — the sidebar's Activity row does the same.
-  const [activityOpen, setActivityOpen] = useState(false);
-  const suppressClickOpenRef = useRef(false);
-  const activityCardOpen = activityOpen && !isActivity;
-
   return (
     // One provider for the row: once any tooltip is up, moving to its
     // neighbour reveals that one immediately instead of serving the warm-up
@@ -191,50 +230,11 @@ export function ChannelNav() {
             <CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />
           }
         />
-        <Popover
-          open={activityCardOpen}
-          onOpenChange={(open) => {
-            const suppressed = open && suppressClickOpenRef.current;
-            suppressClickOpenRef.current = false;
-            if (suppressed) return;
-            setActivityOpen(!isActivity && open);
-          }}
-        >
-          <PopoverTrigger
-            openOnHover
-            delay={300}
-            closeDelay={100}
-            render={
-              <NavButton
-                icon={
-                  <BellIcon
-                    size={16}
-                    weight={isActivity ? "fill" : "regular"}
-                  />
-                }
-                label="Activity"
-                isActive={isActivity}
-                onClick={() => {
-                  suppressClickOpenRef.current = true;
-                  setActivityOpen(false);
-                  withTrack("activity", navigateToActivity)();
-                }}
-                badge={
-                  <CountBadge
-                    count={unseenActivity}
-                    className={ICON_BADGE_CLASS}
-                  />
-                }
-              />
-            }
-          />
-          {activityCardOpen && (
-            <ActivityHoverCard
-              side="bottom"
-              onClose={() => setActivityOpen(false)}
-            />
-          )}
-        </Popover>
+        <ActivityNavItem
+          isActive={isActivity}
+          unreadCount={unseenActivity}
+          onNavigate={withTrack("activity", navigateToActivity)}
+        />
         <NavIcon
           icon={
             <Lightning
