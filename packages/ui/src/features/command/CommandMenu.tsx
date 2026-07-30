@@ -3,6 +3,7 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
+  GitDiffIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -34,6 +35,7 @@ import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyp
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
+import { getDefaultReviewMode } from "@posthog/ui/features/code-review/getDefaultReviewMode";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
 import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
@@ -190,7 +192,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (!reviewTaskId) return;
     const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(reviewTaskId, "split");
+      setReviewMode(reviewTaskId, getDefaultReviewMode());
     }
   }, [reviewTaskId, getReviewMode, setReviewMode]);
 
@@ -341,9 +343,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             {
               id: "open-review-panel",
               label: "Open diff view",
-              icon: (
-                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
-              ),
+              icon: <GitDiffIcon className="h-3 w-3 text-gray-11" />,
               action: "open-review-panel" as CommandMenuAction,
               shortcut: SHORTCUTS.TOGGLE_REVIEW_PANEL,
               onRun: openReviewPanel,

@@ -9,6 +9,7 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { getDefaultReviewMode } from "@posthog/ui/features/code-review/getDefaultReviewMode";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -189,7 +190,10 @@ export function GlobalEventHandlers({
   const handleToggleReview = useCallback(() => {
     if (!currentTaskId) return;
     const mode = getReviewMode(currentTaskId);
-    setReviewMode(currentTaskId, mode === "closed" ? "split" : "closed");
+    setReviewMode(
+      currentTaskId,
+      mode === "closed" ? getDefaultReviewMode() : "closed",
+    );
   }, [currentTaskId, getReviewMode, setReviewMode]);
 
   useHotkeys(
