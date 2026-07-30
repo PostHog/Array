@@ -1584,6 +1584,7 @@ export class AgentServer {
       originProduct: preTask?.origin_product,
       signalReportId: preTask?.signal_report,
       aiStage: getTaskRunStateString(preTaskRun, "ai_stage"),
+      aiSessionId: getTaskRunStateString(preTaskRun, "ai_session_id"),
       taskId: payload.task_id,
       taskRunId: payload.run_id,
       taskUserId: payload.user_id || preTask?.created_by?.id || null,
@@ -3912,6 +3913,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     originProduct,
     signalReportId,
     aiStage,
+    aiSessionId,
     taskId,
     taskRunId,
     taskUserId,
@@ -3921,6 +3923,7 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
     originProduct?: Task["origin_product"] | null;
     signalReportId?: string | null;
     aiStage?: string | null;
+    aiSessionId?: string | null;
     taskId?: string | null;
     taskRunId?: string | null;
     taskUserId?: number | null;
@@ -3946,6 +3949,11 @@ ${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
       task_internal: isInternal,
       signal_report_id: signalReportId,
       ai_stage: aiStage,
+      // Session key for LLM analytics, grouping the run's generations under the caller's
+      // logical operation (e.g. one ReviewHog review turn). Transported unreserved — $-keys
+      // are stripped at gateway header boundaries — and promoted to `$ai_session_id` by the
+      // llm-gateway when it captures the event.
+      ai_session_id: aiSessionId,
       task_id: taskId,
       task_run_id: taskRunId,
       task_user_id: taskUserId,
