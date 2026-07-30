@@ -1,5 +1,6 @@
 import {
   BellIcon,
+  ClockCounterClockwiseIcon,
   EnvelopeSimple,
   Lightning,
   SlidersHorizontal,
@@ -41,6 +42,7 @@ import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
 import { type ComponentPropsWithRef, type ReactNode, useState } from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
+import { RecentsHoverCard } from "./RecentsHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
 
@@ -137,6 +139,7 @@ export function ChannelNav() {
   const view = useAppView();
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [recentsOpen, setRecentsOpen] = useState(false);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -213,6 +216,30 @@ export function ChannelNav() {
             <ActivityHoverCard
               side="bottom"
               onClose={() => setActivityOpen(false)}
+            />
+          )}
+        </Popover>
+        <Popover open={recentsOpen} onOpenChange={setRecentsOpen}>
+          <PopoverTrigger
+            openOnHover
+            delay={300}
+            closeDelay={100}
+            render={
+              <NavButton
+                icon={<ClockCounterClockwiseIcon size={16} />}
+                label="Recents"
+                isActive={false}
+                onClick={() => {
+                  withTrack("recents", () => {})();
+                  setRecentsOpen((value) => !value);
+                }}
+              />
+            }
+          />
+          {recentsOpen && (
+            <RecentsHoverCard
+              side="bottom"
+              onClose={() => setRecentsOpen(false)}
             />
           )}
         </Popover>

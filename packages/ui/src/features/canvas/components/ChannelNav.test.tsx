@@ -31,6 +31,9 @@ vi.mock("@posthog/ui/shell/analytics", () => ({ track: vi.fn() }));
 vi.mock("./ActivityHoverCard", () => ({
   ActivityHoverCard: () => <div>Recent activity card</div>,
 }));
+vi.mock("./RecentsHoverCard", () => ({
+  RecentsHoverCard: () => <div>Recent items card</div>,
+}));
 
 import { ChannelNav } from "./ChannelNav";
 
@@ -48,6 +51,16 @@ describe("ChannelNav", () => {
 
     expect(
       await screen.findByText("Recent activity card", {}, { timeout: 1_000 }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens recents after the hover delay", async () => {
+    const user = userEvent.setup();
+    render(<ChannelNav />);
+
+    await user.hover(screen.getByLabelText("Recents"));
+    expect(
+      await screen.findByText("Recent items card", {}, { timeout: 1_000 }),
     ).toBeInTheDocument();
   });
 

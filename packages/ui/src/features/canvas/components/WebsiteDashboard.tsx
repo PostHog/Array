@@ -2,6 +2,7 @@ import { FreeformCanvasView } from "@posthog/ui/features/canvas/freeform/Freefor
 import { useDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
 import { useIsDashboardEditing } from "@posthog/ui/features/canvas/stores/dashboardEditStore";
 import { useFreeformChatStore } from "@posthog/ui/features/canvas/stores/freeformChatStore";
+import { useRecentCanvasStore } from "@posthog/ui/features/canvas/stores/recentCanvasStore";
 import { useEffect } from "react";
 
 // Renders a canvas's React app in a sandboxed iframe (view + edit). Edit mode
@@ -10,8 +11,11 @@ export function WebsiteDashboard({ dashboardId }: { dashboardId: string }) {
   const editing = useIsDashboardEditing(dashboardId);
   const { dashboard } = useDashboard(dashboardId);
   const syncFromRecord = useFreeformChatStore((s) => s.syncFromRecord);
+  const markViewed = useRecentCanvasStore((s) => s.markViewed);
 
   const threadId = `dashboard:${dashboardId}`;
+
+  useEffect(() => markViewed(dashboardId), [dashboardId, markViewed]);
 
   // Seed the thread from the saved record (code + version history) when its data
   // lands, so undo/redo and the live render reflect what's stored — and adopt a

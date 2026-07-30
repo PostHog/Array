@@ -250,6 +250,7 @@ export type SidebarNavItem =
   | "command_center"
   | "contexts"
   | "activity"
+  | "recents"
   | "configure"
   | "loops"
   | "more"

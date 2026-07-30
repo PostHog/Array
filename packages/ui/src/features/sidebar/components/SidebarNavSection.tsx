@@ -34,6 +34,7 @@ import { ConfigureItem } from "./items/ConfigureItem";
 import { InboxItem } from "./items/InboxItem";
 import { LoopsItem } from "./items/LoopsItem";
 import { NewTaskItem } from "./items/NewTaskItem";
+import { RecentsItem } from "./items/RecentsItem";
 import { SearchItem } from "./items/SearchItem";
 
 const SIDEBAR_INBOX_REFETCH_INTERVAL_MS = 60_000;
@@ -137,6 +138,7 @@ export function SidebarNavSection({
     inbox: true,
     "command-center": true,
     activity: bluebirdEnabled,
+    recents: bluebirdEnabled,
     configure: true,
     loops: loopsEnabled,
   };
@@ -168,6 +170,12 @@ export function SidebarNavSection({
         depth={depth}
         isActive={isActivityActive}
         onClick={withNavTrack("activity", navigateToActivity, depth)}
+      />
+    ),
+    recents: (depth) => (
+      <RecentsItem
+        depth={depth}
+        onClick={withNavTrack("recents", () => {}, depth)}
       />
     ),
     configure: (depth) => (

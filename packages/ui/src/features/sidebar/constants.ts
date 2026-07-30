@@ -19,6 +19,12 @@ export const CUSTOMIZABLE_NAV_ITEMS = [
     defaultVisible: true,
   },
   {
+    id: "recents",
+    label: "Recents",
+    analyticsId: "recents",
+    defaultVisible: true,
+  },
+  {
     id: "loops",
     label: "Loops",
     analyticsId: "loops",

@@ -2,6 +2,7 @@ import { type DragDropEvents, DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import {
   Bell,
+  ClockCounterClockwise,
   DotsSixVertical,
   EnvelopeSimple,
   Lightning,
@@ -31,6 +32,7 @@ const ITEM_ICONS: Record<
   inbox: EnvelopeSimple,
   "command-center": Lightning,
   activity: Bell,
+  recents: ClockCounterClockwise,
   configure: SlidersHorizontal,
   loops: LoopIcon,
 };
@@ -72,7 +74,7 @@ export function CustomizeSidebarSettings() {
   const items = orderedNavItems(previewOrder ?? navItemOrder).filter(
     ({ id }) => {
       if (id === "loops") return loopsEnabled;
-      if (id === "activity") return bluebirdEnabled;
+      if (id === "activity" || id === "recents") return bluebirdEnabled;
       return true;
     },
   );

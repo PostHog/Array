@@ -75,6 +75,9 @@ vi.mock("@posthog/ui/features/tasks/useTasks", () => ({
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskActivity", () => ({
   useTaskActivity: () => ({ items: [], unreadCount: 0, isLoading: false }),
 }));
+vi.mock("./items/RecentsItem", () => ({
+  RecentsItem: () => <button type="button">Recents</button>,
+}));
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => false,
 }));
@@ -114,6 +117,7 @@ describe("SidebarNavSection", () => {
     ["inbox", "Inbox"],
     ["command-center", "Command Center"],
     ["activity", "Activity"],
+    ["recents", "Recents"],
     ["configure", "Configure"],
     ["loops", "Loops"],
   ] as const)("removes %s from the sidebar when hidden", (id, label) => {

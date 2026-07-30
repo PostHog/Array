@@ -49,6 +49,7 @@ describe("orderedNavItems", () => {
       "inbox",
       "loops",
       "command-center",
+      "recents",
       "configure",
     ]);
   });
