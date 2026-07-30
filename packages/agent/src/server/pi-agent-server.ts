@@ -8,6 +8,7 @@ import type {
   StoredLogEntry,
   TaskRunArtifact,
 } from "@posthog/shared";
+import { serializeError } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod/v4";
 import { createPiRpcClient, type PiRpcClient } from "../pi/rpc-client";
@@ -383,8 +384,23 @@ export class PiAgentServer {
 
     const initializationPromise = this.createSession(payload);
     this.initializationPromise = initializationPromise;
+    const initStartedAt = Date.now();
     try {
       await initializationPromise;
+    } catch (error) {
+      this.logger.error("Pi session initialization failed", {
+        runtimeAdapter: "pi",
+        initializationPhase: "session_setup",
+        initMs: Date.now() - initStartedAt,
+        requestedModel: this.config.model ?? null,
+        gatewayConfigured: Boolean(
+          process.env.LLM_GATEWAY_URL || this.config.apiUrl,
+        ),
+        taskId: payload.task_id,
+        taskRunId: payload.run_id,
+        errorDetail: serializeError(error),
+      });
+      throw error;
     } finally {
       if (this.initializationPromise === initializationPromise) {
         this.initializationPromise = null;

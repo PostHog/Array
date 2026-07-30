@@ -22,6 +22,44 @@ function config(overrides: Partial<AgentServerConfig> = {}): AgentServerConfig {
 }
 
 describe("PiAgentServer", () => {
+  it("logs session initialization diagnostics when setup fails", async () => {
+    const payload = { task_id: "task-1", run_id: "run-1" };
+    const server = new PiAgentServer(
+      config({ model: "anthropic/claude-opus-5" }),
+    ) as unknown as {
+      logger: { error: ReturnType<typeof vi.fn> };
+      createSession(sessionPayload: typeof payload): Promise<void>;
+      initializeSession(
+        sessionPayload: typeof payload,
+        sseController: null,
+      ): Promise<void>;
+    };
+    server.createSession = vi.fn(async () => {
+      throw new Error("Pi RPC startup failed");
+    });
+    const errorSpy = vi.spyOn(server.logger, "error");
+
+    await expect(server.initializeSession(payload, null)).rejects.toThrow(
+      "Pi RPC startup failed",
+    );
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Pi session initialization failed",
+      expect.objectContaining({
+        runtimeAdapter: "pi",
+        initializationPhase: "session_setup",
+        initMs: expect.any(Number),
+        requestedModel: "anthropic/claude-opus-5",
+        gatewayConfigured: true,
+        taskId: "task-1",
+        taskRunId: "run-1",
+        errorDetail: expect.objectContaining({
+          message: "Pi RPC startup failed",
+        }),
+      }),
+    );
+  });
+
   it.each([
     ["task", { task_id: "task-2", run_id: "run-1", team_id: 1 }],
     ["run", { task_id: "task-1", run_id: "run-2", team_id: 1 }],
