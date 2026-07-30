@@ -134,8 +134,21 @@ export interface GitCheckpoint extends GitHandoffCheckpoint {
   indexArtifactPath?: string;
 }
 
+export interface RepositoryGitCheckpoint extends GitCheckpoint {
+  /** Path relative to the workspace root. Never absolute. */
+  path: string;
+  /** Whether this is the repository configured for the task. */
+  primary: boolean;
+}
+
 export interface GitCheckpointEvent extends GitCheckpoint {
   device?: DeviceInfo;
+  /** Versioned, portable state for every Git repository in the workspace. */
+  manifestVersion?: 1;
+  workspacePath?: string;
+  repositories?: RepositoryGitCheckpoint[];
+  /** Repositories discovered but not captured, so resume can report partial state. */
+  incompleteRepositories?: string[];
 }
 
 /**

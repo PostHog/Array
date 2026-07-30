@@ -36,6 +36,7 @@ export interface GitHandoffApplyInput {
   headPackPath?: string;
   indexPath?: string;
   localGitState?: HandoffLocalGitState;
+  skipUpstreamBaselineFetch?: boolean;
   onDivergedBranch?: (
     divergence: GitHandoffBranchDivergence,
   ) => Promise<boolean>;
@@ -81,6 +82,7 @@ export class GitHandoffTracker {
 
   async captureForHandoff(
     localGitState?: HandoffLocalGitState,
+    options?: { durableDefaultBranchBaseline?: boolean },
   ): Promise<GitHandoffCaptureResult> {
     const captureSaga = new CaptureCheckpointSaga(this.logger);
     const result = await captureSaga.run({ baseDir: this.repositoryPath });
@@ -105,9 +107,14 @@ export class GitHandoffTracker {
       );
 
       const tracking = await getTrackingMetadata(git, checkpoint.branch);
-      const baselineRefs = localGitState?.upstreamHead
-        ? [localGitState.upstreamHead]
-        : await this.resolveDefaultPackBaseline(git, tracking);
+      const baselineRefs =
+        !options?.durableDefaultBranchBaseline && localGitState?.upstreamHead
+          ? [localGitState.upstreamHead]
+          : await this.resolveDefaultPackBaseline(
+              git,
+              tracking,
+              options?.durableDefaultBranchBaseline ?? false,
+            );
       const packRefs = [
         checkpoint.head,
         reconciledIndex.indexTree,
@@ -160,12 +167,17 @@ export class GitHandoffTracker {
       headPackPath,
       indexPath,
       localGitState,
+      skipUpstreamBaselineFetch,
       onDivergedBranch,
     } = input;
     const git = createGitClient(this.repositoryPath);
 
     if (headPackPath) {
-      await this.ensureBaselineForApply(git, checkpoint, localGitState);
+      // Durable workspace manifests pack against the remote default branch,
+      // which a fresh clone already has. Their feature branch may be deleted.
+      if (!skipUpstreamBaselineFetch) {
+        await this.ensureBaselineForApply(git, checkpoint, localGitState);
+      }
       await this.unpackPackFile(headPackPath);
     }
 
@@ -228,8 +240,13 @@ export class GitHandoffTracker {
   private async resolveDefaultPackBaseline(
     git: GitClient,
     tracking: GitTrackingMetadata,
+    durableDefaultBranchBaseline: boolean,
   ): Promise<string[]> {
-    if (tracking.upstreamRemote && tracking.upstreamMergeRef) {
+    if (
+      !durableDefaultBranchBaseline &&
+      tracking.upstreamRemote &&
+      tracking.upstreamMergeRef
+    ) {
       const branchName = tracking.upstreamMergeRef.replace(
         /^refs\/heads\//,
         "",
@@ -808,9 +825,7 @@ async function getTrackingMetadata(
     git,
     `branch.${branch}.merge`,
   );
-  const remoteUrl = upstreamRemote
-    ? await getRemoteUrl(git, upstreamRemote)
-    : null;
+  const remoteUrl = await getRemoteUrl(git, upstreamRemote ?? "origin");
 
   return { upstreamRemote, upstreamMergeRef, remoteUrl };
 }
