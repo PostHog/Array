@@ -544,10 +544,6 @@ snapshots:
         hash: v1.k4693efd2.fdbf0c24cb386c4345279db3e648efe72aa8a2a984d491361522f62074a771c9.2QmRxRMWYFFfBFrbMm0Dm9rWcvd1lfRbc0egfzoESnY
     loops-loopslistview--long-mixed-list--light:
         hash: v1.k4693efd2.aa17d9b6f40fbd3914bd742951db9f90add0bd233c54170803c8483aeb45b43b.yXpqqGczOq1uW5k4Ie7ddNTnne-cFTglZ9cL800pXB4
-    loops-loopslistview--shared-page-header--dark:
-        hash: v1.k4693efd2.14ab860dcb0df51b4019f012288e45f3a2c4c23fa08e809efef8c04b5687fe36.qoMLHprZmV2wON156NBbl3sqP84a4nXgdYm1H6WpTVM
-    loops-loopslistview--shared-page-header--light:
-        hash: v1.k4693efd2.23be5408ff3b4a912a0ce0457af8638124b99a01c88a499d0f4204cee2c62487.dGBP1K08MA2Fvhml-BPl5eFra8U83JXmy04NK9wOQnM
     loops-loopslistview--with-builder-sessions--dark:
         hash: v1.k4693efd2.df4a1a4764e1de7b69905814b09c30d9b43f705f5e66c7ad83829c567d4faa1a.jthufoX_KPbbxScjj3pPBA4lEtT9Ym6zUCH-v1759GM
     loops-loopslistview--with-builder-sessions--light:
