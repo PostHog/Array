@@ -25,8 +25,7 @@ export function useDiffStatsToggle(task: Task): DiffStatsToggleResult {
 
   const isOpen = reviewMode !== "closed";
   const toggle = useCallback(
-    () =>
-      setReviewMode(taskId, isOpen ? "closed" : getDefaultReviewMode()),
+    () => setReviewMode(taskId, isOpen ? "closed" : getDefaultReviewMode()),
     [setReviewMode, taskId, isOpen],
   );
 
