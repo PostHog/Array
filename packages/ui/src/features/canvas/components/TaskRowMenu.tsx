@@ -4,13 +4,11 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
   DropdownMenu,
   DropdownMenuTrigger,
-  Separator,
 } from "@posthog/quill";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
@@ -58,16 +56,15 @@ interface MenuParts {
   Item: ComponentType<{
     children: ReactNode;
     disabled?: boolean;
+    variant?: "default" | "destructive";
     onClick?: () => void;
   }>;
-  Separator: ComponentType<Record<string, never>>;
   Sub: ComponentType<{ children: ReactNode }>;
   SubTrigger: ComponentType<{ children: ReactNode }>;
 }
 
 const CONTEXT_PARTS: MenuParts = {
   Item: ContextMenuItem,
-  Separator: ContextMenuSeparator,
   Sub: ContextMenuSub,
   SubTrigger: ContextMenuSubTrigger,
 };
@@ -83,7 +80,7 @@ function TaskRowMenuItems({
   parts: MenuParts;
   menu: TaskRowMenuProps;
 }) {
-  const { Item, Separator, Sub, SubTrigger } = parts;
+  const { Item, Sub, SubTrigger } = parts;
   // "File to…" is a Project Bluebird feature; gate the channel fetch behind the
   // flag so neither the submenu nor its request reaches ungated users.
   const bluebirdEnabled = useFeatureFlag(
@@ -105,45 +102,35 @@ function TaskRowMenuItems({
       <Item onClick={menu.onTogglePin}>{menu.isPinned ? "Unpin" : "Pin"}</Item>
       {menu.onRename && <Item onClick={menu.onRename}>Rename</Item>}
       {isTask && (
-        <>
-          <Separator />
-          <Item
-            disabled={!menu.onAddToCommandCenter}
-            onClick={menu.onAddToCommandCenter}
-          >
-            Add to Command Center
-          </Item>
-        </>
+        <Item
+          disabled={!menu.onAddToCommandCenter}
+          onClick={menu.onAddToCommandCenter}
+        >
+          Add to Command Center
+        </Item>
       )}
       {isTask && channelItems.length > 0 && (
-        <>
-          <Separator />
-          <Sub>
-            <SubTrigger>File to…</SubTrigger>
-            <MenuSubFlyout className="w-64 p-0">
-              <SearchableMenuFlyout
-                items={channelItems}
-                placeholder="Search spaces…"
-                emptyLabel="No spaces"
-                onSelect={(channelId) =>
-                  fileToChannel(channelId, menu.id, menu.title)
-                }
-              />
-            </MenuSubFlyout>
-          </Sub>
-        </>
+        <Sub>
+          <SubTrigger>File to…</SubTrigger>
+          <MenuSubFlyout className="w-64 p-0">
+            <SearchableMenuFlyout
+              items={channelItems}
+              placeholder="Search spaces…"
+              emptyLabel="No spaces"
+              onSelect={(channelId) =>
+                fileToChannel(channelId, menu.id, menu.title)
+              }
+            />
+          </MenuSubFlyout>
+        </Sub>
       )}
-      {menu.onArchive && (
-        <>
-          <Separator />
-          <Item onClick={menu.onArchive}>Archive</Item>
-        </>
-      )}
+      {menu.onArchive && <Item onClick={menu.onArchive}>Archive</Item>}
+      {/* The ellipsis is the promise that a confirm follows — deleting a canvas
+          takes it away from everyone in the space. */}
       {menu.onDelete && (
-        <>
-          <Separator />
-          <Item onClick={menu.onDelete}>Delete</Item>
-        </>
+        <Item variant="destructive" onClick={menu.onDelete}>
+          Delete…
+        </Item>
       )}
     </>
   );
@@ -171,9 +158,9 @@ export function TaskRowMenuList({
 }) {
   const parts: MenuParts = useMemo(
     () => ({
-      Item: ({ children, disabled, onClick }) => (
+      Item: ({ children, disabled, variant, onClick }) => (
         <Button
-          variant="default"
+          variant={variant === "destructive" ? "destructive" : "default"}
           size="sm"
           left
           disabled={disabled}
@@ -186,14 +173,19 @@ export function TaskRowMenuList({
           {children}
         </Button>
       ),
-      Separator: () => <Separator />,
       Sub: ({ children }) => (
         <DropdownMenu onOpenChange={onSubmenuOpenChange}>
           {children}
         </DropdownMenu>
       ),
+      // `openOnHover`, so the spaces flyout arrives the way a submenu does in
+      // the right-click menu — pointing at the row is the whole gesture, and
+      // this card is a hover surface to begin with.
       SubTrigger: ({ children }) => (
         <DropdownMenuTrigger
+          openOnHover
+          delay={150}
+          closeDelay={100}
           render={
             <Button variant="default" size="sm" left className="w-full">
               <span className="flex-1 text-left">{children}</span>

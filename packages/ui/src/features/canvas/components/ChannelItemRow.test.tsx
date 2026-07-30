@@ -24,6 +24,7 @@ vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
   useFeatureFlag: () => true,
 }));
 
+import { usePendingCanvasDeleteStore } from "@posthog/ui/features/canvas/stores/pendingCanvasDeleteStore";
 import { ChannelItemRow } from "./ChannelItemRow";
 
 const actions = {
@@ -61,6 +62,7 @@ function renderRow(model: ChannelItemModel) {
 
 beforeEach(() => {
   mocks.status = null;
+  usePendingCanvasDeleteStore.setState({ pending: {} });
 });
 
 describe("ChannelItemRow", () => {
@@ -92,7 +94,7 @@ describe("ChannelItemRow", () => {
       // hours, so the PR's existence has to win over the run's claim.
       "a run still babysitting CI behind an open PR",
       { taskRunStatus: "in_progress" as const, prState: "open" as const },
-      "Nothing owed to you",
+      "All caught up",
     ],
     [
       "a run whose PR url is known but state isn't",
@@ -100,7 +102,7 @@ describe("ChannelItemRow", () => {
         taskRunStatus: "in_progress" as const,
         prUrl: "https://github.com/PostHog/code/pull/1",
       },
-      "Nothing owed to you",
+      "All caught up",
     ],
     [
       // A live local session is the agent typing right now, which no PR overrides.
@@ -112,9 +114,9 @@ describe("ChannelItemRow", () => {
       "a merged PR",
       { prState: "merged" as const },
       // PR state lives on the badge, so the dot stays quiet.
-      "Nothing owed to you",
+      "All caught up",
     ],
-    ["an idle task", {}, "Nothing owed to you"],
+    ["an idle task", {}, "All caught up"],
   ])("labels %s", (_case, status: TaskStatusInput, label) => {
     mocks.status = status;
 
@@ -157,9 +159,7 @@ describe("ChannelItemRow", () => {
       }),
     );
 
-    expect(
-      screen.getByRole("img", { name: "Nothing owed to you" }),
-    ).not.toBeNull();
+    expect(screen.getByRole("img", { name: "All caught up" })).not.toBeNull();
     expect(screen.getByRole("img", { name: "Canvas" })).not.toBeNull();
     expect(screen.queryByText(formatRelativeTimeShort(item().ts))).toBeNull();
   });
@@ -254,6 +254,21 @@ describe("ChannelItemRow", () => {
     expect(onRename).toHaveBeenCalledOnce();
   });
 
+  it("flashes a red dot while a canvas waits out its delete-undo window", () => {
+    const canvas = item({
+      key: "canvas:c1",
+      kind: "canvas",
+      id: "c1",
+      title: "Web analytics overview",
+    });
+    usePendingCanvasDeleteStore.getState().markPending("c1");
+
+    renderRow(canvas);
+
+    expect(screen.getByRole("img", { name: "Deleting…" })).not.toBeNull();
+    expect(screen.queryByRole("img", { name: "All caught up" })).toBeNull();
+  });
+
   it("gives a canvas the actions it has: pin and delete, not archive or filing", async () => {
     const canvas = item({
       key: "canvas:c1",
@@ -272,7 +287,7 @@ describe("ChannelItemRow", () => {
     expect(
       await screen.findByRole("button", { name: "Pin" }, { timeout: 2000 }),
     ).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Delete" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Delete…" })).not.toBeNull();
     // A canvas can't be archived, filed to a space, or given a command-centre
     // cell, so those items aren't drawn at all rather than drawn dead.
     for (const absent of ["Archive", "File to…", "Add to Command Center"]) {
@@ -280,7 +295,7 @@ describe("ChannelItemRow", () => {
     }
   });
 
-  it("deletes a canvas from its menu", async () => {
+  it("confirms before deleting a canvas — it goes for the whole space", async () => {
     const remove = vi.fn();
     const canvas = item({
       key: "canvas:c1",
@@ -300,7 +315,13 @@ describe("ChannelItemRow", () => {
 
     await userEvent.hover(screen.getByText("Web analytics overview"));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Delete" }, { timeout: 2000 }),
+      await screen.findByRole("button", { name: "Delete…" }, { timeout: 2000 }),
+    );
+
+    // The menu item only opens the confirm; nothing is deleted until it is.
+    expect(remove).not.toHaveBeenCalled();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Delete$/ }),
     );
 
     expect(remove).toHaveBeenCalledWith(canvas);

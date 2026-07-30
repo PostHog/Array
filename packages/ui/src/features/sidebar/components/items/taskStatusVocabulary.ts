@@ -157,7 +157,7 @@ export function taskDot(props: TaskStatusInput): TaskDot {
     tone: "gray",
     style: "hollow",
     pulse: false,
-    label: "Nothing owed to you",
+    label: "All caught up",
   };
 }
 
