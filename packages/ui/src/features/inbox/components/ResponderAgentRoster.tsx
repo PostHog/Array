@@ -14,7 +14,7 @@ import type { SignalSourceValues } from "@posthog/ui/features/inbox/components/S
 import { InboxBadge } from "@posthog/ui/features/inbox/components/utils/InboxBadge";
 import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { type ComponentType, memo, useCallback } from "react";
 
 type AgentRosterStatus = "standby" | "watching" | "syncing" | "sync_failed";
@@ -61,7 +61,6 @@ interface ResponderAgentRosterProps {
     >
   >;
   onSetup?: (source: ResponderAgentSource) => void;
-  evaluationsUrl?: string;
 }
 
 export function ResponderAgentRoster({
@@ -70,7 +69,6 @@ export function ResponderAgentRoster({
   disabled,
   sourceStates,
   onSetup,
-  evaluationsUrl,
 }: ResponderAgentRosterProps) {
   return (
     <Flex direction="column" gap="5">
@@ -91,9 +89,6 @@ export function ResponderAgentRoster({
                 onSetup={onSetup}
               />
             ))}
-            {group.label === "PostHog data" && evaluationsUrl ? (
-              <EvaluationsAgentCard evaluationsUrl={evaluationsUrl} />
-            ) : null}
           </Box>
         </Flex>
       ))}
@@ -263,80 +258,6 @@ function AgentIcon({
     </Flex>
   );
 }
-
-const EvaluationsAgentCard = memo(function EvaluationsAgentCard({
-  evaluationsUrl,
-}: {
-  evaluationsUrl: string;
-}) {
-  return (
-    <Box
-      onClick={() => window.open(evaluationsUrl, "_blank", "noopener")}
-      className={[
-        AGENT_CARD_BASE_CLASS,
-        "border-border",
-        AGENT_CARD_INTERACTIVE_IDLE_CLASS,
-      ].join(" ")}
-    >
-      <Flex align="start" justify="between" gap="3">
-        <Flex align="start" gap="3" className="min-w-0 flex-1">
-          <AgentIcon
-            accentColor="var(--purple-9)"
-            Icon={getSourceProductMeta("llm_analytics")?.Icon}
-          />
-          <Flex direction="column" gap="1" className="min-w-0">
-            <Flex align="center" gap="2" wrap="wrap">
-              <Text className="font-medium text-[13px] text-gray-12">
-                AI Observability
-              </Text>
-              <Tooltip content="This is only visible to staff users of PostHog">
-                <Badge color="blue" className="text-[11px]">
-                  Internal
-                </Badge>
-              </Tooltip>
-            </Flex>
-            <Text className="text-[13px] text-gray-11 leading-snug">
-              Quality problems in your AI features.
-            </Text>
-            <Text className="text-[13px] text-gray-11">
-              <a
-                href="https://posthog.com/docs/ai-observability"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  window.open(
-                    "https://posthog.com/docs/ai-observability",
-                    "_blank",
-                    "noopener",
-                  );
-                }}
-                className="inline-flex items-center gap-1 text-(--accent-11) no-underline"
-              >
-                Learn about AI observability
-                <ArrowSquareOutIcon size={11} />
-              </a>
-            </Text>
-          </Flex>
-        </Flex>
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          className="shrink-0"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(evaluationsUrl, "_blank", "noopener");
-          }}
-        >
-          Open
-          <ArrowSquareOutIcon size={12} />
-        </Button>
-      </Flex>
-    </Box>
-  );
-});
 
 function ResponderAgentCardSkeleton() {
   return (
