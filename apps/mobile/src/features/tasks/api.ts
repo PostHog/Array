@@ -74,6 +74,10 @@ export interface RunTaskInCloudOptions {
   model?: string;
   /** Reasoning effort: "low" | "medium" | "high" (model-dependent). */
   reasoningEffort?: string;
+  /** Context window size; only sent for models that support the 1M beta. */
+  contextWindow?: "200k" | "1m";
+  /** Fast mode; only sent for models that support it. */
+  fastMode?: boolean;
   /** Permission mode: "default" | "acceptEdits" | "plan" | "auto". */
   initialPermissionMode?: string;
   /** Source that triggered this run. */
@@ -101,6 +105,8 @@ export async function runTaskInCloud(
     adapter: options.runtimeAdapter,
     model: options.model,
     reasoningLevel: options.reasoningEffort,
+    contextWindow: options.contextWindow,
+    fastMode: options.fastMode,
     initialPermissionMode: options.initialPermissionMode as
       | ExecutionMode
       | undefined,

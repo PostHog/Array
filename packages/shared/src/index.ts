@@ -267,11 +267,15 @@ export {
   isPrivateIpv6Literal,
 } from "./private-network";
 export {
+  type CapabilityNotch,
   DEFAULT_REASONING_EFFORT,
+  getCapabilityLadder,
   getReasoningEffortOptions,
   isSupportedReasoningEffort,
   type ReasoningEffortOption,
   type SupportedReasoningEffort,
+  supports1MContext,
+  supportsFastMode,
 } from "./reasoning-effort";
 export {
   type CloudRegion,
