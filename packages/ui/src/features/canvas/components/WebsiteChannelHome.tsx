@@ -44,7 +44,7 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Heading, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // A channel: a Slack-style multiplayer feed. Each member message kicks off a
 // task rendered as a card everyone in the channel sees; the composer stays
@@ -134,6 +134,13 @@ export function WebsiteChannelHome({ channelId }: { channelId: string }) {
   );
   const openThread = useThreadPanelStore((s) => s.openThread);
   const closeThread = useThreadPanelStore((s) => s.closeThread);
+
+  // The open thread outlives the thread view, so the feed showing itself is
+  // the only signal that it's gone — clear it here.
+  useEffect(() => {
+    const open = useThreadPanelStore.getState().openByChannel[channelId];
+    if (open) useThreadPanelStore.getState().closeThread(channelId);
+  }, [channelId]);
 
   const handleSuggestionSelect = useCallback(
     (prompt: string, mode?: string) => {
