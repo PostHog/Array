@@ -14,6 +14,10 @@ import {
   type AutoresearchStorageClient,
 } from "@posthog/core/autoresearch/identifiers";
 import {
+  CLOUD_TASK_CLIENT,
+  type CloudTaskClient,
+} from "@posthog/core/cloud-task/cloudTaskClient";
+import {
   CODE_REVIEW_WORKSPACE_CLIENT,
   REVERT_HUNK_SERVICE,
 } from "@posthog/core/code-review/identifiers";
@@ -76,8 +80,10 @@ import {
 import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
 import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
-  PI_SESSION_CLIENT,
-  type PiSessionClient,
+  LOCAL_PI_SESSION_FACTORY,
+  PI_SESSION_PROVIDER,
+  type PiSessionFactory,
+  type PiSessionProvider,
 } from "@posthog/core/pi-runtime/piSessionController";
 import {
   type BundleLocalSkill,
@@ -102,10 +108,12 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import type {
   FileReadClient,
+  GithubPrTitleClient,
   TitleGeneratorLogger,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import {
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
 } from "@posthog/core/sessions/titleGeneratorIdentifiers";
 import { type ISetupStore, SETUP_STORE } from "@posthog/core/setup/identifiers";
@@ -295,7 +303,9 @@ export interface RendererBindings {
   [ANALYTICS_TRACKER]: AnalyticsTracker;
   [TASK_CREATION_HOST]: ITaskCreationHost;
   [PI_RUNNER]: PiRunner;
-  [PI_SESSION_CLIENT]: PiSessionClient;
+  [PI_SESSION_PROVIDER]: PiSessionProvider;
+  [LOCAL_PI_SESSION_FACTORY]: PiSessionFactory;
+  [CLOUD_TASK_CLIENT]: CloudTaskClient;
   [TASK_CREATION_EFFECTS]: TaskCreationEffects;
   [RENDERER_TASK_SERVICE]: TaskService;
   [TASK_SERVICE]: TaskService;
@@ -328,6 +338,7 @@ export interface RendererBindings {
   [CLOUD_ARTIFACT_READ_FILE_AS_BASE64]: ReadFileAsBase64;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
+  [TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT]: GithubPrTitleClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
 
   // --- desktop-services.ts ---

@@ -1,4 +1,12 @@
+import type {
+  CloudTaskUpdatePayload,
+  StoredLogEntry,
+  Task,
+  TaskRun,
+} from "@posthog/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockGetTask } = vi.hoisted(() => ({ mockGetTask: vi.fn() }));
 
 vi.mock("expo-haptics", () => ({
   impactAsync: vi.fn(),
@@ -18,19 +26,16 @@ vi.mock("@/features/notifications/lib/notifications", () => ({
 }));
 vi.mock("../api", () => ({
   CloudCommandError: class CloudCommandError extends Error {},
-  getTask: vi.fn(),
   runTaskInCloud: vi.fn(),
   sendCloudCommand: vi.fn(),
 }));
 
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({ getTask: mockGetTask }),
+}));
+
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { getTask, runTaskInCloud } from "../api";
-import type {
-  CloudTaskUpdatePayload,
-  StoredLogEntry,
-  Task,
-  TaskRun,
-} from "../types";
+import { runTaskInCloud } from "../api";
 import { useMessageQueueStore } from "./messageQueueStore";
 import {
   mapTerminalStatus,
@@ -234,7 +239,6 @@ describe("flushQueuedMessagesIfIdle", () => {
 });
 
 describe("_resumeCloudRun", () => {
-  const mockGetTask = vi.mocked(getTask);
   const mockRunTaskInCloud = vi.mocked(runTaskInCloud);
 
   function previousTask(latestRun: Partial<TaskRun>): Task {
@@ -259,6 +263,8 @@ describe("_resumeCloudRun", () => {
     mockGetTask.mockResolvedValue(
       previousTask({
         branch: "feature",
+        runtime_adapter: "claude",
+        model: "claude-opus-4-8",
         reasoning_effort: "low",
         state: { initial_permission_mode: "acceptEdits" },
       }),
@@ -270,6 +276,8 @@ describe("_resumeCloudRun", () => {
 
     expect(mockRunTaskInCloud).toHaveBeenCalledWith("t1", {
       branch: "feature",
+      runtimeAdapter: "claude",
+      model: "claude-opus-4-8",
       resumeFromRunId: "prev-run",
       pendingUserMessage: "hi",
       reasoningEffort: "low",
@@ -294,7 +302,14 @@ describe("_resumeCloudRun", () => {
 
   it("prefers the composer's current selection over the previous run", async () => {
     useTaskStore.setState({
-      composerConfigByTaskId: { t1: { mode: "plan", reasoning: "max" } },
+      composerConfigByTaskId: {
+        t1: {
+          adapter: "codex",
+          mode: "plan",
+          model: "gpt-5.5",
+          reasoning: "high",
+        },
+      },
     });
     mockGetTask.mockResolvedValue(
       previousTask({
@@ -311,8 +326,59 @@ describe("_resumeCloudRun", () => {
     expect(mockRunTaskInCloud).toHaveBeenCalledWith(
       "t1",
       expect.objectContaining({
-        reasoningEffort: "max",
+        runtimeAdapter: "codex",
+        model: "gpt-5.5",
+        reasoningEffort: "high",
         initialPermissionMode: "plan",
+      }),
+    );
+  });
+
+  it("drops stored reasoning unsupported by the resumed model", async () => {
+    mockGetTask.mockResolvedValue(
+      previousTask({
+        runtime_adapter: "claude",
+        model: "claude-sonnet-4-6",
+        reasoning_effort: "max",
+      }),
+    );
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({ reasoningEffort: undefined }),
+    );
+  });
+
+  it("ignores legacy Claude composer values when resuming Codex", async () => {
+    useTaskStore.setState({
+      composerConfigByTaskId: {
+        t1: { mode: "plan", model: "claude-opus-4-8", reasoning: "high" },
+      },
+    });
+    mockGetTask.mockResolvedValue(
+      previousTask({
+        runtime_adapter: "codex",
+        model: "gpt-5.5",
+        reasoning_effort: "medium",
+        state: { initial_permission_mode: "auto" },
+      }),
+    );
+
+    await useTaskSessionStore
+      .getState()
+      ._resumeCloudRun("t1", "prev-run", "hi");
+
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "t1",
+      expect.objectContaining({
+        runtimeAdapter: "codex",
+        model: "gpt-5.5",
+        reasoningEffort: "medium",
+        initialPermissionMode: "auto",
       }),
     );
   });

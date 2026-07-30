@@ -1,3 +1,4 @@
+import type { StoredLogEntry } from "@posthog/shared";
 import packageJson from "../package.json" with { type: "json" };
 import type {
   ArtifactType,
@@ -38,6 +39,12 @@ export interface PreparedTaskArtifactUpload {
   storage_path: string;
   expires_in: number;
   presigned_post: { url: string; fields: Record<string, string> };
+}
+
+export interface TaskSessionStorageAccess {
+  id: string;
+  download_url: string | null;
+  content_sha256: string | null;
 }
 
 export interface TaskArtifactFinalizeUploadPayload {
@@ -98,7 +105,9 @@ export class PostHogAPIClient {
       "Authorization",
       `Bearer ${await this.resolveApiKey(forceRefresh)}`,
     );
-    headers.set("Content-Type", "application/json");
+    if (!headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
     headers.set("User-Agent", this.config.userAgent ?? DEFAULT_USER_AGENT);
     return headers;
   }
@@ -210,10 +219,71 @@ export class PostHogAPIClient {
     );
   }
 
+  async getTaskSession(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskSessionStorageAccess> {
+    const teamId = this.getTeamId();
+    return this.apiRequest<TaskSessionStorageAccess>(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    );
+  }
+
+  async downloadTaskSession(access: TaskSessionStorageAccess): Promise<string> {
+    if (!access.download_url) {
+      return "";
+    }
+    const response = await fetch(access.download_url, {
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 404) {
+      return "";
+    }
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download task session: [${response.status}] ${response.statusText}`,
+      );
+    }
+    return response.text();
+  }
+
+  async syncTaskSession(
+    taskId: string,
+    runId: string,
+    sandboxId: string,
+    expectedContentSha256: string | null,
+    content: string,
+    taskRunToken: string,
+  ): Promise<string> {
+    const teamId = this.getTeamId();
+    const response = await this.performRequestWithRetry(
+      `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session_sync/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "If-Match": `"${expectedContentSha256 ?? "none"}"`,
+          "X-Sandbox-ID": sandboxId,
+          "X-Task-Run-Token": taskRunToken,
+        },
+        body: content,
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok) {
+      const error = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `Failed to sync task session: [${response.status}] ${error}`,
+      );
+    }
+    const result = (await response.json()) as { content_sha256: string };
+    return result.content_sha256;
+  }
+
   async appendTaskRunLog(
     taskId: string,
     runId: string,
-    entries: StoredEntry[],
+    entries: (StoredEntry | StoredLogEntry)[],
   ): Promise<TaskRun> {
     const teamId = this.getTeamId();
     return this.apiRequest<TaskRun>(

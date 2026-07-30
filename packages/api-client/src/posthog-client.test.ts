@@ -1,8 +1,337 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "./fetcher";
-import { PostHogAPIClient } from "./posthog-client";
+import { CloudCommandError, PostHogAPIClient } from "./posthog-client";
 
 describe("PostHogAPIClient", () => {
+  it.each([
+    "user_message",
+    "permission_response",
+    "set_config_option",
+    "cancel",
+  ] as const)("sends the %s cloud run command", async (method) => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ result: { accepted: true } }), {
+        status: 200,
+      }),
+    );
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    await expect(
+      client.sendCloudRunCommand("task-1", "run-1", method, {
+        value: "payload",
+      }),
+    ).resolves.toEqual({ accepted: true });
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/command/",
+      ),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.any(String),
+      }),
+    );
+    const request = fetch.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(request.body as string)).toMatchObject({
+      jsonrpc: "2.0",
+      method,
+      params: { value: "payload" },
+    });
+  });
+
+  it("throws structured cloud command errors for HTTP failures", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: "No active sandbox for this run" }),
+        {
+          status: 409,
+          statusText: "Conflict",
+        },
+      ),
+    );
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    const error = await client
+      .sendCloudRunCommand("task-1", "run-1", "user_message")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      name: "CloudCommandError",
+      method: "user_message",
+      status: 409,
+      backendError: "No active sandbox for this run",
+    });
+    expect(error).toBeInstanceOf(CloudCommandError);
+    expect((error as CloudCommandError).isSandboxInactive()).toBe(true);
+  });
+
+  it("throws structured cloud command errors for JSON-RPC failures", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "Permission request expired" } }),
+          { status: 200 },
+        ),
+      );
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    await expect(
+      client.sendCloudRunCommand("task-1", "run-1", "permission_response"),
+    ).rejects.toMatchObject({
+      method: "permission_response",
+      status: 200,
+      backendError: "Permission request expired",
+    });
+  });
+
+  it("preserves the legacy sendRunCommand result contract", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Run is unavailable" }), {
+        status: 503,
+      }),
+    );
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    await expect(
+      client.sendRunCommand("task-1", "run-1", "set_config_option"),
+    ).resolves.toEqual({
+      success: false,
+      error: "Cloud command 'set_config_option' failed: 503 Run is unavailable",
+    });
+  });
+
+  it("cancels a cloud task run with an optional reason", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status: "cancelled" }), { status: 200 }),
+      );
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    await expect(
+      client.cancelTaskRun("task-1", "run-1", "user requested"),
+    ).resolves.toEqual({ status: "cancelled" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        "https://app.posthog.test/api/projects/42/tasks/task-1/runs/run-1/cancel/",
+      ),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ reason: "user requested" }),
+      }),
+    );
+  });
+
+  it("cancels a cloud task run with an empty body by default", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new PostHogAPIClient(
+      "https://app.posthog.test",
+      async () => "token",
+      async () => "token",
+      42,
+      { fetch },
+    );
+
+    await expect(client.cancelTaskRun("task-1", "run-1")).resolves.toEqual({});
+
+    const request = fetch.mock.calls[0][1] as RequestInit;
+    expect(request.body).toBe(JSON.stringify({}));
+  });
+
+  it("builds cloud task config from the authenticated gateway catalog", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "claude-opus-4-8",
+              owned_by: "anthropic",
+              context_window: 200000,
+              supports_streaming: true,
+              supports_vision: true,
+              allowed: true,
+            },
+            {
+              id: "claude-fable-5",
+              owned_by: "anthropic",
+              context_window: 200000,
+              supports_streaming: true,
+              supports_vision: true,
+              allowed: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    const client = new PostHogAPIClient(
+      "https://eu.posthog.com",
+      async () => "token",
+      async () => "token",
+      123,
+      { fetch },
+    );
+
+    const options = await client.getCloudTaskConfigOptions("claude");
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL("https://gateway.eu.posthog.com/posthog_code/v1/models"),
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(options.find((option) => option.category === "model")).toMatchObject(
+      {
+        currentValue: "claude-opus-4-8",
+        options: [
+          expect.objectContaining({ value: "claude-opus-4-8" }),
+          expect.objectContaining({
+            value: "claude-fable-5",
+            _meta: expect.any(Object),
+          }),
+        ],
+      },
+    );
+  });
+
+  it("uses the configured fetch implementation for task log URLs", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          '{"type":"notification","timestamp":"2026-07-21T00:00:00Z"}\n',
+          { status: 200 },
+        ),
+      );
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+      { fetch },
+    );
+    vi.spyOn(client, "getTask").mockResolvedValue({
+      id: "task-1",
+      task_number: 1,
+      slug: "task-1",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-07-21T00:00:00Z",
+      updated_at: "2026-07-21T00:00:00Z",
+      origin_product: "user_created",
+      latest_run: {
+        id: "run-1",
+        task: "task-1",
+        team: 123,
+        branch: null,
+        status: "in_progress",
+        log_url: "https://logs.posthog.test/run-1.jsonl",
+        error_message: null,
+        output: null,
+        state: {},
+        created_at: "2026-07-21T00:00:00Z",
+        updated_at: "2026-07-21T00:00:00Z",
+        completed_at: null,
+      },
+    });
+
+    await expect(client.getTaskLogs("task-1")).resolves.toHaveLength(1);
+    expect(fetch).toHaveBeenCalledWith("https://logs.posthog.test/run-1.jsonl");
+  });
+
+  it.each([
+    {
+      label: "desktop default",
+      options: undefined,
+      expectedConnectFrom: "posthog_code",
+      expectedUserAgent: "posthog/desktop.hog.dev; version: unknown",
+    },
+    {
+      label: "mobile configuration",
+      options: {
+        appVersion: "1.2.3",
+        userAgent: "posthog/mobile; version: 1.2.3",
+        githubConnectFrom: "posthog_mobile",
+      },
+      expectedConnectFrom: "posthog_mobile",
+      expectedUserAgent: "posthog/mobile; version: 1.2.3",
+    },
+  ])(
+    "uses $label identity for GitHub connections",
+    async ({ options, expectedConnectFrom, expectedUserAgent }) => {
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ install_url: "https://github.com/login/oauth" }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+        { ...options, fetch },
+      );
+
+      await expect(client.startGithubUserIntegrationConnect()).resolves.toEqual(
+        {
+          install_url: "https://github.com/login/oauth",
+        },
+      );
+
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          "http://localhost:8000/api/users/@me/integrations/github/start/",
+        ),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            team_id: 123,
+            connect_from: expectedConnectFrom,
+          }),
+        }),
+      );
+      expect(fetch.mock.calls[0][1].headers.get("User-Agent")).toBe(
+        expectedUserAgent,
+      );
+    },
+  );
+
   it("sends supported reasoning effort for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -146,6 +475,33 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it.each([true, false])("forwards auto publish %s", async (autoPublish) => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", null, { autoPublish });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.objectContaining({ auto_publish: autoPublish }),
+      }),
+    );
+  });
+
   it("rejects unsupported reasoning effort for cloud Codex runs", async () => {
     const client = new PostHogAPIClient(
       "http://localhost:8000",
@@ -257,7 +613,13 @@ describe("PostHogAPIClient", () => {
         reasoningLevel: "high",
         initialPermissionMode: "auto",
       }),
-    ).resolves.toEqual({ id: "run-123", environment: "cloud" });
+    ).resolves.toMatchObject({
+      id: "run-123",
+      task: "task-123",
+      team: 123,
+      environment: "cloud",
+      status: "not_started",
+    });
 
     expect(fetch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -274,6 +636,42 @@ describe("PostHogAPIClient", () => {
             environment: "cloud",
           }),
         },
+      }),
+    );
+  });
+
+  it("loads native task session storage access", async () => {
+    const storage = {
+      id: "session-1",
+      download_url: "https://storage.example/session.jsonl",
+      content_sha256: "hash",
+    };
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => storage,
+    });
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+    (
+      client as unknown as {
+        api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+      }
+    ).api = {
+      baseUrl: "http://localhost:8000",
+      fetcher: { fetch },
+    };
+
+    await expect(
+      client.getTaskSessionStorageAccess("task-123", "run-123"),
+    ).resolves.toEqual(storage);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "get",
+        path: "/api/projects/123/tasks/task-123/runs/run-123/task_session/",
       }),
     );
   });
@@ -409,6 +807,104 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("forwards contextWindow to the cloud run body when an adapter is set", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/context-window", {
+      adapter: "claude",
+      model: "claude-opus-5",
+      contextWindow: "1m",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.objectContaining({ context_window: "1m" }),
+      }),
+    );
+  });
+
+  it.each([false, true] as const)(
+    "forwards fastMode:%s to the cloud run body when an adapter is set",
+    async (fastMode) => {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+
+      const post = vi.fn().mockResolvedValue({
+        id: "task-123",
+        title: "Task",
+        description: "Task",
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:00:00Z",
+        origin_product: "user_created",
+      });
+
+      (client as unknown as { api: { post: typeof post } }).api = { post };
+
+      await client.runTaskInCloud("task-123", "feature/fast-mode", {
+        adapter: "claude",
+        model: "claude-opus-5",
+        fastMode,
+      });
+
+      expect(post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/tasks/{id}/run/",
+        expect.objectContaining({
+          body: expect.objectContaining({ fast_mode: fastMode }),
+        }),
+      );
+    },
+  );
+
+  it("omits contextWindow and fastMode when no adapter is set", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/no-adapter", {
+      contextWindow: "1m",
+      fastMode: false,
+    });
+
+    const call = post.mock.calls[0][1] as { body: Record<string, unknown> };
+    expect(call.body).not.toHaveProperty("context_window");
+    expect(call.body).not.toHaveProperty("fast_mode");
+  });
+
   it("starts an existing cloud task run with run-scoped artifact ids", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -435,7 +931,15 @@ describe("PostHogAPIClient", () => {
         pendingUserMessage: "Read the attached file first",
         pendingUserArtifactIds: ["artifact-1"],
       }),
-    ).resolves.toEqual({ id: "task-123", latest_run: { id: "run-123" } });
+    ).resolves.toMatchObject({
+      id: "task-123",
+      latest_run: {
+        id: "run-123",
+        task: "task-123",
+        team: 123,
+        status: "not_started",
+      },
+    });
 
     expect(fetch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -877,6 +1381,59 @@ describe("PostHogAPIClient", () => {
       const result = await buildClient(fetch).getTaskSummaries(["a"]);
       expect(fetch).toHaveBeenCalledTimes(50);
       expect(result.length).toBe(50);
+    });
+  });
+
+  describe("task pins", () => {
+    function buildClient(fetch: ReturnType<typeof vi.fn>) {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+      (
+        client as unknown as {
+          api: { baseUrl: string; fetcher: { fetch: typeof fetch } };
+        }
+      ).api = { baseUrl: "http://localhost:8000", fetcher: { fetch } };
+      return client;
+    }
+
+    it("loads pinned task ids", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_ids: ["task-1", "task-2"] }),
+      });
+
+      await expect(buildClient(fetch).getPinnedTaskIds()).resolves.toEqual([
+        "task-1",
+        "task-2",
+      ]);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "get",
+          path: "/api/projects/123/tasks/pinned/",
+        }),
+      );
+    });
+
+    it("sets pin state idempotently", async () => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ task_id: "task-1", pinned: true }),
+      });
+
+      await expect(
+        buildClient(fetch).setTaskPinned("task-1", true),
+      ).resolves.toBe(true);
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "post",
+          path: "/api/projects/123/tasks/task-1/pin/",
+          overrides: { body: JSON.stringify({ pinned: true }) },
+        }),
+      );
     });
   });
 

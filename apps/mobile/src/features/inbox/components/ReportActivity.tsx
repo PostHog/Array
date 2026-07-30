@@ -1,15 +1,12 @@
 import { Text } from "@components/text";
+import { attributionLabel } from "@posthog/core/inbox/activityLog";
+import type { AnySignalReportArtefact } from "@posthog/shared/domain-types";
 import { ClockCounterClockwise } from "phosphor-react-native";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { formatRelativeTime } from "@/lib/format";
 import { useThemeColors } from "@/lib/theme";
-import {
-  type ActivityArtefact,
-  attributionLabel,
-  selectActivityArtefacts,
-} from "../activityLog";
-import type { ReportArtefact } from "../types";
+import { type ActivityArtefact, selectActivityArtefacts } from "../activityLog";
 import { ArtefactCommit } from "./ArtefactCommit";
 import { ArtefactTaskRun } from "./ArtefactTaskRun";
 
@@ -57,7 +54,7 @@ export function ReportActivity({
   artefacts,
 }: {
   reportId: string;
-  artefacts: ReportArtefact[];
+  artefacts: AnySignalReportArtefact[];
 }) {
   const themeColors = useThemeColors();
   const activity = useMemo(

@@ -20,26 +20,18 @@ import {
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
-import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
+import {
+  getContextWindowOptions,
+  getFastModeOptions,
+  getReasoningEffortOptions,
+} from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
   getAvailableCodexModes,
   getAvailableModes,
 } from "@posthog/agent/execution-mode";
-import {
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_GATEWAY_MODEL,
-  fetchGatewayModels,
-  formatGatewayModelName,
-  type GatewayModel,
-  getClaudeModelRecency,
-  getProviderName,
-  isAnthropicModel,
-  isCloudflareModel,
-  isModalModel,
-  isOpenAIModel,
-  pickAllowedModel,
-} from "@posthog/agent/gateway-models";
+import { fetchGatewayModels } from "@posthog/agent/gateway-models";
+import { fetchPosthogPiModelCatalog } from "@posthog/agent/pi/model-catalog";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
   findPrUrls,
@@ -73,10 +65,11 @@ import {
 import {
   type AcpMessage,
   type Adapter,
+  buildCloudTaskConfigOptions,
+  type CloudRegion,
   type ExecutionMode,
   isAuthError,
   resolveCloudInitialPermissionMode,
-  restrictedModelMeta,
   serializeError,
   TypedEventEmitter,
 } from "@posthog/shared";
@@ -286,6 +279,10 @@ interface SessionConfig {
   settingSources?: ("user" | "project" | "local")[];
   /** Effort level for Claude sessions */
   effort?: EffortLevel;
+  /** Context window choice for 1M-capable Claude models */
+  contextWindow?: "200k" | "1m";
+  /** Start the session with fast mode enabled (Claude models that support it) */
+  fastMode?: boolean;
   /** Model to use for the session (e.g. "claude-sonnet-4-6") */
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
@@ -787,6 +784,8 @@ If a repository IS genuinely required, attach one in this priority order:
       disallowedTools,
       settingSources,
       effort,
+      contextWindow,
+      fastMode,
       model,
       jsonSchema,
     } = config;
@@ -1056,6 +1055,8 @@ If a repository IS genuinely required, attach one in this priority order:
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
+              ...(contextWindow && { contextWindow }),
+              ...(fastMode !== undefined && { fastMode }),
               ...(jsonSchema && { jsonSchema }),
               claudeCode: {
                 options: claudeCodeOptions,
@@ -1139,6 +1140,8 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(contextWindow && { contextWindow }),
+            ...(fastMode !== undefined && { fastMode }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -1168,6 +1171,8 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(contextWindow && { contextWindow }),
+            ...(fastMode !== undefined && { fastMode }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -2142,6 +2147,9 @@ For git operations while detached:
       settingSources:
         "settingSources" in params ? params.settingSources : undefined,
       effort: "effort" in params ? params.effort : undefined,
+      contextWindow:
+        "contextWindow" in params ? params.contextWindow : undefined,
+      fastMode: "fastMode" in params ? params.fastMode : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
@@ -2362,33 +2370,13 @@ For git operations while detached:
       });
   }
 
-  async getGatewayModels(apiHost: string) {
+  async getPiModelCatalog(apiHost: string, region: CloudRegion) {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const models = await fetchGatewayModels({
+    return fetchPosthogPiModelCatalog(
       gatewayUrl,
-      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
-    });
-
-    const mapped = models.map((model) => ({
-      modelId: model.id,
-      name: formatGatewayModelName(model),
-      description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      provider: getProviderName(model.owned_by),
-    }));
-
-    return mapped.sort((a, b) => {
-      const providerOrder = ["Anthropic", "OpenAI", "Gemini"];
-      const aProviderIdx = providerOrder.indexOf(a.provider ?? "");
-      const bProviderIdx = providerOrder.indexOf(b.provider ?? "");
-      if (aProviderIdx !== bProviderIdx) {
-        const aIdx = aProviderIdx === -1 ? 999 : aProviderIdx;
-        const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
-        return aIdx - bIdx;
-      }
-      return (
-        getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
-      );
-    });
+      region,
+      (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    );
   }
 
   async getPreviewConfigOptions(
@@ -2396,109 +2384,55 @@ For git operations while detached:
     adapter: Adapter = "claude",
   ): Promise<SessionConfigOption[]> {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    // Authenticated so the gateway can mark plan-restricted models; falls
-    // back to an anonymous fetch (everything allowed) without auth.
     const gatewayModels = await fetchGatewayModels({
       gatewayUrl,
       authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
     });
+    const configOptions = buildCloudTaskConfigOptions(
+      gatewayModels,
+      adapter,
+      adapter === "codex" ? getAvailableCodexModes() : getAvailableModes(),
+    ) as SessionConfigOption[];
 
-    // The Claude adapter can drive non-Anthropic models that the gateway exposes through its
-    // Anthropic-Messages surface, so preview filtering must match the session adapter.
-    const modelFilter =
-      adapter === "codex"
-        ? isOpenAIModel
-        : (model: GatewayModel) =>
-            isAnthropicModel(model) ||
-            isCloudflareModel(model) ||
-            isModalModel(model);
+    const modelOption = configOptions.find(
+      (option) => option.category === "model",
+    );
+    const resolvedModelId =
+      modelOption?.type === "select" ? modelOption.currentValue : "";
 
-    const adapterModels = gatewayModels.filter((model) => modelFilter(model));
-    const modelOptions = adapterModels.map((model) => ({
-      value: model.id,
-      name: formatGatewayModelName(model),
-      description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      // Locked models stay listed so the picker can gate them instead of
-      // silently dropping them.
-      ...(model.allowed ? {} : { _meta: restrictedModelMeta() }),
-    }));
-
-    // The gateway returns models in an arbitrary order. Sort Claude models
-    // oldest-to-newest so the picker is deterministic and the newest model
-    // lands at the end of the list, closest to the trigger.
-    if (adapter === "claude") {
-      modelOptions.sort(
-        (a, b) =>
-          getClaudeModelRecency(a.value) - getClaudeModelRecency(b.value),
-      );
+    // The adapter-level effort options carry _meta (default notch, docs links)
+    // that the shared cloud builder omits; the desktop picker needs them.
+    const effortOption = configOptions.find(
+      (option) => option.category === "thought_level",
+    );
+    const effortOpts = getReasoningEffortOptions(adapter, resolvedModelId);
+    if (effortOption?.type === "select" && effortOpts) {
+      effortOption.options = effortOpts;
     }
 
-    const defaultModel =
-      adapter === "codex"
-        ? (modelOptions.find((o) => o.value === DEFAULT_CODEX_MODEL)?.value ??
-          modelOptions[0]?.value ??
-          "")
-        : DEFAULT_GATEWAY_MODEL;
-
-    const preferredModelId = modelOptions.some((o) => o.value === defaultModel)
-      ? defaultModel
-      : (modelOptions[0]?.value ?? defaultModel);
-    // Never preselect a model the org's plan can't use — it would 403 on the
-    // first message.
-    const resolvedModelId = pickAllowedModel(adapterModels, preferredModelId);
-
-    if (!modelOptions.some((o) => o.value === resolvedModelId)) {
-      modelOptions.unshift({
-        value: resolvedModelId,
-        name: resolvedModelId,
-        description: "Custom model",
+    const contextOpts = getContextWindowOptions(adapter, resolvedModelId);
+    if (contextOpts) {
+      configOptions.push({
+        id: "context_window",
+        name: "Context Window",
+        type: "select",
+        currentValue: "1m",
+        options: contextOpts,
+        category: "_context_window",
+        description: "Choose the context window size for this session",
       });
     }
 
-    const modes =
-      adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-    const modeOptions = modes.map((mode) => ({
-      value: mode.id,
-      name: mode.name,
-      description: mode.description ?? undefined,
-    }));
-    const defaultMode = adapter === "codex" ? "auto" : "plan";
-
-    const configOptions: SessionConfigOption[] = [
-      {
-        id: "mode",
-        name: "Approval Preset",
-        type: "select",
-        currentValue: defaultMode,
-        options: modeOptions,
-        category: "mode",
-        description:
-          "Choose an approval and sandboxing preset for your session",
-      },
-      {
-        id: "model",
-        name: "Model",
-        type: "select",
-        currentValue: resolvedModelId,
-        options: modelOptions,
-        category: "model",
-        description: "Choose which model Claude should use",
-      },
-    ];
-
-    const effortOpts = getReasoningEffortOptions(adapter, resolvedModelId);
-    if (effortOpts) {
+    const fastOpts = getFastModeOptions(adapter, resolvedModelId);
+    if (fastOpts) {
       configOptions.push({
-        id: adapter === "codex" ? "reasoning_effort" : "effort",
-        name: adapter === "codex" ? "Reasoning Level" : "Effort",
+        id: "fast",
+        name: "Fast Mode",
         type: "select",
-        currentValue: "high",
-        options: effortOpts,
-        category: "thought_level",
-        description:
-          adapter === "codex"
-            ? "Controls how much reasoning effort the model uses"
-            : "Controls how much effort Claude puts into its response",
+        currentValue: "off",
+        options: fastOpts,
+        category: "_fast_mode",
+        description: "Faster responses on supported models",
       });
     }
 

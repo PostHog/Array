@@ -5,6 +5,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@posthog/quill";
+import { formatRelativeTimeShort } from "@posthog/shared";
 
 function ordinal(value: number): string {
   const remainder = value % 100;
@@ -24,6 +25,10 @@ function formatTooltip(date: Date): string {
   return `${month} ${ordinal(date.getDate())} at ${formatClock(date)}`;
 }
 
+// Sits next to the actor rather than out at the row's right edge, a step below the
+// 13px row copy. Sized here rather than by an ancestor
+// `[data-slot=thread-item-timestamp]` rule: `TooltipTrigger` replaces the wrapped
+// element's `data-slot` with its own, so such a rule never matches.
 export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
   const date = new Date(dateTime);
   if (Number.isNaN(date.getTime())) return null;
@@ -33,8 +38,11 @@ export function ThreadTimestamp({ dateTime }: { dateTime: string }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <ThreadItemTimestamp dateTime={dateTime}>
-              {formatClock(date)}
+            <ThreadItemTimestamp
+              dateTime={dateTime}
+              className="shrink-0 text-[11px]"
+            >
+              {formatRelativeTimeShort(dateTime)}
             </ThreadItemTimestamp>
           }
         />

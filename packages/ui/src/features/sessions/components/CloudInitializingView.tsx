@@ -6,6 +6,8 @@ import zenHedgehog from "../../../assets/images/zen.png";
 
 interface CloudInitializingViewProps {
   cloudStatus: TaskRunStatus | null;
+  heading?: string;
+  subtitle?: string;
 }
 
 const REVEAL_DELAY_MS = 2000;
@@ -35,8 +37,12 @@ function copyFor(cloudStatus: TaskRunStatus | null): {
 
 export function CloudInitializingView({
   cloudStatus,
+  heading,
+  subtitle,
 }: CloudInitializingViewProps) {
-  const { heading, subtitle } = copyFor(cloudStatus);
+  const copy = copyFor(cloudStatus);
+  const visibleHeading = heading ?? copy.heading;
+  const visibleSubtitle = subtitle ?? copy.subtitle;
 
   const [revealed, setRevealed] = useState(false);
   useEffect(() => {
@@ -70,10 +76,10 @@ export function CloudInitializingView({
       <Flex direction="column" align="center" gap="2">
         <Flex align="center" gap="2">
           <Spinner size={16} className="animate-spin text-gray-9" />
-          <Text className="font-medium text-base">{heading}</Text>
+          <Text className="font-medium text-base">{visibleHeading}</Text>
         </Flex>
         <Text color="gray" className="text-sm">
-          {subtitle}
+          {visibleSubtitle}
         </Text>
       </Flex>
     </Flex>

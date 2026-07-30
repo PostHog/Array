@@ -1,6 +1,13 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { Adapter, StoredLogEntry } from "@posthog/shared";
-import { getAvailableCodexModes, getAvailableModes } from "./executionModes";
+import {
+  getAvailableModesForAdapter,
+  getDefaultExecutionModeForAdapter,
+} from "./executionModes";
+
+export function getCloudReasoningConfigOptionId(adapter: Adapter): string {
+  return adapter === "codex" ? "reasoning_effort" : "effort";
+}
 
 /**
  * Pure derivations of cloud session config options. No store or host access —
@@ -52,9 +59,8 @@ export function buildCloudDefaultConfigOptions(
   adapter: Adapter = "claude",
   extra: SessionConfigOption[] = [],
 ): SessionConfigOption[] {
-  const modes =
-    adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
-  const fallbackMode = adapter === "codex" ? "auto" : "plan";
+  const modes = getAvailableModesForAdapter(adapter);
+  const fallbackMode = getDefaultExecutionModeForAdapter(adapter);
   const currentMode =
     typeof initialMode === "string" &&
     modes.some((mode) => mode.id === initialMode)
@@ -99,7 +105,7 @@ export function addMissingCloudRuntimeConfigOptions(
 
   if (initialReasoningEffort && !categories.has("thought_level")) {
     extras.push({
-      id: adapter === "codex" ? "reasoning_effort" : "effort",
+      id: getCloudReasoningConfigOptionId(adapter),
       name: adapter === "codex" ? "Reasoning" : "Effort",
       type: "select",
       currentValue: initialReasoningEffort,

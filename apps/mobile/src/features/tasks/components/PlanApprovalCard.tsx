@@ -1,4 +1,10 @@
 import {
+  getPermissionOptionMeta,
+  isPermissionRejection,
+  permissionOptionUsesCustomInput,
+} from "@posthog/core/sessions/permissionResponse";
+import { extractPlanText } from "@posthog/core/sessions/planApprovalPresentation";
+import {
   ArrowsClockwise,
   ChatCircle,
   CheckCircle,
@@ -28,56 +34,6 @@ interface PlanApprovalCardProps {
   onSendPermissionResponse?: (args: PermissionResponseArgs) => void;
 }
 
-function optionMeta(option: CloudPendingPermissionRequest["options"][number]) {
-  return option._meta as
-    | {
-        customInput?: boolean;
-        description?: string;
-      }
-    | undefined;
-}
-
-function isRejectOption(
-  option?: CloudPendingPermissionRequest["options"][number],
-) {
-  if (!option) return false;
-  return option.kind.startsWith("reject") || option.optionId.includes("reject");
-}
-
-function extractTextContent(item: unknown): string | null {
-  if (!item || typeof item !== "object") return null;
-
-  const record = item as Record<string, unknown>;
-  if (typeof record.text === "string") {
-    return record.text;
-  }
-
-  if (!record.content || typeof record.content !== "object") {
-    return null;
-  }
-
-  const content = record.content as Record<string, unknown>;
-  return typeof content.text === "string" ? content.text : null;
-}
-
-function extractPlanText(
-  permission?: CloudPendingPermissionRequest,
-): string | null {
-  const rawPlan = permission?.toolCall.rawInput?.plan;
-  if (typeof rawPlan === "string" && rawPlan.trim().length > 0) {
-    return rawPlan;
-  }
-
-  for (const item of permission?.toolCall.content ?? []) {
-    const text = extractTextContent(item);
-    if (text?.trim()) {
-      return text;
-    }
-  }
-
-  return null;
-}
-
 export function PlanApprovalCard({
   toolData,
   permission,
@@ -90,7 +46,10 @@ export function PlanApprovalCard({
   const [customInput, setCustomInput] = useState("");
 
   const response = permission?.response;
-  const planText = useMemo(() => extractPlanText(permission), [permission]);
+  const planText = useMemo(
+    () => (permission ? extractPlanText(permission.toolCall) : null),
+    [permission],
+  );
   const selectedOption = useMemo(
     () =>
       permission?.options.find(
@@ -132,7 +91,9 @@ export function PlanApprovalCard({
     selectedOption?.name ||
     response?.displayText ||
     null;
-  const resolvedAsReject = isRejectOption(selectedOption);
+  const resolvedAsReject = selectedOption
+    ? isPermissionRejection(selectedOption)
+    : false;
 
   return (
     <View className="mx-4 my-1 rounded-lg border border-accent-6 bg-gray-2">
@@ -196,8 +157,8 @@ export function PlanApprovalCard({
       ) : (
         <View className="px-3 pb-3">
           {permission.options.map((option) => {
-            const meta = optionMeta(option);
-            const usesCustomInput = meta?.customInput === true;
+            const meta = getPermissionOptionMeta(option);
+            const usesCustomInput = permissionOptionUsesCustomInput(option);
             const isCustomSelected = selectedCustomOptionId === option.optionId;
 
             return (
@@ -225,7 +186,7 @@ export function PlanApprovalCard({
                   >
                     {option.name}
                   </Text>
-                  {meta?.description && (
+                  {meta.description && (
                     <Text className="mt-1 font-mono text-[11px] text-gray-9 leading-4">
                       {meta.description}
                     </Text>

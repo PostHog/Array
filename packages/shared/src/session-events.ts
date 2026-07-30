@@ -1,3 +1,5 @@
+import type { AgentConversationEvent } from "./agent-conversation";
+
 /**
  * JSON-RPC message types for ACP protocol communication.
  * These types are used in both main process (session-manager.ts)
@@ -72,8 +74,10 @@ export const IMPORTED_USER_PROMPT_META_KEY = "importedUserPrompt";
  * Used when fetching historical logs and appending new entries.
  */
 export interface StoredLogEntry {
+  id?: string;
   type: string;
   timestamp?: string;
+  event?: AgentConversationEvent;
   notification?: {
     id?: number;
     method?: string;

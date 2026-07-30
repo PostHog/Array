@@ -1,7 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import {
+  type AgentSideConnection,
+  RequestError,
+} from "@agentclientprotocol/sdk";
 import type { HookInput, Options } from "@anthropic-ai/claude-agent-sdk";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GATEWAY_MODEL } from "../../gateway-models";
@@ -82,6 +85,12 @@ function getModelConfigOption(response: {
   configOptions?: Array<{ id: string; currentValue?: unknown }> | null;
 }) {
   return response.configOptions?.find((opt) => opt.id === "model");
+}
+
+function getEffortConfigOption(response: {
+  configOptions?: Array<{ id: string; currentValue?: unknown }> | null;
+}) {
+  return response.configOptions?.find((opt) => opt.id === "effort");
 }
 
 // Real temp dirs: createSession validates cwd and SettingsManager reads
@@ -317,6 +326,59 @@ describe("ClaudeAcpAgent session creation", () => {
     },
   );
 
+  // The shared claude settings file is cross-session state: the session's own
+  // pick must win over it, with the file only as a fallback.
+  it.each([
+    {
+      name: "prefers meta.model over the settings file model",
+      sessionId: "0197a000-0000-7000-8000-000000000011",
+      settingsModel: "claude-opus-4-8",
+      model: "claude-fable-5",
+      expectedSetModel: "claude-fable-5",
+      expectedCurrentValue: "claude-fable-5",
+    },
+    {
+      name: "falls back to the settings file model without meta.model",
+      sessionId: "0197a000-0000-7000-8000-000000000012",
+      settingsModel: "claude-fable-5",
+      model: undefined,
+      expectedSetModel: "claude-fable-5",
+      expectedCurrentValue: "claude-fable-5",
+    },
+  ])(
+    "$name",
+    async ({
+      sessionId,
+      settingsModel,
+      model,
+      expectedSetModel,
+      expectedCurrentValue,
+    }) => {
+      const settingsPath = path.join(configDir, "settings.json");
+      writeFileSync(settingsPath, JSON.stringify({ model: settingsModel }));
+      try {
+        const agent = makeAgent();
+
+        const response = await agent.resumeSession({
+          sessionId,
+          cwd,
+          mcpServers: [],
+          _meta: { taskRunId: "run-1", ...(model ? { model } : {}) },
+        });
+
+        expect(createdQueries).toHaveLength(1);
+        expect(createdQueries[0].setModel).toHaveBeenCalledWith(
+          expectedSetModel,
+        );
+        expect(getModelConfigOption(response)?.currentValue).toBe(
+          expectedCurrentValue,
+        );
+      } finally {
+        rmSync(settingsPath, { force: true });
+      }
+    },
+  );
+
   // New sessions pass the model to the SDK at spawn, never via setModel. The
   // Codex-model row guards the desync that surfaced as "picked gpt-5.5, session
   // ran Opus": a non-Anthropic id on the Claude adapter must fall back to the
@@ -358,6 +420,21 @@ describe("ClaudeAcpAgent session creation", () => {
     }
   });
 
+  it("does not expose effort controls when a new session starts with Kimi K3", async () => {
+    const agent = makeAgent();
+
+    const response = await agent.newSession({
+      cwd,
+      mcpServers: [],
+      _meta: { taskRunId: "run-kimi", model: "moonshotai/kimi-k3" },
+    });
+
+    expect(getModelConfigOption(response)?.currentValue).toBe(
+      "moonshotai/kimi-k3",
+    );
+    expect(getEffortConfigOption(response)).toBeUndefined();
+  });
+
   // The timeout *message* (RequestError "... timed out after ...") is covered
   // by claude-agent.refresh.test.ts. Here we cover the leak fix on the
   // new-session and resume paths: any init failure must close the query so the
@@ -377,6 +454,50 @@ describe("ClaudeAcpAgent session creation", () => {
     ).rejects.toThrow(/init boom/);
 
     expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs diagnostics and closes the query when new-session init times out", async () => {
+    vi.useFakeTimers();
+    try {
+      nextInitPromise = new Promise(() => {});
+      const agent = makeAgent();
+      const errorSpy = vi.spyOn(agent.logger, "error");
+
+      const promise = agent.newSession({
+        cwd,
+        mcpServers: [],
+        _meta: {
+          taskRunId: "run-init-timeout-new",
+          model: "claude-opus-5",
+        },
+      });
+      promise.catch(() => {});
+
+      await vi.waitFor(() => {
+        expect(createdQueries[0]?.initializationResult).toHaveBeenCalledTimes(
+          1,
+        );
+      });
+      await vi.advanceTimersByTimeAsync(30_001);
+
+      await expect(promise).rejects.toBeInstanceOf(RequestError);
+      expect(createdQueries[0]?.close).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "Session initialization failed",
+        expect.objectContaining({
+          initializationPhase: "sdk_initialization",
+          timeoutMs: 30_000,
+          initMs: expect.any(Number),
+          requestedModel: "claude-opus-5",
+          gatewayConfigured: false,
+          errorDetail: expect.objectContaining({
+            message: "Session initialization timed out after 30000ms",
+          }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("closes the query and rethrows when resume init fails", async () => {

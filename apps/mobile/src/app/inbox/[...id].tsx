@@ -1,4 +1,16 @@
 import { Text } from "@components/text";
+import {
+  formatSignalReportSummaryMarkdown,
+  inboxStatusLabel,
+} from "@posthog/core/inbox/reportPresentation";
+import { DISMISSAL_REASON_OPTIONS } from "@posthog/shared";
+import type {
+  ActionabilityJudgmentContent,
+  SignalFindingContent,
+  SignalReportPriority,
+  SignalReportStatus,
+  SuggestedReviewersArtefact,
+} from "@posthog/shared/domain-types";
 import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -34,12 +46,12 @@ import {
   DismissReportSheet,
 } from "@/features/inbox/components/DismissReportSheet";
 import { ReportActivity } from "@/features/inbox/components/ReportActivity";
+import { ReportFeedbackFooter } from "@/features/inbox/components/ReportFeedbackFooter";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import {
   type ReviewerActionExtra,
   SuggestedReviewers,
 } from "@/features/inbox/components/SuggestedReviewers";
-import { DISMISSAL_REASON_OPTIONS } from "@/features/inbox/constants";
 import { useInboxEngagementTracker } from "@/features/inbox/hooks/useInboxEngagementTracker";
 import {
   useInboxReport,
@@ -47,17 +59,6 @@ import {
   useInboxReportSignals,
 } from "@/features/inbox/hooks/useInboxReports";
 import { useInboxStore } from "@/features/inbox/stores/inboxStore";
-import type {
-  ActionabilityJudgmentContent,
-  SignalFindingContent,
-  SignalReportPriority,
-  SignalReportStatus,
-  SuggestedReviewersArtefact,
-} from "@/features/inbox/types";
-import {
-  formatSignalReportSummaryMarkdown,
-  inboxStatusLabel,
-} from "@/features/inbox/utils";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import {
   computeReportAgeHours,
@@ -573,6 +574,9 @@ export default function ReportDetailScreen() {
 
         {/* Activity log */}
         <ReportActivity reportId={report.id} artefacts={artefacts} />
+
+        {/* Usefulness feedback */}
+        <ReportFeedbackFooter report={report} />
       </ScrollView>
 
       <View

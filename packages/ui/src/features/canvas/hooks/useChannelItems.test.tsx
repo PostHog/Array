@@ -8,9 +8,12 @@ const mocks = vi.hoisted(() => ({
   },
   dashboards: { dashboards: [] as unknown[], isLoading: false },
   feed: { tasks: [] as unknown[], isLoading: false },
+  filedTasks: { tasks: [] as { taskId: string }[], isLoading: false },
+  allTasks: { data: [] as unknown[], isLoading: false },
   currentUser: undefined as { uuid: string; first_name?: string } | undefined,
   currentUserLoading: false,
   useBackendChannel: vi.fn(),
+  useTasks: vi.fn(),
   // Stable identities, mirroring the real hooks — a fresh function per render
   // would hide the very memoization this file asserts.
   setPinned: vi.fn(),
@@ -28,6 +31,15 @@ vi.mock("@posthog/ui/features/canvas/hooks/useDashboards", () => ({
 }));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelFeed", () => ({
   useChannelFeed: () => mocks.feed,
+}));
+vi.mock("@posthog/ui/features/canvas/hooks/useChannelTasks", () => ({
+  useChannelTasks: () => mocks.filedTasks,
+}));
+vi.mock("@posthog/ui/features/tasks/useTasks", () => ({
+  useTasks: (filters: unknown) => {
+    mocks.useTasks(filters);
+    return mocks.allTasks;
+  },
 }));
 vi.mock("@posthog/ui/features/canvas/hooks/useTaskChannels", () => ({
   PERSONAL_CHANNEL_NAME: "me",
@@ -65,13 +77,14 @@ import { useChannelItems } from "./useChannelItems";
 
 const ME = { uuid: "me-uuid", first_name: "Ada", last_name: "Lovelace" };
 
-function canvas(id: string, createdBy?: string) {
+function canvas(id: string, createdBy?: string, createdByUuid?: string) {
   return {
     id,
     channelId: "c1",
     name: id,
     templateId: "freeform",
     createdBy,
+    createdByUuid,
     createdAt: 0,
     updatedAt: 1_000,
   };
@@ -83,6 +96,8 @@ describe("useChannelItems", () => {
     mocks.channels = { channels: [], isLoading: true };
     mocks.dashboards = { dashboards: [], isLoading: false };
     mocks.feed = { tasks: [], isLoading: false };
+    mocks.filedTasks = { tasks: [], isLoading: false };
+    mocks.allTasks = { data: [], isLoading: false };
     mocks.currentUser = undefined;
     mocks.currentUserLoading = false;
   });
@@ -126,8 +141,8 @@ describe("useChannelItems", () => {
     };
     mocks.dashboards = {
       dashboards: [
-        canvas("mine", "Ada Lovelace"),
-        canvas("theirs", "Grace Hopper"),
+        canvas("mine", "Ada Lovelace", ME.uuid),
+        canvas("theirs", "Grace Hopper", "other-uuid"),
       ],
       isLoading: false,
     };
@@ -169,5 +184,34 @@ describe("useChannelItems", () => {
 
     expect(result.current.channelMissing).toBe(true);
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it("includes tasks filed into the space without duplicating feed tasks", () => {
+    mocks.channels = {
+      channels: [{ id: "c1", name: "eng", path: "/eng" }],
+      isLoading: false,
+    };
+    const filedTask = {
+      id: "task-1",
+      title: "Filed task",
+      updated_at: "2026-07-28T12:00:00Z",
+      latest_run: null,
+      created_by: null,
+    };
+    mocks.filedTasks = {
+      tasks: [{ taskId: "task-1" }],
+      isLoading: false,
+    };
+    mocks.allTasks = { data: [filedTask], isLoading: false };
+    mocks.feed = { tasks: [], isLoading: false };
+
+    const { result, rerender } = renderHook(() => useChannelItems("c1"));
+
+    expect(result.current.items.map((item) => item.id)).toEqual(["task-1"]);
+    expect(mocks.useTasks).toHaveBeenCalledWith({ showAllUsers: true });
+
+    mocks.feed = { tasks: [filedTask], isLoading: false };
+    rerender();
+    expect(result.current.items.map((item) => item.id)).toEqual(["task-1"]);
   });
 });

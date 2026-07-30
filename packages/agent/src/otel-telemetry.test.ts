@@ -177,6 +177,30 @@ describe("OtelRunTelemetry", () => {
         attrs: { error_source: "agent_server", stop_reason: "error" },
       },
       {
+        name: "initialization_failed",
+        entry: makeEntry("_posthog/initialization_failed", {
+          runtimeAdapter: "codex",
+          initializationPhase: "session_setup",
+          initMs: 12_345,
+          requestedModel: "gpt-5.2-codex",
+          gatewayConfigured: true,
+          errorType: "timeout",
+          timeoutMs: 30_000,
+          errorDetail: "SECRET provider response",
+        }),
+        severityText: "ERROR",
+        body: "agent initialization failed",
+        attrs: {
+          runtime_adapter: "codex",
+          initialization_phase: "session_setup",
+          init_ms: 12_345,
+          requested_model: "gpt-5.2-codex",
+          gateway_configured: true,
+          error_type: "timeout",
+          timeout_ms: 30_000,
+        },
+      },
+      {
         name: "progress",
         entry: makeEntry("_posthog/progress", {
           group: "setup:run-1",
@@ -337,6 +361,20 @@ describe("OtelRunTelemetry", () => {
         makeEntry("_posthog/error", {
           source: "agent_server_crash",
           error: "Agent server crashed: ENOENT open '/repos/acme/SECRET/.env'",
+        }),
+      );
+
+      expect(mapped).not.toBeNull();
+      expect(JSON.stringify([mapped?.body, mapped?.attributes])).not.toContain(
+        "SECRET",
+      );
+    });
+
+    it("never exports initialization error detail", () => {
+      const mapped = mapNotificationToLogRecord(
+        makeEntry("_posthog/initialization_failed", {
+          runtimeAdapter: "pi",
+          errorDetail: "SECRET provider response",
         }),
       );
 

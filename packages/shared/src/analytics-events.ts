@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { EffortLevel } from "./domain-types";
 import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
@@ -615,9 +616,13 @@ export type InboxReportActionType =
 
 export type InboxReportActionSurface =
   | "detail_pane"
+  | "detail_footer"
   | "toolbar"
   | "keyboard"
   | "list_row";
+
+/** Sentiment captured by the report usefulness thumbs. */
+export type InboxReportFeedbackSentiment = "positive" | "negative";
 
 export interface InboxViewedProperties {
   report_count: number;
@@ -739,6 +744,48 @@ export interface InboxReportActionProperties {
   // The feedback text the user typed before hitting Create PR. Truncated to
   // 500 chars to keep event payloads bounded.
   feedback_text?: string;
+}
+
+/**
+ * Thumbs-up/down verdict on a report's usefulness, fired from the feedback
+ * footer at the end of the report body. Feedback-only: unlike a dismiss, the
+ * report keeps its state. The sentiment is the label ranking work trains
+ * against, so it carries the same report classification as the impression and
+ * open events. Mirrors cloud's `Inbox report feedback`
+ * (`frontend/src/scenes/inbox/inboxAnalytics.ts`) so the clients are
+ * comparable in one PostHog project. `note` is optional — the thumbs submit on
+ * one click, with no note.
+ */
+export interface InboxReportFeedbackProperties {
+  report_id: string;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  /** Whether the report already has an implementation PR. */
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+  // Optional free-text note, truncated to keep event payloads bounded. Present
+  // only on the rare path where the rating and note submit together.
+  note?: string;
+}
+
+/**
+ * Optional free-text note, offered only once a rating is already recorded. It
+ * rides on its own event rather than re-firing {@link InboxReportFeedbackProperties}
+ * so sentiment stays exactly one event per rating; join back to the rating on
+ * `report_id`. Carries `sentiment` too so a note can be read without that join.
+ */
+export interface InboxReportFeedbackNoteProperties {
+  report_id: string;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+  /** Truncated to keep event payloads bounded. */
+  note: string;
 }
 
 // Scout events
@@ -918,7 +965,8 @@ export type ChannelActionType =
   | "view_activity"
   | "open_mention"
   | "canvas_mode_toggle"
-  | "activity_tab_change";
+  | "activity_tab_change"
+  | "artifacts_view_change";
 
 export interface ChannelActionProperties {
   action_type: ChannelActionType;
@@ -939,6 +987,7 @@ export interface ChannelActionProperties {
   armed?: boolean;
   /** For activity_tab_change: the tab landed on. */
   tab?: string;
+  view_mode?: "list" | "grid" | "masonry";
   /** Whether the underlying mutation resolved successfully. */
   success?: boolean;
 }
@@ -947,6 +996,8 @@ export type DashboardActionType =
   | "open"
   | "create"
   | "delete"
+  /** The delete was undone inside its undo window, so nothing was removed. */
+  | "delete_undo"
   | "rename"
   | "save"
   | "fork"
@@ -1102,7 +1153,7 @@ export interface AutoresearchRunStartedProperties {
 }
 
 // Loops events
-type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopReasoningEffort = EffortLevel;
 type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
 type LoopRunBlockedReason =
   | "deduped"
@@ -1342,6 +1393,8 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  INBOX_REPORT_FEEDBACK: "Inbox report feedback",
+  INBOX_REPORT_FEEDBACK_NOTE: "Inbox report feedback note",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
   // Agents page events
@@ -1519,6 +1572,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK]: InboxReportFeedbackProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE]: InboxReportFeedbackNoteProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
 
   // Agents page events
@@ -1588,6 +1643,8 @@ export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
   ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
   ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
   ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE,
   ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
 ]);
 

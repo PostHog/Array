@@ -1,8 +1,8 @@
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { Theme } from "@radix-ui/themes";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { ChannelItemRow } from "./ChannelItemRow";
 
 const actions = {
@@ -22,6 +22,7 @@ function item(overrides: Partial<ChannelItemModel> = {}): ChannelItemModel {
     rawStatus: null,
     authorUser: null,
     authorName: null,
+    authorUuid: "user-uuid",
     templateId: null,
     ...overrides,
   };
@@ -72,5 +73,24 @@ describe("ChannelItemRow", () => {
     expect(running).toHaveClass("ph-shimmer");
     // The glyph is wrapped, not replaced — no spinner swapped in its place.
     expect(running.querySelector("svg")).not.toBeNull();
+  });
+
+  it("opens the task context menu from the row", () => {
+    const onContextMenu = vi.fn();
+
+    render(
+      <Theme>
+        <ChannelItemRow
+          actions={actions}
+          isActive={false}
+          item={item()}
+          onContextMenu={onContextMenu}
+        />
+      </Theme>,
+    );
+
+    fireEvent.contextMenu(screen.getByText("Investigate signup drop-off"));
+
+    expect(onContextMenu).toHaveBeenCalledOnce();
   });
 });

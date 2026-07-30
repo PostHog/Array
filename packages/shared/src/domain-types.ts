@@ -3,7 +3,7 @@ import type { Adapter } from "./adapter";
 import type { AgentRuntime } from "./agent-runtime";
 import type { DismissalReasonOptionValue } from "./dismissal-reasons";
 import type { StoredLogEntry } from "./session-events";
-import type { TaskRunArtifact } from "./task";
+import type { UploadableSkillSource } from "./skills";
 
 // Execution mode schema and type - shared between main and renderer
 export const executionModeSchema = z.enum([
@@ -26,8 +26,32 @@ export const effortLevelSchema = z.enum([
   "high",
   "xhigh",
   "max",
+  "ultracode",
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
+
+/** All effort levels in ascending order of depth. */
+export const EFFORT_LEVELS = effortLevelSchema.options;
+
+export const EFFORT_LEVEL_LABELS: Record<EffortLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+  ultracode: "Ultracode",
+};
+
+/** Claude Code docs for the tiers that need explaining. */
+export const EFFORT_LEVEL_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
+  ultracode: "https://code.claude.com/docs/en/workflows",
+};
+
+/** Adapter-specific docs for the fast mode toggle. */
+export const FAST_MODE_DOCS_URLS: Record<string, string> = {
+  claude: "https://code.claude.com/docs/en/model-config",
+  codex: "https://developers.openai.com/codex",
+};
 
 export interface UserBasic {
   id: number;
@@ -192,6 +216,37 @@ export type TaskRunStatus =
   | "failed"
   | "cancelled";
 
+export type TaskRunEnvironment = "local" | "cloud";
+
+export type ArtifactType =
+  | "plan"
+  | "context"
+  | "reference"
+  | "output"
+  | "artifact"
+  | "user_attachment"
+  | "skill_bundle";
+
+export interface TaskRunArtifactMetadata {
+  skill_name: string;
+  skill_source: UploadableSkillSource;
+  content_sha256: string;
+  bundle_format: "zip";
+  schema_version: number;
+}
+
+export interface TaskRunArtifact {
+  id?: string;
+  name: string;
+  type: ArtifactType;
+  source?: string;
+  size?: number;
+  content_type?: string;
+  metadata?: TaskRunArtifactMetadata;
+  storage_path?: string;
+  uploaded_at?: string;
+}
+
 export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 export function isTerminalStatus(
@@ -218,9 +273,9 @@ export interface TaskRun {
   branch: string | null;
   runtime_adapter?: Adapter | null;
   model?: string | null;
-  reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  reasoning_effort?: EffortLevel | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
-  environment?: "local" | "cloud";
+  environment?: TaskRunEnvironment;
   status: TaskRunStatus;
   log_url: string;
   error_message: string | null;

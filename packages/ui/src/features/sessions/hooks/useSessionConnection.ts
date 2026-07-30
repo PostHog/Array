@@ -5,7 +5,9 @@ import {
 } from "@posthog/core/sessions/sessionService";
 import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import type { AgentSession } from "@posthog/ui/features/sessions/sessionStore";
 import { useConnectivity } from "@posthog/ui/hooks/useConnectivity";
 import { useUserPresence } from "@posthog/ui/hooks/useUserPresence";
@@ -33,6 +35,8 @@ export function useSessionConnection({
   isSuspended,
 }: UseSessionConnectionOptions) {
   const queryClient = useQueryClient();
+  const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
   const { isOnline } = useConnectivity();
   const cloudAuthState = useAuthStateValue((state) => state);
   const sessionService = useService<SessionService>(SESSION_SERVICE);
@@ -99,6 +103,10 @@ export function useSessionConnection({
       session: connectionSession,
       repoPath,
       isCloud,
+      isTaskAuthor:
+        currentUser?.uuid && task.created_by?.uuid
+          ? currentUser.uuid === task.created_by.uuid
+          : undefined,
       // While the user is away, freeze local reconciling too — otherwise the
       // idle-kill auto-reconnect would respawn the agent process seconds
       // after the server reclaimed it. Cloud reconcile ignores this flag.
@@ -119,6 +127,7 @@ export function useSessionConnection({
     connectionSession,
     repoPath,
     isCloud,
+    currentUser?.uuid,
     isSuspended,
     userPresent,
     isOnline,

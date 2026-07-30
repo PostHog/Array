@@ -1,9 +1,9 @@
 import { Text } from "@components/text";
+import type { Task } from "@posthog/shared";
 import { Cube } from "phosphor-react-native";
 import { View } from "react-native";
 import { toRgba } from "@/lib/theme";
 import { useCustomImageName } from "../hooks/useCustomImageName";
-import type { Task } from "../types";
 
 // Theme tokens have no violet; a fixed Radix violet-9 mirrors the desktop
 // custom-image badge and reads well in both light and dark.

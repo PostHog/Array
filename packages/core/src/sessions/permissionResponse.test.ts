@@ -2,9 +2,61 @@ import type { PermissionRequest } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatPermissionAnswerPrompt,
+  getPermissionOptionMeta,
   isOtherPermissionOption,
+  isPermissionApproval,
+  isPermissionRejection,
+  permissionOptionUsesCustomInput,
   planPermissionResponse,
+  resolveInitialPlanApprovalOption,
+  selectPlanPermissionOptions,
 } from "./permissionResponse";
+
+describe("permission option presentation", () => {
+  const approveOnce = {
+    optionId: "default",
+    name: "Approve",
+    kind: "allow_once" as const,
+  };
+  const approveAuto = {
+    optionId: "auto",
+    name: "Approve automatically",
+    kind: "allow_always" as const,
+  };
+  const reject = {
+    optionId: "reject_with_feedback",
+    name: "Reject",
+    kind: "reject_once" as const,
+    _meta: { customInput: true, description: "Explain why" },
+  };
+
+  it("classifies approval, rejection, and custom-input options", () => {
+    expect(isPermissionApproval(approveOnce)).toBe(true);
+    expect(isPermissionRejection(reject)).toBe(true);
+    expect(permissionOptionUsesCustomInput(reject)).toBe(true);
+    expect(getPermissionOptionMeta(reject)).toEqual({
+      customInput: true,
+      description: "Explain why",
+    });
+  });
+
+  it("selects plan options and prefers a feedback rejection", () => {
+    expect(selectPlanPermissionOptions([approveOnce, reject])).toEqual({
+      approvals: [approveOnce],
+      rejection: reject,
+    });
+  });
+
+  it.each([
+    ["default", "default"],
+    [null, "auto"],
+    ["missing", "auto"],
+  ])("resolves preferred approval %s", (preferred, expected) => {
+    expect(
+      resolveInitialPlanApprovalOption([approveOnce, approveAuto], preferred),
+    ).toBe(expected);
+  });
+});
 
 function makePermission(
   options: Array<{

@@ -103,6 +103,7 @@ export class TaskRunEventStreamSender {
     config.logger.info("Event ingest target resolved", {
       ingestUrl: this.ingestUrl,
       routedToProxy: usingProxy,
+      persistentUpload: !usingProxy || config.keepProxyStreamOpen === true,
     });
     this.maxBufferedEvents =
       config.maxBufferedEvents ?? DEFAULT_MAX_BUFFERED_EVENTS;
@@ -478,6 +479,12 @@ export class TaskRunEventStreamSender {
 
     await this.applyIngestResponse(response, "Event ingest stream");
     this.sequenceSynced = true;
+    this.config.logger.debug("Task run event ingest stream delivered", {
+      durationMs: Date.now() - stream.startedAtMs,
+      sentBytes: stream.sentBytes,
+      sentEvents: stream.sentEvents,
+      sentThroughSeq: stream.sentThroughSeq,
+    });
   }
 
   private async abortActiveStream(): Promise<void> {

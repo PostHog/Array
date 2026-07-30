@@ -77,6 +77,15 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     ResizeObserverStub as unknown as typeof ResizeObserver;
 }
 
+// jsdom does not implement animation frames. Components backed by browser
+// animation libraries can schedule a frame from a delayed callback, turning an
+// otherwise passing test into an unhandled ReferenceError later in the suite.
+if (typeof globalThis.requestAnimationFrame === "undefined") {
+  globalThis.requestAnimationFrame = (callback: FrameRequestCallback) =>
+    setTimeout(() => callback(performance.now()), 0) as unknown as number;
+  globalThis.cancelAnimationFrame = (handle: number) => clearTimeout(handle);
+}
+
 // jsdom does not implement Element.getAnimations. With ResizeObserver stubbed
 // above, Base UI's ScrollAreaViewport now mounts fully and schedules a timer
 // that calls viewport.getAnimations() — which would otherwise throw an

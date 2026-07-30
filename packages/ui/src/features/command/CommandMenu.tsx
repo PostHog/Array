@@ -3,7 +3,7 @@ import {
   CaretRightIcon,
   ChartLine,
   EnvelopeSimple,
-  RepeatIcon,
+  GitDiffIcon,
 } from "@phosphor-icons/react";
 import { workspaceIdSet } from "@posthog/core/command-center/eligibility";
 import { resolveService } from "@posthog/di/container";
@@ -35,6 +35,7 @@ import { channelGlyph } from "@posthog/ui/features/canvas/components/channelGlyp
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useTaskChannelMap } from "@posthog/ui/features/canvas/hooks/useTaskChannelMap";
+import { getDefaultReviewMode } from "@posthog/ui/features/code-review/getDefaultReviewMode";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { CommandKeyHints } from "@posthog/ui/features/command/CommandKeyHints";
 import { useFileSearchStore } from "@posthog/ui/features/command/fileSearchStore";
@@ -55,6 +56,7 @@ import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
 import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspaces } from "@posthog/ui/features/workspace/useWorkspace";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import {
   goBackInHistory,
   goForwardInHistory,
@@ -190,7 +192,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     if (!reviewTaskId) return;
     const mode = getReviewMode(reviewTaskId);
     if (mode === "closed") {
-      setReviewMode(reviewTaskId, "split");
+      setReviewMode(reviewTaskId, getDefaultReviewMode());
     }
   }, [reviewTaskId, getReviewMode, setReviewMode]);
 
@@ -289,7 +291,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
               id: "loops",
               label: "Loops",
               keywords: "automations schedules recurring",
-              icon: <RepeatIcon size={12} className="text-gray-11" />,
+              icon: <LoopIcon size={12} className="text-gray-11" />,
               action: "open-loops" as CommandMenuAction,
               onRun: () => {
                 closeSettingsDialog();
@@ -340,10 +342,8 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         ? [
             {
               id: "open-review-panel",
-              label: "Open review panel",
-              icon: (
-                <ViewVerticalIcon className="h-3 w-3 rotate-180 text-gray-11" />
-              ),
+              label: "Open diff view",
+              icon: <GitDiffIcon className="h-3 w-3 text-gray-11" />,
               action: "open-review-panel" as CommandMenuAction,
               shortcut: SHORTCUTS.TOGGLE_REVIEW_PANEL,
               onRun: openReviewPanel,
@@ -628,7 +628,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                       // fill the row (so a trailing shortcut can `ml-auto` to the
                       // end) and let it overflow visibly so the shortcut Kbd
                       // boxes aren't clipped by the wrapper's `truncate`.
-                      className="flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
+                      className="group flex h-auto! min-h-7 w-full items-center gap-2 py-1.5 pr-2 text-left [&>span]:w-full [&>span]:overflow-visible"
                     >
                       {cmd.icon}
                       <span className="wrap-break-word min-w-0 whitespace-normal">

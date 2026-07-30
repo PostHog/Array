@@ -8,6 +8,7 @@ import {
   convertStoredEntriesToEvents,
   extractUserPromptsFromEvents,
   hasSessionPromptEvent,
+  hasSessionPromptEventForTaskRun,
   isAbsoluteFolderPath,
   isFatalSessionError,
   promptReferencesAbsoluteFolder,
@@ -195,6 +196,37 @@ describe("hasSessionPromptEvent", () => {
   it("is false when no session/prompt request is present", () => {
     expect(hasSessionPromptEvent([notification])).toBe(false);
     expect(hasSessionPromptEvent([])).toBe(false);
+  });
+
+  it("does not attribute an ancestor prompt to a resumed run", () => {
+    const storedEntry = (event: AcpMessage): StoredLogEntry => ({
+      type: "notification",
+      timestamp: new Date(event.ts).toISOString(),
+      notification: event.message,
+    });
+    const leafPrompt = {
+      ...promptRequest,
+      ts: 3,
+      message: { ...promptRequest.message, id: 2 },
+    };
+    const events = convertStoredEntriesToEvents(
+      [
+        storedEntry(promptRequest),
+        storedEntry(notification),
+        storedEntry(leafPrompt),
+      ],
+      undefined,
+      {
+        taskRunId: "resume-run",
+        startEntryIndex: 0,
+        firstPositionedEntryIndex: 2,
+      },
+    );
+
+    expect(
+      hasSessionPromptEventForTaskRun(events.slice(0, 2), "resume-run"),
+    ).toBe(false);
+    expect(hasSessionPromptEventForTaskRun(events, "resume-run")).toBe(true);
   });
 });
 

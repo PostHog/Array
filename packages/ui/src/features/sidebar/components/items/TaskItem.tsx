@@ -221,7 +221,7 @@ export function TaskItem({
   );
 }
 
-function InlineEditInput({
+export function InlineEditInput({
   depth,
   icon,
   label,
@@ -268,7 +268,7 @@ function InlineEditInput({
 
   return (
     <div
-      className={`flex w-full items-start gap-[4px] px-2 py-1.5 text-[13px]${isActive ? "bg-accent-4 text-gray-12" : ""}`}
+      className={`flex w-full items-start gap-[4px] px-2 py-1.5 text-[13px] ${isActive ? "bg-accent-4 text-gray-12" : ""}`}
       style={{
         paddingLeft: `${depth * INDENT_SIZE + 8 + (depth > 0 ? 4 : 0)}px`,
       }}

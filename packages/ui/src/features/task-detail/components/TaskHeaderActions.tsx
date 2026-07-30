@@ -110,10 +110,10 @@ function LocalHandoffButton({ taskId, task }: { taskId: string; task: Task }) {
 
 function TaskDiffStatsBadge({ task }: { task: Task }) {
   const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
-    useDiffStatsToggle(task, "split");
+    useDiffStatsToggle(task);
   return (
     <Tooltip
-      content={isOpen ? "Close review panel" : "Open review panel"}
+      content={isOpen ? "Close diff view" : "Open diff view"}
       shortcut={formatHotkey(SHORTCUTS.TOGGLE_REVIEW_PANEL)}
       side="bottom"
     >

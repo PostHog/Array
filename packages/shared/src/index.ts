@@ -19,6 +19,7 @@ export type {
   AgentToolKind,
 } from "./agent-conversation";
 export * from "./agent-runtime";
+export { AGENT_SLUG_PATTERN, isValidAgentSlug } from "./agent-slug";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -72,6 +73,32 @@ export {
   serializeCloudPrompt,
 } from "./cloud-prompt";
 export {
+  BLOCKED_GATEWAY_MODEL_IDS,
+  buildCloudTaskConfigOptions,
+  type CloudTaskConfigOption,
+  type CloudTaskConfigSelectOption,
+  type CloudTaskModePreset,
+  compareModelsForPicker,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_GATEWAY_MODEL,
+  formatGatewayModelName,
+  formatModelId,
+  type GatewayModel,
+  getClaudeModelRecency,
+  getCloudTaskGatewayUrl,
+  getProviderName,
+  isAnthropicModel,
+  isBlockedModelId,
+  isCloudflareModel,
+  isCloudflareModelId,
+  isGlmModelId,
+  isModalModel,
+  isModalModelId,
+  isOpenAIModel,
+  normalizeGatewayModelsResponse,
+  pickAllowedModel,
+} from "./cloud-task-models";
+export {
   buildInboxDeeplink,
   buildScoutDeeplink,
   DEEPLINK_PROTOCOL_DEVELOPMENT,
@@ -87,12 +114,32 @@ export {
 export {
   DISMISSAL_REASON_OPTIONS,
   type DismissalReasonOptionValue,
+  dismissalReasonLabel,
   isDismissalReasonSnooze,
 } from "./dismissal-reasons";
-export type { SignalReportPriority, Task } from "./domain-types";
+export {
+  type ArtifactType,
+  type CloudPermissionOption,
+  type CloudTaskErrorUpdate,
+  type CloudTaskLogsUpdate,
+  type CloudTaskPermissionRequestUpdate,
+  type CloudTaskSnapshotUpdate,
+  type CloudTaskStatusUpdate,
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type SignalReportPriority,
+  type Task,
+  type TaskRun,
+  type TaskRunArtifact,
+  type TaskRunArtifactMetadata,
+  type TaskRunEnvironment,
+  type TaskRunStatus,
+  TERMINAL_STATUSES,
+} from "./domain-types";
 export * from "./enrichment";
 export {
   classifyGatewayLimitError,
+  classifyPromptFailure,
   type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
@@ -101,6 +148,8 @@ export {
   isRateLimitError,
   isTransientUpstreamError,
   NotAuthenticatedError,
+  type PromptFailure,
+  type PromptFailureKind,
   type SerializedError,
   serializeError,
 } from "./errors";
@@ -174,10 +223,14 @@ export {
   splitMentionSegments,
 } from "./mentions";
 export {
+  DEFAULT_OPTION_META_KEY,
   defaultEligibleModel,
+  isDefaultSelectOption,
   isRestrictedModelOption,
+  OPTION_DOCS_URL_META_KEY,
   RESTRICTED_MODEL_META_KEY,
   restrictedModelMeta,
+  selectOptionDocsUrl,
 } from "./models";
 export {
   getOauthClientIdFromRegion,
@@ -213,6 +266,17 @@ export {
   isPrivateIpv4Octets,
   isPrivateIpv6Literal,
 } from "./private-network";
+export {
+  type CapabilityNotch,
+  DEFAULT_REASONING_EFFORT,
+  getCapabilityLadder,
+  getReasoningEffortOptions,
+  isSupportedReasoningEffort,
+  type ReasoningEffortOption,
+  type SupportedReasoningEffort,
+  supports1MContext,
+  supportsFastMode,
+} from "./reasoning-effort";
 export {
   type CloudRegion,
   formatRegionBadge,
@@ -276,15 +340,19 @@ export {
   serializeSkillMarkdown,
   stripFrontmatter,
 } from "./skills";
-export type {
-  ArtifactType,
-  PostHogAPIConfig,
-  TaskRun,
-  TaskRunArtifact,
-  TaskRunArtifactMetadata,
-  TaskRunEnvironment,
-  TaskRunStatus,
-} from "./task";
+export type { PostHogAPIConfig } from "./task";
+export {
+  type CreateTaskAutomationOptions,
+  createTaskAutomationSchema,
+  type TaskAutomation,
+  type TaskAutomationList,
+  type TaskAutomationValidationErrorDetails,
+  taskAutomationListSchema,
+  taskAutomationSchema,
+  taskAutomationValidationErrorSchema,
+  type UpdateTaskAutomationOptions,
+  updateTaskAutomationSchema,
+} from "./task-automation";
 export type {
   TaskCreationInput,
   TaskCreationOutput,

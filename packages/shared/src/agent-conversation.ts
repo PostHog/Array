@@ -17,6 +17,8 @@ export type AgentToolCallStatus =
   | "completed"
   | "failed";
 
+export type AgentProgressStatus = "in_progress" | "completed" | "failed";
+
 export interface AgentTextContent {
   type: "text";
   text: string;
@@ -26,6 +28,7 @@ export interface AgentImageContent {
   type: "image";
   data: string;
   mimeType: string;
+  fileName?: string;
 }
 
 export interface AgentAudioContent {
@@ -105,9 +108,14 @@ export interface AgentToolCall {
   rawInput?: unknown;
   rawOutput?: unknown;
   parentId?: string;
+  origin?: "agent" | "user_shell";
 }
 
-export type AgentConversationEvent =
+interface AgentConversationEventIdentity {
+  sourceId?: string;
+}
+
+export type AgentConversationEvent = (
   | {
       type: "user_message";
       id: string;
@@ -135,6 +143,21 @@ export type AgentConversationEvent =
       toolCall: Pick<AgentToolCall, "id"> & Partial<Omit<AgentToolCall, "id">>;
     }
   | {
+      type: "progress";
+      timestamp: number;
+      step: string;
+      status: AgentProgressStatus;
+      label: string;
+      group: string;
+      detail?: string;
+    }
+  | {
+      type: "queue_update";
+      timestamp: number;
+      steering: string[];
+      followUp: string[];
+    }
+  | {
       type: "runtime_status";
       timestamp: number;
       status: string;
@@ -155,4 +178,6 @@ export type AgentConversationEvent =
       type: "turn_completed";
       timestamp: number;
       stopReason?: string;
-    };
+    }
+) &
+  AgentConversationEventIdentity;

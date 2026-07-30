@@ -1,3 +1,4 @@
+import type { SignalReport } from "@posthog/shared/domain-types";
 import { useCallback, useEffect, useRef } from "react";
 import {
   ANALYTICS_EVENTS,
@@ -7,7 +8,6 @@ import {
   type InboxReportCloseMethod,
   type InboxReportOpenMethod,
 } from "@/lib/analytics";
-import type { SignalReport } from "../types";
 
 interface OpenInfo {
   reportId: string;

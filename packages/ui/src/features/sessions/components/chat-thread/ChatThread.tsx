@@ -6,8 +6,10 @@ import {
   Scroll,
 } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
+import type { ContextUsage } from "@posthog/core/sessions/contextUsage";
 import { useService } from "@posthog/di/react";
 import {
+  Button,
   ChatBubble,
   ChatBubbleContent,
   ChatMarker,
@@ -22,7 +24,15 @@ import {
   ChatMessageScrollerItem,
   ChatMessageScrollerProvider,
   ChatMessageScrollerViewport,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
   cn,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   useChatMessageScroller,
   useChatMessageScrollerScrollable,
   useChatMessageScrollerVisibility,
@@ -34,7 +44,10 @@ import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useSmoothedText } from "@posthog/ui/features/editor/components/useSmoothedText";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
-import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import type {
+  BuildResult,
+  ConversationItem,
+} from "@posthog/ui/features/sessions/components/buildConversationItems";
 import { CloudArtifactDownloads } from "@posthog/ui/features/sessions/components/CloudArtifactDownloads";
 import {
   ChatMarkdown,
@@ -62,8 +75,10 @@ import {
   type ThreadScrollResume,
   type TurnRow,
 } from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
+import { buildTurnCopyText } from "@posthog/ui/features/sessions/components/chat-thread/turnCopyText";
 import { usePromptRecallSource } from "@posthog/ui/features/sessions/components/chat-thread/usePromptRecallSource";
 import { VirtualThreadScrollBody } from "@posthog/ui/features/sessions/components/chat-thread/VirtualThreadScrollBody";
+import { copyFromContextMenu } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitActionMessage";
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
@@ -90,6 +105,11 @@ import {
   useOptimisticItemsForTask,
   useSessionIsCloud,
 } from "@posthog/ui/features/sessions/sessionStore";
+import {
+  useSessionViewActions,
+  useShowRawLogs,
+} from "@posthog/ui/features/sessions/sessionViewStore";
+import { useThreadScrollRequest } from "@posthog/ui/features/sessions/threadNavigationStore";
 import type { UserMessageAttachment } from "@posthog/ui/features/sessions/userMessageTypes";
 import {
   SessionTaskIdProvider,
@@ -97,14 +117,15 @@ import {
 } from "@posthog/ui/features/sessions/useSessionTaskId";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { SkillButtonActionMessage } from "@posthog/ui/features/skill-buttons/components/SkillButtonActionMessage";
+import { toast } from "@posthog/ui/primitives/toast";
 import { useCopy } from "@posthog/ui/primitives/useCopy";
 import {
   DIFF_WORKER_FACTORY,
   type DiffWorkerFactory,
 } from "@posthog/ui/shell/diffWorkerHost";
-import { IconButton, Tooltip } from "@radix-ui/themes";
 import {
   memo,
+  type ReactElement,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -198,14 +219,16 @@ function groupToolRuns(items: ConversationItem[]): ThreadItem[] {
  * Collapse each contiguous run of non-user rows into one {@link AgentTurn}, broken only by a
  * user-initiated row (which stays standalone so it remains the scroll anchor for the sticky header
  * and auto-follow). The turn block renders as a single muted card, tightening the spacing between
- * the agent's successive replies and tool calls.
+ * the agent's successive replies and tool calls. Each turn records the user-initiated row that
+ * opened it, so "Copy turn" can lead with the prompt the turn answered.
  */
 function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
   const out: TurnRow[] = [];
   let buffer: ThreadItem[] = [];
+  let prompt: ThreadItem | undefined;
   const flush = () => {
     if (buffer.length > 0) {
-      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer });
+      out.push({ type: "agent_turn", id: buffer[0].id, items: buffer, prompt });
       buffer = [];
     }
   };
@@ -217,6 +240,7 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     if (isUserInitiatedConversationItem(row)) {
       flush();
       out.push(row);
+      prompt = row;
     } else {
       buffer.push(row);
     }
@@ -237,19 +261,56 @@ function formatTimestamp(ts: number): string {
 }
 
 /**
- * Hover-revealed timestamp rendered right-aligned under agent-side content (the end-aligned user
- * bubble keeps its own right-aligned footer). Sits inside a `group` container so it fades in only
- * while that container is hovered. Shown once per completed agent turn (under the turn card)
- * rather than on every message — per-row it was too noisy.
+ * Hover-revealed footer under a completed agent turn: the turn's timestamp plus a button copying
+ * the whole turn. Rendered right-aligned under agent-side content — the end-aligned user bubble
+ * keeps its own footer — inside a `group` container, so it fades in only while that turn is
+ * hovered. Once per turn rather than per row, which was too noisy.
  */
-function RowTimestamp({ timestamp }: { timestamp?: number }) {
+function TurnFooter({
+  timestamp,
+  copyText,
+}: {
+  timestamp?: number;
+  copyText?: string;
+}) {
   if (timestamp == null) return null;
   return (
     <ChatMessageFooter className="mt-2 items-center justify-end gap-1 pl-0 opacity-0 transition-opacity group-hover:opacity-100">
       <span className="text-muted-foreground">
         {formatTimestamp(timestamp)}
       </span>
+      {copyText && <CopyButton value={copyText} label="Copy turn" />}
     </ChatMessageFooter>
+  );
+}
+
+/**
+ * Shared copy affordance for the message and turn footers. Stays muted whether idle or just-copied —
+ * the icon swap is the confirmation, so the row never lights up in a colour the thread doesn't use
+ * elsewhere.
+ */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const { copied, copy } = useCopy();
+  const [hovered, setHovered] = useState(false);
+  return (
+    // Held open for the life of the `copied` window so the confirmation lands even when the click
+    // moves the pointer off the button; hover drives it the rest of the time.
+    <Tooltip open={copied || hovered} onOpenChange={setHovered}>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="default"
+            size="icon-xs"
+            aria-label={label}
+            onClick={() => copy(value)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </Button>
+        }
+      />
+      <TooltipContent>{copied ? "Copied!" : label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -336,135 +397,149 @@ function UserBubble({
   }, [displayContent, isExpanded]);
 
   return (
-    <ChatMessage align="end" className="group">
-      <ChatMessageContent className="gap-1 pr-9">
-        {showHeaderChips && (
-          <ChatMessageHeader className="flex-wrap gap-1">
-            {showChannelContextTag && channelContext && (
-              <MentionChip
-                icon={<FileText size={12} />}
-                label={`${
-                  channelContext.mention.name
-                    ? `#${channelContext.mention.name} `
-                    : ""
-                }CONTEXT.md`}
-                onClick={
-                  taskId
-                    ? () =>
-                        openChannelContextInSplit(taskId, {
-                          channelName: channelContext.mention.name,
-                          body: channelContext.mention.body,
-                        })
-                    : undefined
-                }
-              />
-            )}
-            {showCanvasInstructionsTag && canvasInstructions && (
-              <MentionChip
-                icon={<Scroll size={12} />}
-                label="Canvas instructions"
-                onClick={
-                  taskId
-                    ? () =>
-                        openCanvasInstructionsInSplit(taskId, {
-                          body: canvasInstructions.body,
-                        })
-                    : undefined
-                }
-              />
-            )}
-          </ChatMessageHeader>
-        )}
-        <ChatBubble
-          align="end"
-          variant="default"
-          className={cn(
-            "rounded-lg ring-(--gray-11) ring-0 ring-inset transition-shadow",
-            keyboardFocused && "ring-[3px]",
-          )}
-        >
-          <ChatBubbleContent>
-            <div
-              ref={textRef}
-              className={cn(
-                "[&_p]:my-0",
-                !isExpanded && "max-h-[5lh] overflow-hidden",
-                // Fade the clamped text out at the bottom so it reads as "continues below". Only
-                // when actually overflowing — a short collapsed message shouldn't fade. The mask is
-                // paint-only, so it doesn't affect the overflow measurement above.
-                !isExpanded &&
-                  isOverflowing &&
-                  "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
-              )}
-            >
-              {containsFileMentions ? (
-                parseFileMentions(displayContent)
-              ) : (
-                <ChatMarkdown content={displayContent} />
-              )}
-            </div>
-            {attachments.length > 0 && !containsFileMentions && (
-              <div className="mt-1.5">
-                <UserMessageAttachments attachments={attachments} />
-              </div>
-            )}
-            {isOverflowing && (
-              <button
-                type="button"
-                onClick={() => setIsExpanded((v) => !v)}
-                className="mt-1 flex items-center gap-0.5 text-muted-foreground text-sm hover:text-foreground"
-              >
-                Show {isExpanded ? "less" : "more"}
-                <CaretDown
-                  className={cn("size-3", isExpanded && "rotate-180")}
+    <MessageContextMenu value={displayContent}>
+      <ChatMessage align="end" className="group">
+        <ChatMessageContent className="gap-1">
+          {showHeaderChips && (
+            <ChatMessageHeader className="flex-wrap gap-1">
+              {showChannelContextTag && channelContext && (
+                <MentionChip
+                  icon={<FileText size={12} />}
+                  label={`${
+                    channelContext.mention.name
+                      ? `#${channelContext.mention.name} `
+                      : ""
+                  }CONTEXT.md`}
+                  onClick={
+                    taskId
+                      ? () =>
+                          openChannelContextInSplit(taskId, {
+                            channelName: channelContext.mention.name,
+                            body: channelContext.mention.body,
+                          })
+                      : undefined
+                  }
                 />
-              </button>
+              )}
+              {showCanvasInstructionsTag && canvasInstructions && (
+                <MentionChip
+                  icon={<Scroll size={12} />}
+                  label="Canvas instructions"
+                  onClick={
+                    taskId
+                      ? () =>
+                          openCanvasInstructionsInSplit(taskId, {
+                            body: canvasInstructions.body,
+                          })
+                      : undefined
+                  }
+                />
+              )}
+            </ChatMessageHeader>
+          )}
+          <ChatBubble
+            align="end"
+            variant="default"
+            className={cn(
+              "rounded-lg ring-(--gray-11) ring-0 ring-inset transition-shadow",
+              keyboardFocused && "ring-[3px]",
             )}
-          </ChatBubbleContent>
-        </ChatBubble>
-        {timestamp != null && (
-          <ChatMessageFooter className="opacity-0 transition-opacity group-hover:opacity-100">
-            {formatTimestamp(timestamp)}
-          </ChatMessageFooter>
-        )}
-      </ChatMessageContent>
-      <MessageCopyButton
-        value={displayContent}
-        revealClassName="group-hover:opacity-100"
-      />
-    </ChatMessage>
+          >
+            <ChatBubbleContent>
+              <div
+                ref={textRef}
+                className={cn(
+                  "[&_p]:my-0",
+                  !isExpanded && "max-h-[5lh] overflow-hidden",
+                  // Fade the clamped text out at the bottom so it reads as "continues below". Only
+                  // when actually overflowing — a short collapsed message shouldn't fade. The mask is
+                  // paint-only, so it doesn't affect the overflow measurement above.
+                  !isExpanded &&
+                    isOverflowing &&
+                    "[mask-image:linear-gradient(to_bottom,black_45%,transparent)]",
+                )}
+              >
+                {containsFileMentions ? (
+                  parseFileMentions(displayContent)
+                ) : (
+                  <ChatMarkdown content={displayContent} />
+                )}
+              </div>
+              {attachments.length > 0 && !containsFileMentions && (
+                <div className="mt-1.5">
+                  <UserMessageAttachments attachments={attachments} />
+                </div>
+              )}
+              {isOverflowing && (
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded((v) => !v)}
+                  className="mt-1 flex items-center gap-0.5 text-muted-foreground text-sm hover:text-foreground"
+                >
+                  Show {isExpanded ? "less" : "more"}
+                  <CaretDown
+                    className={cn("size-3", isExpanded && "rotate-180")}
+                  />
+                </button>
+              )}
+            </ChatBubbleContent>
+          </ChatBubble>
+          {timestamp != null && (
+            <ChatMessageFooter className="items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              {formatTimestamp(timestamp)}
+              <CopyButton value={displayContent} label="Copy message" />
+            </ChatMessageFooter>
+          )}
+        </ChatMessageContent>
+      </ChatMessage>
+    </MessageContextMenu>
   );
 }
 
 /**
- * Copy icon that floats into a message's right rail on hover. The hover-group qualifier differs by
- * message type (`group` for user bubbles, `group/msg` for agent prose), so callers pass their own
- * `revealClassName` (the `group-hover*:opacity-100` utility).
+ * Right-click a message to copy it. Replaces the per-message copy button that used to float in the
+ * message's right rail — the turn footer covers the common case, so a single message's copy lives
+ * here instead of costing every row a hover affordance.
+ *
+ * This menu sits inside `SessionView`'s own context menu and wins the event over it, so it also
+ * carries that menu's raw-logs toggle; without it, right-clicking a message would be the one spot
+ * in the session where the toggle went missing.
+ *
+ * The write goes through {@link copyFromContextMenu}: a synchronous write from a closing menu
+ * rejects while focus is still being restored, and both outcomes surface as toasts — a silent
+ * failure would leave the clipboard's previous contents where the user believes the message is.
  */
-function MessageCopyButton({
+function MessageContextMenu({
   value,
-  revealClassName,
+  children,
 }: {
   value: string;
-  revealClassName: string;
+  children: ReactElement;
 }) {
-  const { copied, copy } = useCopy();
+  const showRawLogs = useShowRawLogs();
+  const { setShowRawLogs } = useSessionViewActions();
   return (
-    <Tooltip content={copied ? "Copied!" : "Copy message"}>
-      <IconButton
-        size="1"
-        variant="ghost"
-        color={copied ? "green" : "gray"}
-        onClick={() => copy(value)}
-        className={cn(
-          "absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity",
-          revealClassName,
-        )}
-        aria-label="Copy message"
-      >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </IconButton>
-    </Tooltip>
+    <ContextMenu>
+      <ContextMenuTrigger className="select-text" render={children} />
+      <ContextMenuContent>
+        <ContextMenuItem
+          onClick={() =>
+            copyFromContextMenu(value, {
+              onSuccess: () => toast.success("Copied"),
+              onError: () => toast.error("Couldn't copy"),
+            })
+          }
+        >
+          <Copy size={14} />
+          Copy message
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => setShowRawLogs(!showRawLogs)}>
+          <Scroll size={14} />
+          {showRawLogs ? "Back to conversation" : "Show raw logs"}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -487,25 +562,21 @@ const AgentProse = memo(function AgentProse({
   const smoothed = useSmoothedText(text);
 
   return (
-    <ChatMessage align="start" className="group/msg">
-      <ChatMessageContent className="gap-1 pr-9">
-        <ChatBubble variant="ghost">
-          <ChatBubbleContent>
-            {isStreaming ? (
-              <ChatStreamingMarkdown content={smoothed} />
-            ) : (
-              <ChatMarkdown content={text} />
-            )}
-          </ChatBubbleContent>
-        </ChatBubble>
-      </ChatMessageContent>
-      {isStreaming ? null : (
-        <MessageCopyButton
-          value={text}
-          revealClassName="group-hover/msg:opacity-100"
-        />
-      )}
-    </ChatMessage>
+    <MessageContextMenu value={text}>
+      <ChatMessage align="start" className="group/msg">
+        <ChatMessageContent className="gap-1">
+          <ChatBubble variant="ghost">
+            <ChatBubbleContent>
+              {isStreaming ? (
+                <ChatStreamingMarkdown content={smoothed} />
+              ) : (
+                <ChatMarkdown content={text} />
+              )}
+            </ChatBubbleContent>
+          </ChatBubble>
+        </ChatMessageContent>
+      </ChatMessage>
+    </MessageContextMenu>
   );
 });
 
@@ -590,7 +661,14 @@ const ThreadRow = memo(function ThreadRow({
             </div>
           ))}
         </div>
-        <RowTimestamp timestamp={completedTurnTimestamp(item)} />
+        <TurnFooter
+          timestamp={completedTurnTimestamp(item)}
+          copyText={
+            buildTurnCopyText(
+              item.prompt ? [item.prompt, ...item.items] : item.items,
+            ) ?? undefined
+          }
+        />
       </ChatMessageScrollerItem>
     );
   }
@@ -598,7 +676,7 @@ const ThreadRow = memo(function ThreadRow({
     <ChatMessageScrollerItem
       messageId={item.id}
       scrollAnchor={item.type === "user_message"}
-      className="mx-auto w-full px-2.5 py-1 empty:hidden"
+      className="mx-auto w-full py-1 empty:hidden"
       style={{ maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       <ThreadItemBody
@@ -926,7 +1004,10 @@ const FlatRowView = memo(
           keyboardFocused={keyboardFocused}
         />
         {row.turnTimestamp != null && (
-          <RowTimestamp timestamp={row.turnTimestamp} />
+          <TurnFooter
+            timestamp={row.turnTimestamp}
+            copyText={row.turnCopyText}
+          />
         )}
       </ChatMessageScrollerItem>
     );
@@ -959,10 +1040,27 @@ interface SharedChatThreadProps {
   repoPath?: string | null;
   task?: Task;
   taskId?: string;
+  usage?: ContextUsage | null;
+  footerState?: Omit<BuildResult, "items">;
 }
 
 export interface ChatThreadProps extends SharedChatThreadProps {
   events: AgentConversationEvent[];
+}
+
+/** Serves scroll-to-message requests from panes outside this tree (the Activity
+ *  timeline). Sits inside `ChatMessageScrollerProvider` so it can fall back to the
+ *  engine's `scrollToMessage`, which the windowed body's own jump replaces. */
+function ThreadScrollRequestBridge({
+  taskId,
+  jumpToMessage,
+}: {
+  taskId?: string;
+  jumpToMessage?: (id: string) => void;
+}) {
+  const { scrollToMessage } = useChatMessageScroller();
+  useThreadScrollRequest(taskId, jumpToMessage ?? scrollToMessage);
+  return null;
 }
 
 export interface AcpChatThreadProps extends SharedChatThreadProps {
@@ -970,7 +1068,10 @@ export interface AcpChatThreadProps extends SharedChatThreadProps {
 }
 
 export function ChatThread({ events, ...props }: ChatThreadProps) {
-  const { items } = useAgentConversationItems(events, props.isPromptPending);
+  const { items, ...footerState } = useAgentConversationItems(
+    events,
+    props.isPromptPending,
+  );
 
   return (
     <ChatThreadRenderer
@@ -978,6 +1079,7 @@ export function ChatThread({ events, ...props }: ChatThreadProps) {
       {...props}
       conversationItems={items}
       footerEvents={[]}
+      footerState={footerState}
     />
   );
 }
@@ -1011,6 +1113,8 @@ function ChatThreadRenderer({
   repoPath,
   task,
   taskId,
+  usage,
+  footerState,
   promptRecallRef,
 }: ChatThreadRendererProps) {
   const diffWorkerFactory = useService<DiffWorkerFactory>(DIFF_WORKER_FACTORY);
@@ -1136,6 +1240,8 @@ function ChatThreadRenderer({
         promptStartedAt={promptStartedAt}
         task={task}
         taskId={taskId}
+        usage={usage}
+        footerState={footerState}
       />
     </>
   );
@@ -1154,15 +1260,21 @@ function ChatThreadRenderer({
   // The nav layer sits beside the scroll body so it can be handed the windowed body's jump
   // implementation — the engine's `scrollToMessage` only reaches mounted rows.
   const renderNav = (jumpToMessage?: (id: string) => void) => (
-    <ThreadKeyboardNav
-      items={items}
-      jumpPickerOpen={jumpPickerOpen}
-      setJumpPickerOpen={setJumpPickerOpen}
-      keyboardFocusedMessageId={keyboardFocusedMessageId}
-      setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
-      promptRecallRef={promptRecallRef}
-      jumpToMessage={jumpToMessage}
-    />
+    <>
+      <ThreadKeyboardNav
+        items={items}
+        jumpPickerOpen={jumpPickerOpen}
+        setJumpPickerOpen={setJumpPickerOpen}
+        keyboardFocusedMessageId={keyboardFocusedMessageId}
+        setKeyboardFocusedMessageId={setKeyboardFocusedMessageId}
+        promptRecallRef={promptRecallRef}
+        jumpToMessage={jumpToMessage}
+      />
+      <ThreadScrollRequestBridge
+        taskId={taskId}
+        jumpToMessage={jumpToMessage}
+      />
+    </>
   );
 
   return (

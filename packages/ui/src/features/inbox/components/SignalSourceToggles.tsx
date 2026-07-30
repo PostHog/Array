@@ -16,7 +16,7 @@ import {
 } from "@posthog/shared";
 import { getSourceProductMeta } from "@posthog/ui/features/inbox/components/utils/source-product-icons";
 import { Badge } from "@posthog/ui/primitives/Badge";
-import { Box, Flex, Spinner, Switch, Text, Tooltip } from "@radix-ui/themes";
+import { Box, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
 import { memo, useCallback } from "react";
 
 export type SignalSourceValues = Record<ToggleableSourceProduct, boolean>;
@@ -210,75 +210,6 @@ const ExternalSourceCard = memo(function ExternalSourceCard({
   );
 });
 
-interface EvaluationsSectionProps {
-  evaluationsUrl: string;
-}
-
-export const EvaluationsSection = memo(function EvaluationsSection({
-  evaluationsUrl,
-}: EvaluationsSectionProps) {
-  return (
-    <Box
-      p="3"
-      onClick={() => window.open(evaluationsUrl, "_blank", "noopener")}
-      className="cursor-pointer rounded-(--radius-3) border border-border bg-(--color-panel-solid) transition duration-150 hover:border-(--gray-6) hover:bg-(--gray-2) hover:shadow-sm"
-    >
-      <Flex align="center" justify="between" gap="4">
-        <Flex align="center" gap="3">
-          <Box className="shrink-0 text-gray-11">
-            <BrainIcon size={20} />
-          </Box>
-          <Flex direction="column" gap="1">
-            <Flex align="center" gap="2">
-              <Text className="font-medium text-gray-12 text-sm">
-                AI observability
-              </Text>
-              <Tooltip content="This is only visible to staff users of PostHog">
-                <Badge color="blue">Internal</Badge>
-              </Tooltip>
-            </Flex>
-            <Text className="text-[13px] text-gray-11">
-              Monitor how your AI features are performing
-            </Text>
-            <Text className="text-[13px] text-gray-11">
-              <a
-                href="https://posthog.com/docs/ai-observability"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  window.open(
-                    "https://posthog.com/docs/ai-observability",
-                    "_blank",
-                    "noopener",
-                  );
-                }}
-                className="inline-flex items-center gap-[4px] text-(--accent-11) no-underline"
-              >
-                Learn about AI observability
-                <ArrowSquareOutIcon size={11} />
-              </a>
-            </Text>
-          </Flex>
-        </Flex>
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(evaluationsUrl, "_blank", "noopener");
-          }}
-        >
-          Open
-          <ArrowSquareOutIcon size={12} />
-        </Button>
-      </Flex>
-    </Box>
-  );
-});
-
 function SourceRunningIndicator({
   status,
   message,
@@ -303,7 +234,6 @@ interface SignalSourceTogglesProps {
   disabled?: boolean;
   sourceStates?: Partial<Record<ToggleableSourceProduct, SourceState>>;
   onSetup?: (source: ToggleableSourceProduct) => void;
-  evaluationsUrl?: string;
 }
 
 export function SignalSourceToggles({
@@ -312,7 +242,6 @@ export function SignalSourceToggles({
   disabled,
   sourceStates,
   onSetup,
-  evaluationsUrl,
 }: SignalSourceTogglesProps) {
   const toggleSessionReplay = useCallback(
     (checked: boolean) => onToggle("session_replay", checked),
@@ -328,6 +257,10 @@ export function SignalSourceToggles({
   );
   const toggleHealthChecks = useCallback(
     (checked: boolean) => onToggle("health_checks", checked),
+    [onToggle],
+  );
+  const toggleLlmAnalytics = useCallback(
+    (checked: boolean) => onToggle("llm_analytics", checked),
     [onToggle],
   );
 
@@ -390,9 +323,16 @@ export function SignalSourceToggles({
               ) : undefined
             }
           />
-          {evaluationsUrl && (
-            <EvaluationsSection evaluationsUrl={evaluationsUrl} />
-          )}
+          <SignalSourceToggleCard
+            icon={<BrainIcon size={20} />}
+            label="AI observability"
+            description="Quality problems in your AI features. Set up evaluations to start getting signals."
+            checked={value.llm_analytics}
+            onCheckedChange={toggleLlmAnalytics}
+            disabled={disabled}
+            docsUrl="https://posthog.com/docs/ai-evals"
+            docsLabel="evaluations"
+          />
         </Flex>
       </Flex>
 

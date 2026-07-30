@@ -1,10 +1,13 @@
+import { getCloudTaskGatewayUrl } from "@posthog/shared";
+
 export type GatewayProduct =
   | "posthog_code"
   | "background_agents"
   | "signals"
   | "slack_app"
   | "posthog_ai"
-  | "conversations";
+  | "conversations"
+  | "onboarding";
 
 export function resolveGatewayProduct({
   isInternal,
@@ -13,17 +16,18 @@ export function resolveGatewayProduct({
   isInternal?: boolean;
   originProduct?: string | null;
 } = {}): GatewayProduct {
-  if (originProduct === "slack") {
-    return "slack_app";
-  }
-  if (originProduct === "posthog_ai") {
-    return "posthog_ai";
-  }
-  if (originProduct === "signal_report" || originProduct === "signals_scout") {
-    return "signals";
-  }
-  if (originProduct === "support_reply") {
-    return "conversations";
+  const originProductToGatewayProductMap: Record<string, GatewayProduct> = {
+    loop: "posthog_code",
+    onboarding: "onboarding",
+    posthog_ai: "posthog_ai",
+    signal_report: "signals",
+    signals_scout: "signals",
+    slack: "slack_app",
+    support_reply: "conversations",
+  };
+
+  if (originProduct && originProduct in originProductToGatewayProductMap) {
+    return originProductToGatewayProductMap[originProduct];
   }
   if (isInternal) {
     return "background_agents";
@@ -39,26 +43,7 @@ export {
 } from "@posthog/shared/posthog-property-headers";
 
 function getGatewayBaseUrl(posthogHost: string): string {
-  const url = new URL(posthogHost);
-  const hostname = url.hostname;
-
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
-    return `${url.protocol}//localhost:3308`;
-  }
-
-  if (hostname === "host.docker.internal") {
-    return `${url.protocol}//host.docker.internal:3308`;
-  }
-
-  // The hosted dev environment runs its own LLM gateway with its own auth DB,
-  // so a dev-minted `pha_` token can't be routed to the US gateway — that's
-  // a different DB and returns 401 Authentication required.
-  if (hostname === "app.dev.posthog.dev") {
-    return "https://gateway.dev.posthog.dev";
-  }
-
-  const region = hostname.match(/^(us|eu)\.posthog\.com$/)?.[1] ?? "us";
-  return `https://gateway.${region}.posthog.com`;
+  return getCloudTaskGatewayUrl(posthogHost).replace(/\/posthog_code$/, "");
 }
 
 export function getLlmGatewayUrl(

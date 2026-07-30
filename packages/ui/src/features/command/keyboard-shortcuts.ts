@@ -194,7 +194,7 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
   {
     id: "toggle-review-panel",
     keys: SHORTCUTS.TOGGLE_REVIEW_PANEL,
-    description: "Toggle review panel",
+    description: "Toggle diff view",
     category: "navigation",
   },
   {

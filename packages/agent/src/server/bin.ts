@@ -1,15 +1,19 @@
 #!/usr/bin/env node
+import { fileURLToPath } from "node:url";
+import { EFFORT_LEVELS } from "@posthog/shared/domain-types";
 import { Command } from "commander";
 import { z } from "zod/v4";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { DEFAULT_POSTHOG_EXEC_PERMISSION_REGEX_SOURCE } from "../posthog-exec-permission";
 import { AgentServer } from "./agent-server";
+import { PiAgentServer } from "./pi-agent-server";
 import {
   claudeCodeConfigSchema,
   mcpServersSchema,
   posthogExecPermissionRegexSchema,
   relayMcpServerNamesSchema,
 } from "./schemas";
+import type { AgentServerConfig } from "./types";
 
 const envSchema = z.object({
   JWT_PUBLIC_KEY: z
@@ -33,13 +37,21 @@ const envSchema = z.object({
     })
     .regex(/^\d+$/, "POSTHOG_PROJECT_ID must be a numeric string")
     .transform((val) => parseInt(val, 10)),
+  POSTHOG_AGENT_RUNTIME: z.enum(["acp", "pi"]).optional(),
+  POSTHOG_SANDBOX_ID: z.string().min(1).optional(),
   POSTHOG_CODE_RUNTIME_ADAPTER: z.enum(["claude", "codex"]).optional(),
   POSTHOG_CODE_MODEL: z.string().optional(),
   POSTHOG_CODE_REASONING_EFFORT: z
-    .enum(["low", "medium", "high", "xhigh", "max"])
+    .enum(["off", "minimal", ...EFFORT_LEVELS])
+    .optional(),
+  POSTHOG_CODE_CONTEXT_WINDOW: z.enum(["200k", "1m"]).optional(),
+  POSTHOG_CODE_FAST_MODE: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
     .optional(),
   POSTHOG_AGENT_STATE_DIR: z.string().startsWith("/").optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN: z.string().min(1).optional(),
+  POSTHOG_TASK_RUN_SESSION_TOKEN: z.string().min(1).optional(),
   // Base URL for the event-ingest POST only; falls back to POSTHOG_API_URL when unset.
   POSTHOG_TASK_RUN_EVENT_INGEST_URL: z.url().optional(),
   POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS: z
@@ -176,6 +188,7 @@ program
     // bodies can't leak it. Defense in depth, not a boundary: same-UID
     // processes can still read the container's initial env via /proc.
     delete process.env.POSTHOG_AGENT_OTEL_LOGS_TOKEN;
+    delete process.env.POSTHOG_TASK_RUN_SESSION_TOKEN;
 
     const mode = options.mode === "background" ? "background" : "interactive";
     const createPr = parseBooleanOption(options.createPr, "--createPr");
@@ -227,11 +240,12 @@ program
       );
     }
 
-    const server = new AgentServer({
+    const serverConfig: AgentServerConfig = {
       port: parseInt(options.port, 10),
       agentStateDir: env.POSTHOG_AGENT_STATE_DIR,
       jwtPublicKey: env.JWT_PUBLIC_KEY,
       eventIngestToken: env.POSTHOG_TASK_RUN_EVENT_INGEST_TOKEN,
+      taskRunSessionToken: env.POSTHOG_TASK_RUN_SESSION_TOKEN,
       eventIngestBaseUrl: env.POSTHOG_TASK_RUN_EVENT_INGEST_URL,
       eventIngestStreamWindowMs:
         env.POSTHOG_TASK_RUN_EVENT_INGEST_STREAM_WINDOW_MS,
@@ -248,6 +262,7 @@ program
       mode,
       taskId: options.taskId,
       runId: options.runId,
+      sandboxId: env.POSTHOG_SANDBOX_ID,
       createPr,
       autoPublish,
       mcpServers,
@@ -256,10 +271,19 @@ program
       baseBranch: options.baseBranch,
       claudeCode,
       allowedDomains,
+      piRpcHostPath: fileURLToPath(
+        new URL("../pi/rpc-host.js", import.meta.url),
+      ),
       runtimeAdapter: env.POSTHOG_CODE_RUNTIME_ADAPTER,
       model: env.POSTHOG_CODE_MODEL,
       reasoningEffort: env.POSTHOG_CODE_REASONING_EFFORT,
-    });
+      contextWindow: env.POSTHOG_CODE_CONTEXT_WINDOW,
+      fastMode: env.POSTHOG_CODE_FAST_MODE,
+    };
+    const server =
+      env.POSTHOG_AGENT_RUNTIME === "pi"
+        ? new PiAgentServer(serverConfig)
+        : new AgentServer(serverConfig);
 
     process.on("SIGINT", async () => {
       await server.stop();

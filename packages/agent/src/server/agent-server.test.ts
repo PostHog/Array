@@ -448,6 +448,58 @@ describe("AgentServer HTTP Mode", () => {
     );
   };
 
+  it("exports safe telemetry when session initialization fails", async () => {
+    const append = vi.fn();
+    const shutdown = vi.fn(async () => {});
+    const testServer = createServer({
+      runtimeAdapter: "codex",
+      model: "gpt-5.2-codex",
+    }) as unknown as {
+      initializingTelemetry: {
+        append: typeof append;
+        shutdown: typeof shutdown;
+      };
+      _doInitializeSession(
+        payload: JwtPayload,
+        controller: null,
+      ): Promise<void>;
+      initializeSession(payload: JwtPayload, controller: null): Promise<void>;
+    };
+    testServer._doInitializeSession = vi.fn(async () => {
+      testServer.initializingTelemetry = { append, shutdown };
+      throw new Error("SECRET provider response");
+    });
+    const payload = {
+      task_id: "test-task-id",
+      run_id: "test-run-id",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "test-distinct-id",
+      mode: "interactive" as const,
+    };
+
+    await expect(testServer.initializeSession(payload, null)).rejects.toThrow(
+      "SECRET provider response",
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      "test-run-id",
+      expect.objectContaining({
+        notification: expect.objectContaining({
+          method: POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED,
+          params: expect.objectContaining({
+            runtimeAdapter: "codex",
+            initializationPhase: "session_setup",
+            requestedModel: "gpt-5.2-codex",
+            errorType: "error",
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(append.mock.calls)).not.toContain("SECRET");
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
   it("replays ACP notifications emitted before cloud session assignment", () => {
     const testServer = createServer() as unknown as {
       session: { sseController: null } | null;
@@ -2640,6 +2692,59 @@ describe("AgentServer HTTP Mode", () => {
       expect(resetTurnMessages).not.toHaveBeenCalled();
     }, 20000);
 
+    it("does not queue steering behind an active non-steering turn", async () => {
+      const s = createServer();
+      await s.start();
+      let finishTurn!: (result: { stopReason: "end_turn" }) => void;
+      const prompt = vi.fn((params: { _meta?: { steer?: boolean } }) =>
+        params._meta?.steer === true
+          ? Promise.resolve({
+              stopReason: "end_turn" as const,
+              _meta: { steer: true },
+            })
+          : new Promise<{ stopReason: "end_turn" }>((resolve) => {
+              finishTurn = resolve;
+            }),
+      );
+      const serverInternals = s as unknown as {
+        session: { clientConnection: { prompt: typeof prompt } };
+      };
+      serverInternals.session.clientConnection.prompt = prompt;
+
+      const token = createToken();
+      const send = (id: string, steer = false) =>
+        fetch(`http://localhost:${port}/command`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            method: "user_message",
+            params: { content: id, messageId: id, ...(steer && { steer }) },
+          }),
+        });
+
+      const activeTurn = send("normal-turn");
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
+
+      const steerResponse = await send("steer-turn", true);
+      await expect(steerResponse.json()).resolves.toMatchObject({
+        result: { stopReason: "steered", steered: true },
+      });
+      expect(prompt).toHaveBeenCalledTimes(2);
+      expect(prompt.mock.calls[1]?.[0]).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({ steer: true }),
+        }),
+      );
+
+      finishTurn({ stopReason: "end_turn" });
+      await activeTurn;
+    }, 20000);
+
     it("declines steering without blocking on a fallback normal turn", async () => {
       const s = createServer();
       await s.start();
@@ -2951,18 +3056,21 @@ describe("AgentServer HTTP Mode", () => {
       );
       const { relaySpy, send } = await setupRelayEchoServer(prompt);
 
-      // The second message lands while the first turn is still in flight;
-      // each relay carries its own sender's id, not the first turn's.
+      // The second non-steering message lands while the first turn is still in
+      // flight. It waits for exclusive turn ownership, and each relay carries
+      // its own sender's id.
       const first = send("m-first");
       await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(1));
       const second = send("m-second");
-      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(prompt).toHaveBeenCalledTimes(1);
 
       pendingTurns[0]({ stopReason: "end_turn" });
       await first;
       await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(1));
       expect(relaySpy.mock.calls[0][4]).toBe("m-first");
 
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2));
       pendingTurns[1]({ stopReason: "end_turn" });
       await second;
       await vi.waitFor(() => expect(relaySpy).toHaveBeenCalledTimes(2));
@@ -3955,6 +4063,13 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh issue list --state open --search");
       expect(prompt).toContain("Closes #<n>");
       expect(prompt).toContain("Refs #<n>");
+      // Guard against turning a Slack name/handle into a GitHub @mention and
+      // tagging an unrelated account.
+      expect(prompt).toContain("Never guess a GitHub identity");
+      expect(prompt).toContain(
+        "A Slack display name or handle is NOT a GitHub username",
+      );
+      expect(prompt).toContain("These `<@U…>` tokens are Slack-only");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 

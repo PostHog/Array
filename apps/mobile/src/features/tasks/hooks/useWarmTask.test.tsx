@@ -8,8 +8,10 @@ const flagState = vi.hoisted(() => ({ enabled: true as boolean }));
 vi.mock("posthog-react-native", () => ({
   useFeatureFlag: () => flagState.enabled,
 }));
-vi.mock("@/features/tasks/api", () => ({
-  warmTask: mockWarmTask,
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: vi.fn(() => ({
+    warmTask: mockWarmTask,
+  })),
 }));
 vi.mock("@/lib/logger", () => {
   const mockLogger = {
@@ -32,6 +34,8 @@ interface Props {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  contextWindow?: "200k" | "1m" | null;
+  fastMode?: boolean | null;
   sandboxEnvironmentId?: string | null;
   customImageId?: string | null;
 }
@@ -199,6 +203,29 @@ describe("useWarmTask", () => {
       expect(mockWarmTask).toHaveBeenCalledTimes(2);
     },
   );
+
+  it("forwards context window and fast mode", async () => {
+    render({
+      ...composing,
+      runtimeAdapter: "claude",
+      model: "claude-opus-4-8",
+      reasoningEffort: "high",
+      contextWindow: "200k",
+      fastMode: true,
+    });
+    await flushDebounce();
+
+    expect(mockWarmTask).toHaveBeenCalledWith({
+      repository: "acme/repo",
+      github_integration: 42,
+      branch: "main",
+      runtime_adapter: "claude",
+      model: "claude-opus-4-8",
+      reasoning_effort: "high",
+      context_window: "200k",
+      fast_mode: true,
+    });
+  });
 
   it("forwards the sandbox environment and custom image", async () => {
     render({

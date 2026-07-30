@@ -28,6 +28,7 @@ interface FsEntry extends FsEntryBase {
   // The backend's creator user (standard PostHog UserBasic shape). Absent on
   // rows the API returns without an expanded creator.
   created_by?: {
+    uuid: string;
     first_name?: string | null;
     last_name?: string | null;
     email?: string | null;
@@ -88,6 +89,7 @@ export class DashboardsService {
           name,
           templateId,
           createdBy,
+          createdByUuid,
           updatedAt,
           code,
           generationTaskId,
@@ -98,6 +100,7 @@ export class DashboardsService {
           name,
           templateId,
           createdBy,
+          createdByUuid,
           updatedAt,
           code,
           generationTaskId,
@@ -793,6 +796,7 @@ function toRecord(entry: FsEntry): DashboardRecord {
     generationTaskId: meta.generationTaskId,
     // Prefer our stamped meta; fall back to the FS row's creator if present.
     createdBy: meta.createdBy ?? creatorName(entry.created_by),
+    createdByUuid: entry.created_by?.uuid,
     createdAt,
     updatedAt: meta.updatedAt ?? createdAt,
     pinnedAt: meta.pinnedAt,

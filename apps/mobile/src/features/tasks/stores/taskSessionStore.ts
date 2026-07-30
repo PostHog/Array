@@ -1,35 +1,38 @@
+import { resolveCloudResumeOptions } from "@posthog/core/sessions/cloudRunOptions";
+import { convertStoredEntriesToPortableSessionEvents } from "@posthog/core/sessions/portableSessionEvents";
+import {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type StoredLogEntry,
+  serializeCloudPrompt,
+  type Task,
+} from "@posthog/shared";
 import * as Haptics from "expo-haptics";
 import { AppState } from "react-native";
 import { create } from "zustand";
 import { presentLocalNotification } from "@/features/notifications/lib/notifications";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import {
   CloudCommandError,
   cancelRun,
-  getTask,
   runTaskInCloud,
   sendCloudCommand,
 } from "../api";
 import { buildCloudPromptBlocks } from "../composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "../composer/attachments/cloudPrompt";
 import type { PendingAttachment } from "../composer/attachments/types";
 import {
   type WatchCloudTaskHandle,
   watchCloudTask,
 } from "../lib/cloudTaskStream";
-import {
-  type CloudPendingPermissionRequest,
-  type CloudTaskUpdatePayload,
-  isTerminalStatus,
-  type SessionEvent,
-  type SessionNotification,
-  type SessionNotificationAttachment,
-  type StoredLogEntry,
-  type Task,
-  type TerminalStatus,
+import type {
+  CloudPendingPermissionRequest,
+  SessionEvent,
+  SessionNotification,
+  SessionNotificationAttachment,
+  TerminalStatus,
 } from "../types";
-import { convertStoredEntriesToEvents } from "../utils/parseSessionLogs";
 import { playbackRateForTaskDuration } from "../utils/playbackRate";
 import { reinjectPromptAttachments } from "../utils/promptAttachments";
 import { playCompletionSound } from "../utils/sounds";
@@ -989,7 +992,8 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
         ? update.newEntries
         : dedupAgainstLocalEchoes(update.newEntries, echoSet);
 
-      const events = convertStoredEntriesToEvents(dedupedEntries);
+      const events =
+        convertStoredEntriesToPortableSessionEvents(dedupedEntries);
       // Snapshots are S3-backed and replay user turns as text-only chunks;
       // reattach the images from the `session/prompt` entries in the same log.
       if (isSnapshot) {
@@ -1178,27 +1182,25 @@ export const useTaskSessionStore = create<TaskSessionStore>((set, get) => ({
     previousRunId: string,
     prompt: string,
   ) => {
-    const freshTask = await getTask(taskId);
+    const freshTask = await getPostHogApiClient().getTask(taskId);
     const previousRun = freshTask.latest_run;
     const previousBranch = previousRun?.branch ?? null;
 
     const composerConfig =
       useTaskStore.getState().composerConfigByTaskId[taskId];
-    const previousPermissionMode = previousRun?.state?.initial_permission_mode;
-    const reasoningEffort =
-      composerConfig?.reasoning ?? previousRun?.reasoning_effort ?? undefined;
-    const initialPermissionMode =
-      composerConfig?.mode ??
-      (typeof previousPermissionMode === "string"
-        ? previousPermissionMode
-        : undefined);
+    const runtimeOptions = resolveCloudResumeOptions(
+      composerConfig,
+      previousRun,
+    );
 
     const updatedTask = await runTaskInCloud(taskId, {
       branch: previousBranch,
+      runtimeAdapter: runtimeOptions.adapter,
+      model: runtimeOptions.model,
       resumeFromRunId: previousRunId,
       pendingUserMessage: prompt,
-      reasoningEffort,
-      initialPermissionMode,
+      reasoningEffort: runtimeOptions.reasoningLevel,
+      initialPermissionMode: runtimeOptions.initialPermissionMode,
       rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
     });
 

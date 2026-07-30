@@ -1,10 +1,12 @@
-import { CODEX_MODE_PRESETS } from "@posthog/shared";
+import { CODEX_MODE_PRESETS, type ExecutionMode } from "@posthog/shared";
 
 export interface ModeInfo {
   id: string;
   name: string;
   description: string;
 }
+
+export const DEFAULT_CLAUDE_EXECUTION_MODE: ExecutionMode = "plan";
 
 const availableModes: ModeInfo[] = [
   {
@@ -43,4 +45,16 @@ export function getAvailableModes(): ModeInfo[] {
 // including full-access; the agent package applies its own bypass gating.
 export function getAvailableCodexModes(): ModeInfo[] {
   return [...CODEX_MODE_PRESETS];
+}
+
+export function getAvailableModesForAdapter(
+  adapter: "claude" | "codex",
+): ModeInfo[] {
+  return adapter === "codex" ? getAvailableCodexModes() : getAvailableModes();
+}
+
+export function getDefaultExecutionModeForAdapter(
+  adapter: "claude" | "codex",
+): ExecutionMode {
+  return adapter === "codex" ? "auto" : DEFAULT_CLAUDE_EXECUTION_MODE;
 }

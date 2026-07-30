@@ -79,6 +79,8 @@ export const startSessionInput = z.object({
   disallowedTools: z.array(z.string()).optional(),
   settingSources: z.array(z.enum(["user", "project", "local"])).optional(),
   effort: effortLevelSchema.optional(),
+  contextWindow: z.enum(["200k", "1m"]).optional(),
+  fastMode: z.boolean().optional(),
   model: z.string().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
   /**
@@ -103,14 +105,17 @@ export const startSessionInput = z.object({
 
 export type StartSessionInput = z.infer<typeof startSessionInput>;
 
-export const modelOptionSchema = z.object({
-  modelId: z.string(),
+export const piModelCatalogEntrySchema = z.object({
+  provider: z.literal("posthog"),
+  id: z.string(),
   name: z.string(),
-  description: z.string().nullish(),
-  provider: z.string().optional(),
+  contextWindow: z.number(),
+  thinkingLevels: z.array(
+    z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
+  ),
 });
 
-export type ModelOption = z.infer<typeof modelOptionSchema>;
+export type PiModelCatalogEntry = z.infer<typeof piModelCatalogEntrySchema>;
 
 const sessionConfigSelectOptionSchema = z.looseObject({
   value: z.string(),
@@ -229,6 +234,8 @@ export const reconnectSessionInput = z.object({
   model: z.string().optional(),
   customInstructions: customInstructionsField,
   effort: effortLevelSchema.optional(),
+  contextWindow: z.enum(["200k", "1m"]).optional(),
+  fastMode: z.boolean().optional(),
   jsonSchema: z.record(z.string(), z.unknown()).nullish(),
   /** See startSessionInput.rtkEnabled. */
   rtkEnabled: z.boolean().optional(),
@@ -356,11 +363,12 @@ export const sessionInfoSchema = z.object({
 
 export const listSessionsOutput = z.array(sessionInfoSchema);
 
-export const getGatewayModelsInput = z.object({
+export const getPiModelCatalogInput = z.object({
   apiHost: z.string(),
+  region: z.enum(["us", "eu", "dev"]),
 });
 
-export const getGatewayModelsOutput = z.array(modelOptionSchema);
+export const getPiModelCatalogOutput = z.array(piModelCatalogEntrySchema);
 
 export const getPreviewConfigOptionsInput = z.object({
   apiHost: z.string(),

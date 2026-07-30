@@ -1,4 +1,5 @@
 import { CaretDown, CaretRight, CheckCircle } from "@phosphor-icons/react";
+import { extractPlanText } from "@posthog/core/sessions/planApprovalPresentation";
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
 import { PlanContent } from "../../../permissions/PlanContent";
@@ -32,20 +33,10 @@ export function PlanApprovalView({
     | undefined;
   const isHistoricalPlan = rawInput?.historical === true;
 
-  const planText = useMemo(() => {
-    if (content?.length) {
-      const textContent = content.find((c) => c.type === "content");
-      if (textContent && "content" in textContent) {
-        const inner = textContent.content as
-          | { type?: string; text?: string }
-          | undefined;
-        if (inner?.type === "text" && inner.text) {
-          return inner.text;
-        }
-      }
-    }
-    return rawInput?.plan ?? null;
-  }, [content, rawInput?.plan]);
+  const planText = useMemo(
+    () => extractPlanText({ rawInput, content }),
+    [content, rawInput],
+  );
 
   const wasNotApproved = isFailed || wasCancelled;
   const showResult = isHistoricalPlan || isComplete || wasNotApproved;

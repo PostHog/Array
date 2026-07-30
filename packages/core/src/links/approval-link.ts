@@ -7,7 +7,7 @@ import {
   type IMainWindow,
   MAIN_WINDOW_SERVICE,
 } from "@posthog/platform/main-window";
-import { TypedEventEmitter } from "@posthog/shared";
+import { isValidAgentSlug, TypedEventEmitter } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import type { LinkLogger } from "./identifiers";
 
@@ -72,10 +72,15 @@ export class ApprovalLinkService extends TypedEventEmitter<ApprovalLinkEvents> {
       return false;
     }
 
-    const payload: ApprovalLinkPayload = {
-      requestId,
-      agent: searchParams.get("agent") || null,
-    };
+    const rawAgent = searchParams.get("agent");
+    const agent = isValidAgentSlug(rawAgent) ? rawAgent : null;
+    if (rawAgent && !agent) {
+      this.log.warn(
+        "Approval link carried a malformed agent slug; ignoring it",
+      );
+    }
+
+    const payload: ApprovalLinkPayload = { requestId, agent };
 
     const hasListeners = this.listenerCount(ApprovalLinkEvent.OpenApproval) > 0;
 

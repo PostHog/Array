@@ -30,6 +30,10 @@ import { taskThreadCoreModule } from "@posthog/core/canvas/taskThread.module";
 import type { CloudTaskService } from "@posthog/core/cloud-task/cloud-task";
 import { cloudTaskModule } from "@posthog/core/cloud-task/cloud-task.module";
 import {
+  CLOUD_TASK_CLIENT,
+  type CloudTaskClient,
+} from "@posthog/core/cloud-task/cloudTaskClient";
+import {
   CLOUD_TASK_AUTH,
   CLOUD_TASK_SERVICE,
   type ICloudTaskAuth,
@@ -86,10 +90,14 @@ import {
   type GithubConnectClient as OnboardingGithubConnectContract,
 } from "@posthog/core/onboarding/identifiers";
 import { onboardingModule } from "@posthog/core/onboarding/onboarding.module";
+import { PI_RUNNER } from "@posthog/core/pi-runtime/identifiers";
 import { piRuntimeModule } from "@posthog/core/pi-runtime/pi-runtime.module";
+import type { PiRunner } from "@posthog/core/pi-runtime/piRunner";
 import {
-  PI_SESSION_CLIENT,
-  type PiSessionClient,
+  LOCAL_PI_SESSION_FACTORY,
+  PI_SESSION_PROVIDER,
+  type PiSessionFactory,
+  type PiSessionProvider,
 } from "@posthog/core/pi-runtime/piSessionController";
 import {
   type BundleLocalSkill,
@@ -117,7 +125,9 @@ import {
 import { sessionsModule } from "@posthog/core/sessions/sessions.module";
 import {
   type FileReadClient,
+  type GithubPrTitleClient,
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
   TITLE_GENERATOR_SERVICE,
   type TitleGeneratorLogger,
@@ -161,7 +171,9 @@ import {
   HOST_TRPC_CLIENT,
   type HostTrpcClient,
 } from "@posthog/host-router/client";
-import { TrpcPiSessionClient } from "@posthog/host-router/pi-session-client";
+import { TrpcCloudTaskClient } from "@posthog/host-router/cloud-task-client";
+import { TrpcPiRunner } from "@posthog/host-router/pi-runner";
+import { TrpcPiSessionFactory } from "@posthog/host-router/pi-session-factory";
 import {
   ANALYTICS_SERVICE,
   type IAnalytics,
@@ -299,6 +311,7 @@ import { WebOAuthFlowService } from "./web-oauth-flow";
 import { webDiffWorkerFactory, webReviewHost } from "./web-review-host";
 import {
   webBundleLocalSkill,
+  webGithubPrTitleClient,
   webReadFileAsBase64,
   webResolveSkillBundleDependencies,
   webTitleGeneratorFileReadClient,
@@ -314,7 +327,10 @@ import { hostTrpcClient } from "./web-trpc";
 
 interface WebBindings {
   [HOST_TRPC_CLIENT]: HostTrpcClient;
-  [PI_SESSION_CLIENT]: PiSessionClient;
+  [PI_SESSION_PROVIDER]: PiSessionProvider;
+  [LOCAL_PI_SESSION_FACTORY]: PiSessionFactory;
+  [CLOUD_TASK_CLIENT]: CloudTaskClient;
+  [PI_RUNNER]: PiRunner;
   [ROOT_LOGGER]: RootLogger;
   [HOST_LOGGER]: HostLogger;
   [FEATURE_FLAGS]: FeatureFlags;
@@ -367,6 +383,7 @@ interface WebBindings {
   [CLOUD_ARTIFACT_RESOLVE_SKILL_DEPENDENCIES]: ResolveSkillBundleDependencies;
   [TITLE_GENERATOR_SERVICE]: TitleGeneratorService;
   [TITLE_GENERATOR_FILE_READ_CLIENT]: FileReadClient;
+  [TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT]: GithubPrTitleClient;
   [TITLE_GENERATOR_LOGGER]: TitleGeneratorLogger;
   [LLM_GATEWAY_SERVICE]: LlmGatewayService;
   [LLM_GATEWAY_HOST]: LlmGatewayHost;
@@ -395,7 +412,9 @@ export const container = new TypedContainer<WebBindings>({
 // Keystone: the same typed host client the renderer binds — served in-process
 // here (web-trpc.ts) instead of over Electron IPC.
 container.bind(HOST_TRPC_CLIENT).toConstantValue(hostTrpcClient);
-container.bind(PI_SESSION_CLIENT).to(TrpcPiSessionClient);
+container.bind(LOCAL_PI_SESSION_FACTORY).to(TrpcPiSessionFactory);
+container.bind(CLOUD_TASK_CLIENT).to(TrpcCloudTaskClient);
+container.bind(PI_RUNNER).to(TrpcPiRunner);
 container.load(piRuntimeModule);
 
 // Logger: web uses console; electron uses electron-log. Same RootLogger shape.
@@ -709,6 +728,9 @@ container
 container
   .bind(TITLE_GENERATOR_FILE_READ_CLIENT)
   .toConstantValue(webTitleGeneratorFileReadClient);
+container
+  .bind(TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT)
+  .toConstantValue(webGithubPrTitleClient);
 container
   .bind(TITLE_GENERATOR_LOGGER)
   .toConstantValue(webTitleGeneratorLogger(scoped()));
