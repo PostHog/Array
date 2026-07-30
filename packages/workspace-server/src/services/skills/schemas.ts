@@ -139,7 +139,15 @@ export const resolveSkillDependenciesInput = z.array(bundleLocalSkillInput);
 export const resolveSkillDependenciesOutput = z.array(bundleLocalSkillInput);
 
 export const renderAlwaysOnSkillsInput = z.array(bundleLocalSkillInput);
-export const renderAlwaysOnSkillsOutput = z.string();
+export const renderAlwaysOnSkillsOutput = z.object({
+  instructions: z.string().optional(),
+  failures: z.array(
+    z.object({
+      skill: bundleLocalSkillInput,
+      error: z.string(),
+    }),
+  ),
+});
 
 export type BundleLocalSkillInput = z.infer<typeof bundleLocalSkillInput>;
 export type BundleLocalSkillOutput = z.infer<typeof bundleLocalSkillOutput>;

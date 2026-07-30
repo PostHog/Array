@@ -356,6 +356,14 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
+  getPersistedAlwaysOnSkillInstructions?: (
+    taskRunId: string,
+  ) => string | undefined;
+  setPersistedAlwaysOnSkillInstructions?: (
+    taskRunId: string,
+    instructions: string,
+  ) => void;
+  removePersistedAlwaysOnSkillInstructions?: (taskRunId: string) => void;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -1969,6 +1977,10 @@ export class SessionService {
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
 
     const previous = this.d.store.getSessions()[taskRunId];
+    const resolvedAlwaysOnSkillInstructions =
+      alwaysOnSkillInstructions ??
+      previous?.alwaysOnSkillInstructions ??
+      this.d.getPersistedAlwaysOnSkillInstructions?.(taskRunId);
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
     // Repainting from the log must not blank a transcript we already hold:
@@ -2066,7 +2078,7 @@ export class SessionService {
         this.d.settings;
       const effectiveCustomInstructions = [
         customInstructions,
-        alwaysOnSkillInstructions ?? previous?.alwaysOnSkillInstructions,
+        resolvedAlwaysOnSkillInstructions,
       ]
         .filter((value): value is string => Boolean(value))
         .join("\n\n");
@@ -2090,8 +2102,7 @@ export class SessionService {
       });
 
       if (result) {
-        session.alwaysOnSkillInstructions =
-          alwaysOnSkillInstructions ?? previous?.alwaysOnSkillInstructions;
+        session.alwaysOnSkillInstructions = resolvedAlwaysOnSkillInstructions;
         const liveConfigOptions = result.configOptions as
           | SessionConfigOption[]
           | undefined;
@@ -2216,6 +2227,7 @@ export class SessionService {
       // permanent disconnect (archive, delete, fresh session) may drop them.
       this.d.adapterStore.removeAdapter(taskRunId);
       this.d.removePersistedConfigOptions(taskRunId);
+      this.d.removePersistedAlwaysOnSkillInstructions?.(taskRunId);
     }
   }
 
@@ -2460,6 +2472,12 @@ export class SessionService {
     session.contextWindow = contextWindow;
     session.fastMode = fastMode;
     session.alwaysOnSkillInstructions = alwaysOnSkillInstructions;
+    if (alwaysOnSkillInstructions) {
+      this.d.setPersistedAlwaysOnSkillInstructions?.(
+        taskRun.id,
+        alwaysOnSkillInstructions,
+      );
+    }
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.

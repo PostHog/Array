@@ -4,8 +4,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 interface SessionConfigState {
-  /** Map of taskRunId -> persisted config options */
   configsByRunId: Record<string, SessionConfigOption[]>;
+  alwaysOnSkillInstructionsByRunId: Record<string, string>;
 }
 
 interface SessionConfigActions {
@@ -15,6 +15,12 @@ interface SessionConfigActions {
   getConfigOptions: (taskRunId: string) => SessionConfigOption[] | undefined;
   /** Remove config options for a task run */
   removeConfigOptions: (taskRunId: string) => void;
+  setAlwaysOnSkillInstructions: (
+    taskRunId: string,
+    instructions: string,
+  ) => void;
+  getAlwaysOnSkillInstructions: (taskRunId: string) => string | undefined;
+  removeAlwaysOnSkillInstructions: (taskRunId: string) => void;
 }
 
 type SessionConfigStore = SessionConfigState & SessionConfigActions;
@@ -23,6 +29,7 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
   persist(
     (set, get) => ({
       configsByRunId: {},
+      alwaysOnSkillInstructionsByRunId: {},
 
       setConfigOptions: (taskRunId, options) =>
         set((state) => ({
@@ -36,11 +43,30 @@ export const useSessionConfigStore = create<SessionConfigStore>()(
           const { [taskRunId]: _removed, ...rest } = state.configsByRunId;
           return { configsByRunId: rest };
         }),
+      setAlwaysOnSkillInstructions: (taskRunId, instructions) =>
+        set((state) => ({
+          alwaysOnSkillInstructionsByRunId: {
+            ...state.alwaysOnSkillInstructionsByRunId,
+            [taskRunId]: instructions,
+          },
+        })),
+      getAlwaysOnSkillInstructions: (taskRunId) =>
+        get().alwaysOnSkillInstructionsByRunId[taskRunId],
+      removeAlwaysOnSkillInstructions: (taskRunId) =>
+        set((state) => {
+          const { [taskRunId]: _removed, ...rest } =
+            state.alwaysOnSkillInstructionsByRunId;
+          return { alwaysOnSkillInstructionsByRunId: rest };
+        }),
     }),
     {
       name: "session-config-storage",
       storage: electronStorage,
-      partialize: (state) => ({ configsByRunId: state.configsByRunId }),
+      partialize: (state) => ({
+        configsByRunId: state.configsByRunId,
+        alwaysOnSkillInstructionsByRunId:
+          state.alwaysOnSkillInstructionsByRunId,
+      }),
     },
   ),
 );
@@ -63,4 +89,27 @@ export function setPersistedConfigOptions(
 /** Non-hook accessor for removing persisted config options */
 export function removePersistedConfigOptions(taskRunId: string): void {
   useSessionConfigStore.getState().removeConfigOptions(taskRunId);
+}
+
+export function getPersistedAlwaysOnSkillInstructions(
+  taskRunId: string,
+): string | undefined {
+  return useSessionConfigStore
+    .getState()
+    .getAlwaysOnSkillInstructions(taskRunId);
+}
+
+export function setPersistedAlwaysOnSkillInstructions(
+  taskRunId: string,
+  instructions: string,
+): void {
+  useSessionConfigStore
+    .getState()
+    .setAlwaysOnSkillInstructions(taskRunId, instructions);
+}
+
+export function removePersistedAlwaysOnSkillInstructions(
+  taskRunId: string,
+): void {
+  useSessionConfigStore.getState().removeAlwaysOnSkillInstructions(taskRunId);
 }

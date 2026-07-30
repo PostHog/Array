@@ -329,30 +329,36 @@ export function useTaskCreation({
       let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills;
       let alwaysOnSkillInstructions: string | undefined;
       while (alwaysOnSkills.length > 0) {
-        try {
-          alwaysOnSkillInstructions =
-            await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
+        const rendered =
+          await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
+        alwaysOnSkillInstructions = rendered.instructions;
+        if (rendered.failures.length === 0) {
           break;
-        } catch (error) {
-          const action = await useAlwaysOnSkillsFailureStore
-            .getState()
-            .confirm(
-              error instanceof Error ? error.message : String(error),
-              alwaysOnSkills,
-            );
-          if (action === "retry") continue;
-          if (action === "cancel") {
-            setIsCreatingTask(false);
-            return false;
-          }
-          if (action === "disable") {
-            for (const skill of alwaysOnSkills) {
-              useSettingsStore.getState().setSkillAlwaysOn(skill, false);
-            }
-          }
-          alwaysOnSkills = [];
-          alwaysOnSkillInstructions = undefined;
         }
+        const failedSkills = rendered.failures.map(({ skill }) => skill);
+        const action = await useAlwaysOnSkillsFailureStore
+          .getState()
+          .confirm(
+            rendered.failures.map(({ error }) => error).join("\n"),
+            failedSkills,
+          );
+        if (action === "retry") continue;
+        if (action === "cancel") {
+          setIsCreatingTask(false);
+          return false;
+        }
+        if (action === "disable") {
+          for (const skill of failedSkills) {
+            useSettingsStore.getState().setSkillAlwaysOn(skill, false);
+          }
+        }
+        const failedKeys = new Set(
+          failedSkills.map((skill) => `${skill.source}:${skill.path}`),
+        );
+        alwaysOnSkills = alwaysOnSkills.filter(
+          (skill) => !failedKeys.has(`${skill.source}:${skill.path}`),
+        );
+        break;
       }
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;

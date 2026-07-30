@@ -509,10 +509,11 @@ export class SkillsService {
     });
   }
 
-  async renderAlwaysOnSkillInstructions(
-    refs: SkillBundleRef[],
-  ): Promise<string> {
-    const blocks = await Promise.all(
+  async renderAlwaysOnSkillInstructions(refs: SkillBundleRef[]): Promise<{
+    instructions?: string;
+    failures: { skill: SkillBundleRef; error: string }[];
+  }> {
+    const results = await Promise.all(
       [...refs]
         .sort((left, right) =>
           `${left.source}:${left.name}`.localeCompare(
@@ -520,15 +521,37 @@ export class SkillsService {
           ),
         )
         .map(async (ref) => {
-          const skillDir = await this.resolveKnownSkillDir(ref.path);
-          const manifest = await fs.promises.readFile(
-            path.join(skillDir, "SKILL.md"),
-            "utf-8",
-          );
-          return `## ${ref.name}\n\nInstalled at: ${skillDir}\n\n${stripFrontmatter(manifest).trim()}`;
+          try {
+            const skillDir = await this.resolveKnownSkillDir(ref.path);
+            const manifest = await fs.promises.readFile(
+              path.join(skillDir, "SKILL.md"),
+              "utf-8",
+            );
+            return {
+              block: `## ${ref.name}\n\nInstalled at: ${skillDir}\n\n${stripFrontmatter(manifest).trim()}`,
+            };
+          } catch (error) {
+            return {
+              failure: {
+                skill: ref,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            };
+          }
         }),
     );
-    return `Always-on skills apply for the entire session. Follow every skill below in the listed order. Supporting files are available at each installed path. Do not execute scripts unless the task requires them.\n\n${blocks.join("\n\n---\n\n")}`;
+    const blocks = results.flatMap((result) =>
+      result.block ? [result.block] : [],
+    );
+    return {
+      instructions:
+        blocks.length > 0
+          ? `Always-on skills apply for the entire session. Follow every skill below in the listed order. Supporting files are available at each installed path. Do not execute scripts unless the task requires them.\n\n${blocks.join("\n\n---\n\n")}`
+          : undefined,
+      failures: results.flatMap((result) =>
+        result.failure ? [result.failure] : [],
+      ),
+    };
   }
 
   /**
