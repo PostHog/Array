@@ -184,12 +184,12 @@ describe("loopReasoningEffortOptions", () => {
     {
       adapter: "claude",
       model: "",
-      expectedValues: ["low", "medium", "high", "xhigh", "max"],
+      expectedValues: ["low", "medium", "high", "xhigh", "max", "ultracode"],
     },
     {
       adapter: "claude",
       model: "claude-sonnet-5",
-      expectedValues: ["low", "medium", "high", "xhigh", "max"],
+      expectedValues: ["low", "medium", "high", "xhigh", "max", "ultracode"],
     },
     {
       adapter: "claude",
@@ -218,6 +218,27 @@ describe("loopReasoningEffortOptions", () => {
       ).toEqual(expectedValues);
     },
   );
+
+  it("forwards isDefault and docsUrl from the underlying option meta", () => {
+    const options = loopReasoningEffortOptions("claude", "claude-sonnet-5");
+
+    const highOption = options.find((option) => option.value === "high");
+    expect(highOption?.isDefault).toBe(true);
+
+    for (const option of options.filter((option) => option.value !== "high")) {
+      expect(option.isDefault).toBeFalsy();
+    }
+
+    const ultracodeOption = options.find(
+      (option) => option.value === "ultracode",
+    );
+    expect(ultracodeOption?.docsUrl).toBe(
+      "https://code.claude.com/docs/en/workflows",
+    );
+
+    const lowOption = options.find((option) => option.value === "low");
+    expect(lowOption?.docsUrl).toBeUndefined();
+  });
 });
 
 describe("clampLoopReasoningEffort", () => {

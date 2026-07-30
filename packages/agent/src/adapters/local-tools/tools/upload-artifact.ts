@@ -11,7 +11,8 @@ export const uploadArtifactTool = defineLocalTool({
   description:
     "Deliver a file you created to the user as a downloadable task artifact. " +
     "Call this for every non-code deliverable (reports, images, archives, data files, and similar output) " +
-    "before your final response. The file must be inside the session workspace. Repository changes belong in git and should not be uploaded.",
+    "before your final response. The file must be inside the session workspace. Repository changes belong in git and should not be uploaded. " +
+    "On success the result includes a download URL for the uploaded file, which you can reference in your final response.",
   schema: {
     path: z
       .string()
@@ -115,19 +116,25 @@ export const uploadArtifactTool = defineLocalTool({
           },
         ],
       );
-      if (
-        !finalized.some(
-          (artifact) => artifact.storage_path === upload.storage_path,
-        )
-      ) {
+      const finalizedEntry = finalized.find(
+        (artifact) => artifact.storage_path === upload.storage_path,
+      );
+      if (!finalizedEntry) {
         return errorResult("PostHog did not confirm the artifact upload.");
       }
+
+      // The finalize endpoint returns a presigned download URL on each artifact.
+      // Read it defensively: the field rides in on TaskRunArtifact once the
+      // api-client is regenerated against the updated OpenAPI spec, and older
+      // backends simply omit it.
+      const downloadUrl = (finalizedEntry as { url?: string }).url;
+      const linkText = downloadUrl ? ` Download URL: ${downloadUrl}` : "";
 
       return {
         content: [
           {
             type: "text",
-            text: `Uploaded ${name} as a downloadable task artifact. Mention it in your final response.`,
+            text: `Uploaded ${name} as a downloadable task artifact.${linkText} Mention it in your final response.`,
           },
         ],
       };

@@ -28,8 +28,9 @@ function strippedUserContent(content: string): string {
 }
 
 // Cloud's initial optimistic is pinned to the top so the user's prompt stays
-// visible above setup progress. Follow-up optimistics render at the tail until
-// the streamed `session/prompt` arrives and replaces them.
+// visible above setup progress. Follow-up optimistics render at the tail, but
+// before trailing progress cards, to match where the streamed `session/prompt`
+// will appear.
 //
 // Local sessions keep optimistic at the chronological end — they rely on
 // `replaceOptimisticWithEvent` to swap optimistic↔real in place.
@@ -103,9 +104,23 @@ export function mergeConversationItems({
           };
         });
 
+  let tailInsertionIndex = dedupedConversation.length;
+  while (tailInsertionIndex > 0) {
+    const item = dedupedConversation[tailInsertionIndex - 1];
+    if (
+      item.type === "session_update" &&
+      item.update.sessionUpdate === "progress_group"
+    ) {
+      tailInsertionIndex--;
+    } else {
+      break;
+    }
+  }
+
   return [
     ...resolvedPinnedItems,
-    ...dedupedConversation,
+    ...dedupedConversation.slice(0, tailInsertionIndex),
     ...tailOptimisticItems,
+    ...dedupedConversation.slice(tailInsertionIndex),
   ];
 }

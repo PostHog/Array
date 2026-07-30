@@ -6,6 +6,7 @@ import {
 import { Button } from "@posthog/quill";
 import type { SignalReport } from "@posthog/shared/types";
 import { ReportActivitySection } from "@posthog/ui/features/inbox/components/detail/ReportActivitySection";
+import { ReportFeedbackFooter } from "@posthog/ui/features/inbox/components/detail/ReportFeedbackFooter";
 import { InboxDetailFrame } from "@posthog/ui/features/inbox/components/InboxDetailFrame";
 import { InboxReportDetailGate } from "@posthog/ui/features/inbox/components/InboxReportDetailGate";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
@@ -62,6 +63,7 @@ function ReportDetailContent({ report }: { report: SignalReport }) {
       <ReportTasksSection report={report} />
       <SuggestedReviewersSection report={report} />
       <ReportActivitySection reportId={report.id} />
+      <ReportFeedbackFooter report={report} />
     </InboxDetailFrame>
   );
 }

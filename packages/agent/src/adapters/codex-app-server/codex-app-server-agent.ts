@@ -25,6 +25,7 @@ import {
   classifyGatewayLimitError,
   mcpToolKey,
   posthogToolMeta,
+  serializeError,
 } from "@posthog/shared";
 import {
   type NativeGoalState,
@@ -251,6 +252,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   ) => Promise<void>;
   /** Codex-specific guidance injected at spawn time; replayed per-thread. */
   private readonly developerInstructions?: string;
+  private readonly gatewayConfigured: boolean;
   private threadId?: string;
   /** JSON schema constraining the final message; set per session via `_meta`. */
   private jsonSchema?: Record<string, unknown>;
@@ -306,6 +308,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     );
     this.onStructuredOutput = options.onStructuredOutput;
     this.developerInstructions = options.processOptions.developerInstructions;
+    this.gatewayConfigured = Boolean(options.processOptions.apiBaseUrl);
 
     const handlers: AppServerClientHandlers = {
       logger: this.logger,
@@ -388,7 +391,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   }
 
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
-    const { threadId } = await this.setupThread(
+    const { threadId } = await this.setupThreadWithDiagnostics(
       APP_SERVER_METHODS.THREAD_START,
       {
         cwd: params.cwd,
@@ -403,7 +406,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   async resumeSession(
     params: ResumeSessionRequest,
   ): Promise<ResumeSessionResponse> {
-    await this.setupThread(APP_SERVER_METHODS.THREAD_RESUME, {
+    await this.setupThreadWithDiagnostics(APP_SERVER_METHODS.THREAD_RESUME, {
       cwd: params.cwd,
       mcpServers: params.mcpServers,
       meta: params._meta as AppServerSessionMeta | undefined,
@@ -415,7 +418,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
 
   /** Re-attach to an existing thread without starting a turn: resume it, then replay the transcript. */
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
-    const { thread } = await this.setupThread(
+    const { thread } = await this.setupThreadWithDiagnostics(
       APP_SERVER_METHODS.THREAD_RESUME,
       {
         cwd: params.cwd,
@@ -432,7 +435,7 @@ export class CodexAppServerAgent extends BaseAcpAgent {
   async unstable_forkSession(
     params: ForkSessionRequest,
   ): Promise<ForkSessionResponse> {
-    const { threadId } = await this.setupThread(
+    const { threadId } = await this.setupThreadWithDiagnostics(
       APP_SERVER_METHODS.THREAD_FORK,
       {
         cwd: params.cwd,
@@ -482,6 +485,28 @@ export class CodexAppServerAgent extends BaseAcpAgent {
     } catch (err) {
       this.logger.warn("thread/list failed", { error: String(err) });
       return { sessions: [] };
+    }
+  }
+
+  private async setupThreadWithDiagnostics(
+    method: string,
+    params: Parameters<CodexAppServerAgent["setupThread"]>[1],
+  ): ReturnType<CodexAppServerAgent["setupThread"]> {
+    const initStartedAt = Date.now();
+    try {
+      return await this.setupThread(method, params);
+    } catch (error) {
+      this.logger.error("Codex app-server session initialization failed", {
+        runtimeAdapter: "codex",
+        initializationPhase: method,
+        initMs: Date.now() - initStartedAt,
+        requestedModel: this.config.model,
+        gatewayConfigured: this.gatewayConfigured,
+        taskId: params.meta?.taskId,
+        taskRunId: params.meta?.taskRunId,
+        errorDetail: serializeError(error),
+      });
+      throw error;
     }
   }
 

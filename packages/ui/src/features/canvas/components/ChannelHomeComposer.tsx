@@ -20,7 +20,6 @@ import { useDraftStore } from "../../message-editor/draftStore";
 import type { EditorHandle } from "../../message-editor/types";
 import { toastError } from "../../notifications/errorDetails";
 import { ReasoningLevelSelector } from "../../sessions/components/ReasoningLevelSelector";
-import { UnifiedModelSelector } from "../../sessions/components/UnifiedModelSelector";
 import { getCurrentModeFromConfigOptions } from "../../sessions/sessionStore";
 import {
   type AgentAdapter,
@@ -163,8 +162,15 @@ export const ChannelHomeComposer = forwardRef<
     [setLastUsedWorkspaceMode, setLastUsedLocalWorkspaceMode],
   );
 
-  const { modeOption, modelOption, thoughtOption, isLoading, setConfigOption } =
-    usePreviewConfig(adapter);
+  const {
+    modeOption,
+    modelOption,
+    thoughtOption,
+    contextWindowOption,
+    fastModeOption,
+    isLoading,
+    setConfigOption,
+  } = usePreviewConfig(adapter);
 
   const currentModel =
     modelOption?.type === "select" ? modelOption.currentValue : undefined;
@@ -180,6 +186,16 @@ export const ChannelHomeComposer = forwardRef<
     modeFallback;
   const currentReasoningLevel =
     thoughtOption?.type === "select" ? thoughtOption.currentValue : undefined;
+  const currentContextWindow =
+    contextWindowOption?.type === "select" &&
+    (contextWindowOption.currentValue === "200k" ||
+      contextWindowOption.currentValue === "1m")
+      ? contextWindowOption.currentValue
+      : undefined;
+  const currentFastMode =
+    fastModeOption?.type === "select"
+      ? fastModeOption.currentValue === "on"
+      : undefined;
 
   const queryClient = useQueryClient();
   const apiClient = useOptionalAuthenticatedClient();
@@ -287,6 +303,8 @@ export const ChannelHomeComposer = forwardRef<
     executionMode: currentExecutionMode,
     model: currentModel,
     reasoningLevel: currentReasoningLevel,
+    contextWindow: currentContextWindow,
+    fastMode: currentFastMode,
     allowNoRepo: true,
     channelContext,
     channelName,
@@ -371,11 +389,13 @@ export const ChannelHomeComposer = forwardRef<
   const submitComposer = canvasArmed ? handleCanvasSubmit : submit;
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="relative flex w-full flex-col">
       {/* Canvas generation always runs in the cloud, so the local/cloud pick
-          doesn't apply while canvas mode is armed. */}
+          doesn't apply while canvas mode is armed. The row floats over the feed,
+          and the trigger's own fill is translucent, so it carries an opaque
+          backdrop at the button's radius to stop messages showing through. */}
       {!canvasArmed && (
-        <div className="mb-2 flex items-center gap-2">
+        <div className="absolute bottom-full left-0 mb-2 flex items-center gap-2 rounded-sm bg-card">
           <WorkspaceModeSelect
             value={workspaceMode}
             onChange={setWorkspaceMode}
@@ -412,22 +432,19 @@ export const ChannelHomeComposer = forwardRef<
         canvas={{ active: canvasArmed, onToggle: toggleCanvasMode }}
         enableCommands
         enableBashMode={false}
-        modelSelector={
-          <UnifiedModelSelector
-            modelOption={modelOption}
-            adapter={adapter ?? "claude"}
-            onAdapterChange={setAdapter}
-            disabled={isBusy}
-            isConnecting={isLoading}
-            onModelChange={handleModelChange}
-          />
-        }
+        modelSelector={null}
         reasoningSelector={
           !isLoading && (
             <ReasoningLevelSelector
               thoughtOption={thoughtOption}
-              adapter={adapter}
+              modelOption={modelOption}
+              adapter={adapter ?? "claude"}
+              contextWindowOption={contextWindowOption}
+              fastModeOption={fastModeOption}
               onChange={handleThoughtChange}
+              onModelChange={handleModelChange}
+              onAdapterChange={setAdapter}
+              onConfigOptionChange={setConfigOption}
               disabled={isBusy}
             />
           )

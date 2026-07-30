@@ -16,6 +16,8 @@ interface UseWarmTaskOptions {
   runtimeAdapter?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
+  contextWindow?: "200k" | "1m" | null;
+  fastMode?: boolean | null;
   sandboxEnvironmentId?: string | null;
   customImageId?: string | null;
 }
@@ -28,6 +30,8 @@ export function useWarmTask({
   runtimeAdapter,
   model,
   reasoningEffort,
+  contextWindow,
+  fastMode,
   sandboxEnvironmentId,
   customImageId,
 }: UseWarmTaskOptions): void {
@@ -40,6 +44,8 @@ export function useWarmTask({
   const normalizedRuntimeAdapter = runtimeAdapter ?? null;
   const normalizedModel = model ?? null;
   const normalizedReasoningEffort = reasoningEffort ?? null;
+  const normalizedContextWindow = contextWindow ?? null;
+  const normalizedFastMode = fastMode ?? null;
   const normalizedSandboxEnvironmentId = sandboxEnvironmentId ?? null;
   const normalizedCustomImageId = customImageId ?? null;
   const eligible =
@@ -49,7 +55,7 @@ export function useWarmTask({
     !composerIsEmpty;
   const key =
     repository && githubIntegrationId != null
-      ? `${githubIntegrationId}:${repository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}:${normalizedSandboxEnvironmentId ?? ""}:${normalizedCustomImageId ?? ""}`
+      ? `${githubIntegrationId}:${repository}:${normalizedBranch ?? ""}:${normalizedRuntimeAdapter ?? ""}:${normalizedModel ?? ""}:${normalizedReasoningEffort ?? ""}:${normalizedContextWindow ?? ""}:${normalizedFastMode ?? ""}:${normalizedSandboxEnvironmentId ?? ""}:${normalizedCustomImageId ?? ""}`
       : null;
 
   useEffect(() => {
@@ -74,6 +80,8 @@ export function useWarmTask({
     const warmRuntimeAdapter = normalizedRuntimeAdapter;
     const warmModel = normalizedModel;
     const warmReasoningEffort = normalizedReasoningEffort;
+    const warmContextWindow = normalizedContextWindow;
+    const warmFastMode = normalizedFastMode;
     const warmSandboxEnvironmentId = normalizedSandboxEnvironmentId;
     const warmCustomImageId = normalizedCustomImageId;
     debounceRef.current = setTimeout(() => {
@@ -87,6 +95,8 @@ export function useWarmTask({
           runtime_adapter: warmRuntimeAdapter,
           model: warmModel,
           reasoning_effort: warmReasoningEffort,
+          ...(warmContextWindow ? { context_window: warmContextWindow } : {}),
+          ...(warmFastMode != null ? { fast_mode: warmFastMode } : {}),
           ...(warmSandboxEnvironmentId
             ? { sandbox_environment_id: warmSandboxEnvironmentId }
             : {}),
@@ -108,6 +118,8 @@ export function useWarmTask({
     normalizedRuntimeAdapter,
     normalizedModel,
     normalizedReasoningEffort,
+    normalizedContextWindow,
+    normalizedFastMode,
     normalizedSandboxEnvironmentId,
     normalizedCustomImageId,
   ]);

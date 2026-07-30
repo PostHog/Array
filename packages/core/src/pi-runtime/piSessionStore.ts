@@ -1,18 +1,45 @@
 import type {
   PiCommand,
-  PiModelOption,
+  PiNativeModelInfo,
+  PiQueueSnapshot,
+  PiSessionStats,
   PiSessionStatus,
+  PiThinkingLevel,
 } from "@posthog/agent/pi/types";
-import type { AgentConversationEvent } from "@posthog/shared";
+import type {
+  AgentConversationEvent,
+  GatewayLimitCause,
+  PromptFailureKind,
+  SessionStatus,
+  TaskRunStatus,
+} from "@posthog/shared";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
+export interface PiSessionError {
+  id: string;
+  scope: "connection" | "operation";
+  kind: PromptFailureKind;
+  title: string;
+  message: string;
+  retryable: boolean;
+  limitCause: GatewayLimitCause | null;
+  recoveryPrompt?: string;
+}
+
 export interface PiControllerSessionState {
-  connectionState: "connecting" | "connected" | "failed";
+  connectionState: SessionStatus;
   events: AgentConversationEvent[];
-  models: PiModelOption[];
+  models: Array<Pick<PiNativeModelInfo, "provider" | "id">>;
+  modelsLoaded: boolean;
+  thinkingLevels: PiThinkingLevel[];
+  thinkingLevelsLoaded: boolean;
   commands: PiCommand[];
+  queue: PiQueueSnapshot;
   status?: PiSessionStatus;
-  error?: string;
+  stats?: PiSessionStats;
+  cloudStatus?: TaskRunStatus;
+  error?: PiSessionError;
+  authRestoring: boolean;
   isBashRunning: boolean;
 }
 
@@ -31,7 +58,12 @@ export function createEmptyPiControllerSession(): PiControllerSessionState {
     connectionState: "connecting",
     events: [],
     models: [],
+    modelsLoaded: false,
+    thinkingLevels: [],
+    thinkingLevelsLoaded: false,
     commands: [],
+    queue: { steering: [], followUp: [] },
+    authRestoring: false,
     isBashRunning: false,
   };
 }

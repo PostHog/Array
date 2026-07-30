@@ -20,17 +20,18 @@ import {
 } from "@posthog/agent";
 import type { McpToolApprovals } from "@posthog/agent/adapters/claude/mcp/tool-metadata";
 import { hydrateSessionJsonl } from "@posthog/agent/adapters/claude/session/jsonl-hydration";
+import {
+  getContextWindowOptions,
+  getFastModeOptions,
+  getReasoningEffortOptions,
+} from "@posthog/agent/adapters/reasoning-effort";
 import { Agent } from "@posthog/agent/agent";
 import {
   getAvailableCodexModes,
   getAvailableModes,
 } from "@posthog/agent/execution-mode";
-import {
-  fetchGatewayModels,
-  formatGatewayModelName,
-  getClaudeModelRecency,
-  getProviderName,
-} from "@posthog/agent/gateway-models";
+import { fetchGatewayModels } from "@posthog/agent/gateway-models";
+import { fetchPosthogPiModelCatalog } from "@posthog/agent/pi/model-catalog";
 import { getLlmGatewayUrl } from "@posthog/agent/posthog-api";
 import {
   findPrUrls,
@@ -65,6 +66,7 @@ import {
   type AcpMessage,
   type Adapter,
   buildCloudTaskConfigOptions,
+  type CloudRegion,
   type ExecutionMode,
   isAuthError,
   resolveCloudInitialPermissionMode,
@@ -277,6 +279,10 @@ interface SessionConfig {
   settingSources?: ("user" | "project" | "local")[];
   /** Effort level for Claude sessions */
   effort?: EffortLevel;
+  /** Context window choice for 1M-capable Claude models */
+  contextWindow?: "200k" | "1m";
+  /** Start the session with fast mode enabled (Claude models that support it) */
+  fastMode?: boolean;
   /** Model to use for the session (e.g. "claude-sonnet-4-6") */
   model?: string;
   /** JSON Schema for structured task output — when set, the agent gets a create_output tool */
@@ -778,6 +784,8 @@ If a repository IS genuinely required, attach one in this priority order:
       disallowedTools,
       settingSources,
       effort,
+      contextWindow,
+      fastMode,
       model,
       jsonSchema,
     } = config;
@@ -1047,6 +1055,8 @@ If a repository IS genuinely required, attach one in this priority order:
               mcpToolApprovals: toolApprovals,
               ...(permissionMode && { permissionMode }),
               ...(model != null && { model }),
+              ...(contextWindow && { contextWindow }),
+              ...(fastMode !== undefined && { fastMode }),
               ...(jsonSchema && { jsonSchema }),
               claudeCode: {
                 options: claudeCodeOptions,
@@ -1130,6 +1140,8 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(contextWindow && { contextWindow }),
+            ...(fastMode !== undefined && { fastMode }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -1159,6 +1171,8 @@ If a repository IS genuinely required, attach one in this priority order:
             mcpToolApprovals: toolApprovals,
             ...(permissionMode && { permissionMode }),
             ...(model != null && { model }),
+            ...(contextWindow && { contextWindow }),
+            ...(fastMode !== undefined && { fastMode }),
             ...(jsonSchema && { jsonSchema }),
             claudeCode: {
               options: claudeCodeOptions,
@@ -2133,6 +2147,9 @@ For git operations while detached:
       settingSources:
         "settingSources" in params ? params.settingSources : undefined,
       effort: "effort" in params ? params.effort : undefined,
+      contextWindow:
+        "contextWindow" in params ? params.contextWindow : undefined,
+      fastMode: "fastMode" in params ? params.fastMode : undefined,
       model: "model" in params ? params.model : undefined,
       jsonSchema: "jsonSchema" in params ? params.jsonSchema : undefined,
       importedSessionId:
@@ -2353,33 +2370,13 @@ For git operations while detached:
       });
   }
 
-  async getGatewayModels(apiHost: string) {
+  async getPiModelCatalog(apiHost: string, region: CloudRegion) {
     const gatewayUrl = getLlmGatewayUrl(apiHost);
-    const models = await fetchGatewayModels({
+    return fetchPosthogPiModelCatalog(
       gatewayUrl,
-      authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
-    });
-
-    const mapped = models.map((model) => ({
-      modelId: model.id,
-      name: formatGatewayModelName(model),
-      description: `Context: ${model.context_window.toLocaleString()} tokens`,
-      provider: getProviderName(model.owned_by),
-    }));
-
-    return mapped.sort((a, b) => {
-      const providerOrder = ["Anthropic", "OpenAI", "Gemini"];
-      const aProviderIdx = providerOrder.indexOf(a.provider ?? "");
-      const bProviderIdx = providerOrder.indexOf(b.provider ?? "");
-      if (aProviderIdx !== bProviderIdx) {
-        const aIdx = aProviderIdx === -1 ? 999 : aProviderIdx;
-        const bIdx = bProviderIdx === -1 ? 999 : bProviderIdx;
-        return aIdx - bIdx;
-      }
-      return (
-        getClaudeModelRecency(a.modelId) - getClaudeModelRecency(b.modelId)
-      );
-    });
+      region,
+      (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
+    );
   }
 
   async getPreviewConfigOptions(
@@ -2391,10 +2388,54 @@ For git operations while detached:
       gatewayUrl,
       authToken: (await this.agentAuthAdapter.gatewayAuthToken()) ?? undefined,
     });
-    return buildCloudTaskConfigOptions(
+    const configOptions = buildCloudTaskConfigOptions(
       gatewayModels,
       adapter,
       adapter === "codex" ? getAvailableCodexModes() : getAvailableModes(),
     ) as SessionConfigOption[];
+
+    const modelOption = configOptions.find(
+      (option) => option.category === "model",
+    );
+    const resolvedModelId =
+      modelOption?.type === "select" ? modelOption.currentValue : "";
+
+    // The adapter-level effort options carry _meta (default notch, docs links)
+    // that the shared cloud builder omits; the desktop picker needs them.
+    const effortOption = configOptions.find(
+      (option) => option.category === "thought_level",
+    );
+    const effortOpts = getReasoningEffortOptions(adapter, resolvedModelId);
+    if (effortOption?.type === "select" && effortOpts) {
+      effortOption.options = effortOpts;
+    }
+
+    const contextOpts = getContextWindowOptions(adapter, resolvedModelId);
+    if (contextOpts) {
+      configOptions.push({
+        id: "context_window",
+        name: "Context Window",
+        type: "select",
+        currentValue: "1m",
+        options: contextOpts,
+        category: "_context_window",
+        description: "Choose the context window size for this session",
+      });
+    }
+
+    const fastOpts = getFastModeOptions(adapter, resolvedModelId);
+    if (fastOpts) {
+      configOptions.push({
+        id: "fast",
+        name: "Fast Mode",
+        type: "select",
+        currentValue: "off",
+        options: fastOpts,
+        category: "_fast_mode",
+        description: "Faster responses on supported models",
+      });
+    }
+
+    return configOptions;
   }
 }

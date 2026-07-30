@@ -1,4 +1,5 @@
 import type { Adapter } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import type { AgentMode } from "../types";
 import type { RtkSavingsSummary } from "./rtk-savings";
 import type { RemoteMcpServer } from "./schemas";
@@ -20,6 +21,7 @@ export interface AgentServerConfig {
   projectId: number;
   jwtPublicKey: string; // RS256 public key for JWT verification
   eventIngestToken?: string;
+  taskRunSessionToken?: string;
   // Base URL for the event-ingest POST only; falls back to apiUrl when unset.
   eventIngestBaseUrl?: string;
   eventIngestStreamWindowMs?: number;
@@ -33,6 +35,7 @@ export interface AgentServerConfig {
   mode: AgentMode;
   taskId: string;
   runId: string;
+  sandboxId?: string;
   createPr?: boolean;
   // User-opted auto-publish: push and open a draft PR on completion even for
   // manual (non-automated-origin) cloud runs. createPr=false still wins.
@@ -53,8 +56,11 @@ export interface AgentServerConfig {
   baseBranch?: string;
   claudeCode?: ClaudeCodeConfig;
   allowedDomains?: string[];
+  piRpcHostPath?: string;
   runtimeAdapter?: Adapter;
   model?: string;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+  reasoningEffort?: EffortLevel | "off" | "minimal";
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   resolveRtkSavings?: () => Promise<RtkSavingsSummary | null>;
 }

@@ -5,10 +5,15 @@ import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "@posthog/core/task-detail/previewConfig";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, FAST_MODE_FLAG } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
@@ -19,13 +24,16 @@ import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAut
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
 import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
+import {
+  CloudStreamDisconnectedBanner,
+  ConnectingToAgent,
+} from "@posthog/ui/features/sessions/components/CloudSessionLifecycle";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
 import {
   copyFromContextMenu,
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
-import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
@@ -45,7 +53,9 @@ import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/u
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
+  useConfigOptionForTask,
   useModeConfigOptionForTask,
+  useModelConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
   useThoughtLevelConfigOptionForTask,
@@ -102,17 +112,6 @@ interface SessionViewProps {
 const DEFAULT_ERROR_MESSAGE =
   "Failed to resume this session. The working directory may have been deleted. Please start a new session.";
 
-function ConnectingToAgent() {
-  return (
-    <>
-      <Spinner size={28} className="animate-spin text-gray-9" />
-      <Text color="gray" className="text-base">
-        Connecting to agent...
-      </Text>
-    </>
-  );
-}
-
 /** Centers composer-slot content at the chat width (or compact padding). */
 function ComposerWidth({
   compact,
@@ -156,48 +155,6 @@ function ComposerSlot({
   );
 }
 
-interface CloudStreamDisconnectedBannerProps {
-  errorTitle?: string;
-  errorMessage?: string;
-  onRetry?: () => void;
-}
-
-function CloudStreamDisconnectedBanner({
-  errorTitle,
-  errorMessage,
-  onRetry,
-}: CloudStreamDisconnectedBannerProps) {
-  return (
-    <Flex
-      align="center"
-      justify="between"
-      gap="3"
-      py="2"
-      px="3"
-      className="shrink-0 border-(--red-5) border-b bg-(--red-2)"
-    >
-      <Flex align="center" gap="2" className="min-w-0">
-        <Warning size={14} weight="duotone" color="var(--red-9)" />
-        {errorTitle && (
-          <Text className="shrink-0 font-medium text-(--red-12) text-[13px]">
-            {errorTitle}
-          </Text>
-        )}
-        {errorMessage && (
-          <Text color="gray" className="truncate text-[13px]">
-            {errorMessage}
-          </Text>
-        )}
-      </Flex>
-      {onRetry && (
-        <Button variant="soft" size="1" color="red" onClick={onRetry}>
-          Retry
-        </Button>
-      )}
-    </Flex>
-  );
-}
-
 export function SessionView({
   events,
   taskId,
@@ -236,7 +193,18 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
+  const contextWindowOption = useConfigOptionForTask(
+    taskId,
+    CONTEXT_WINDOW_OPTION_CATEGORY,
+  );
+  const sessionModelOption = useModelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
+  const liveFastModeOption = useConfigOptionForTask(
+    taskId,
+    FAST_MODE_OPTION_CATEGORY,
+  );
+  const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
@@ -281,6 +249,14 @@ export function SessionView({
       sessionService.setSessionConfigOption(taskId, thoughtOption.id, value);
     },
     [taskId, thoughtOption, sessionService],
+  );
+
+  const handleConfigOptionChange = useCallback(
+    (configId: string, value: string) => {
+      if (!taskId) return;
+      sessionService.setSessionConfigOption(taskId, configId, value);
+    },
+    [taskId, sessionService],
   );
 
   const sessionId = taskId ?? "default";
@@ -789,18 +765,17 @@ export function SessionView({
                           }
                           allowBypassPermissions={allowBypassPermissions}
                           enableBashMode={!isCloudRun}
-                          modelSelector={
-                            <ModelSelector
-                              taskId={taskId}
-                              disabled={!isRunning}
-                            />
-                          }
+                          modelSelector={null}
                           reasoningSelector={
                             thoughtOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
+                                modelOption={sessionModelOption}
                                 adapter={adapter}
+                                contextWindowOption={contextWindowOption}
+                                fastModeOption={fastModeOption}
                                 onChange={handleThoughtChange}
+                                onConfigOptionChange={handleConfigOptionChange}
                                 disabled={!isRunning}
                               />
                             ) : null

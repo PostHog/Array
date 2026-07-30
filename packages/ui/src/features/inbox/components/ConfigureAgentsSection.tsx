@@ -84,7 +84,6 @@ export function ConfigureAgentsSection() {
     handleSetupCancel,
     userAutonomyConfig,
     userAutonomyConfigLoading,
-    evaluationsUrl,
   } = useSignalSourceManager();
   const { hasGithubIntegration, isLoadingIntegrations } =
     useRepositoryIntegration();
@@ -188,7 +187,6 @@ export function ConfigureAgentsSection() {
                   disabled={!hasGithubIntegration}
                   sourceStates={sourceStates}
                   onSetup={handleSetup}
-                  evaluationsUrl={evaluationsUrl}
                 />
               )}
             </Box>

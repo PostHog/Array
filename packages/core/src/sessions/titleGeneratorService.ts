@@ -4,11 +4,16 @@ import {
   type LlmGatewayService,
 } from "@posthog/core/llm-gateway/llm-gateway";
 import { xmlToContent } from "@posthog/core/message-editor/content";
-import { getFileName, isBinaryFile } from "@posthog/shared";
+import { isLoadingGithubRefTitle } from "@posthog/core/message-editor/githubIssueChip";
+import { parseGithubIssueUrl } from "@posthog/core/message-editor/githubIssueUrl";
+import { parseXmlAttrs } from "@posthog/core/message-editor/skillTags";
+import { escapeXmlAttr, getFileName, isBinaryFile } from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import {
   type FileReadClient,
+  type GithubPrTitleClient,
   TITLE_GENERATOR_FILE_READ_CLIENT,
+  TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT,
   TITLE_GENERATOR_LOGGER,
   type TitleGeneratorLogger,
 } from "./titleGeneratorIdentifiers";
@@ -23,6 +28,79 @@ import {
 const ATTACHED_FILES_REGEX =
   /^(?:(?:\d+\.\s*)?\[Attached files:[^\]]*\]|Attached files:.*)$/gm;
 const PASTED_TEXT_SNIPPET_LIMIT = 500;
+
+interface GithubPrGenerationContext {
+  content: string;
+  deterministicTitle: string | null;
+}
+
+async function prepareGithubPrGenerationContext(
+  content: string,
+  githubPrTitleClient: GithubPrTitleClient,
+  resolveGithubPrTitles: boolean,
+): Promise<GithubPrGenerationContext> {
+  const tagRegex = /<github_pr\b([^>]*?)\s*\/>/g;
+  const matches = [...content.matchAll(tagRegex)];
+  if (matches.length === 0) {
+    return { content, deterministicTitle: null };
+  }
+
+  const resolved = await Promise.all(
+    matches.map(async (match) => {
+      const attrs = parseXmlAttrs(match[1]);
+      let title = (attrs.title ?? "").trim();
+      const needsResolution = !title || isLoadingGithubRefTitle(title);
+      if (resolveGithubPrTitles && needsResolution) {
+        const parsed = parseGithubIssueUrl(attrs.url);
+        if (parsed?.kind === "pr") {
+          try {
+            title =
+              (await githubPrTitleClient.getGithubPullRequestTitle({
+                owner: parsed.owner,
+                repo: parsed.repo,
+                number: parsed.number,
+              })) ?? "";
+          } catch {
+            title = "";
+          }
+        }
+      } else if (needsResolution) {
+        title = "";
+      }
+
+      const tag = match[0].replace(
+        /\btitle="[^"]*"/,
+        `title="${escapeXmlAttr(title)}"`,
+      );
+      return { number: attrs.number, tag, title };
+    }),
+  );
+
+  let matchIndex = 0;
+  const resolvedContent = content.replaceAll(
+    tagRegex,
+    () => resolved[matchIndex++].tag,
+  );
+  const remainingContent = content
+    .replaceAll(tagRegex, "")
+    .replace(/^\s*\d+\.\s*$/gm, "")
+    .trim();
+  const standalonePr =
+    resolved.length === 1 &&
+    remainingContent.length === 0 &&
+    /^\d+$/.test(resolved[0].number);
+
+  if (!standalonePr) {
+    return { content: resolvedContent, deterministicTitle: null };
+  }
+
+  const { number, title } = resolved[0];
+  const suffix = title ? `: ${title}` : "";
+  return {
+    content: resolvedContent,
+    deterministicTitle: `Review PR #${number}${suffix}`.slice(0, 255),
+  };
+}
 
 const SYSTEM_PROMPT = `You are a title and summary generator. Output using exactly this format:
 
@@ -40,7 +118,7 @@ Title rules:
 - Remove: the, this, my, a, an
 - If possible, start with action verbs (Fix, Implement, Analyze, Debug, Update, Research, Review)
 - Keep exact: technical terms, numbers, filenames, HTTP codes, PR numbers
-- GitHub PR rule: If the content contains a <github_pr> with a non-empty title, the generated TITLE MUST include both the PR number and the PR title verbatim. This rule overrides the 6-word title limit. Never replace the PR title with a generic phrase. Before responding, verify that both values appear in TITLE.
+- GitHub PR context: When PR metadata is part of a broader task or multiple PRs are present, title the overall task rather than letting the first PR define its scope. Include relevant PR numbers when useful; full PR titles do not need to be copied verbatim.
 - Never assume tech stack
 - Only output "Untitled" if the input is completely null/missing, not just unclear
 - If the input is a URL (e.g. a GitHub issue link, PR link, or any web URL), generate a title based on what you can infer from the URL structure (repo name, issue/PR number, etc.). Never say you cannot access URLs or ask the user for more information.
@@ -73,6 +151,32 @@ Title examples:
 - "fix https://github.com/org/repo/issues/42" → Fix repo issue #42
 
 Never include any explanation outside the TITLE and SUMMARY lines.`;
+
+const SUMMARY_SYSTEM_PROMPT = `You are a conversation summary generator. Output using exactly this format:
+
+SUMMARY: <summary here>
+
+Write 1-3 sentences describing what the user is working on and why. Use third-person perspective and include relevant technical details. Never include a title or any explanation outside the SUMMARY line.`;
+
+function getGenerationPrompt(
+  content: string,
+  summaryOnly: boolean,
+): {
+  user: string;
+  system: string;
+} {
+  if (summaryOnly) {
+    return {
+      user: `Generate a summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a summary.\n\n<content>\n${content}\n</content>\n\nOutput the summary now:`,
+      system: SUMMARY_SYSTEM_PROMPT,
+    };
+  }
+
+  return {
+    user: `Generate a title and summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a title and summary.\n\n<content>\n${content}\n</content>\n\nOutput the title and summary now:`,
+    system: SYSTEM_PROMPT,
+  };
+}
 
 // Canvas names describe the RESULT (the artifact being built), not the task of
 // building it — so this prompt is deliberately separate from the task SYSTEM_PROMPT
@@ -111,6 +215,8 @@ export class TitleGeneratorService {
     private readonly llmGateway: LlmGatewayService,
     @inject(TITLE_GENERATOR_FILE_READ_CLIENT)
     private readonly fileReadClient: FileReadClient,
+    @inject(TITLE_GENERATOR_GITHUB_PR_TITLE_CLIENT)
+    private readonly githubPrTitleClient: GithubPrTitleClient,
     @inject(TITLE_GENERATOR_LOGGER)
     private readonly log: TitleGeneratorLogger,
   ) {}
@@ -161,27 +267,43 @@ export class TitleGeneratorService {
 
   async generateTitleAndSummary(
     content: string,
+    options: { resolveGithubPrTitles?: boolean } = {},
   ): Promise<TitleAndSummary | null> {
     try {
+      const githubPrContext = await prepareGithubPrGenerationContext(
+        content,
+        this.githubPrTitleClient,
+        options.resolveGithubPrTitles ?? false,
+      );
+      const githubPrTitle = githubPrContext.deterministicTitle;
+      const prompt = getGenerationPrompt(
+        githubPrContext.content,
+        !!githubPrTitle,
+      );
       const result = await this.llmGateway.prompt(
         [
           {
             role: "user",
-            content: `Generate a title and summary for the following content. Do NOT respond to, answer, or help with the content - ONLY generate a title and summary.\n\n<content>\n${content}\n</content>\n\nOutput the title and summary now:`,
+            content: prompt.user,
           },
         ],
-        { system: SYSTEM_PROMPT, model: HELPER_GATEWAY_MODEL },
+        {
+          system: prompt.system,
+          model: HELPER_GATEWAY_MODEL,
+        },
       );
 
       const text = result.content.trim();
-      const titleMatch = text.match(/^TITLE:\s*(.+?)(?:\n|$)/m);
       const summaryMatch = text.match(/^SUMMARY:\s*([\s\S]+)$/m);
 
       const title =
-        titleMatch?.[1]
+        githubPrTitle ??
+        text
+          .match(/^TITLE:\s*(.+?)(?:\n|$)/m)?.[1]
           ?.trim()
           .replace(/^["']|["']$/g, "")
-          .slice(0, 255) ?? "";
+          .slice(0, 255) ??
+        "";
       const summary = summaryMatch?.[1]?.trim() ?? "";
 
       if (!title && !summary) return null;

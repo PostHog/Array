@@ -3,6 +3,7 @@ import {
   GITHUB_ISSUE_STATE_COLORS,
   githubIssueStateColor,
   githubIssueToMentionChip,
+  isLoadingGithubRefTitle,
 } from "./githubIssueChip";
 
 describe("githubIssueToMentionChip", () => {
@@ -36,5 +37,18 @@ describe("githubIssueStateColor", () => {
     expect(githubIssueStateColor("MERGED")).toBe(
       GITHUB_ISSUE_STATE_COLORS.MERGED,
     );
+  });
+});
+
+describe("isLoadingGithubRefTitle", () => {
+  it.each(["Loading...", "Loading…"])(
+    "detects the unresolved title %s",
+    (title) => {
+      expect(isLoadingGithubRefTitle(title)).toBe(true);
+    },
+  );
+
+  it("allows resolved GitHub titles", () => {
+    expect(isLoadingGithubRefTitle("Fix the loading... state")).toBe(false);
   });
 });

@@ -14,7 +14,7 @@ interface DiffStatsChipProps {
 
 export function DiffStatsChip({ task }: DiffStatsChipProps) {
   const { filesChanged, linesAdded, linesRemoved, isOpen, toggle } =
-    useDiffStatsToggle(task, "expanded");
+    useDiffStatsToggle(task);
 
   if (filesChanged === 0) return null;
 

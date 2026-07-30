@@ -173,6 +173,12 @@ export interface TaskRunSessionLogsResult {
   complete: boolean;
 }
 
+export interface TaskSessionStorageAccess {
+  id: string;
+  download_url: string | null;
+  content_sha256: string | null;
+}
+
 /** Thrown when the backend rejects a cloud run with a 429 usage-limit error. */
 export class CloudUsageLimitError extends Error {
   limitType: UsageLimitType;
@@ -641,8 +647,11 @@ export interface FinalizedTaskArtifactUpload {
 
 export interface CloudRunOptions {
   adapter?: Adapter;
+  piRuntime?: boolean;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   sandboxEnvironmentId?: string;
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;
@@ -739,35 +748,41 @@ function buildCloudRunRequestBody(
   }
   if (options?.adapter) {
     body.runtime_adapter = options.adapter;
-    if (options.model) {
-      body.model = options.model;
-    }
-    if (options.reasoningLevel) {
-      if (!options.model) {
-        throw new Error(
-          "A cloud reasoning level requires a model to be selected.",
-        );
-      }
-      if (
-        !isSupportedReasoningEffort(
-          options.adapter,
-          options.model,
-          options.reasoningLevel,
-        )
-      ) {
-        throw new Error(
-          `Reasoning effort '${options.reasoningLevel}' is not supported for ${options.adapter} model '${options.model}'.`,
-        );
-      }
-      body.reasoning_effort = options.reasoningLevel;
-    }
-    // The API rejects initial_permission_mode without runtime_adapter and validates it per adapter.
-    if (options.initialPermissionMode) {
-      body.initial_permission_mode = resolveCloudInitialPermissionMode(
-        options.adapter,
-        options.initialPermissionMode,
+  }
+  if (options?.model && (options.adapter || options.piRuntime)) {
+    body.model = options.model;
+  }
+  if (options?.reasoningLevel && (options.adapter || options.piRuntime)) {
+    if (!options.model) {
+      throw new Error(
+        "A cloud reasoning level requires a model to be selected.",
       );
     }
+    if (
+      options.adapter &&
+      !isSupportedReasoningEffort(
+        options.adapter,
+        options.model,
+        options.reasoningLevel,
+      )
+    ) {
+      throw new Error(
+        `Reasoning effort '${options.reasoningLevel}' is not supported for ${options.adapter} model '${options.model}'.`,
+      );
+    }
+    body.reasoning_effort = options.reasoningLevel;
+  }
+  if (options?.adapter && options.contextWindow) {
+    body.context_window = options.contextWindow;
+  }
+  if (options?.adapter && options.fastMode !== undefined) {
+    body.fast_mode = options.fastMode;
+  }
+  if (options?.adapter && options.initialPermissionMode) {
+    body.initial_permission_mode = resolveCloudInitialPermissionMode(
+      options.adapter,
+      options.initialPermissionMode,
+    );
   }
   if (options?.resumeFromRunId) {
     body.resume_from_run_id = options.resumeFromRunId;
@@ -3071,6 +3086,8 @@ export class PostHogAPIClient {
     runtime_adapter?: string | null;
     model?: string | null;
     reasoning_effort?: string | null;
+    context_window?: "200k" | "1m" | null;
+    fast_mode?: boolean | null;
     sandbox_environment_id?: string | null;
     custom_image_id?: string | null;
   }): Promise<{ task_id: string; run_id: string } | null> {
@@ -3089,6 +3106,12 @@ export class PostHogAPIClient {
           runtime_adapter: options.runtime_adapter ?? null,
           model: options.model ?? null,
           reasoning_effort: options.reasoning_effort ?? null,
+          ...(options.context_window
+            ? { context_window: options.context_window }
+            : {}),
+          ...(options.fast_mode != null
+            ? { fast_mode: options.fast_mode }
+            : {}),
           ...(options.sandbox_environment_id
             ? { sandbox_environment_id: options.sandbox_environment_id }
             : {}),
@@ -3284,6 +3307,29 @@ export class PostHogAPIClient {
 
     const data = (await response.json()) as { url: string };
     return data.url;
+  }
+
+  async getTaskSessionStorageAccess(
+    taskId: string,
+    runId: string,
+  ): Promise<TaskSessionStorageAccess | null> {
+    const teamId = await this.getTeamId();
+    const url = new URL(
+      `${this.api.baseUrl}/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    );
+    const response = await this.api.fetcher.fetch({
+      method: "get",
+      url,
+      path: `/api/projects/${teamId}/tasks/${taskId}/runs/${runId}/task_session/`,
+    });
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to load task session: ${response.statusText}`);
+    }
+
+    return (await response.json()) as TaskSessionStorageAccess;
   }
 
   async resumeRunInCloud(taskId: string, runId: string): Promise<TaskRun> {

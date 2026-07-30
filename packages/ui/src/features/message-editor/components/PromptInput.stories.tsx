@@ -119,7 +119,6 @@ function PromptInputWithSelectors({
         showSelectors ? (
           <ReasoningLevelSelector
             thoughtOption={reasoningOption}
-            adapter={adapter}
             onChange={handleReasoningChange}
           />
         ) : (

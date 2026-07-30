@@ -1,6 +1,7 @@
 // Analytics event types and properties
 
 import type { Adapter } from "./adapter";
+import type { EffortLevel } from "./domain-types";
 import type { SourceProduct } from "./inbox-types";
 
 export interface PromptHistoryOpenedProperties {
@@ -41,7 +42,6 @@ export type SkillButtonId =
   | "add-error-tracking"
   | "instrument-llm-calls"
   | "add-logging";
-type SkillButtonSource = "primary" | "dropdown";
 export type CommandMenuAction =
   | "home"
   | "new-task"
@@ -286,12 +286,6 @@ export interface BrainrotActivatedProperties {
   layout: string;
   /** Cells already holding a task when Brainrot was chosen. */
   filled_cells: number;
-}
-
-export interface SkillButtonTriggeredProperties {
-  task_id: string;
-  button_id: SkillButtonId;
-  source: SkillButtonSource;
 }
 
 // Settings events
@@ -615,9 +609,13 @@ export type InboxReportActionType =
 
 export type InboxReportActionSurface =
   | "detail_pane"
+  | "detail_footer"
   | "toolbar"
   | "keyboard"
   | "list_row";
+
+/** Sentiment captured by the report usefulness thumbs. */
+export type InboxReportFeedbackSentiment = "positive" | "negative";
 
 export interface InboxViewedProperties {
   report_count: number;
@@ -739,6 +737,48 @@ export interface InboxReportActionProperties {
   // The feedback text the user typed before hitting Create PR. Truncated to
   // 500 chars to keep event payloads bounded.
   feedback_text?: string;
+}
+
+/**
+ * Thumbs-up/down verdict on a report's usefulness, fired from the feedback
+ * footer at the end of the report body. Feedback-only: unlike a dismiss, the
+ * report keeps its state. The sentiment is the label ranking work trains
+ * against, so it carries the same report classification as the impression and
+ * open events. Mirrors cloud's `Inbox report feedback`
+ * (`frontend/src/scenes/inbox/inboxAnalytics.ts`) so the clients are
+ * comparable in one PostHog project. `note` is optional — the thumbs submit on
+ * one click, with no note.
+ */
+export interface InboxReportFeedbackProperties {
+  report_id: string;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  /** Whether the report already has an implementation PR. */
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+  // Optional free-text note, truncated to keep event payloads bounded. Present
+  // only on the rare path where the rating and note submit together.
+  note?: string;
+}
+
+/**
+ * Optional free-text note, offered only once a rating is already recorded. It
+ * rides on its own event rather than re-firing {@link InboxReportFeedbackProperties}
+ * so sentiment stays exactly one event per rating; join back to the rating on
+ * `report_id`. Carries `sentiment` too so a note can be read without that join.
+ */
+export interface InboxReportFeedbackNoteProperties {
+  report_id: string;
+  report_age_hours: number;
+  priority: string | null;
+  actionability: string | null;
+  sentiment: InboxReportFeedbackSentiment;
+  has_pr: boolean;
+  surface: InboxReportActionSurface;
+  /** Truncated to keep event payloads bounded. */
+  note: string;
 }
 
 // Scout events
@@ -1106,7 +1146,7 @@ export interface AutoresearchRunStartedProperties {
 }
 
 // Loops events
-type LoopReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type LoopReasoningEffort = EffortLevel;
 type LoopOverlapPolicy = "skip" | "allow" | "cancel_previous";
 type LoopRunBlockedReason =
   | "deduped"
@@ -1272,7 +1312,6 @@ export const ANALYTICS_EVENTS = {
   COMMAND_MENU_ACTION: "Command menu action",
   COMMAND_CENTER_VIEWED: "Command center viewed",
   BRAINROT_ACTIVATED: "Brainrot activated",
-  SKILL_BUTTON_TRIGGERED: "Skill button triggered",
   POSTHOG_WEB_OPENED: "PostHog web opened",
   SIDEBAR_NAV_ITEM_CLICKED: "Sidebar nav item clicked",
   SIDEBAR_CUSTOMIZED: "Sidebar customized",
@@ -1346,6 +1385,8 @@ export const ANALYTICS_EVENTS = {
   INBOX_REPORT_CLOSED: "Inbox report closed",
   INBOX_REPORT_ACTION: "Inbox report action",
   INBOX_REPORT_SCROLLED: "Inbox report scrolled",
+  INBOX_REPORT_FEEDBACK: "Inbox report feedback",
+  INBOX_REPORT_FEEDBACK_NOTE: "Inbox report feedback note",
   SIGNAL_SOURCE_CONNECTED: "Signal source connected",
 
   // Agents page events
@@ -1449,7 +1490,6 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.COMMAND_MENU_ACTION]: CommandMenuActionProperties;
   [ANALYTICS_EVENTS.COMMAND_CENTER_VIEWED]: never;
   [ANALYTICS_EVENTS.BRAINROT_ACTIVATED]: BrainrotActivatedProperties;
-  [ANALYTICS_EVENTS.SKILL_BUTTON_TRIGGERED]: SkillButtonTriggeredProperties;
   [ANALYTICS_EVENTS.POSTHOG_WEB_OPENED]: never;
   [ANALYTICS_EVENTS.SIDEBAR_NAV_ITEM_CLICKED]: SidebarNavItemClickedProperties;
   [ANALYTICS_EVENTS.SIDEBAR_CUSTOMIZED]: SidebarCustomizedProperties;
@@ -1523,6 +1563,8 @@ export type EventPropertyMap = {
   [ANALYTICS_EVENTS.INBOX_REPORT_CLOSED]: InboxReportClosedProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_ACTION]: InboxReportActionProperties;
   [ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED]: InboxReportScrolledProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK]: InboxReportFeedbackProperties;
+  [ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE]: InboxReportFeedbackNoteProperties;
   [ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED]: SignalSourceConnectedProperties;
 
   // Agents page events
@@ -1592,6 +1634,8 @@ export const INBOX_ANALYTICS_EVENT_NAMES: ReadonlySet<string> = new Set([
   ANALYTICS_EVENTS.INBOX_REPORT_CLOSED,
   ANALYTICS_EVENTS.INBOX_REPORT_ACTION,
   ANALYTICS_EVENTS.INBOX_REPORT_SCROLLED,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK,
+  ANALYTICS_EVENTS.INBOX_REPORT_FEEDBACK_NOTE,
   ANALYTICS_EVENTS.SIGNAL_SOURCE_CONNECTED,
 ]);
 

@@ -7,6 +7,7 @@ import type {
 import type {
   AgentContent,
   AgentConversationEvent,
+  AgentToolCallContent,
   AgentToolCallStatus,
 } from "@posthog/shared";
 import { type PiToolName, TOOL_KIND_BY_NAME } from "./toolKind";
@@ -43,11 +44,42 @@ function isPiToolName(name: string): name is PiToolName {
   return name in TOOL_KIND_BY_NAME;
 }
 
+function toGenericToolContent(
+  resultContent: ToolResultMessage["content"],
+): AgentToolCallContent[] | undefined {
+  const content: AgentToolCallContent[] = [];
+  let text = "";
+
+  const appendText = () => {
+    if (!text) {
+      return;
+    }
+    content.push({ type: "content", content: { type: "text", text } });
+    text = "";
+  };
+
+  for (const block of resultContent) {
+    if (block.type === "text") {
+      text += block.text;
+      continue;
+    }
+    const translated = toContent(block);
+    if (translated) {
+      appendText();
+      content.push({ type: "content", content: translated });
+    }
+  }
+  appendText();
+
+  return content.length > 0 ? content : undefined;
+}
+
 function toContent(block: {
   type: string;
   text?: string;
   data?: string;
   mimeType?: string;
+  fileName?: string;
 }): AgentContent | undefined {
   if (block.type === "text" && typeof block.text === "string") {
     return { type: "text", text: block.text };
@@ -58,7 +90,12 @@ function toContent(block: {
     typeof block.data === "string" &&
     typeof block.mimeType === "string"
   ) {
-    return { type: "image", data: block.data, mimeType: block.mimeType };
+    return {
+      type: "image",
+      data: block.data,
+      mimeType: block.mimeType,
+      ...(block.fileName ? { fileName: block.fileName } : {}),
+    };
   }
 
   return undefined;
@@ -213,6 +250,12 @@ export function createPiMessageTranslator(): PiMessageTranslator {
 
       if (output.locations) {
         toolCall.locations = output.locations;
+      }
+    } else {
+      const content = toGenericToolContent(result.content);
+
+      if (content) {
+        toolCall.content = content;
       }
     }
 

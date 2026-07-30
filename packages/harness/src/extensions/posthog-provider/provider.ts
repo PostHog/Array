@@ -1,6 +1,10 @@
-import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type {
-  AuthStorage,
+  Api,
+  CredentialStore,
+  Model,
+  OAuthCredentials,
+} from "@earendil-works/pi-ai";
+import type {
   ProviderConfig,
   ProviderModelConfig,
 } from "@earendil-works/pi-coding-agent";
@@ -36,11 +40,14 @@ export function parsePosthogOAuthCredentials(
     : null;
 }
 
-export function setPosthogOAuthCredentials(
-  storage: AuthStorage,
+export async function setPosthogOAuthCredentials(
+  storage: CredentialStore,
   credentials: PosthogOAuthCredentials,
-): void {
-  storage.set(POSTHOG_PROVIDER_NAME, { type: "oauth", ...credentials });
+): Promise<void> {
+  await storage.modify(POSTHOG_PROVIDER_NAME, async () => ({
+    type: "oauth",
+    ...credentials,
+  }));
 }
 
 /**

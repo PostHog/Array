@@ -427,6 +427,18 @@ export function hasSessionPromptEvent(events: AcpMessage[]): boolean {
   );
 }
 
+export function hasSessionPromptEventForTaskRun(
+  events: AcpMessage[],
+  taskRunId: string,
+): boolean {
+  return events.some(
+    (event) =>
+      isJsonRpcRequest(event.message) &&
+      event.message.method === "session/prompt" &&
+      getStoredLogEventPosition(event)?.taskRunId === taskRunId,
+  );
+}
+
 /**
  * Whether an event is a turn-complete notification.
  */

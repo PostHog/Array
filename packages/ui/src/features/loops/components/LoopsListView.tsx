@@ -6,7 +6,6 @@ import type { UserBasic } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
-import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
@@ -26,7 +25,7 @@ import {
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Heading, Text } from "@radix-ui/themes";
+import { Flex, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { useLoopBuilderSessions } from "../hooks/useLoopBuilderSessions";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
@@ -75,10 +74,6 @@ function startLoopFromTemplate(template: LoopTemplate): void {
 
 export function LoopsListView() {
   const { data: loops, isLoading, isError, error } = useLoops();
-  // The shared page header ships behind bluebird. Read here, not in the
-  // presentation — that renders bare in tests and Storybook, with no container
-  // to resolve the flags service from.
-  const bluebird = useBluebirdFlag();
   const authenticatedClient = useOptionalAuthenticatedClient();
   const {
     data: currentUser,
@@ -146,7 +141,6 @@ export function LoopsListView() {
 
   return (
     <LoopsListViewPresentation
-      sharedPageHeader={bluebird}
       loops={allLoops}
       currentUserId={currentUser?.id ?? null}
       isLoading={isLoading || currentUserLoading}
@@ -166,8 +160,6 @@ export function LoopsListView() {
 }
 
 interface LoopsListViewPresentationProps {
-  /** Bluebird: title/description/CTA move into the shared full-bleed header. */
-  sharedPageHeader?: boolean;
   loops: LoopSchemas.Loop[];
   currentUserId?: number | null;
   isLoading?: boolean;
@@ -185,7 +177,6 @@ interface LoopsListViewPresentationProps {
 }
 
 export function LoopsListViewPresentation({
-  sharedPageHeader = false,
   loops,
   currentUserId = null,
   isLoading = false,
@@ -239,35 +230,6 @@ export function LoopsListViewPresentation({
           className="@container mx-auto w-full max-w-5xl px-8 py-8"
         >
           <Flex direction="column" gap="4">
-            {!sharedPageHeader && (
-              <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
-                <Flex direction="column" gap="1" className="min-w-0">
-                  <Flex align="center" gap="2" wrap="wrap">
-                    <Heading className="font-bold text-2xl">Loops</Heading>
-                    <Flex
-                      align="center"
-                      className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
-                    >
-                      <CloudIcon
-                        size={12}
-                        weight="fill"
-                        className="text-(--accent-11)"
-                      />
-                      <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
-                        Runs entirely in the cloud
-                      </Text>
-                    </Flex>
-                  </Flex>
-                  <Text color="gray" className="max-w-2xl text-sm">
-                    Put your work on autopilot. Loops run on a schedule, on an
-                    API call, or when something happens on GitHub. You can
-                    finally close the laptop!
-                  </Text>
-                </Flex>
-                {createButton}
-              </div>
-            )}
-
             {isLoading ? (
               <LoopsSkeleton />
             ) : error ? (
@@ -280,26 +242,15 @@ export function LoopsListViewPresentation({
                 }
               />
             ) : loops.length > 0 ? (
-              sharedPageHeader ? (
-                // Triggers live in the page header; only the panels sit here.
-                <LoopTabPanels
-                  personalLoops={personalLoops}
-                  teamLoops={teamLoops}
-                  members={members}
-                  membersLoading={membersLoading}
-                  membersError={membersError}
-                  membersComplete={membersComplete}
-                />
-              ) : (
-                <LoopListTabs
-                  personalLoops={personalLoops}
-                  teamLoops={teamLoops}
-                  members={members}
-                  membersLoading={membersLoading}
-                  membersError={membersError}
-                  membersComplete={membersComplete}
-                />
-              )
+              // Triggers live in the page header; only the panels sit here.
+              <LoopTabPanels
+                personalLoops={personalLoops}
+                teamLoops={teamLoops}
+                members={members}
+                membersLoading={membersLoading}
+                membersError={membersError}
+                membersComplete={membersComplete}
+              />
             ) : (
               <LoopsEmptyState />
             )}
@@ -328,14 +279,6 @@ export function LoopsListViewPresentation({
       </div>
     </>
   );
-
-  if (!sharedPageHeader) {
-    return (
-      <Flex direction="column" className="h-full min-h-0">
-        {body}
-      </Flex>
-    );
-  }
 
   // One Tabs root spanning header and body: the trigger strip sits in the
   // header's sub-nav, its panels stay down in the scrolling body.
@@ -373,40 +316,7 @@ export function LoopsListViewPresentation({
   );
 }
 
-function LoopListTabs({
-  personalLoops,
-  teamLoops,
-  members,
-  membersLoading,
-  membersError,
-  membersComplete,
-}: {
-  personalLoops: LoopSchemas.Loop[];
-  teamLoops: LoopSchemas.Loop[];
-  members: UserBasic[];
-  membersLoading: boolean;
-  membersError: boolean;
-  membersComplete: boolean;
-}) {
-  return (
-    <Tabs defaultValue="personal" className="flex flex-col gap-5">
-      <LoopTabsList
-        personalCount={personalLoops.length}
-        teamCount={teamLoops.length}
-      />
-      <LoopTabPanels
-        personalLoops={personalLoops}
-        teamLoops={teamLoops}
-        members={members}
-        membersLoading={membersLoading}
-        membersError={membersError}
-        membersComplete={membersComplete}
-      />
-    </Tabs>
-  );
-}
-
-/** The trigger strip. Rendered inside the page header when one is present. */
+/** The trigger strip. Rendered inside the page header. */
 function LoopTabsList({
   personalCount,
   teamCount,

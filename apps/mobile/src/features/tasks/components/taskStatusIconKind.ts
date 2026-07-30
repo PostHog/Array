@@ -1,4 +1,4 @@
-import type { Task } from "@posthog/shared";
+import { readPrUrls, type Task } from "@posthog/shared";
 
 export type TaskStatusIconKind =
   | "pr"
@@ -9,11 +9,12 @@ export type TaskStatusIconKind =
   | "chat";
 
 export function getTaskStatusIconKind(task: Task): TaskStatusIconKind {
-  const prUrl = task.latest_run?.output?.pr_url as string | undefined;
+  const hasPr = readPrUrls(task.latest_run?.output).length > 0;
   const status = task.latest_run?.status;
   const environment = task.latest_run?.environment;
 
-  if (prUrl) {
+  // Match desktop semantics, but let PR win when a cloud task also has one.
+  if (hasPr) {
     return "pr";
   }
 

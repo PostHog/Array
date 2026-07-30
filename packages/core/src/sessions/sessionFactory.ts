@@ -9,6 +9,7 @@ export function createBaseSession(
     taskRunId,
     taskId,
     taskTitle,
+    isTaskAuthor: true,
     channel: `agent-event:${taskRunId}`,
     events: [],
     startedAt: Date.now(),

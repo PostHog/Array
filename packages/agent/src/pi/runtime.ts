@@ -1,17 +1,16 @@
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentSessionEvent,
+  RpcCommand,
+  RpcResponse,
+} from "@earendil-works/pi-coding-agent";
 import type { AgentConversationEvent } from "@posthog/shared";
 import {
   createPiConversationTranslator,
   type PiConversationTranslator,
+  type PiDirectBashResult,
 } from "./conversation/translatePiConversation";
-import {
-  createPiRpcClient,
-  getAvailableModelsWithThinkingLevels,
-  getPiRpcClientProcess,
-  type PiRpcClient,
-  type PiRpcClientOptions,
-} from "./rpc-client";
-import type { PiModelOption } from "./types";
+import { getPiRpcClientProcess, type PiRpcClient } from "./rpc-client";
+import { sendPiRpcCommand } from "./rpc-transport";
 
 export class PiRuntime {
   readonly client: PiRpcClient;
@@ -23,6 +22,12 @@ export class PiRuntime {
   private readonly conversationListeners = new Set<
     (event: AgentConversationEvent) => void
   >();
+  private readonly pendingUserMessages: Array<{
+    id: string;
+    message: string;
+    type: "prompt" | "steer" | "follow_up";
+  }> = [];
+  private directBashActive = false;
 
   constructor(client: PiRpcClient) {
     this.client = client;
@@ -46,22 +51,66 @@ export class PiRuntime {
     return () => this.conversationListeners.delete(listener);
   }
 
-  availableModels(): Promise<PiModelOption[]> {
-    return getAvailableModelsWithThinkingLevels(this.client);
-  }
-
-  async conversation(): Promise<AgentConversationEvent[]> {
-    const entries = await this.client.getEntries();
-    const translator = createPiConversationTranslator();
-    const events: AgentConversationEvent[] = [];
-
-    for (const entry of entries.entries) {
-      if (entry.type === "message") {
-        events.push(...translator.translateHistoryMessage(entry.message));
+  async sendCommand(command: RpcCommand): Promise<RpcResponse> {
+    const isUserMessage =
+      command.type === "prompt" ||
+      command.type === "steer" ||
+      command.type === "follow_up";
+    if (isUserMessage && command.id) {
+      this.pendingUserMessages.push({
+        id: command.id,
+        message: command.message,
+        type: command.type,
+      });
+    }
+    if (command.type !== "bash") {
+      try {
+        const response = await sendPiRpcCommand(this.client, command);
+        if (!response.success && isUserMessage && command.id) {
+          this.removePendingUserMessageId(command.id);
+        }
+        return response;
+      } catch (error) {
+        if (isUserMessage && command.id) {
+          this.removePendingUserMessageId(command.id);
+        }
+        throw error;
       }
     }
 
-    return events;
+    if (this.directBashActive) {
+      throw new Error("A Pi bash command is already running");
+    }
+    this.directBashActive = true;
+    this.emitConversationEvents(
+      this.translator.beginDirectBash(command.command),
+    );
+    try {
+      const response = await sendPiRpcCommand(this.client, command);
+      if (response.success) {
+        const result = (response as { data: PiDirectBashResult }).data;
+        this.emitConversationEvents(this.translator.completeDirectBash(result));
+      } else {
+        this.emitConversationEvents(
+          this.translator.failDirectBash(response.error),
+        );
+      }
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emitConversationEvents(this.translator.failDirectBash(message));
+      throw error;
+    } finally {
+      this.directBashActive = false;
+    }
+  }
+
+  clearPendingQueuedUserMessages(): void {
+    for (let index = this.pendingUserMessages.length - 1; index >= 0; index--) {
+      if (this.pendingUserMessages[index]?.type !== "prompt") {
+        this.pendingUserMessages.splice(index, 1);
+      }
+    }
   }
 
   private handleEvent(event: AgentSessionEvent): void {
@@ -71,13 +120,37 @@ export class PiRuntime {
 
     const conversationEvents = this.translator.translateEvent(event);
     for (const conversationEvent of conversationEvents) {
+      if (conversationEvent.type === "user_message") {
+        const text = conversationEvent.content
+          .filter((content) => content.type === "text")
+          .map((content) => content.text)
+          .join("");
+        const pendingIndex = this.pendingUserMessages.findIndex(
+          (pending) => pending.message === text,
+        );
+        if (pendingIndex >= 0) {
+          const [pending] = this.pendingUserMessages.splice(pendingIndex, 1);
+          conversationEvent.id = pending.id;
+        }
+      }
+    }
+    this.emitConversationEvents(conversationEvents);
+  }
+
+  private removePendingUserMessageId(messageId: string): void {
+    const index = this.pendingUserMessages.findIndex(
+      (pending) => pending.id === messageId,
+    );
+    if (index >= 0) {
+      this.pendingUserMessages.splice(index, 1);
+    }
+  }
+
+  private emitConversationEvents(events: AgentConversationEvent[]): void {
+    for (const event of events) {
       for (const listener of this.conversationListeners) {
-        listener(conversationEvent);
+        listener(event);
       }
     }
   }
-}
-
-export function createPiRuntime(options: PiRpcClientOptions): PiRuntime {
-  return new PiRuntime(createPiRpcClient(options));
 }

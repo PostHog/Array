@@ -822,8 +822,10 @@ export function ChannelFeedView({
         <ChatMessageScrollerViewport ref={viewportRef}>
           {/* Horizontal padding is load-bearing: ThreadItem's actions float at
               the row's top-right corner (absolute, past the row edge). Without a
-              gutter they hug the scroll container and get clipped. */}
-          <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
+              gutter they hug the scroll container and get clipped. The deeper
+              bottom padding clears the composer's floating workspace-mode
+              selector, which hangs over the end of the feed. */}
+          <ChatMessageScrollerContent className="mx-auto w-full gap-0 pt-4 pb-10">
             {intro}
             {entries.map((entry) =>
               entry.kind === "task" ? (
