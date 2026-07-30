@@ -50,12 +50,12 @@ export function ScoutDetailHeader({
         <ScoutOriginBadge config={config} />
         <DryRunBadge config={config} />
         {cloudSkillUrl ? (
-          <Tooltip content="View scout in PostHog">
+          <Tooltip content="View skill in PostHog">
             <a
               href={cloudSkillUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`${config.skill_name} scout in PostHog`}
+              aria-label={`${config.skill_name} skill in PostHog`}
               onClick={() =>
                 track(ANALYTICS_EVENTS.SCOUT_ACTION, {
                   action_type: "open_skill_in_posthog",
