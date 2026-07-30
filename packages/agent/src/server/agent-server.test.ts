@@ -4063,6 +4063,13 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh issue list --state open --search");
       expect(prompt).toContain("Closes #<n>");
       expect(prompt).toContain("Refs #<n>");
+      // Guard against turning a Slack name/handle into a GitHub @mention and
+      // tagging an unrelated account.
+      expect(prompt).toContain("Never guess a GitHub identity");
+      expect(prompt).toContain(
+        "A Slack display name or handle is NOT a GitHub username",
+      );
+      expect(prompt).toContain("These `<@U…>` tokens are Slack-only");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 
