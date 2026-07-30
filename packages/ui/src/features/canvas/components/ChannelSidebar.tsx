@@ -4,10 +4,15 @@ import {
   MagnifyingGlass,
   PackageIcon,
 } from "@phosphor-icons/react";
-import type { CreatedByFilter } from "@posthog/core/canvas/channelItems";
+import type {
+  ChannelItemModel,
+  CreatedByFilter,
+} from "@posthog/core/canvas/channelItems";
 import { filterChannelItems } from "@posthog/core/canvas/channelItems";
 import { RUN_STATUS_FILTER_OPTIONS } from "@posthog/core/canvas/runStatus";
 import {
+  ChatMarker,
+  ChatMarkerContent,
   cn,
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +30,11 @@ import {
   Skeleton,
   SkeletonText,
 } from "@posthog/quill";
-import { LOOPS_FLAG } from "@posthog/shared";
+import {
+  formatDaySeparatorLabel,
+  getLocalDayKey,
+  LOOPS_FLAG,
+} from "@posthog/shared";
 import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
@@ -39,13 +48,12 @@ import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelIte
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   [
@@ -237,8 +245,10 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
   const { items, actions, me, isLoading, channelMissing } =
     useChannelItems(channelId);
-  const { showContextMenu, editingTaskId, setEditingTaskId } =
-    useTaskContextMenu();
+  // Inline rename is the only thing left of the old native-menu hook here: the
+  // row's menu is a quill one now, so this surface no longer reaches into the
+  // main process to draw it.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const { renameTask } = useRenameTask();
   const commandCenterCells = useCommandCenterStore((state) => state.cells);
   const assignTaskToCommandCenter = useCommandCenterStore(
@@ -277,6 +287,30 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     [items, query, createdByFilter, statusFilter, me],
   );
 
+  // Recents are already newest-first, so grouping is a single pass that breaks
+  // whenever the calendar day changes. Pinned items are deliberately left
+  // ungrouped: that list is a shelf you put things on, not a timeline, and its
+  // order says nothing about when anything happened.
+  const recentDays = useMemo(() => {
+    const groups: { key: string; label: string; items: ChannelItemModel[] }[] =
+      [];
+    const now = new Date();
+    for (const item of recentItems) {
+      const key = getLocalDayKey(item.ts);
+      const last = groups.at(-1);
+      if (last && last.key === key) {
+        last.items.push(item);
+      } else {
+        groups.push({
+          key,
+          label: formatDaySeparatorLabel(item.ts, now),
+          items: [item],
+        });
+      }
+    }
+    return groups;
+  }, [recentItems]);
+
   const narrowed = filtersActive || searchOpen;
   const listState = listStateOf({
     channelMissing,
@@ -291,6 +325,19 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const showRecent =
     listState === "ready" && (items.some((i) => !i.pinned) || narrowed);
 
+  // The first free command-centre cell, or nothing if every cell is taken by a
+  // task that still exists.
+  const commandCenterAssigner = (taskId: string) => {
+    const cellIndex = commandCenterCells.findIndex(
+      (cellTaskId) => cellTaskId == null || !allTaskIds.has(cellTaskId),
+    );
+    if (cellIndex === -1) return undefined;
+    return () => {
+      assignTaskToCommandCenter(cellIndex, taskId);
+      navigateToCommandCenter();
+    };
+  };
+
   const taskRow = (item: (typeof items)[number]) => (
     <ChannelItemRow
       key={item.key}
@@ -298,27 +345,15 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
       isActive={item.key === activeKey}
       actions={actions}
       isEditing={item.kind === "task" && editingTaskId === item.id}
-      onContextMenu={
-        item.kind === "task"
-          ? (event) =>
-              void showContextMenu(item, event, {
-                isPinned: item.pinned,
-                isInCommandCenter: commandCenterCells.includes(item.id),
-                hasEmptyCommandCenterCell: commandCenterCells.some(
-                  (taskId) => taskId == null || !allTaskIds.has(taskId),
-                ),
-                showArchivePrior: false,
-                onTogglePin: () => actions.togglePin(item),
-                onArchive: () => actions.archive(item),
-                onAddToCommandCenter: () => {
-                  const cellIndex = commandCenterCells.findIndex(
-                    (taskId) => taskId == null || !allTaskIds.has(taskId),
-                  );
-                  if (cellIndex === -1) return;
-                  assignTaskToCommandCenter(cellIndex, item.id);
-                  navigateToCommandCenter();
-                },
-              })
+      onRename={
+        item.kind === "task" ? () => setEditingTaskId(item.id) : undefined
+      }
+      // Undefined disables the menu item: a full command centre has nowhere to
+      // put the task, and an action that silently does nothing is worse than a
+      // greyed-out one.
+      onAddToCommandCenter={
+        item.kind === "task" && !commandCenterCells.includes(item.id)
+          ? commandCenterAssigner(item.id)
           : undefined
       }
       onEditSubmit={
@@ -447,7 +482,16 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               />
               {recentItems.length > 0 ? (
                 <div className="flex flex-col gap-px">
-                  {recentItems.map(taskRow)}
+                  {recentDays.map((day) => (
+                    <Fragment key={day.key}>
+                      {/* The same separator the space feed uses for its day
+                          breaks, so one window never names a day two ways. */}
+                      <ChatMarker variant="separator" className="px-2 py-1">
+                        <ChatMarkerContent>{day.label}</ChatMarkerContent>
+                      </ChatMarker>
+                      {day.items.map(taskRow)}
+                    </Fragment>
+                  ))}
                 </div>
               ) : (
                 <Empty className="border-0 py-6">

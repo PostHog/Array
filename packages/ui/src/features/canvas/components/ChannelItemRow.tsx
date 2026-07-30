@@ -1,5 +1,4 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
-import { Archive, PushPin } from "@phosphor-icons/react";
 import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import {
   runStatusLabel,
@@ -9,6 +8,11 @@ import { Avatar, AvatarFallback, Badge } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import {
+  TaskRowContextMenu,
+  TaskRowMenuButton,
+  type TaskRowMenuProps,
+} from "@posthog/ui/features/canvas/components/TaskRowMenu";
 import { useChannelTaskStatus } from "@posthog/ui/features/canvas/hooks/useChannelTaskStatus";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { InlineEditInput } from "@posthog/ui/features/sidebar/components/items/TaskItem";
@@ -19,8 +23,6 @@ import {
 } from "@posthog/ui/features/sidebar/components/items/TaskStatusDot";
 import { taskDot } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { NestedButton } from "@posthog/ui/primitives/NestedButton";
-import { Tooltip } from "@posthog/ui/primitives/Tooltip";
 import type { ReactNode } from "react";
 
 /**
@@ -36,15 +38,13 @@ export interface ChannelItemActions {
 // The channel sidebar's own chrome. Deliberately not shared with the Code
 // sidebar's TaskItem: that one is still on the absolute gray scale, while these
 // rows use the theme's fill/foreground tokens.
-const HOVER_ACTION_CLASS =
-  "flex h-5 w-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
-const HOVER_TOOLBAR_CLASS =
-  "hidden shrink-0 items-center gap-0.5 group-hover:flex";
-const TIMESTAMP_CLASS =
-  "shrink-0 text-[11px] text-muted-foreground group-hover:hidden";
-// Same hide-on-hover rule as the timestamp it replaces, so the pin/archive
-// toolbar has the slot to itself while the pointer is on the row.
-const TRAILING_CLASS = "flex shrink-0 items-center group-hover:hidden";
+const MENU_BUTTON_CLASS =
+  "hidden h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground group-hover:flex data-popup-open:flex data-popup-open:bg-fill-hover data-popup-open:text-foreground";
+const TIMESTAMP_CLASS = "shrink-0 text-[11px] text-muted-foreground";
+// The badges stay put while the "…" button appears beside them. They used to
+// give up the slot to a two-button toolbar; one button fits alongside, and a
+// row's identity is worth more than the couple of pixels.
+const TRAILING_CLASS = "flex shrink-0 items-center";
 
 // A canvas has no run to report, so it keeps its template glyph. Tasks moved to
 // the status dot, which is why only canvases still have an icon function.
@@ -66,7 +66,8 @@ export function ChannelItemRow({
   isActive,
   actions,
   isEditing = false,
-  onContextMenu,
+  onRename,
+  onAddToCommandCenter,
   onEditSubmit,
   onEditCancel,
 }: {
@@ -74,7 +75,10 @@ export function ChannelItemRow({
   isActive: boolean;
   actions: ChannelItemActions;
   isEditing?: boolean;
-  onContextMenu?: (event: React.MouseEvent) => void;
+  /** Puts the row into inline-rename mode. Absent for canvases. */
+  onRename?: () => void;
+  /** Absent when the command centre has no free cell, which disables the item. */
+  onAddToCommandCenter?: () => void;
   onEditSubmit?: (newTitle: string) => void;
   onEditCancel?: () => void;
 }) {
@@ -86,6 +90,20 @@ export function ChannelItemRow({
   // glyph — it has room to say what the row is as well as how it's doing.
   const icon = canvasIcon(item);
   const rowIcon = status ? <TaskStatusDot dot={taskDot(status)} /> : icon;
+  // Canvases have no menu: they can't be archived, filed, or put in the command
+  // centre, which is most of it.
+  const menu: TaskRowMenuProps | null =
+    item.kind === "task" && onRename
+      ? {
+          taskId: item.id,
+          taskTitle: item.title,
+          isPinned: item.pinned,
+          onAddToCommandCenter,
+          onRename,
+          onTogglePin: () => actions.togglePin(item),
+          onArchive: () => actions.archive(item),
+        }
+      : null;
 
   if (isEditing) {
     return (
@@ -116,7 +134,6 @@ export function ChannelItemRow({
               label={<span>{item.title}</span>}
               isActive={isActive}
               onClick={() => actions.open(item)}
-              onContextMenu={onContextMenu}
               endContent={
                 <>
                   {/* Badges take the timestamp's slot on a task row: the row's
@@ -131,32 +148,14 @@ export function ChannelItemRow({
                       {formatRelativeTimeShort(item.ts)}
                     </span>
                   )}
-                  <span className={HOVER_TOOLBAR_CLASS}>
-                    <Tooltip content={item.pinned ? "Unpin" : "Pin"} side="top">
-                      <NestedButton
-                        aria-label={item.pinned ? "Unpin" : "Pin"}
-                        className={HOVER_ACTION_CLASS}
-                        onActivate={() => actions.togglePin(item)}
-                      >
-                        <PushPin
-                          size={12}
-                          weight={item.pinned ? "fill" : "regular"}
-                        />
-                      </NestedButton>
-                    </Tooltip>
-                    {/* Canvases can't be archived. */}
-                    {item.kind === "task" && (
-                      <Tooltip content="Archive task" side="top">
-                        <NestedButton
-                          aria-label="Archive task"
-                          className={HOVER_ACTION_CLASS}
-                          onActivate={() => actions.archive(item)}
-                        >
-                          <Archive size={12} />
-                        </NestedButton>
-                      </Tooltip>
-                    )}
-                  </span>
+                  {/* Every row action now lives behind the one button, so the
+                      row at rest shows status rather than controls. */}
+                  {menu && (
+                    <TaskRowMenuButton
+                      menu={menu}
+                      className={MENU_BUTTON_CLASS}
+                    />
+                  )}
                 </>
               }
             />
@@ -219,5 +218,11 @@ export function ChannelItemRow({
     </PreviewCard.Root>
   );
 
-  return status ? <TaskStatusTooltips>{row}</TaskStatusTooltips> : row;
+  const tipped = status ? <TaskStatusTooltips>{row}</TaskStatusTooltips> : row;
+  // Right-click opens the same menu the "…" button does, so the two can't drift.
+  return menu ? (
+    <TaskRowContextMenu menu={menu}>{tipped}</TaskRowContextMenu>
+  ) : (
+    tipped
+  );
 }

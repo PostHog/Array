@@ -3,6 +3,7 @@ import { formatRelativeTimeShort } from "@posthog/shared";
 import type { TaskStatusInput } from "@posthog/ui/features/sidebar/components/items/taskStatusVocabulary";
 import { Theme } from "@radix-ui/themes";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The row's status comes from live session/workspace state and a per-task tRPC
@@ -11,6 +12,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ status: null as TaskStatusInput | null }));
 vi.mock("@posthog/ui/features/canvas/hooks/useChannelTaskStatus", () => ({
   useChannelTaskStatus: () => mocks.status,
+}));
+// The row menu's spaces list and filing mutation are tRPC-backed.
+vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
+  useChannels: () => ({ channels: [{ id: "channel-1", name: "code" }] }),
+}));
+vi.mock("@posthog/ui/features/canvas/hooks/useFileTaskToChannel", () => ({
+  useFileTaskToChannel: () => vi.fn(),
+}));
+vi.mock("@posthog/ui/features/feature-flags/useFeatureFlag", () => ({
+  useFeatureFlag: () => true,
 }));
 
 import { ChannelItemRow } from "./ChannelItemRow";
@@ -151,22 +162,88 @@ describe("ChannelItemRow", () => {
     expect(screen.getByText(formatRelativeTimeShort(item().ts))).not.toBeNull();
   });
 
-  it("opens the task context menu from the row", () => {
-    const onContextMenu = vi.fn();
+  // The "…" button and right-click render the same item list from one
+  // definition, so both are asserted against the same expectations.
+  const MENU_ITEMS = [
+    "Pin",
+    "Rename",
+    "Add to Command Center",
+    "File to…",
+    "Archive",
+  ];
 
-    render(
+  function renderWithMenu(overrides: {
+    onRename?: () => void;
+    onAddToCommandCenter?: () => void;
+  }) {
+    return render(
       <Theme>
         <ChannelItemRow
           actions={actions}
           isActive={false}
           item={item()}
-          onContextMenu={onContextMenu}
+          onRename={overrides.onRename ?? (() => {})}
+          onAddToCommandCenter={overrides.onAddToCommandCenter}
+        />
+      </Theme>,
+    );
+  }
+
+  it("opens the row menu from the … button", async () => {
+    renderWithMenu({});
+
+    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
+
+    // The popup mounts in a portal a tick later, so the first assertion waits.
+    expect(await screen.findByRole("menuitem", { name: "Pin" })).not.toBeNull();
+    for (const label of MENU_ITEMS) {
+      expect(screen.getByRole("menuitem", { name: label })).not.toBeNull();
+    }
+  });
+
+  it("opens the same menu on right-click", () => {
+    renderWithMenu({});
+
+    fireEvent.contextMenu(screen.getByText("Investigate signup drop-off"));
+
+    for (const label of MENU_ITEMS) {
+      expect(screen.getByRole("menuitem", { name: label })).not.toBeNull();
+    }
+  });
+
+  it("disables Add to Command Center when there is nowhere to put the task", async () => {
+    renderWithMenu({ onAddToCommandCenter: undefined });
+
+    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
+
+    expect(
+      await screen.findByRole("menuitem", { name: "Add to Command Center" }),
+    ).toHaveAttribute("data-disabled");
+  });
+
+  it("renames from the menu", async () => {
+    const onRename = vi.fn();
+    renderWithMenu({ onRename });
+
+    await userEvent.click(screen.getByRole("button", { name: "Task actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Rename" }),
+    );
+
+    expect(onRename).toHaveBeenCalledOnce();
+  });
+
+  it("gives a canvas no menu — it can't be archived, filed, or pinned to a cell", () => {
+    render(
+      <Theme>
+        <ChannelItemRow
+          actions={actions}
+          isActive={false}
+          item={item({ key: "canvas:c1", kind: "canvas", id: "c1" })}
         />
       </Theme>,
     );
 
-    fireEvent.contextMenu(screen.getByText("Investigate signup drop-off"));
-
-    expect(onContextMenu).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Task actions" })).toBeNull();
   });
 });

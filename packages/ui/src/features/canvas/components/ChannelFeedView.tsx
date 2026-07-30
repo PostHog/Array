@@ -42,7 +42,11 @@ import {
   ThreadItemTimestamp,
   useChatMessageScroller,
 } from "@posthog/quill";
-import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
+import {
+  formatDaySeparatorLabel,
+  formatRelativeTimeShort,
+  getLocalDayKey,
+} from "@posthog/shared";
 import type {
   Task,
   TaskRunStatus,
@@ -101,37 +105,6 @@ function statusBadge(status: TaskRunStatus) {
       {RUN_STATUS_LABELS[status]}
     </Badge>
   );
-}
-
-// Local calendar-day identity, so tasks created on the same day share a heading
-// regardless of time. Uses local getters (not the UTC ISO) so the split lands
-// on the viewer's midnight.
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-function ordinal(n: number): string {
-  const suffix = ["th", "st", "nd", "rd"];
-  const rem = n % 100;
-  return `${n}${suffix[(rem - 20) % 10] ?? suffix[rem] ?? suffix[0]}`;
-}
-
-// The day-separator label: "Today" / "Yesterday" for the recent days, then a
-// weekday + ordinal ("Monday 5th") within the week, adding the month (and the
-// year when it differs) further back so older separators stay unambiguous.
-function dayLabel(iso: string, now: Date): string {
-  const date = new Date(iso);
-  const days = getLocalDayDiff(date, now);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
-  const day = ordinal(date.getDate());
-  if (days < 7) return `${weekday} ${day}`;
-  const month = date.toLocaleDateString(undefined, { month: "long" });
-  const year =
-    date.getFullYear() === now.getFullYear() ? "" : `, ${date.getFullYear()}`;
-  return `${weekday}, ${month} ${day}${year}`;
 }
 
 interface TaskStatusDisplay {
@@ -863,13 +836,14 @@ export function ChannelFeedView({
               const previous = entries[index - 1];
               const showDayMarker =
                 !previous ||
-                dayKey(previous.createdAt) !== dayKey(entry.createdAt);
+                getLocalDayKey(previous.createdAt) !==
+                  getLocalDayKey(entry.createdAt);
               return (
                 <Fragment key={entry.id}>
                   {showDayMarker && (
                     <ChatMarker variant="separator">
                       <ChatMarkerContent>
-                        {dayLabel(entry.createdAt, now)}
+                        {formatDaySeparatorLabel(entry.createdAt, now)}
                       </ChatMarkerContent>
                     </ChatMarker>
                   )}

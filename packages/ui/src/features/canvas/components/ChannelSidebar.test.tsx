@@ -2,7 +2,7 @@ import type { ChannelItemModel } from "@posthog/core/canvas/channelItems";
 import { Theme } from "@radix-ui/themes";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   items: [] as ChannelItemModel[],
@@ -36,15 +36,11 @@ vi.mock("@posthog/ui/features/canvas/components/ChannelsFab", () => ({
   ChannelsFab: () => null,
 }));
 
-// The row context menu's hooks reach for a QueryClient and the DI container,
-// neither of which a unit test has. Stubbed at the module boundary, as
-// WebsiteLayout.test.tsx does for the same reason.
-vi.mock("@posthog/ui/features/tasks/useTaskContextMenu", () => ({
-  useTaskContextMenu: () => ({
-    showContextMenu: vi.fn(),
-    editingTaskId: null,
-    setEditingTaskId: vi.fn(),
-  }),
+// The row menu's spaces list reaches for a QueryClient the unit test has no
+// stack for. Stubbed at the module boundary, as WebsiteLayout.test.tsx does for
+// the same reason.
+vi.mock("@posthog/ui/features/canvas/hooks/useChannels", () => ({
+  useChannels: () => ({ channels: [] }),
 }));
 vi.mock("@posthog/ui/features/tasks/useTaskMutations", () => ({
   useRenameTask: () => ({ renameTask: vi.fn() }),
@@ -165,5 +161,87 @@ describe("ChannelSidebar", () => {
 
     expect(screen.getByText("No matches")).toBeInTheDocument();
     expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChannelSidebar recents grouping", () => {
+  // A fixed clock, so "Today" and "Yesterday" mean the same thing on every run.
+  const NOW = new Date(2026, 6, 29, 12);
+
+  beforeEach(() => {
+    mocks.isLoading = false;
+    mocks.channelMissing = false;
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("splits recents into day sections, newest first", () => {
+    mocks.items = [
+      item({
+        key: "task:a",
+        id: "a",
+        title: "Today's work",
+        ts: new Date(2026, 6, 29, 9).getTime(),
+      }),
+      item({
+        key: "task:b",
+        id: "b",
+        title: "Also today",
+        ts: new Date(2026, 6, 29, 8).getTime(),
+      }),
+      item({
+        key: "task:c",
+        id: "c",
+        title: "Yesterday's work",
+        ts: new Date(2026, 6, 28, 17).getTime(),
+      }),
+      item({
+        key: "task:d",
+        id: "d",
+        title: "Older work",
+        ts: new Date(2026, 6, 20, 17).getTime(),
+      }),
+    ];
+
+    renderSidebar();
+
+    expect(screen.getByText("Today")).not.toBeNull();
+    expect(screen.getByText("Yesterday")).not.toBeNull();
+    expect(screen.getByText("Monday, July 20th")).not.toBeNull();
+  });
+
+  it("gives one day a single heading however many items it holds", () => {
+    mocks.items = [
+      item({ key: "task:a", id: "a", ts: new Date(2026, 6, 29, 9).getTime() }),
+      item({ key: "task:b", id: "b", ts: new Date(2026, 6, 29, 8).getTime() }),
+      item({ key: "task:c", id: "c", ts: new Date(2026, 6, 29, 1).getTime() }),
+    ];
+
+    renderSidebar();
+
+    expect(screen.getAllByText("Today")).toHaveLength(1);
+  });
+
+  it("leaves pinned items ungrouped — that list is a shelf, not a timeline", () => {
+    mocks.items = [
+      item({
+        key: "task:pinned",
+        id: "pinned",
+        title: "Kept at hand",
+        pinned: true,
+        ts: new Date(2026, 6, 20, 9).getTime(),
+      }),
+    ];
+
+    renderSidebar();
+
+    // The pinned item is listed, but no day heading is drawn for it.
+    expect(screen.getByText("Kept at hand")).not.toBeNull();
+    expect(screen.queryByText("Monday, July 20th")).toBeNull();
+    expect(screen.queryByText("Today")).toBeNull();
   });
 });
