@@ -5,6 +5,7 @@ import type {
   ExecutionMode,
   WorkspaceMode,
 } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -22,13 +23,7 @@ export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
-export type DefaultReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "last_used";
+export type DefaultReasoningEffort = EffortLevel | "last_used";
 
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
@@ -113,6 +108,8 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedPiModel: string | null;
   lastUsedReasoningEffort: string | null;
+  lastUsedContextWindow: "200k" | "1m" | null;
+  lastUsedFastMode: boolean | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   // Last-known default ("trunk") branch per cloud repo, keyed by lowercased
@@ -136,6 +133,8 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedPiModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
+  setLastUsedContextWindow: (value: "200k" | "1m") => void;
+  setLastUsedFastMode: (enabled: boolean) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
   setCachedCloudRepositoryMap: (
     map: Record<string, UserRepositoryIntegrationRef>,
@@ -310,6 +309,8 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedPiModel: null,
       lastUsedReasoningEffort: null,
+      lastUsedContextWindow: null,
+      lastUsedFastMode: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
       cachedCloudDefaultBranchMap: {},
@@ -331,6 +332,9 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastUsedPiModel: (model) => set({ lastUsedPiModel: model }),
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
+      setLastUsedContextWindow: (value) =>
+        set({ lastUsedContextWindow: value }),
+      setLastUsedFastMode: (enabled) => set({ lastUsedFastMode: enabled }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
       setCachedCloudRepositoryMap: (map) =>
@@ -529,6 +533,19 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: "settings-storage",
       storage: electronStorage,
+      version: 1,
+      // v1 ships the merged model/reasoning control: bust everyone's saved
+      // selection state once so all users start on the new defaults.
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 1) {
+          state.lastUsedModel = null;
+          state.lastUsedReasoningEffort = null;
+          state.lastUsedContextWindow = null;
+          state.lastUsedFastMode = null;
+        }
+        return state;
+      },
       partialize: (state) => ({
         // Run mode + last-used flow defaults
         defaultRunMode: state.defaultRunMode,
@@ -540,6 +557,8 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedPiModel: state.lastUsedPiModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
+        lastUsedContextWindow: state.lastUsedContextWindow,
+        lastUsedFastMode: state.lastUsedFastMode,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         cachedCloudDefaultBranchMap: state.cachedCloudDefaultBranchMap,

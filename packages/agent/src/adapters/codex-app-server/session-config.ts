@@ -5,10 +5,12 @@ import type {
 import {
   CODEX_MODE_PRESETS,
   type CodexModePreset,
+  DEFAULT_OPTION_META_KEY,
   type ExecutionMode,
   resolveCloudInitialPermissionMode,
   restrictedModelMeta,
 } from "@posthog/shared";
+import { EFFORT_LEVEL_LABELS } from "@posthog/shared/domain-types";
 import {
   type GatewayModel,
   isOpenAIModel,
@@ -146,17 +148,8 @@ export function resolveCodexMode(mode: string | undefined): string {
 /** Codex's standard reasoning efforts; used when model/list doesn't expose them. */
 export const DEFAULT_EFFORTS = ["low", "medium", "high"];
 
-// Display labels for reasoning efforts; the host renders `name` verbatim.
-const EFFORT_LABELS: Record<string, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra High",
-  max: "Max",
-};
-
 function humanizeEffort(effort: string): string {
-  return EFFORT_LABELS[effort] ?? effort;
+  return (EFFORT_LEVEL_LABELS as Record<string, string>)[effort] ?? effort;
 }
 
 /** The current selector values `buildConfigOptions` projects into ACP options. */
@@ -221,7 +214,11 @@ export function buildConfigOptions(s: ConfigSelectors): SessionConfigOption[] {
       name: "Reasoning effort",
       category: "thought_level",
       currentValue: currentEffort,
-      options: efforts.map((e) => ({ name: humanizeEffort(e), value: e })),
+      options: efforts.map((e) => ({
+        name: humanizeEffort(e),
+        value: e,
+        ...(e === "high" ? { _meta: { [DEFAULT_OPTION_META_KEY]: true } } : {}),
+      })),
     } as unknown as SessionConfigOption,
   ];
 }

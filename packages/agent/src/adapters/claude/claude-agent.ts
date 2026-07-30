@@ -115,9 +115,12 @@ import {
   resolveInitialModelId,
 } from "./session/model-config";
 import {
+  CONTEXT_WINDOW_1M_BETA,
+  CONTEXT_WINDOW_200K_TOKENS,
   DEFAULT_EFFORT,
   DEFAULT_MODEL,
   fastModeStateEnabled,
+  getContextWindowOptions,
   getEffortOptions,
   resolveEffortForModel,
   resolveModelPreference,
@@ -131,6 +134,8 @@ import {
   buildSystemPrompt,
   type GatewayEnv,
   type ProcessSpawnedInfo,
+  toEffortFlagSettings,
+  toSdkEffort,
 } from "./session/options";
 import { SettingsManager } from "./session/settings";
 import {
@@ -1752,15 +1757,24 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       this.session.lastContextWindowSize =
         this.getContextWindowForModel(resolvedValue);
       this.rebuildEffortConfigOption(resolvedValue);
+      this.rebuildContextWindowConfigOption(resolvedValue);
       this.rebuildFastModeConfigOption(resolvedValue);
     } else if (params.configId === "effort") {
       const newEffort = resolvedValue as EffortLevel;
       this.session.effort = newEffort;
-      this.session.queryOptions.effort = newEffort;
-      await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: newEffort,
-      });
+      this.session.queryOptions.effort = toSdkEffort(newEffort);
+      await this.session.query.applyFlagSettings(
+        toEffortFlagSettings(newEffort),
+      );
+    } else if (params.configId === "context_window") {
+      const enable1M = resolvedValue === "1m";
+      // queryOptions is read per prompt, so this applies from the next turn.
+      this.session.queryOptions.betas = enable1M
+        ? [CONTEXT_WINDOW_1M_BETA]
+        : undefined;
+      this.session.lastContextWindowSize = enable1M
+        ? this.getContextWindowForModel(this.session.modelId ?? "")
+        : CONTEXT_WINDOW_200K_TOKENS;
     } else if (params.configId === "fast") {
       // SDK flag first: a rejected control request leaves state untouched.
       const enabled = resolvedValue === "on";
@@ -1949,8 +1963,10 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     const settingsManager = new SettingsManager(cwd);
     await settingsManager.initialize();
 
+    // The session's explicit pick outranks the shared claude settings file:
+    // that file is cross-session state and must only ever be a fallback.
     const earlyModelId =
-      settingsManager.getSettings().model || meta?.model || "";
+      meta?.model || settingsManager.getSettings().model || "";
 
     // Register the in-process general local-tools MCP server. Tools self-gate
     // via the registry (e.g. signed-commit is cloud-only and needs a GH token),
@@ -2184,7 +2200,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     const [rawModelOptions] = await Promise.all([
       this.getModelConfigOptions(
-        settingsManager.getSettings().model || meta?.model || undefined,
+        meta?.model || settingsManager.getSettings().model || undefined,
         this.options?.gatewayEnv?.anthropicBaseUrl,
         this.options?.gatewayEnv?.anthropicAuthToken,
       ),
@@ -2249,13 +2265,15 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     }
 
     const resolvedModelId = resolveInitialModelId(modelOptions, [
-      settingsManager.getSettings().model,
       meta?.model,
+      settingsManager.getSettings().model,
     ]);
     modelOptions.currentModelId = resolvedModelId;
     session.modelId = resolvedModelId;
     session.lastContextWindowSize =
-      this.getContextWindowForModel(resolvedModelId);
+      meta?.contextWindow === "200k"
+        ? CONTEXT_WINDOW_200K_TOKENS
+        : this.getContextWindowForModel(resolvedModelId);
 
     const resolvedSdkModel = toSdkModelId(resolvedModelId);
 
@@ -2270,17 +2288,26 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // Keep thinking enabled by default for effort-capable models (see
     // DEFAULT_EFFORT).
     const resolvedEffort = resolveEffortForModel(resolvedModelId, effort);
-    if (resolvedEffort && resolvedEffort !== effort) {
+    // Ultracode re-applies even when the requested effort stands: the flag
+    // only reaches the session through applyFlagSettings.
+    if (
+      resolvedEffort &&
+      (resolvedEffort !== effort || resolvedEffort === "ultracode")
+    ) {
       this.session.effort = resolvedEffort;
-      this.session.queryOptions.effort = resolvedEffort;
-      await this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: resolvedEffort,
-      });
+      this.session.queryOptions.effort = toSdkEffort(resolvedEffort);
+      await this.session.query.applyFlagSettings(
+        toEffortFlagSettings(resolvedEffort),
+      );
     }
 
-    if (supports1MContext(resolvedModelId)) {
-      options.betas = ["context-1m-2025-08-07"];
+    if (supports1MContext(resolvedModelId) && meta?.contextWindow !== "200k") {
+      options.betas = [CONTEXT_WINDOW_1M_BETA];
+    }
+
+    if (meta?.fastMode && supportsFastMode(resolvedModelId)) {
+      this.session.fastModeEnabled = true;
+      await this.session.query.applyFlagSettings({ fastMode: true });
     }
 
     const availableModes = getAvailableModes();
@@ -2460,6 +2487,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
       });
     }
 
+    const contextOption = this.contextWindowConfigOption(
+      modelOptions.currentModelId,
+    );
+    if (contextOption) {
+      configOptions.push(contextOption);
+    }
+
     if (supportsFastMode(modelOptions.currentModelId)) {
       configOptions.push(this.fastModeConfigOption(fastModeEnabled ?? false));
     }
@@ -2467,16 +2501,53 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     return configOptions;
   }
 
+  private contextWindowConfigOption(
+    modelId: string,
+  ): SessionConfigOption | null {
+    const contextOptions = getContextWindowOptions(modelId);
+    if (!contextOptions) return null;
+    const is1M = this.session.queryOptions.betas?.includes(
+      CONTEXT_WINDOW_1M_BETA,
+    );
+    return {
+      id: "context_window",
+      name: "Context Window",
+      type: "select",
+      currentValue: is1M ? "1m" : "200k",
+      options: contextOptions,
+      category: "_context_window" as SessionConfigOptionCategory,
+      description: "Choose the context window size for this session",
+    };
+  }
+
+  private rebuildContextWindowConfigOption(modelId: string): void {
+    const withoutContext = this.session.configOptions.filter(
+      (o) => o.id !== "context_window",
+    );
+    if (!supports1MContext(modelId)) {
+      this.session.queryOptions.betas = undefined;
+      this.session.configOptions = withoutContext;
+      return;
+    }
+    // Switching onto a 1M-capable model restores the default 1M window.
+    this.session.queryOptions.betas = [CONTEXT_WINDOW_1M_BETA];
+    const contextOption = this.contextWindowConfigOption(modelId);
+    this.session.configOptions = contextOption
+      ? [...withoutContext, contextOption]
+      : withoutContext;
+  }
+
   private fastModeConfigOption(enabled: boolean): SessionConfigOption {
     return {
       id: "fast",
-      name: "Fast mode",
+      name: "Fast Mode",
       type: "select",
       currentValue: enabled ? "on" : "off",
       options: [
         { value: "on", name: "On" },
         { value: "off", name: "Off" },
       ],
+      category: "_fast_mode" as SessionConfigOptionCategory,
       description: "Faster responses on supported models",
     };
   }
@@ -2564,6 +2635,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.queryOptions.effort = undefined;
         void this.session.query.applyFlagSettings({
           effortLevel: undefined,
+          ultracode: false,
         });
       }
       return;
@@ -2578,12 +2650,12 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
     // Set the default when none is chosen yet (see DEFAULT_EFFORT), or re-apply
     // when the prior level is invalid for the newly selected model.
     if (!this.session.effort || resolvedValue !== currentValue) {
-      this.session.effort = resolvedValue as EffortLevel;
-      this.session.queryOptions.effort = resolvedValue as EffortLevel;
-      void this.session.query.applyFlagSettings({
-        // @ts-expect-error SDK Settings.effortLevel omits "max" but runtime accepts it
-        effortLevel: resolvedValue,
-      });
+      const resolvedEffort = resolvedValue as EffortLevel;
+      this.session.effort = resolvedEffort;
+      this.session.queryOptions.effort = toSdkEffort(resolvedEffort);
+      void this.session.query.applyFlagSettings(
+        toEffortFlagSettings(resolvedEffort),
+      );
     }
 
     const effortConfig: SessionConfigOption = {

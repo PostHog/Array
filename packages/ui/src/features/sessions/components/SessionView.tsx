@@ -5,10 +5,15 @@ import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "@posthog/core/task-detail/previewConfig";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, FAST_MODE_FLAG } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
@@ -29,7 +34,6 @@ import {
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
-import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
@@ -49,7 +53,9 @@ import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/u
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
+  useConfigOptionForTask,
   useModeConfigOptionForTask,
+  useModelConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
   useThoughtLevelConfigOptionForTask,
@@ -187,7 +193,18 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
+  const contextWindowOption = useConfigOptionForTask(
+    taskId,
+    CONTEXT_WINDOW_OPTION_CATEGORY,
+  );
+  const sessionModelOption = useModelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
+  const liveFastModeOption = useConfigOptionForTask(
+    taskId,
+    FAST_MODE_OPTION_CATEGORY,
+  );
+  const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
@@ -232,6 +249,14 @@ export function SessionView({
       sessionService.setSessionConfigOption(taskId, thoughtOption.id, value);
     },
     [taskId, thoughtOption, sessionService],
+  );
+
+  const handleConfigOptionChange = useCallback(
+    (configId: string, value: string) => {
+      if (!taskId) return;
+      sessionService.setSessionConfigOption(taskId, configId, value);
+    },
+    [taskId, sessionService],
   );
 
   const sessionId = taskId ?? "default";
@@ -740,18 +765,17 @@ export function SessionView({
                           }
                           allowBypassPermissions={allowBypassPermissions}
                           enableBashMode={!isCloudRun}
-                          modelSelector={
-                            <ModelSelector
-                              taskId={taskId}
-                              disabled={!isRunning}
-                            />
-                          }
+                          modelSelector={null}
                           reasoningSelector={
                             thoughtOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
+                                modelOption={sessionModelOption}
                                 adapter={adapter}
+                                contextWindowOption={contextWindowOption}
+                                fastModeOption={fastModeOption}
                                 onChange={handleThoughtChange}
+                                onConfigOptionChange={handleConfigOptionChange}
                                 disabled={!isRunning}
                               />
                             ) : null

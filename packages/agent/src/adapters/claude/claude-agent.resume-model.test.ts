@@ -323,6 +323,59 @@ describe("ClaudeAcpAgent session creation", () => {
     },
   );
 
+  // The shared claude settings file is cross-session state: the session's own
+  // pick must win over it, with the file only as a fallback.
+  it.each([
+    {
+      name: "prefers meta.model over the settings file model",
+      sessionId: "0197a000-0000-7000-8000-000000000011",
+      settingsModel: "claude-opus-4-8",
+      model: "claude-fable-5",
+      expectedSetModel: "claude-fable-5",
+      expectedCurrentValue: "claude-fable-5",
+    },
+    {
+      name: "falls back to the settings file model without meta.model",
+      sessionId: "0197a000-0000-7000-8000-000000000012",
+      settingsModel: "claude-fable-5",
+      model: undefined,
+      expectedSetModel: "claude-fable-5",
+      expectedCurrentValue: "claude-fable-5",
+    },
+  ])(
+    "$name",
+    async ({
+      sessionId,
+      settingsModel,
+      model,
+      expectedSetModel,
+      expectedCurrentValue,
+    }) => {
+      const settingsPath = path.join(configDir, "settings.json");
+      writeFileSync(settingsPath, JSON.stringify({ model: settingsModel }));
+      try {
+        const agent = makeAgent();
+
+        const response = await agent.resumeSession({
+          sessionId,
+          cwd,
+          mcpServers: [],
+          _meta: { taskRunId: "run-1", ...(model ? { model } : {}) },
+        });
+
+        expect(createdQueries).toHaveLength(1);
+        expect(createdQueries[0].setModel).toHaveBeenCalledWith(
+          expectedSetModel,
+        );
+        expect(getModelConfigOption(response)?.currentValue).toBe(
+          expectedCurrentValue,
+        );
+      } finally {
+        rmSync(settingsPath, { force: true });
+      }
+    },
+  );
+
   // New sessions pass the model to the SDK at spawn, never via setModel. The
   // Codex-model row guards the desync that surfaced as "picked gpt-5.5, session
   // ran Opus": a non-Anthropic id on the Claude adapter must fall back to the

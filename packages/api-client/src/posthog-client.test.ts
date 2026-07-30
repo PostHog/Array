@@ -807,6 +807,104 @@ describe("PostHogAPIClient", () => {
     );
   });
 
+  it("forwards contextWindow to the cloud run body when an adapter is set", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/context-window", {
+      adapter: "claude",
+      model: "claude-opus-5",
+      contextWindow: "1m",
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/projects/{project_id}/tasks/{id}/run/",
+      expect.objectContaining({
+        body: expect.objectContaining({ context_window: "1m" }),
+      }),
+    );
+  });
+
+  it.each([false, true] as const)(
+    "forwards fastMode:%s to the cloud run body when an adapter is set",
+    async (fastMode) => {
+      const client = new PostHogAPIClient(
+        "http://localhost:8000",
+        async () => "token",
+        async () => "token",
+        123,
+      );
+
+      const post = vi.fn().mockResolvedValue({
+        id: "task-123",
+        title: "Task",
+        description: "Task",
+        created_at: "2026-04-14T00:00:00Z",
+        updated_at: "2026-04-14T00:00:00Z",
+        origin_product: "user_created",
+      });
+
+      (client as unknown as { api: { post: typeof post } }).api = { post };
+
+      await client.runTaskInCloud("task-123", "feature/fast-mode", {
+        adapter: "claude",
+        model: "claude-opus-5",
+        fastMode,
+      });
+
+      expect(post).toHaveBeenCalledWith(
+        "/api/projects/{project_id}/tasks/{id}/run/",
+        expect.objectContaining({
+          body: expect.objectContaining({ fast_mode: fastMode }),
+        }),
+      );
+    },
+  );
+
+  it("omits contextWindow and fastMode when no adapter is set", async () => {
+    const client = new PostHogAPIClient(
+      "http://localhost:8000",
+      async () => "token",
+      async () => "token",
+      123,
+    );
+
+    const post = vi.fn().mockResolvedValue({
+      id: "task-123",
+      title: "Task",
+      description: "Task",
+      created_at: "2026-04-14T00:00:00Z",
+      updated_at: "2026-04-14T00:00:00Z",
+      origin_product: "user_created",
+    });
+
+    (client as unknown as { api: { post: typeof post } }).api = { post };
+
+    await client.runTaskInCloud("task-123", "feature/no-adapter", {
+      contextWindow: "1m",
+      fastMode: false,
+    });
+
+    const call = post.mock.calls[0][1] as { body: Record<string, unknown> };
+    expect(call.body).not.toHaveProperty("context_window");
+    expect(call.body).not.toHaveProperty("fast_mode");
+  });
+
   it("starts an existing cloud task run with run-scoped artifact ids", async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,

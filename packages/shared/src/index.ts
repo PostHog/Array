@@ -223,10 +223,14 @@ export {
   splitMentionSegments,
 } from "./mentions";
 export {
+  DEFAULT_OPTION_META_KEY,
   defaultEligibleModel,
+  isDefaultSelectOption,
   isRestrictedModelOption,
+  OPTION_DOCS_URL_META_KEY,
   RESTRICTED_MODEL_META_KEY,
   restrictedModelMeta,
+  selectOptionDocsUrl,
 } from "./models";
 export {
   getOauthClientIdFromRegion,
