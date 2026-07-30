@@ -75,4 +75,20 @@ describe("RecentsService", () => {
       }),
     );
   });
+
+  it("does not rewrite a non-canvas row supplied as a canvas id", async () => {
+    const { service, getEntry, fetch } = serviceWith([]);
+    getEntry.mockResolvedValue({
+      id: "task-row",
+      path: "Tasks/task-row",
+      type: "task",
+      ref: "task-row",
+    } as never);
+
+    await expect(
+      service.record({ kind: "canvas", id: "task-row" }),
+    ).rejects.toThrow("Canvas not found");
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

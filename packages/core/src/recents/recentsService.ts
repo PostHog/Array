@@ -54,7 +54,8 @@ export class RecentsService {
 
   private async ensureCanvasReference(id: string): Promise<void> {
     const entry = await this.fs.getEntry<RecentFsEntry>(id, "canvas");
-    if (!entry) throw new Error("Canvas not found");
+    if (!entry || entry.type !== "dashboard")
+      throw new Error("Canvas not found");
     if (entry.ref === id) return;
     const response = await this.fs.fetch(`${encodeURIComponent(id)}/`, {
       method: "PATCH",
