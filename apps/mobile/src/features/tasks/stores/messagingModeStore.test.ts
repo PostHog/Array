@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type MessagingMode,
+  migrateMessagingModeState,
   useMessagingModeStore,
 } from "./messagingModeStore";
 
@@ -28,12 +29,15 @@ describe("messagingModeStore", () => {
     );
   });
 
-  it("falls back to the global default when a task has no override", () => {
-    useMessagingModeStore.getState().setDefaultMode("queue");
-    expect(useMessagingModeStore.getState().getEffectiveMode("t1")).toBe(
-      "queue",
-    );
-  });
+  it.each(["queue", "steer"] as const)(
+    "falls back to the global default (%s) when a task has no override",
+    (mode) => {
+      useMessagingModeStore.getState().setDefaultMode(mode);
+      expect(useMessagingModeStore.getState().getEffectiveMode("t1")).toBe(
+        mode,
+      );
+    },
+  );
 
   it("prefers a per-task override over the global default", () => {
     useMessagingModeStore.getState().setMode("t1", "queue");
@@ -53,6 +57,8 @@ describe("messagingModeStore", () => {
     );
   });
 
+  // Exercises the migration through the persisted store's wired `migrate`
+  // option, complementing the direct unit tests below.
   describe("migration", () => {
     it.each([
       {
@@ -88,6 +94,30 @@ describe("messagingModeStore", () => {
       );
       expect(migrated.modesByTaskId).toEqual({ t1: "queue", t2: "steer" });
       expect(migrated.defaultMode).toBe("steer");
+    });
+  });
+});
+
+describe("migrateMessagingModeState", () => {
+  it("moves v0 installs to steer while keeping per-task overrides", () => {
+    const migrated = migrateMessagingModeState(
+      { modesByTaskId: { t1: "queue" }, defaultMode: "queue" },
+      0,
+    );
+    expect(migrated).toEqual({
+      modesByTaskId: { t1: "queue" },
+      defaultMode: "steer",
+    });
+  });
+
+  it("leaves already-migrated state untouched", () => {
+    const state = { modesByTaskId: {}, defaultMode: "queue" as const };
+    expect(migrateMessagingModeState(state, 1)).toEqual(state);
+  });
+
+  it("tolerates missing persisted state", () => {
+    expect(migrateMessagingModeState(undefined, 0)).toEqual({
+      defaultMode: "steer",
     });
   });
 });

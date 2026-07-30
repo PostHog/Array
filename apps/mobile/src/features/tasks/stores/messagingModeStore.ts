@@ -13,6 +13,20 @@ interface MessagingModeState {
   getEffectiveMode: (taskId: string | undefined) => MessagingMode;
 }
 
+/**
+ * Mobile sessions are all cloud, where steer is stable, so the default moved to
+ * steer. Existing installs persisted "queue" under v0 and would keep it, so v1
+ * rehydrates them to steer. Per-task overrides are untouched; an explicit
+ * "queue" default is indistinguishable from the old default, so it is reset too.
+ */
+export function migrateMessagingModeState(
+  persisted: unknown,
+  version: number,
+): Partial<MessagingModeState> {
+  const state = (persisted ?? {}) as Partial<MessagingModeState>;
+  return version < 1 ? { ...state, defaultMode: "steer" } : state;
+}
+
 export const useMessagingModeStore = create<MessagingModeState>()(
   persist(
     (set, get) => ({
@@ -35,18 +49,7 @@ export const useMessagingModeStore = create<MessagingModeState>()(
       name: "messaging-mode-storage",
       storage: createJSONStorage(() => AsyncStorage),
       version: 1,
-      // Pre-v1 installs persisted the old "queue" default, so flip them to the
-      // new "steer" default once. Per-task overrides are left untouched.
-      migrate: (persisted, version) => {
-        const state = persisted as Pick<
-          MessagingModeState,
-          "modesByTaskId" | "defaultMode"
-        >;
-        if (version < 1 && state.defaultMode === "queue") {
-          return { ...state, defaultMode: "steer" };
-        }
-        return state;
-      },
+      migrate: migrateMessagingModeState,
       partialize: (state) => ({
         modesByTaskId: state.modesByTaskId,
         defaultMode: state.defaultMode,
