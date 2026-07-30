@@ -37,7 +37,7 @@ export function TerminalSettings() {
 
   const hostClient = useHostTRPCClient();
   const { localWorkspaces } = useHostCapabilities();
-  const [isChoosingFolder, setIsChoosingFolder] = useState(false);
+  const [isChoosingDirectory, setIsChoosingDirectory] = useState(false);
 
   const [draftCustomFont, setDraftCustomFont] = useState(
     terminalCustomFontFamily,
@@ -93,16 +93,16 @@ export function TerminalSettings() {
   };
 
   const handleChooseDefaultCwd = async () => {
-    if (isChoosingFolder) return;
-    setIsChoosingFolder(true);
+    if (isChoosingDirectory) return;
+    setIsChoosingDirectory(true);
     try {
       const path = await hostClient.os.selectDirectory.query();
       if (path) handleDefaultCwdChange(path);
     } catch (error) {
-      log.error("Failed to open folder picker", { error });
-      toast.error("Failed to open folder picker");
+      log.error("Failed to open directory picker", { error });
+      toast.error("Failed to open directory picker");
     } finally {
-      setIsChoosingFolder(false);
+      setIsChoosingDirectory(false);
     }
   };
 
@@ -113,7 +113,7 @@ export function TerminalSettings() {
       {localWorkspaces && (
         <SettingRow
           label="Default directory"
-          description="Choose which directory new terminal sessions open in. Leave this unset to use the folder you most recently worked in."
+          description="Choose which directory new terminal sessions open in. Leave this unset to use the directory you most recently worked in."
         >
           <Flex align="center" gap="2" className="min-w-0">
             {terminalDefaultCwd && (
@@ -137,10 +137,10 @@ export function TerminalSettings() {
             <Button
               size="sm"
               variant="outline"
-              loading={isChoosingFolder}
+              loading={isChoosingDirectory}
               onClick={() => void handleChooseDefaultCwd()}
             >
-              {terminalDefaultCwd ? "Change…" : "Choose folder…"}
+              {terminalDefaultCwd ? "Change…" : "Choose directory…"}
             </Button>
           </Flex>
         </SettingRow>
