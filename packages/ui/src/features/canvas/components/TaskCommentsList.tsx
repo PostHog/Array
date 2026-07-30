@@ -193,9 +193,10 @@ function PrThreadRow({
       busy={busy}
       source={<SourceLabel thread={thread} />}
       // Only inline review threads accept replies and resolution; conversation
-      // comments are read here and acted on in GitHub.
+      // comments are read here and linked out to GitHub to act on.
       canReply={origin.kind === "pr-review"}
       canResolve={origin.kind === "pr-review"}
+      viewHref={origin.kind === "pr-conversation" ? origin.url : undefined}
       onSelect={onOpen}
       onReply={(content) =>
         run(() =>

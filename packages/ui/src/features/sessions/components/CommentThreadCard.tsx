@@ -1,5 +1,6 @@
 import {
   ArrowCounterClockwise,
+  ArrowSquareOutIcon,
   ChatCircle,
   CheckCircle,
   WarningCircle,
@@ -17,7 +18,9 @@ import { formatRelativeTimeShort } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import type { CommentEntry } from "@posthog/ui/features/canvas/components/taskCommentThreads";
+import { githubRehypePlugins } from "@posthog/ui/features/editor/components/githubMarkdownPlugins";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
+import { openExternalUrl } from "@posthog/ui/shell/openExternal";
 import { type ReactNode, useState } from "react";
 import { CommentComposer } from "./CommentComposer";
 import type { HighlightResolution } from "./commentViewTypes";
@@ -47,8 +50,11 @@ function CommentBody({ entry }: { entry: CommentEntry }) {
           </span>
         </div>
         {entry.format === "markdown" ? (
-          <div className="mt-1 break-words text-[13px] leading-relaxed">
-            <MarkdownRenderer content={entry.body} />
+          <div className="mt-1 break-words text-[13px] leading-relaxed [&_img]:max-w-full [&_p]:m-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto">
+            <MarkdownRenderer
+              content={entry.body}
+              rehypePlugins={githubRehypePlugins}
+            />
           </div>
         ) : (
           <MentionText
@@ -78,6 +84,7 @@ export function CommentThreadCard({
   source,
   canReply = true,
   canResolve = true,
+  viewHref,
   onSelect,
   onReply,
   onResolve,
@@ -96,6 +103,8 @@ export function CommentThreadCard({
   /** GitHub conversation comments take neither replies nor resolution. */
   canReply?: boolean;
   canResolve?: boolean;
+  /** Where to read/act on a thread that can't be handled in place. */
+  viewHref?: string | null;
   onSelect: () => void;
   onReply: (content: string, mentions: number[]) => void;
   onResolve: (resolved: boolean) => void;
@@ -132,9 +141,19 @@ export function CommentThreadCard({
           <CommentBody key={entry.id} entry={entry} />
         ))}
         {/* A conversation comment can only be read here and acted on in GitHub;
-            dead Reply/Resolve buttons would just discard whatever was typed. */}
-        {(canReply || canResolve) && <Separator className="my-2" />}
-        {replying ? (
+            dead Reply/Resolve buttons would just discard whatever was typed, so
+            it gets a link out instead. */}
+        {(canReply || canResolve || viewHref) && <Separator className="my-2" />}
+        {!canReply && !canResolve && viewHref ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openExternalUrl(viewHref)}
+          >
+            <ArrowSquareOutIcon />
+            View on GitHub
+          </Button>
+        ) : replying ? (
           <CommentComposer
             value={reply}
             onValueChange={setReply}

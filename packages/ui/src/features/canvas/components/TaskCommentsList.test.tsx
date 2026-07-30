@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   prReviewThreads: [] as unknown[],
   openArtifactTab: vi.fn(),
   openPrInReview: vi.fn(),
+  openExternalUrl: vi.fn(),
   requestScrollToFile: vi.fn(),
   prReply: vi.fn(async () => true),
   prResolve: vi.fn(async () => true),
@@ -44,6 +45,16 @@ vi.mock("@posthog/ui/features/pr-review/usePrReviewThreadsForUrls", () => ({
 }));
 vi.mock("@posthog/ui/features/git-interaction/usePrDetails", () => ({
   usePrTitles: () => ({}),
+}));
+vi.mock("@posthog/ui/shell/openExternal", () => ({
+  openExternalUrl: (url: string) => mocks.openExternalUrl(url),
+}));
+// GitHub bodies render through MarkdownRenderer; the wiring under test is the
+// list, not the markdown pipeline, so keep it to plain text here.
+vi.mock("@posthog/ui/features/editor/components/MarkdownRenderer", () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => (
+    <span>{content}</span>
+  ),
 }));
 vi.mock("@posthog/ui/features/code-review/openPrInReview", () => ({
   openPrInReview: (taskId: string, url: string) =>
@@ -184,6 +195,7 @@ describe("TaskCommentsList", () => {
     mocks.prReviewThreads = [];
     mocks.openArtifactTab.mockReset();
     mocks.openPrInReview.mockReset();
+    mocks.openExternalUrl.mockReset();
     mocks.requestScrollToFile.mockReset();
     mocks.prReply.mockClear();
     mocks.prResolve.mockClear();
@@ -360,6 +372,30 @@ describe("TaskCommentsList", () => {
     expect(screen.getAllByText("PR #7").length).toBe(2);
     // Only the file-anchored thread can be resolved on GitHub.
     expect(screen.getAllByText("Resolve")).toHaveLength(1);
+    // The conversation comment can't be handled here, so it links out instead.
+    expect(screen.getByText("View on GitHub")).toBeTruthy();
+  });
+
+  it("links a conversation comment out to GitHub", () => {
+    mocks.runs = [prRun("https://github.com/acme/repo/pull/7")];
+    mocks.comments = [];
+    mocks.prConversation = [
+      {
+        id: 900,
+        author: "octocat",
+        avatarUrl: null,
+        body: "Shipping this",
+        createdAt: "2024-01-03T00:00:00Z",
+        url: "https://github.com/acme/repo/pull/7#issuecomment-900",
+      },
+    ];
+
+    render(<TaskCommentsList task={task} timeline={[]} />);
+    fireEvent.click(screen.getByText("View on GitHub"));
+
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith(
+      "https://github.com/acme/repo/pull/7#issuecomment-900",
+    );
   });
 
   it("opens a PR thread in the review pane at its file", () => {
