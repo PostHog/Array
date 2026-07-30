@@ -108,14 +108,11 @@ describe("ChannelNav", () => {
     rerender(<ChannelNav />);
     await user.unhover(bell());
 
-    // Opening a notification from the Activity page navigates to its task: the
-    // card must not come along for the ride.
     mocks.view = { type: "task-detail" };
     rerender(<ChannelNav />);
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByText("Recent activity card")).not.toBeInTheDocument();
 
-    // ...and hover must still work there.
     await user.hover(bell());
     expect(
       await screen.findByText("Recent activity card", {}, { timeout: 1_000 }),

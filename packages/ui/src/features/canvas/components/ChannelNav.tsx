@@ -138,12 +138,6 @@ function NavButton({
   );
 }
 
-// Only mounted off the Activity page, so the card's open state is born fresh on
-// every visit. That matters because refusing an open is not free: quill's
-// trigger applies it internally before we see it, so a `false` we hand back
-// leaves the trigger stuck in its pressed state with hover-open dead until it
-// remounts. Nothing here refuses one — the click prevents the trigger's own
-// open, and the Activity page renders the bell without a popover at all.
 function ActivityHoverPopover({ trigger }: { trigger: ReactElement }) {
   const [open, setOpen] = useState(false);
 
