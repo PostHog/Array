@@ -48,10 +48,6 @@ export type TabData =
       type: "artifact";
       runId: string;
       artifactId: string;
-      /** Set when the artifact was opened from a comment elsewhere (e.g. the
-       *  task's centralized comment list) so the preview can select and scroll
-       *  to that thread on mount. */
-      commentId?: string;
     }
   | {
       type: "other";

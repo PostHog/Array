@@ -13,6 +13,11 @@ export type CommentTarget = {
   itemId: string;
 };
 
+/** The target as one string, for map keys and cache-key membership tests. */
+export function commentTargetKey(target: CommentTarget): string {
+  return `${target.scope}:${target.itemId}`;
+}
+
 export function isSameCommentTarget(
   a: CommentTarget | null,
   b: CommentTarget | null,

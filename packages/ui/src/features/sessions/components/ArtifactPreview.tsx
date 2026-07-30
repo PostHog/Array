@@ -1,8 +1,9 @@
-import { ChatCircle, CrosshairSimpleIcon, XIcon } from "@phosphor-icons/react";
+import { CrosshairSimpleIcon, XIcon } from "@phosphor-icons/react";
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
-import type {
-  CommentAnchor,
-  CommentTarget,
+import {
+  type CommentAnchor,
+  type CommentTarget,
+  isSameCommentTarget,
 } from "@posthog/core/comments/anchors";
 import {
   SESSION_SERVICE,
@@ -17,6 +18,7 @@ import {
 } from "@posthog/ui/features/auth/store";
 import { AUTH_SCOPED_QUERY_META } from "@posthog/ui/features/auth/useCurrentUser";
 import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
+import { useCommentNavigationStore } from "@posthog/ui/features/sessions/commentNavigationStore";
 import { useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -33,18 +35,12 @@ import { AnnotatedArtifactHtml } from "./AnnotatedArtifactHtml";
 import { AnnotatedArtifactImage } from "./AnnotatedArtifactImage";
 import { ArtifactTextAnnotations } from "./ArtifactTextAnnotations";
 import { artifactPreviewBlob } from "./artifactPreviewDocument";
-import { CommentsSidebar } from "./CommentsSidebar";
 import {
   buildCommentThreads,
   type CommentLocateRequest,
   type HighlightResolution,
-  readCommentContext,
 } from "./commentViewTypes";
-import {
-  useCommentsQuery,
-  useCreateComment,
-  useSetCommentResolved,
-} from "./useComments";
+import { useCommentsQuery, useCreateComment } from "./useComments";
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
 const HTML_EXTENSIONS = new Set(["html", "htm"]);
@@ -65,92 +61,38 @@ function ArtifactPreviewError() {
   );
 }
 
-function CommentsButton({
-  count,
-  open,
-  onClick,
-}: {
-  count: number;
-  open: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      size="sm"
-      variant={open ? "primary" : "default"}
-      aria-label={open ? "Hide comments" : "Show comments"}
-      onClick={onClick}
-    >
-      <ChatCircle />
-      Comments
-      {count > 0 && (
-        <span className="rounded-full bg-current/10 px-1.5 text-xs">
-          {count}
-        </span>
-      )}
-    </Button>
-  );
-}
-
 function GenericArtifactHeader({
   name,
-  commentsAction,
+  actions,
 }: {
   name: string;
-  commentsAction: ReactNode;
+  actions?: ReactNode;
 }) {
   return (
     <header className="flex h-11 shrink-0 items-center justify-between border-border border-b px-3">
       <span className="truncate font-[var(--code-font-family)] text-[13px] text-muted-foreground">
         {name}
       </span>
-      {commentsAction}
+      {actions}
     </header>
   );
 }
 
-function ContentAndSidebar({
-  children,
-  sidebar,
-}: {
-  children: ReactNode;
-  sidebar: ReactNode;
-}) {
-  return (
-    <div className="flex min-h-0 flex-1">
-      <div className="min-w-0 flex-1">{children}</div>
-      {sidebar}
-    </div>
-  );
-}
-
+/** The artifact is the whole pane: its threads are listed in the task's
+ *  Comments tab, and this only renders and locates their anchors. */
 export function ArtifactPreview({
   taskId,
   runId,
   artifactId,
   name,
-  initialCommentId,
 }: {
   taskId: string;
   runId: string;
   artifactId: string;
   name: string;
-  /** Opened from a comment elsewhere: select and scroll to that thread once the
-   *  comments have loaded. */
-  initialCommentId?: string;
 }) {
   const sessionService = useService<SessionService>(SESSION_SERVICE);
   const [showRendered, setShowRendered] = useState(true);
-  const [commentsOpen, setCommentsOpen] = useState(false);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  const [pulseThreadId, setPulseThreadId] = useState<string | null>(null);
-  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [locateRequest, setLocateRequest] =
-    useState<CommentLocateRequest | null>(null);
-  const locateNonceRef = useRef(0);
-  const [resolutions, setResolutions] = useState(
-    new Map<string, HighlightResolution>(),
-  );
   const markdownRootRef = useRef<HTMLDivElement>(null);
   const markdownContainerRef = useRef<HTMLDivElement>(null);
   const [imageError, setImageError] = useState(false);
@@ -163,7 +105,13 @@ export function ArtifactPreview({
   const commentsQuery = useCommentsQuery(commentTarget);
   const { members } = useOrgMembers();
   const createComment = useCreateComment(commentTarget);
-  const setResolved = useSetCommentResolved(commentTarget);
+  const requestCommentFocus = useCommentNavigationStore(
+    (state) => state.requestCommentFocus,
+  );
+  const setCommentResolutions = useCommentNavigationStore(
+    (state) => state.setCommentResolutions,
+  );
+  const focus = useCommentNavigationStore((state) => state.focusByTask[taskId]);
   const { data, isLoading, isError } = useQuery<PreviewData>({
     queryKey: ["artifactPreview", authIdentity, taskId, runId, artifactId],
     queryFn: async () => {
@@ -198,7 +146,6 @@ export function ArtifactPreview({
     () => threads.flatMap((thread) => (thread.resolved ? [] : [thread.root])),
     [threads],
   );
-  const threadCount = threads.length;
 
   useEffect(() => {
     return () => {
@@ -206,85 +153,48 @@ export function ArtifactPreview({
     };
   }, [previewUrl]);
 
-  const activateThread = useCallback((id: string, pulse = false) => {
-    setSelectedThreadId(id);
-    setCommentsOpen(true);
-    locateNonceRef.current += 1;
-    setLocateRequest({ id, nonce: locateNonceRef.current });
-    requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-comment-thread-id="${CSS.escape(id)}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-    if (!pulse) return;
-    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-    setPulseThreadId(id);
-    pulseTimerRef.current = setTimeout(() => setPulseThreadId(null), 1_200);
-  }, []);
-
-  // Deep link from a centralized comment list. Runs once per requested id, and
-  // only after the thread exists, so it survives the comments arriving late.
-  const deepLinkedRef = useRef<string | null>(null);
+  /** This artifact's share of the task's focus, if the focus is on it at all. */
+  const focusedThreadId =
+    focus && isSameCommentTarget(focus.target, commentTarget)
+      ? focus.threadId
+      : null;
+  // The locate request only fires once the thread exists, so it survives the
+  // comments arriving after the request — and re-fires when the nonce moves,
+  // which is how picking the same thread twice scrolls twice.
+  const [locateRequest, setLocateRequest] =
+    useState<CommentLocateRequest | null>(null);
   useEffect(() => {
-    if (!initialCommentId || deepLinkedRef.current === initialCommentId) return;
-    if (!threads.some((thread) => thread.root.id === initialCommentId)) return;
-    deepLinkedRef.current = initialCommentId;
-    activateThread(initialCommentId, true);
-  }, [initialCommentId, threads, activateThread]);
+    if (!focus || !focusedThreadId) return;
+    if (!threads.some((thread) => thread.root.id === focusedThreadId)) return;
+    setLocateRequest((current) =>
+      current?.nonce === focus.nonce
+        ? current
+        : { id: focusedThreadId, nonce: focus.nonce },
+    );
+  }, [focus, focusedThreadId, threads]);
 
-  useEffect(
-    () => () => {
-      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-    },
-    [],
+  const activateThread = useCallback(
+    (id: string) => requestCommentFocus(taskId, commentTarget, id),
+    [requestCommentFocus, taskId, commentTarget],
+  );
+
+  const onResolutionsChange = useCallback(
+    (resolutions: Map<string, HighlightResolution>) =>
+      setCommentResolutions(commentTarget, resolutions),
+    [setCommentResolutions, commentTarget],
   );
 
   const createAnchoredComment = useCallback(
     (anchor: CommentAnchor, content: string, mentions: number[] = []) => {
-      createComment.mutate({
-        content,
-        context: { anchor },
-        mentions,
-      });
-      setCommentsOpen(true);
+      createComment.mutate(
+        { content, context: { anchor }, mentions },
+        // With no thread list in this pane, focusing the new thread is what
+        // tells the user it landed — and brings the Comments tab forward.
+        { onSuccess: (created) => activateThread(created.id) },
+      );
     },
-    [createComment],
+    [createComment, activateThread],
   );
-
-  const commentsAction = (
-    <CommentsButton
-      count={threadCount}
-      open={commentsOpen}
-      onClick={() => setCommentsOpen((open) => !open)}
-    />
-  );
-
-  const sidebar = commentsOpen ? (
-    <CommentsSidebar
-      threads={threads}
-      members={members}
-      selectedThreadId={selectedThreadId}
-      pulseThreadId={pulseThreadId}
-      resolutions={resolutions}
-      loading={commentsQuery.isLoading}
-      busy={createComment.isPending || setResolved.isPending}
-      onClose={() => setCommentsOpen(false)}
-      onSelectThread={activateThread}
-      onCreateDocumentComment={(content, mentions) =>
-        createAnchoredComment({ kind: "document" }, content, mentions)
-      }
-      onReply={(root: ResourceComment, content, mentions) => {
-        const rootContext = readCommentContext(root);
-        createComment.mutate({
-          content,
-          sourceCommentId: root.id,
-          context: rootContext ?? { anchor: { kind: "document" } },
-          mentions,
-        });
-      }}
-      onResolve={(root, resolved) => setResolved.mutate({ root, resolved })}
-    />
-  ) : null;
 
   if (isLoading) {
     return (
@@ -303,39 +213,36 @@ export function ArtifactPreview({
           content={data}
           showRendered={showRendered}
           onToggleRendered={() => setShowRendered((rendered) => !rendered)}
-          actions={commentsAction}
         />
-        <ContentAndSidebar sidebar={sidebar}>
-          {showRendered ? (
-            <div
-              ref={markdownContainerRef}
-              className="relative h-full overflow-auto"
-            >
-              <div ref={markdownRootRef}>
-                <MarkdownDocumentPreview
-                  content={data}
-                  components={{ img: () => null }}
-                />
-              </div>
-              <ArtifactTextAnnotations
-                artifactName={name}
-                rootRef={markdownRootRef}
-                containerRef={markdownContainerRef}
-                comments={openRootComments}
-                activeThreadId={selectedThreadId}
-                locateRequest={locateRequest}
-                members={members}
-                onActivateThread={(id) => activateThread(id, true)}
-                onCreate={createAnchoredComment}
-                onResolutionsChange={setResolutions}
+        {showRendered ? (
+          <div
+            ref={markdownContainerRef}
+            className="relative min-h-0 min-w-0 flex-1 overflow-auto"
+          >
+            <div ref={markdownRootRef}>
+              <MarkdownDocumentPreview
+                content={data}
+                components={{ img: () => null }}
               />
             </div>
-          ) : (
-            <div className="h-full overflow-hidden">
-              <CodeMirrorEditor content={data} filePath={name} readOnly />
-            </div>
-          )}
-        </ContentAndSidebar>
+            <ArtifactTextAnnotations
+              artifactName={name}
+              rootRef={markdownRootRef}
+              containerRef={markdownContainerRef}
+              comments={openRootComments}
+              activeThreadId={focusedThreadId}
+              locateRequest={locateRequest}
+              members={members}
+              onActivateThread={activateThread}
+              onCreate={createAnchoredComment}
+              onResolutionsChange={onResolutionsChange}
+            />
+          </div>
+        ) : (
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <CodeMirrorEditor content={data} filePath={name} readOnly />
+          </div>
+        )}
       </div>
     );
   }
@@ -343,20 +250,20 @@ export function ArtifactPreview({
   if (data && !(data instanceof Blob) && data.kind === "html") {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <GenericArtifactHeader name={name} commentsAction={commentsAction} />
-        <ContentAndSidebar sidebar={sidebar}>
+        <GenericArtifactHeader name={name} />
+        <div className="min-h-0 min-w-0 flex-1">
           <AnnotatedArtifactHtml
             html={data.html}
             name={name}
             comments={openRootComments}
-            activeThreadId={selectedThreadId}
+            activeThreadId={focusedThreadId}
             locateRequest={locateRequest}
             members={members}
-            onActivateThread={(id) => activateThread(id, true)}
+            onActivateThread={activateThread}
             onCreate={createAnchoredComment}
-            onResolutionsChange={setResolutions}
+            onResolutionsChange={onResolutionsChange}
           />
-        </ContentAndSidebar>
+        </div>
       </div>
     );
   }
@@ -365,51 +272,48 @@ export function ArtifactPreview({
 
   if (data instanceof Blob && isAllowedImageMimeType(data.type)) {
     const imageActions = (
-      <div className="flex items-center gap-1">
-        <Button
-          size="sm"
-          variant={imageCommenting ? "primary" : "outline"}
-          onClick={() => setImageCommenting((commenting) => !commenting)}
-        >
-          {imageCommenting ? <XIcon /> : <CrosshairSimpleIcon />}
-          {imageCommenting ? "Cancel" : "Add comment"}
-        </Button>
-        {commentsAction}
-      </div>
+      <Button
+        size="sm"
+        variant={imageCommenting ? "primary" : "outline"}
+        onClick={() => setImageCommenting((commenting) => !commenting)}
+      >
+        {imageCommenting ? <XIcon /> : <CrosshairSimpleIcon />}
+        {imageCommenting ? "Cancel" : "Add comment"}
+      </Button>
     );
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <GenericArtifactHeader name={name} commentsAction={imageActions} />
-        <ContentAndSidebar sidebar={sidebar}>
+        <GenericArtifactHeader name={name} actions={imageActions} />
+        <div className="min-h-0 min-w-0 flex-1">
           <AnnotatedArtifactImage
             src={previewUrl}
             name={name}
             comments={openRootComments}
-            activeThreadId={selectedThreadId}
+            activeThreadId={focusedThreadId}
             locateRequest={locateRequest}
             commenting={imageCommenting}
             members={members}
             onCommentingChange={setImageCommenting}
-            onActivateThread={(id) => activateThread(id, true)}
+            onActivateThread={activateThread}
             onCreate={createAnchoredComment}
             onError={() => setImageError(true)}
           />
-        </ContentAndSidebar>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <GenericArtifactHeader name={name} commentsAction={commentsAction} />
-      <ContentAndSidebar sidebar={sidebar}>
+      <GenericArtifactHeader name={name} />
+      <div className="min-h-0 min-w-0 flex-1">
         <iframe
           className="h-full w-full border-0 bg-white"
           sandbox=""
           src={previewUrl}
           title={`Preview of ${name}`}
         />
-      </ContentAndSidebar>
+      </div>
     </div>
   );
 }

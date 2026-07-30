@@ -84,7 +84,6 @@ export function TabContentRenderer({
           runId={data.runId}
           artifactId={data.artifactId}
           name={tab.label}
-          initialCommentId={data.commentId}
         />
       );
 

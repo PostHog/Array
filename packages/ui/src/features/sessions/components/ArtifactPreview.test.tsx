@@ -1,4 +1,5 @@
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
+import { useCommentNavigationStore } from "@posthog/ui/features/sessions/commentNavigationStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
@@ -47,7 +48,6 @@ vi.mock("./useComments", () => ({
     isLoading: false,
   }),
   useCreateComment: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetCommentResolved: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
@@ -56,9 +56,36 @@ vi.mock("../../code-editor/components/CodeMirrorEditor", () => ({
   ),
 }));
 
+function textComment(): ResourceComment {
+  return {
+    id: "comment-1",
+    created_by: null,
+    content: "Tighten this summary",
+    created_at: "2026-01-01T00:00:00Z",
+    item_id: "artifact-1",
+    item_context: {
+      anchor: {
+        kind: "text",
+        quote: "Report",
+        prefix: "# ",
+        suffix: "",
+        start: 2,
+        end: 8,
+      },
+    },
+    scope: "task_artifact",
+    source_comment: null,
+    completed_at: null,
+  };
+}
+
 describe("ArtifactPreview", () => {
   beforeEach(() => {
     auth.identity = "auth-1";
+    useCommentNavigationStore.setState({
+      focusByTask: {},
+      resolutionsByTarget: {},
+    });
     artifactComments.data = [];
     useQuery.mockReset();
     useQuery.mockReturnValue({
@@ -346,21 +373,13 @@ describe("ArtifactPreview", () => {
     expect(screen.queryByLabelText("Open comment thread")).toBeNull();
   });
 
-  // Opening an artifact from the task's centralized comment list has to land on
-  // the thread that was clicked, even though comments load after the preview.
-  it("selects the thread it was opened from", async () => {
+  // The pane is the artifact: its threads are listed in the task's Comments
+  // tab, so nothing here may render or toggle a second list of them.
+  it("keeps the pane free of a thread list", () => {
+    // Document-anchored, so this asserts the missing list rather than tripping
+    // over jsdom's lack of range geometry for highlights.
     artifactComments.data = [
-      {
-        id: "comment-1",
-        created_by: null,
-        content: "Tighten this summary",
-        created_at: "2026-01-01T00:00:00Z",
-        item_id: "artifact-1",
-        item_context: { anchor: { kind: "document" } },
-        scope: "task_artifact",
-        source_comment: null,
-        completed_at: null,
-      },
+      { ...textComment(), item_context: { anchor: { kind: "document" } } },
     ];
     useQuery.mockReturnValue({
       data: "# Report",
@@ -374,14 +393,11 @@ describe("ArtifactPreview", () => {
         runId="run-1"
         artifactId="artifact-1"
         name="report.md"
-        initialCommentId="comment-1"
       />,
     );
 
-    // The sidebar opens itself on the deep-linked thread.
-    await waitFor(() =>
-      expect(screen.getByText("Tighten this summary")).toBeTruthy(),
-    );
+    expect(screen.queryByRole("button", { name: /comments/i })).toBeNull();
+    expect(screen.queryByText("Tighten this summary")).toBeNull();
   });
 
   it("preserves authored styles and injects the inline-comment bridge", () => {
