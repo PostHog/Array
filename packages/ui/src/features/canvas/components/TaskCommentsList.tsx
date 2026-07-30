@@ -430,7 +430,10 @@ export function TaskCommentsList({
               </Button>
             }
           />
-          <DropdownMenuContent align="end" sideOffset={6} className="max-w-80">
+          {/* Wide enough, and wrapping rather than truncating, so a long PR
+              title is legible — the whole point of the filter is telling the
+              sources apart. Count pinned right with the shared ml-auto idiom. */}
+          <DropdownMenuContent align="end" sideOffset={6} className="w-72">
             <DropdownMenuRadioGroup
               value={sourceFilter}
               onValueChange={(value) => {
@@ -439,20 +442,23 @@ export function TaskCommentsList({
               }}
             >
               <DropdownMenuRadioItem value={ALL_SOURCES}>
-                All sources ({threads.length})
+                <span className="min-w-0 flex-1">All sources</span>
+                <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
+                  {threads.length}
+                </span>
               </DropdownMenuRadioItem>
               {sourceOptions.map((option) => (
-                <DropdownMenuRadioItem
-                  key={option.key}
-                  value={option.key}
-                  title={option.label}
-                >
-                  <span className="truncate">{option.label}</span> (
-                  {
-                    threads.filter((thread) => thread.sourceKey === option.key)
-                      .length
-                  }
-                  )
+                <DropdownMenuRadioItem key={option.key} value={option.key}>
+                  <span className="min-w-0 flex-1 whitespace-normal break-words">
+                    {option.label}
+                  </span>
+                  <span className="ml-auto shrink-0 self-start text-muted-foreground tabular-nums">
+                    {
+                      threads.filter(
+                        (thread) => thread.sourceKey === option.key,
+                      ).length
+                    }
+                  </span>
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
