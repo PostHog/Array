@@ -137,4 +137,12 @@ describe("buildPrOutput", () => {
       pr_urls: [A],
     });
   });
+
+  it("does not mutate the existing output", () => {
+    const existing = { pr_url: B, pr_urls: [B] };
+
+    buildPrOutput(existing, [A]);
+
+    expect(existing).toEqual({ pr_url: B, pr_urls: [B] });
+  });
 });
