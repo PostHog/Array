@@ -340,15 +340,7 @@ export {
   serializeSkillMarkdown,
   stripFrontmatter,
 } from "./skills";
-export type {
-  ArtifactType,
-  PostHogAPIConfig,
-  TaskRun,
-  TaskRunArtifact,
-  TaskRunArtifactMetadata,
-  TaskRunEnvironment,
-  TaskRunStatus,
-} from "./task";
+export type { PostHogAPIConfig } from "./task";
 export {
   type CreateTaskAutomationOptions,
   createTaskAutomationSchema,

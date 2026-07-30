@@ -196,6 +196,9 @@ const mockSessionConfigStore = vi.hoisted(() => ({
   >(() => undefined),
   setPersistedConfigOptions: vi.fn(),
   removePersistedConfigOptions: vi.fn(),
+  getPersistedAlwaysOnSkillInstructions: vi.fn(() => undefined),
+  setPersistedAlwaysOnSkillInstructions: vi.fn(),
+  removePersistedAlwaysOnSkillInstructions: vi.fn(),
 }));
 
 vi.mock(
