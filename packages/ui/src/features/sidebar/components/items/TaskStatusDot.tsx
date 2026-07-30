@@ -58,8 +58,8 @@ function RowTooltip({
 }
 
 /**
- * A task's state as a single dot: blue wants a decision, amber is working or
- * unread, grey is quiet. The trigger renders as a span because rows are
+ * A task's state as a single dot: blue wants a decision, the brand yellow is
+ * working or unread, grey is quiet. The trigger renders as a span because rows are
  * `<button>`s — a nested button would be invalid HTML.
  */
 export function TaskStatusDot({ dot }: { dot: TaskDot }) {
@@ -106,16 +106,24 @@ export function TaskStatusDot({ dot }: { dot: TaskDot }) {
 }
 
 /**
- * The pin, in the vocabulary's yellow: this row was put here on purpose. Lives
- * with the badges because it belongs in their stack — pinned rows sit in the one
- * list with everything else, so the badge is what says a row is pinned.
+ * The pin: this row was put here on purpose. Lives with the badges because it
+ * belongs in their stack — pinned rows sit in the one list with everything else,
+ * so the badge is what says a row is pinned.
+ *
+ * Amber rather than the vocabulary's `--primary` yellow: primary means "there is
+ * something here for you", and a pin is a shelf, not a claim on your attention.
  */
 export function PinnedBadge() {
   return (
     <RowTooltip label="Pinned" side="top">
-      <Avatar size="xs" aria-label="Pinned" role="img">
+      <Avatar
+        size="xs"
+        aria-label="Pinned"
+        role="img"
+        className="cursor-default"
+      >
         <AvatarFallback className="bg-transparent">
-          <PushPin size={9} weight="fill" color={TONE_ICON_VAR.yellow} />
+          <PushPin size={9} className="text-muted-foreground/80" />
         </AvatarFallback>
       </Avatar>
     </RowTooltip>
@@ -142,7 +150,15 @@ export function TaskBadgeStack({
           {/* The tooltip names the badge on hover; `aria-label` is what names it
               for everyone else — without it the stack is a row of blank avatars
               to a screen reader. */}
-          <Avatar size="xs" aria-label={label} role="img">
+          {/* `cursor-default`: these name a fact about the row, they aren't
+              controls — quill gives an avatar rendered as a button the pointer
+              cursor, which promises a click that does nothing. */}
+          <Avatar
+            size="xs"
+            aria-label={label}
+            role="img"
+            className="cursor-default"
+          >
             <AvatarFallback className="bg-transparent text-muted-foreground">
               {/* An explicit `color` (an SVG fill) rather than a text-* class,
                   so a hovered or selected row can't reset it — the same reason

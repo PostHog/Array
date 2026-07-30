@@ -117,9 +117,16 @@ function authorLabel(item: ChannelItemModel): string | null {
 function RowBadge({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Tooltip disableHoverablePopup>
+      {/* `cursor-default`: a badge names a fact about the row, it isn't a
+          control — see the same note in TaskBadgeStack. */}
       <TooltipTrigger
         render={
-          <Avatar size="xs" aria-label={label} role="img">
+          <Avatar
+            size="xs"
+            aria-label={label}
+            role="img"
+            className="cursor-default"
+          >
             <AvatarFallback className="bg-transparent">
               {children}
             </AvatarFallback>

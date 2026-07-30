@@ -89,14 +89,13 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
               <CaretLeftIcon
                 size={12}
                 className="shrink-0 text-muted-foreground"
-                weight="bold"
               />
               {/* Only #me still has a glyph under the layout, and its well is
                   drawn only when there's something in it — an empty 16px column
                   in front of every other space's name is worse than the name
                   starting where the caret leaves off. */}
               {glyph && (
-                <span className="flex w-4 shrink-0 items-center justify-center">
+                <span className="flex w-4 shrink-0 items-center justify-center text-foreground">
                   {glyph}
                 </span>
               )}

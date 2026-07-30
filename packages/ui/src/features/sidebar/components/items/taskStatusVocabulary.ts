@@ -44,11 +44,16 @@ export type TaskStatusInput = TaskIconProps & {
 
 export type DotTone = "green" | "purple" | "yellow" | "red" | "blue" | "gray";
 
-/** Radix step 9 — the "solid" step, the only one meant to be a filled fill. */
+/**
+ * Radix step 9 — the "solid" step, the only one meant to be a filled fill.
+ * Yellow is the exception: it's the brand's `--primary` (yellow in dark, orange
+ * in light), the same token the unread badges use, so "something is owed to you"
+ * is one colour across the window rather than two shades of amber.
+ */
 export const DOT_TONE_VAR: Record<DotTone, string> = {
   green: "var(--green-9)",
   purple: "var(--purple-9)",
-  yellow: "var(--amber-9)",
+  yellow: "var(--primary)",
   red: "var(--red-9)",
   blue: "var(--blue-9)",
   gray: "var(--gray-8)",
@@ -57,12 +62,14 @@ export const DOT_TONE_VAR: Record<DotTone, string> = {
 /**
  * Step 11 — the readable step, for a glyph rather than a filled shape. Grey is
  * the exception at step 10: it's there to read as *mid* grey, present but
- * plainly not asking for anything, which step 11 is too emphatic for.
+ * plainly not asking for anything, which step 11 is too emphatic for. Yellow is
+ * `--primary` here too — it has no scale of its own, and the token is already
+ * chosen to read against either theme's chrome.
  */
 export const TONE_ICON_VAR: Record<DotTone, string> = {
   green: "var(--green-11)",
   purple: "var(--purple-11)",
-  yellow: "var(--amber-11)",
+  yellow: "var(--primary)",
   red: "var(--red-11)",
   blue: "var(--blue-11)",
   gray: "var(--gray-10)",
@@ -90,8 +97,8 @@ export interface TaskDot {
 }
 
 /**
- * State → dot. Three things only: blue wants a decision from you, amber is
- * working or unread, grey is quiet.
+ * State → dot. Three things only: blue wants a decision from you, the brand
+ * yellow is working or unread, grey is quiet.
  *
  * Run mechanics are deliberately absent. A cloud run is magic from the outside —
  * queued, claiming a sandbox, retrying, and erroring out are our problems, not
