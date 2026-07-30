@@ -170,6 +170,7 @@ export function CommentThreadCard({
             rows={2}
             disabled={busy}
             submitLabel="Reply"
+            autoFocus
           />
         ) : (
           (canReply || canResolve) && (

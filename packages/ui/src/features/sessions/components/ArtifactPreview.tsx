@@ -44,6 +44,10 @@ import { useCommentsQuery, useCreateComment } from "./useComments";
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "mdx", "markdown"]);
 const HTML_EXTENSIONS = new Set(["html", "htm"]);
+/** SVG is excluded from the shared image allowlist because its scripts can run
+ *  when it comes from a data URL. An <img> renders SVG in a secure static mode
+ *  that never runs scripts, so the zoom-and-annotate surface is safe for it. */
+const SVG_MIME_TYPE = "image/svg+xml";
 const EMPTY_COMMENTS: ResourceComment[] = [];
 
 type HtmlPreview = { kind: "html"; html: string };
@@ -270,7 +274,10 @@ export function ArtifactPreview({
 
   if (!previewUrl || !data) return <ArtifactPreviewError />;
 
-  if (data instanceof Blob && isAllowedImageMimeType(data.type)) {
+  if (
+    data instanceof Blob &&
+    (isAllowedImageMimeType(data.type) || data.type === SVG_MIME_TYPE)
+  ) {
     const imageActions = (
       <Button
         size="sm"

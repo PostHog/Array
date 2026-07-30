@@ -154,6 +154,7 @@ function SelectionComposerCard({
             members={members}
             placeholder={placeholder ?? "Add a comment…"}
             rows={2}
+            autoFocus
           />
         </div>
       ) : (

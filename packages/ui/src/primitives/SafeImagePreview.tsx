@@ -35,8 +35,9 @@ interface ZoomableImageProps {
   style?: React.CSSProperties;
   controls?: boolean;
   onError?: () => void;
-  /** Content positioned over the image and transformed with zoom/pan. */
-  overlay?: React.ReactNode;
+  /** Content positioned over the image and transformed with zoom/pan. Given the
+   *  current scale so markers can hold their on-screen size. */
+  overlay?: React.ReactNode | ((scale: number) => React.ReactNode);
 }
 
 export function ZoomableImage({
@@ -86,7 +87,11 @@ export function ZoomableImage({
                   className="max-h-full max-w-full object-contain"
                   onError={onError}
                 />
-                {overlay && <div className="absolute inset-0">{overlay}</div>}
+                {overlay && (
+                  <div className="absolute inset-0">
+                    {typeof overlay === "function" ? overlay(scale) : overlay}
+                  </div>
+                )}
               </div>
             </TransformComponent>
             {controls && (

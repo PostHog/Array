@@ -14,6 +14,7 @@ export function CommentComposer({
   rows = 3,
   disabled = false,
   submitLabel = "Comment",
+  autoFocus = false,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -24,6 +25,8 @@ export function CommentComposer({
   rows?: number;
   disabled?: boolean;
   submitLabel?: string;
+  /** For a composer the user just opened, so they can type straight away. */
+  autoFocus?: boolean;
 }) {
   const submit = () => {
     const content = value.trim();
@@ -37,6 +40,7 @@ export function CommentComposer({
       onValueChange={onValueChange}
       onSubmit={submit}
       members={members}
+      autoFocus={autoFocus}
       placeholder={placeholder}
       rows={rows}
       inputClassName="max-h-40 text-[13px]"

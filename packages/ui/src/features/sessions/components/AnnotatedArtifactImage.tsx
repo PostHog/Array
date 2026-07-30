@@ -132,7 +132,9 @@ export function AnnotatedArtifactImage({
     [comments],
   );
 
-  const overlay = (
+  // Takes the zoom scale so a pin keeps its on-screen size: the overlay is
+  // inside the transformed content, so it would otherwise grow with the image.
+  const overlay = (scale: number) => (
     <>
       {commenting && (
         <ImageCommentCreationLayer
@@ -151,13 +153,13 @@ export function AnnotatedArtifactImage({
             aria-label="Open image comment thread"
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute rounded-full shadow-md ${
-              comment.id === activeThreadId ? "ring-2 ring-white/80" : ""
+            className={`pointer-events-auto absolute rounded-full ring-1 ring-white/70 ${
+              comment.id === activeThreadId ? "ring-2 ring-white" : ""
             }`}
             style={{
               left: `${(anchor.x + anchor.width / 2) * 100}%`,
               top: `${(anchor.y + anchor.height / 2) * 100}%`,
-              transform: "translate(-50%, -50%)",
+              transform: `translate(-50%, -50%) scale(${1 / scale})`,
             }}
             onClick={() => onActivateThread(comment.id)}
           >

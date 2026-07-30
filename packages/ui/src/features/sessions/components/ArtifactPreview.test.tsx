@@ -170,6 +170,30 @@ describe("ArtifactPreview", () => {
     expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
   });
 
+  // Same zoom-and-annotate surface as a raster image: an <img> renders SVG in a
+  // secure static mode, so it doesn't need the sandboxed-iframe fallback.
+  it("gives SVG the image controls rather than an iframe", () => {
+    useQuery.mockReturnValue({
+      data: new Blob(["<svg/>"], { type: "image/svg+xml" }),
+      isLoading: false,
+      isError: false,
+    });
+
+    render(
+      <ArtifactPreview
+        taskId="task-1"
+        runId="run-1"
+        artifactId="artifact-1"
+        name="diagram.svg"
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "diagram.svg" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Add comment" })).toBeTruthy();
+    expect(screen.queryByTitle("Preview of diagram.svg")).toBeNull();
+  });
+
   it("keeps opaque formats in a fully sandboxed iframe", () => {
     render(
       <ArtifactPreview
@@ -203,9 +227,9 @@ describe("ArtifactPreview", () => {
     expect(blob.type).toBe(mimeType);
   });
 
-  // Kept out of the <img> path for safety, but the sandboxed iframe needs a
-  // typed blob to draw it rather than offer a download.
-  it("types an SVG blob so the sandboxed iframe can render it", async () => {
+  // A download often arrives untyped, and the preview picks its surface off the
+  // blob's type, so the extension has to supply it.
+  it("types an SVG blob from its filename", async () => {
     const blob = await artifactPreviewBlob(
       new Blob(["<svg/>"], { type: "" }),
       "diagram.svg",
