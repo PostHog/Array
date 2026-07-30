@@ -931,15 +931,13 @@ function ThreadTurnAnchor({
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<(() => void) | null>(null);
-  const promptIds = useMemo(
-    () =>
-      new Set(
-        items
-          .filter((item) => item.type === "user_message")
-          .map((item) => item.id),
-      ),
-    [items],
-  );
+  const promptIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of items) {
+      if (item.type === "user_message") ids.add(item.id);
+    }
+    return ids;
+  }, [items]);
   const promptIdsRef = useRef(promptIds);
   useEffect(() => {
     promptIdsRef.current = promptIds;
