@@ -1,6 +1,7 @@
 import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import { commentTargetKey } from "@posthog/core/comments/anchors";
 import type { PrConversationComment, PrReviewThread } from "@posthog/shared";
+import type { UserBasic } from "@posthog/shared/domain-types";
 import type { CommentSource } from "@posthog/ui/features/canvas/components/taskArtifactRows";
 import {
   buildCommentThreads,
@@ -10,6 +11,9 @@ import {
 export type CommentEntry = {
   id: string;
   authorName: string;
+  /** A PostHog author, whose avatar and hue are the ones they have app-wide. */
+  user: UserBasic | null;
+  /** A GitHub author, who only comes with an avatar url. */
   avatarUrl: string | null;
   createdAt: string;
   body: string;
@@ -66,6 +70,7 @@ function resourceEntry(comment: ResourceComment): CommentEntry {
   return {
     id: comment.id,
     authorName: resourceAuthorName(comment),
+    user: comment.created_by,
     avatarUrl: null,
     createdAt: comment.created_at,
     body: comment.content ?? "",
@@ -129,6 +134,7 @@ export function prCommentThreads(
         entries: thread.comments.map((comment) => ({
           id: `pr-comment-${comment.id}`,
           authorName: comment.user.login,
+          user: null,
           avatarUrl: comment.user.avatar_url || null,
           createdAt: comment.created_at,
           body: comment.body,
@@ -159,6 +165,7 @@ export function prCommentThreads(
         {
           id: `pr-conversation-${comment.id}`,
           authorName: comment.author,
+          user: null,
           avatarUrl: comment.avatarUrl,
           createdAt: comment.createdAt,
           body: comment.body,

@@ -16,6 +16,7 @@ import {
 } from "@posthog/quill";
 import { formatRelativeTimeShort } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
+import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
 import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import type { CommentEntry } from "@posthog/ui/features/canvas/components/taskCommentThreads";
 import { githubRehypePlugins } from "@posthog/ui/features/editor/components/githubMarkdownPlugins";
@@ -25,21 +26,19 @@ import { type ReactNode, useState } from "react";
 import { CommentComposer } from "./CommentComposer";
 import type { HighlightResolution } from "./commentViewTypes";
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
 function CommentBody({ entry }: { entry: CommentEntry }) {
   return (
     <div className="flex gap-2 py-2">
-      <Avatar size="sm">
-        {entry.avatarUrl && <AvatarImage src={entry.avatarUrl} alt="" />}
-        <AvatarFallback>{initials(entry.authorName) || "?"}</AvatarFallback>
-      </Avatar>
+      {/* A PostHog author keeps the avatar and hue they have everywhere else;
+          a GitHub author only ever comes with a url. */}
+      {entry.user || !entry.avatarUrl ? (
+        <UserAvatar user={entry.user} size="sm" />
+      ) : (
+        <Avatar size="sm">
+          <AvatarImage src={entry.avatarUrl} alt="" />
+          <AvatarFallback>{entry.authorName.slice(0, 2)}</AvatarFallback>
+        </Avatar>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate font-medium text-xs">

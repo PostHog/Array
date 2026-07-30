@@ -162,14 +162,15 @@ export function AnnotatedArtifactImage({
           //
           // The shell doesn't follow the theme: it sits on someone's artwork,
           // which has a palette of its own, and has to read on both black and
-          // white pixels.
+          // white pixels. Fully opaque, both the shell and the disc behind the
+          // avatar, so artwork can't show through an avatar's own transparency.
           <button
             key={comment.id}
             type="button"
             aria-label={`Open comment from ${authorName(comment)}`}
             title={comment.content ?? "Comment"}
             data-image-comment-id={comment.id}
-            className={`pointer-events-auto absolute flex size-7 items-center justify-center rounded-full rounded-bl-none bg-black/85 p-0.5 ring-white/70 transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-1 ${
+            className={`pointer-events-auto absolute flex size-7 items-center justify-center rounded-full rounded-bl-none bg-black p-0.5 ring-white transition-[box-shadow] focus-visible:outline-2 focus-visible:outline-white focus-visible:outline-offset-1 ${
               comment.id === activeThreadId ? "ring-2" : "ring-1"
             }`}
             style={{
@@ -183,7 +184,7 @@ export function AnnotatedArtifactImage({
             <UserAvatar
               user={comment.created_by}
               size="sm"
-              className="rounded-full"
+              className="rounded-full bg-white"
             />
           </button>
         ))}
