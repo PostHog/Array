@@ -33,7 +33,11 @@ describe("PiAgentServer", () => {
         sessionPayload: typeof payload,
         sseController: null,
       ): Promise<void>;
+      createRunTelemetry: ReturnType<typeof vi.fn>;
     };
+    const append = vi.fn();
+    const shutdown = vi.fn(async () => {});
+    server.createRunTelemetry = vi.fn(() => ({ append, shutdown }));
     server.createSession = vi.fn(async () => {
       throw new Error("Pi RPC startup failed");
     });
@@ -58,6 +62,20 @@ describe("PiAgentServer", () => {
         }),
       }),
     );
+    expect(append).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({
+        notification: expect.objectContaining({
+          method: "_posthog/initialization_failed",
+          params: expect.objectContaining({
+            runtimeAdapter: "pi",
+            initializationPhase: "session_setup",
+            errorType: "error",
+          }),
+        }),
+      }),
+    );
+    expect(shutdown).toHaveBeenCalledOnce();
   });
 
   it.each([
