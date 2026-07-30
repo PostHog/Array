@@ -122,8 +122,7 @@ export const bundleLocalSkillInput = z.object({
   name: z.string().min(1),
   source: z.enum(["user", "repo", "marketplace", "codex"]),
   path: z.string().min(1),
-  activation: z.enum(["explicit", "always", "dependency"]).optional(),
-  activationOrder: z.number().int().nonnegative().optional(),
+  alwaysOn: z.boolean().optional(),
 });
 
 export const bundleLocalSkillOutput = z.object({
@@ -139,9 +138,7 @@ export const bundleLocalSkillOutput = z.object({
 export const resolveSkillDependenciesInput = z.array(bundleLocalSkillInput);
 export const resolveSkillDependenciesOutput = z.array(bundleLocalSkillInput);
 
-export const renderAlwaysOnSkillsInput = z.array(
-  bundleLocalSkillInput.extend({ order: z.number().int().nonnegative() }),
-);
+export const renderAlwaysOnSkillsInput = z.array(bundleLocalSkillInput);
 export const renderAlwaysOnSkillsOutput = z.string();
 
 export type BundleLocalSkillInput = z.infer<typeof bundleLocalSkillInput>;

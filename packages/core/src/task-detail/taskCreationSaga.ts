@@ -86,8 +86,7 @@ function addAlwaysOnSkills(
   for (const skill of input.alwaysOnSkills ?? []) {
     refs.set(`${skill.source}:${skill.path}`, {
       ...skill,
-      activation: "always",
-      activationOrder: skill.order,
+      alwaysOn: true,
     });
   }
   return { ...transport, skillBundles: [...refs.values()] };

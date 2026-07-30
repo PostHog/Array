@@ -2842,12 +2842,12 @@ export class AgentServer {
       .filter(
         (artifact) =>
           artifact.type === "skill_bundle" &&
-          artifact.metadata?.activation === "always",
+          artifact.metadata?.always_on === true,
       )
-      .sort(
-        (left, right) =>
-          (left.metadata?.activation_order ?? 0) -
-          (right.metadata?.activation_order ?? 0),
+      .sort((left, right) =>
+        `${left.metadata?.skill_source}:${left.metadata?.skill_name}`.localeCompare(
+          `${right.metadata?.skill_source}:${right.metadata?.skill_name}`,
+        ),
       )
       .map((artifact) =>
         this.installedSkillBundleInfo.get(

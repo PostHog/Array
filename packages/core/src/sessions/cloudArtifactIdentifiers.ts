@@ -1,5 +1,4 @@
 import type {
-  SkillActivation,
   TaskRunArtifactMetadata,
   UploadableSkillSource,
 } from "@posthog/shared";
@@ -52,8 +51,7 @@ export interface CloudSkillBundleRef {
   name: string;
   source: UploadableSkillSource;
   path: string;
-  activation?: SkillActivation;
-  activationOrder?: number;
+  alwaysOn?: boolean;
 }
 
 export interface LocalSkillBundle {
