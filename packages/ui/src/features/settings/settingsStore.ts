@@ -96,7 +96,7 @@ export interface SyncedCustomInstructions {
   truncated: boolean;
 }
 
-export type AlwaysOnSkillPreference = Omit<AlwaysOnSkillRef, "order">;
+export type AlwaysOnSkillPreference = AlwaysOnSkillRef;
 
 // ---------- Store shape ----------
 

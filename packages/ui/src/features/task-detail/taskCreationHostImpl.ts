@@ -156,12 +156,6 @@ export class TrpcTaskCreationHost implements ITaskCreationHost {
     );
   }
 
-  renderAlwaysOnSkillInstructions(
-    skills: Parameters<ITaskCreationHost["renderAlwaysOnSkillInstructions"]>[0],
-  ): Promise<string> {
-    return hostClient().skills.renderAlwaysOn.query(skills);
-  }
-
   takeWarmTaskLease(args: {
     repository: string;
     branch?: string | null;
