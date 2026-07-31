@@ -29,6 +29,7 @@ import {
 } from "@posthog/ui/features/sessions/components/CloudSessionLifecycle";
 import { ChatThread } from "@posthog/ui/features/sessions/components/chat-thread/ChatThread";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
+import { focusComposerOnPaneClick } from "@posthog/ui/features/sessions/components/focusComposerOnPaneClick";
 import { SessionInitializingView } from "@posthog/ui/features/sessions/components/SessionInitializingView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useMessagingModeStore } from "@posthog/ui/features/sessions/messagingModeStore";
@@ -224,6 +225,13 @@ export function PiSessionView({
       );
   }, [handleControllerError, piSessionController, taskId]);
 
+  const handleThreadClick = useCallback(
+    (event: React.MouseEvent) => {
+      focusComposerOnPaneClick(event, () => draftActions.requestFocus(taskId));
+    },
+    [draftActions, taskId],
+  );
+
   const restart = useCallback(() => {
     void piSessionController
       .restart(taskId)
@@ -379,7 +387,7 @@ export function PiSessionView({
           onRestart={restart}
         />
       )}
-      <Box className="min-h-0 flex-1">
+      <Box className="min-h-0 flex-1" onClick={handleThreadClick}>
         <ChatThread
           events={session.events}
           isPromptPending={isStreaming}

@@ -33,6 +33,7 @@ import {
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
+import { focusComposerOnPaneClick } from "@posthog/ui/features/sessions/components/focusComposerOnPaneClick";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
@@ -502,21 +503,8 @@ export function SessionView({
       .catch(() => toast.error("Failed to attach files"));
   }, []);
 
-  const handlePaneClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    const interactiveSelector =
-      'button, a, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"], [data-interactive]';
-    if (target.closest(interactiveSelector)) {
-      return;
-    }
-
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) {
-      return;
-    }
-
-    editorRef.current?.focus();
+  const handlePaneClick = useCallback((event: React.MouseEvent) => {
+    focusComposerOnPaneClick(event, () => editorRef.current?.focus());
   }, []);
 
   useAutoFocusOnTyping(editorRef, !isActiveSession);
