@@ -77,19 +77,17 @@ function addAlwaysOnSkills(
   transport: CloudPromptTransport,
   input: TaskCreationInput,
 ): CloudPromptTransport {
-  const refs = new Map(
-    (transport.skillBundles ?? []).map((skill) => [
-      `${skill.source}:${skill.path}`,
-      skill,
-    ]),
-  );
-  for (const skill of input.alwaysOnSkills ?? []) {
-    refs.set(`${skill.source}:${skill.path}`, {
+  const refs = [
+    ...(transport.skillBundles ?? []),
+    ...(input.alwaysOnSkills ?? []).map((skill) => ({
       ...skill,
       alwaysOn: true,
-    });
-  }
-  return { ...transport, skillBundles: [...refs.values()] };
+    })),
+  ];
+  const deduplicated = new Map(
+    refs.map((skill) => [`${skill.source}:${skill.path}`, skill]),
+  );
+  return { ...transport, skillBundles: [...deduplicated.values()] };
 }
 
 export class TaskCreationSaga extends Saga<
@@ -519,13 +517,6 @@ export class TaskCreationSaga extends Saga<
     const shouldConnect = !isCloudCreate && (!!input.taskId || !!agentCwd);
 
     if (shouldConnect) {
-      const alwaysOnSkillInstructions = input.alwaysOnSkills?.length
-        ? await this.readOnlyStep("resolve_always_on_skills", () =>
-            this.deps.host.renderAlwaysOnSkillInstructions(
-              input.alwaysOnSkills ?? [],
-            ),
-          )
-        : undefined;
       const initialPrompt =
         !isPiRuntime && !input.taskId && input.content
           ? await this.readOnlyStep("build_prompt_blocks", () =>
@@ -582,8 +573,9 @@ export class TaskCreationSaga extends Saga<
             connectParams.contextWindow = input.contextWindow;
           if (input.fastMode !== undefined)
             connectParams.fastMode = input.fastMode;
-          if (alwaysOnSkillInstructions)
-            connectParams.alwaysOnSkillInstructions = alwaysOnSkillInstructions;
+          if (input.alwaysOnSkillInstructions)
+            connectParams.alwaysOnSkillInstructions =
+              input.alwaysOnSkillInstructions;
           if (importedClaude) {
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";

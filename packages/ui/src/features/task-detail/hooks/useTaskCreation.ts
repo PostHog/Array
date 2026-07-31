@@ -327,9 +327,11 @@ export function useTaskCreation({
       const filePaths = extractFilePaths(content);
       const settings = useSettingsStore.getState();
       let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills;
+      let alwaysOnSkillInstructions: string | undefined;
       while (alwaysOnSkills.length > 0) {
         try {
-          await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
+          alwaysOnSkillInstructions =
+            await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
           break;
         } catch (error) {
           const action = await useAlwaysOnSkillsFailureStore
@@ -349,6 +351,7 @@ export function useTaskCreation({
             }
           }
           alwaysOnSkills = [];
+          alwaysOnSkillInstructions = undefined;
         }
       }
 
@@ -419,6 +422,7 @@ export function useTaskCreation({
           channelContextId,
           customInstructions: getEffectiveCustomInstructions(settings),
           alwaysOnSkills,
+          alwaysOnSkillInstructions,
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,

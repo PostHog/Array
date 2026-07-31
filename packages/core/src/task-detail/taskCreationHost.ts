@@ -1,11 +1,6 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import type { CloudSkillBundleRef } from "@posthog/core/sessions/cloudArtifactIdentifiers";
-import type {
-  AlwaysOnSkillRef,
-  Workspace,
-  WorkspaceInfo,
-  WorkspaceMode,
-} from "@posthog/shared";
+import type { Workspace, WorkspaceInfo, WorkspaceMode } from "@posthog/shared";
 import type { TaskCreationApiClient } from "./taskCreationApiClient";
 
 export interface CloudPromptTransport {
@@ -108,7 +103,6 @@ export interface ITaskCreationHost {
    * too, or a typed `/my-skill` reaches the sandbox with no bundle attached.
    */
   resolveLocalSkillCommandPrompt(prompt: string): Promise<string>;
-  renderAlwaysOnSkillInstructions(skills: AlwaysOnSkillRef[]): Promise<string>;
   /**
    * Return-and-clear the pre-warmed sandbox lease matching the composer
    * selection, if one was provisioned while the user typed. The saga uploads
