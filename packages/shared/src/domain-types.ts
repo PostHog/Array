@@ -93,15 +93,15 @@ export interface Task {
 }
 
 /**
- * A backend task channel — the shared feed a task is kicked off in. Distinct
- * from the desktop file-system "channel" folders: those carry CONTEXT.md and
- * artifacts, while this owns the task feed and threads. `personal` is the
- * user's private "#me" channel.
+ * A backend task channel — the single channel identity: it owns the task feed,
+ * threads, instructions (CONTEXT.md) and filed canvases. `personal` is the
+ * user's private "#me" channel. `starred` is per-user.
  */
 export interface TaskChannel {
   id: string;
   name: string;
   channel_type: "public" | "personal";
+  starred: boolean;
   created_at: string;
   created_by?: UserBasic | null;
 }
