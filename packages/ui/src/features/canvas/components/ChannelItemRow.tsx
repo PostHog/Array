@@ -258,7 +258,10 @@ export function ChannelItemRow({
     // Controlled so the card survives its own submenu: "File to…" opens in a
     // portal outside the card, and the pointer moving there reads as leaving the
     // card, which would take the menu down with it.
-    <PreviewCard.Root open={cardOpen || submenuOpen} onOpenChange={setCardOpen}>
+    <PreviewCard.Root
+      open={true || cardOpen || submenuOpen}
+      onOpenChange={setCardOpen}
+    >
       <PreviewCard.Trigger
         delay={400}
         closeDelay={100}
@@ -319,11 +322,18 @@ export function ChannelItemRow({
               each section pays for its own inset, which is what lets the rules
               run edge to edge and the action rows highlight full width. */}
           <PreviewCard.Popup
-            render={<Card size="sm" className="w-64 gap-0 py-0" />}
+            render={
+              <Card
+                size="sm"
+                className="w-64 gap-0 border border-border py-0 shadow-md"
+              />
+            }
           >
             <ItemGroup className="gap-0!">
               <Item size="xs" className="p-2">
-                <ItemMedia variant="icon">{previewIcon}</ItemMedia>
+                <ItemMedia variant="icon" className="size-5">
+                  {previewIcon}
+                </ItemMedia>
                 <ItemContent>
                   <ItemTitle>{item.title}</ItemTitle>
                   <ItemDescription>
@@ -357,7 +367,7 @@ export function ChannelItemRow({
                         </Avatar>
                       )}
                     </ItemMedia>
-                    <ItemContent>
+                    <ItemContent className="gap-0">
                       <ItemTitle>{author}</ItemTitle>
                       <ItemDescription>Created by</ItemDescription>
                     </ItemContent>
