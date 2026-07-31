@@ -26,6 +26,11 @@ export function createGitClient(
     trimmed: true,
     abort: signal,
     config,
+    unsafe: {
+      allowUnsafeFsMonitor: true,
+      allowUnsafeEditor: true,
+      allowUnsafePager: true,
+    },
     ...rest,
   });
 }
