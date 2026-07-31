@@ -211,7 +211,7 @@ export function ChannelNav() {
     // cannot do that — the skip window is provider state, and isolated
     // providers never share it.
     <TooltipProvider delay={400}>
-      <div className="flex shrink-0 gap-2 px-2 pt-2 pb-1">
+      <div className="flex shrink-0 gap-2 p-2">
         <NavIcon
           icon={
             <EnvelopeSimple size={16} weight={isInbox ? "fill" : "regular"} />

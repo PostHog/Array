@@ -143,7 +143,7 @@ function SpaceRowSurface({
     <AutocompleteItem
       value={optionValue}
       className={cn(
-        "w-full min-w-0 data-selected:bg-fill-selected data-selected:text-foreground",
+        "w-full min-w-0 pr-1 data-selected:bg-fill-selected data-selected:text-foreground",
         // quill wraps an option's children in its own flex row; widening it is
         // what keeps the shortcut hint at the row's right edge and lets the
         // name truncate, exactly as they do in the button above.
@@ -475,8 +475,13 @@ function ChannelSection({
               >
                 {channel.name}
               </OverflowTickerText>
+              {/* `!mr-0` undoes quill's `.quill-button kbd { margin-right: -4px }`,
+                  which is meant to let a shortcut hang into a button's own
+                  padding. Here the row's inner span is `truncate` (overflow
+                  hidden) and `ml-auto` eats every pixel of slack, so the hang
+                  had nowhere to go and the last 4px of the hint was cut off. */}
               {hotkeySlot != null && (
-                <Kbd className="ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
+                <Kbd className="!mr-0 ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
                   {formatHotkey(`mod+${hotkeySlot}`)}
                 </Kbd>
               )}
@@ -757,7 +762,7 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
           {PERSONAL_CHANNEL_NAME}
         </span>
         {hotkeySlot != null && (
-          <Kbd className="ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
+          <Kbd className="!mr-0 ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
             {formatHotkey(`mod+${hotkeySlot}`)}
           </Kbd>
         )}
