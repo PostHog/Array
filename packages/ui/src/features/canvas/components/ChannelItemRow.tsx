@@ -258,10 +258,7 @@ export function ChannelItemRow({
     // Controlled so the card survives its own submenu: "File to…" opens in a
     // portal outside the card, and the pointer moving there reads as leaving the
     // card, which would take the menu down with it.
-    <PreviewCard.Root
-      open={true || cardOpen || submenuOpen}
-      onOpenChange={setCardOpen}
-    >
+    <PreviewCard.Root open={cardOpen || submenuOpen} onOpenChange={setCardOpen}>
       <PreviewCard.Trigger
         delay={400}
         closeDelay={100}
