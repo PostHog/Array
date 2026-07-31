@@ -80,7 +80,25 @@ export function ProductView() {
     );
   }
 
-  if (projectId == null || isLoading) return null;
+  if (projectId == null) {
+    return (
+      <Empty className="h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <GlobeIcon size={28} />
+          </EmptyMedia>
+          <EmptyTitle>Sign in to open your product</EmptyTitle>
+          <EmptyDescription>
+            The Product tab browses your live site (or a local checkout) with
+            your PostHog project's analytics overlaid on it. Connect your
+            PostHog account to pick a project first.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
+  if (isLoading) return null;
 
   if (!activeEnv || adding) {
     return (
