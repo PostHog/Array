@@ -16,7 +16,6 @@ import {
 import { isValidMcpUrl } from "@posthog/core/mcp-servers/customServerForm";
 import { RobotAvatar } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
-import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { useRegisterGatewayServer } from "@posthog/ui/features/mcp-gateway/hooks/useRegisterGatewayServer";
 import {
   Button,
@@ -28,11 +27,7 @@ import {
   TextArea,
   TextField,
 } from "@radix-ui/themes";
-import { useEffect, useState } from "react";
-
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
+import { useState } from "react";
 
 interface GatewayAddServerProps {
   isAdmin: boolean;
@@ -51,23 +46,8 @@ export function GatewayAddServer({
   );
   const [showKey, setShowKey] = useState(false);
   const [optionalOpen, setOptionalOpen] = useState(false);
-  // URL of the just-registered server; once the refreshed registry contains
-  // it, jump to its detail page.
-  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
 
-  const { servers } = useGatewayServers();
   const { register, registerPending } = useRegisterGatewayServer();
-
-  useEffect(() => {
-    if (!pendingUrl) return;
-    const created = servers.find(
-      (server) => normalizeUrl(server.url) === pendingUrl,
-    );
-    if (created) {
-      setPendingUrl(null);
-      onNavigate({ view: "server", serverId: created.id });
-    }
-  }, [pendingUrl, servers, onNavigate]);
 
   const set = <K extends keyof GatewayAddServerValues>(
     key: K,
@@ -85,8 +65,9 @@ export function GatewayAddServer({
       { request },
       {
         onSuccess: (result) => {
-          if (result && "error" in result && result.error) return;
-          setPendingUrl(normalizeUrl(request.url));
+          if (result.created) {
+            onNavigate({ view: "server", serverId: result.created.id });
+          }
         },
       },
     );

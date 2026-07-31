@@ -26,7 +26,9 @@ import { useEffect, useState } from "react";
  */
 export function McpGatewayView() {
   const queryClient = useQueryClient();
-  const [route, setRoute] = useState<GatewayRoute>({ view: "servers" });
+  const [requestedRoute, setRoute] = useState<GatewayRoute>({
+    view: "servers",
+  });
 
   const { isAdmin, allowCustomServers, configLoading } = useGatewayConfig();
   const canAddServers = isAdmin || allowCustomServers;
@@ -50,14 +52,12 @@ export function McpGatewayView() {
     };
   }, [queryClient]);
 
-  // Role guard: if the config resolves to a narrower role than the current
-  // route needs, fall back to the servers home.
-  useEffect(() => {
-    if (configLoading) return;
-    if (!isRouteAllowed(route, { isAdmin, canAddServers })) {
-      setRoute({ view: "servers" });
-    }
-  }, [route, isAdmin, canAddServers, configLoading]);
+  // Role guard, applied at render: if the config resolves to a narrower role
+  // than the stored route needs, show the servers home instead.
+  const route: GatewayRoute =
+    configLoading || isRouteAllowed(requestedRoute, { isAdmin, canAddServers })
+      ? requestedRoute
+      : { view: "servers" };
 
   const activeAgentCount = serviceAccounts.accounts.filter(
     (account) => account.status === "active",

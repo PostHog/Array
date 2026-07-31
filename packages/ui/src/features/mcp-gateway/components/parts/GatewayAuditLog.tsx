@@ -198,15 +198,15 @@ export function GatewayAuditLog() {
           >
             Prev
           </Button>
-          {pageWindow(currentPage, pages).map((index) => (
+          {pageWindow(currentPage, pages).map((pageNumber) => (
             <Button
-              key={index}
-              variant={index === currentPage ? "solid" : "surface"}
-              color={index === currentPage ? undefined : "gray"}
+              key={pageNumber}
+              variant={pageNumber === currentPage ? "solid" : "surface"}
+              color={pageNumber === currentPage ? undefined : "gray"}
               size="1"
-              onClick={() => setPage(index)}
+              onClick={() => setPage(pageNumber)}
             >
-              {index + 1}
+              {pageNumber + 1}
             </Button>
           ))}
           <Button
