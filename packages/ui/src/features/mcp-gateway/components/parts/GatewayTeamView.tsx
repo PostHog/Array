@@ -1,26 +1,21 @@
-import { CaretRight, MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
+import { CaretRight, MagnifyingGlass, X } from "@phosphor-icons/react";
 import type {
   McpGatewayMemberSummary,
   McpGatewayServer,
   McpServiceAccount,
 } from "@posthog/api-client/posthog-client";
-import {
-  agentHandlePreview,
-  formatAgo,
-} from "@posthog/core/mcp-gateway/gatewayServers";
+import { formatAgo } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   gatewayUserName,
   RobotAvatar,
   UserAvatar,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
-import { NewTokenDialog } from "@posthog/ui/features/mcp-gateway/components/parts/NewTokenDialog";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useGatewayMembers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayMembers";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts";
 import {
   Badge,
-  Button,
   Flex,
   IconButton,
   Switch,
@@ -40,7 +35,6 @@ export function GatewayTeamView({
   const { servers } = useGatewayServers();
   const serviceAccounts = useServiceAccounts();
   const { members } = useGatewayMembers({ enabled: true });
-  const [creating, setCreating] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [membersExpanded, setMembersExpanded] = useState(false);
   const normalizedMemberSearch = memberSearch.trim().toLowerCase();
@@ -70,40 +64,11 @@ export function GatewayTeamView({
         </Text>
       </Flex>
 
-      {creating && (
-        <CreateAgentForm
-          pending={serviceAccounts.createPending}
-          onCreate={(name) =>
-            serviceAccounts.createAccount(
-              { name },
-              {
-                onSuccess: (account) => {
-                  setCreating(false);
-                  onNavigate({ view: "agent", accountId: account.id });
-                },
-              },
-            )
-          }
-          onCancel={() => setCreating(false)}
-        />
-      )}
-
       <Flex align="center" gap="2">
         <Text className="font-medium text-base">Agents</Text>
         <Badge color="gray" variant="soft" size="1">
           {serviceAccounts.accounts.length}
         </Badge>
-        {!creating && (
-          <Button
-            variant="ghost"
-            color="gray"
-            size="1"
-            className="ml-auto"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={12} /> New agent
-          </Button>
-        )}
       </Flex>
       <Flex direction="column" gap="2">
         {serviceAccounts.accounts.map((account) => (
@@ -194,67 +159,6 @@ export function GatewayTeamView({
           </button>
         )}
       </div>
-
-      <NewTokenDialog
-        account={serviceAccounts.newToken}
-        onClose={serviceAccounts.dismissNewToken}
-      />
-    </Flex>
-  );
-}
-
-function CreateAgentForm({
-  pending,
-  onCreate,
-  onCancel,
-}: {
-  pending: boolean;
-  onCreate: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState("");
-  const handle = agentHandlePreview(name);
-
-  return (
-    <Flex
-      direction="column"
-      gap="2"
-      className="rounded-[10px] border border-gray-6 border-dashed p-3"
-    >
-      <Flex align="end" gap="2">
-        <Flex direction="column" gap="1" className="flex-1">
-          <Text color="gray" className="font-medium text-xs">
-            Agent name
-          </Text>
-          <TextField.Root
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Docs Agent"
-            autoFocus
-          />
-        </Flex>
-        <Button
-          variant="solid"
-          disabled={!handle || pending}
-          onClick={() => onCreate(name.trim())}
-        >
-          <Plus size={12} weight="bold" /> Create
-        </Button>
-        <Button variant="soft" color="gray" onClick={onCancel}>
-          Cancel
-        </Button>
-      </Flex>
-      <Text color="gray" className="text-xs">
-        {handle ? (
-          <>
-            Will authenticate as{" "}
-            <span className="font-mono font-semibold">{handle}</span> — share
-            servers with it on the next screen.
-          </>
-        ) : (
-          "The agent signs in with a generated svc-… identity."
-        )}
-      </Text>
     </Flex>
   );
 }
