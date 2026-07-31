@@ -3625,9 +3625,7 @@ Optimize for the fewest shell round trips.
 - Read multiple files at once.
 - Never rerun a command solely to reproduce output you already have.`;
 
-    const artifactInstructions = isSlack
-      ? ""
-      : `
+    const artifactInstructions = `
 ## Delivering non-code files (artifacts)
 When you create a non-code deliverable the user should be able to download (a report, chart, image, data file, rendered canvas), call the \`upload_artifact\` tool with its path before your final reply, then mention it. Files left in the workspace don't reach the user; uploaded ones show up in their artifact panel. Don't upload source code or repository changes — those belong in a commit or PR.`;
 
