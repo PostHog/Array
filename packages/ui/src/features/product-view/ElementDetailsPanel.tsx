@@ -39,7 +39,11 @@ function EmptyLine({ text }: { text: string }) {
 function TrendBars(props: { trend: { day: string; clicks: number }[] }) {
   const max = Math.max(...props.trend.map((t) => t.clicks), 1);
   return (
-    <div className="flex h-12 items-end gap-px" aria-label="Daily clicks">
+    <div
+      role="img"
+      className="flex h-12 items-end gap-px"
+      aria-label="Daily clicks"
+    >
       {props.trend.map((point) => (
         <div
           key={point.day}

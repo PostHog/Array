@@ -25,7 +25,6 @@ import {
   MCP_RELAY_EXECUTOR,
 } from "@posthog/core/cloud-task/identifiers";
 import { contextMenuCoreModule } from "@posthog/core/context-menu/context-menu.module";
-import { productViewCoreModule } from "@posthog/core/product-view/product-view.module";
 import {
   CONTEXT_MENU_CONTROLLER,
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -80,6 +79,7 @@ import {
   type OAuthCallbackReceiver,
 } from "@posthog/core/oauth/identifiers";
 import { oauthModule } from "@posthog/core/oauth/oauth.module";
+import { productViewCoreModule } from "@posthog/core/product-view/product-view.module";
 import { PROVISIONING_SERVICE } from "@posthog/core/provisioning/identifiers";
 import { ProvisioningService } from "@posthog/core/provisioning/provisioning";
 import { SLEEP_SERVICE } from "@posthog/core/sleep/identifiers";
@@ -106,11 +106,11 @@ import { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
-import { EMBEDDED_BROWSER } from "@posthog/platform/embedded-browser";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
 import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
+import { EMBEDDED_BROWSER } from "@posthog/platform/embedded-browser";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
 import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
@@ -156,7 +156,6 @@ import {
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
-import { productEnvironmentsModule } from "@posthog/workspace-server/services/product-view/product-view.module";
 import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
@@ -200,6 +199,7 @@ import { POSTHOG_PLUGIN_SERVICE } from "@posthog/workspace-server/services/posth
 import { posthogPluginModule } from "@posthog/workspace-server/services/posthog-plugin/posthog-plugin.module";
 import { PROCESS_TRACKING_SERVICE } from "@posthog/workspace-server/services/process-tracking/identifiers";
 import { processTrackingModule } from "@posthog/workspace-server/services/process-tracking/process-tracking.module";
+import { productEnvironmentsModule } from "@posthog/workspace-server/services/product-view/product-view.module";
 import { releaseFeedModule } from "@posthog/workspace-server/services/release-feed/release-feed.module";
 import { SECURE_STORE_SERVICE } from "@posthog/workspace-server/services/secure-store/identifiers";
 import { shellModule } from "@posthog/workspace-server/services/shell/shell.module";
@@ -241,10 +241,10 @@ import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
-import { ElectronEmbeddedBrowser } from "../platform-adapters/electron-embedded-browser";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
 import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
+import { ElectronEmbeddedBrowser } from "../platform-adapters/electron-embedded-browser";
 import { ElectronFileIcon } from "../platform-adapters/electron-file-icon";
 import { ElectronImageProcessor } from "../platform-adapters/electron-image-processor";
 import { ElectronMainWindow } from "../platform-adapters/electron-main-window";

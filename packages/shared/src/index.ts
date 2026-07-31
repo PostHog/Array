@@ -65,10 +65,6 @@ export {
   type WindowBounds,
   windowBoundsSchema,
 } from "./browser-tabs-schemas";
-export {
-  type ProductEnvironment,
-  productEnvironmentSchema,
-} from "./product-view-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,
@@ -270,6 +266,10 @@ export {
   isPrivateIpv4Octets,
   isPrivateIpv6Literal,
 } from "./private-network";
+export {
+  type ProductEnvironment,
+  productEnvironmentSchema,
+} from "./product-view-schemas";
 export {
   type CapabilityNotch,
   DEFAULT_REASONING_EFFORT,
