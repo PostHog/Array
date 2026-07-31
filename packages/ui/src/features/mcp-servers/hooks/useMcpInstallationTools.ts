@@ -94,8 +94,8 @@ export function useMcpInstallationTools(
       }
       const eligibleTools = (vars.targetTools ?? tools ?? []).filter(
         (tool) =>
-          options.teamScope ||
-          (!tool.locked &&
+          !tool.locked &&
+          (options.teamScope ||
             isPolicyStateAllowedByCeiling(
               vars.approval_state,
               tool.team_state,
