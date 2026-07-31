@@ -222,6 +222,16 @@ export function parseShareLink(href: string): ShareLinkTarget | null {
   return null;
 }
 
+export function replayUrl(
+  sessionId: string,
+  overrides?: LinkOverrides,
+): string | null {
+  return withProjectId(
+    (pid) => `/project/${pid}/replay/${encodeURIComponent(sessionId)}`,
+    overrides,
+  );
+}
+
 export function errorTrackingIssueUrl(
   issueId: string,
   overrides?: ErrorTrackingIssueLinkOverrides,

@@ -30,12 +30,14 @@ import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { ElementDetailsPanel } from "./ElementDetailsPanel";
 import { ProductEnvironmentPicker } from "./ProductEnvironmentPicker";
 import {
   useProductEnvironments,
   useRemoveProductEnvironment,
 } from "./useProductEnvironments";
 import { useProductViewPageState, useProductViewSlot } from "./useProductView";
+import { useSelectedElement } from "./useSelectedElement";
 
 function isLocalOrigin(origin: string): boolean {
   return origin.includes("//localhost") || origin.includes("//127.0.0.1");
@@ -143,6 +145,7 @@ function ProductBrowser(props: {
 
   const [inspecting, setInspecting] = useState(false);
   const [draftUrl, setDraftUrl] = useState<string | null>(null);
+  const { selected, clear: clearSelected } = useSelectedElement(viewId);
   const currentUrl = pageState?.url || initialUrl;
 
   // Remember where this environment is parked (debounced) so the tab restores
@@ -269,8 +272,18 @@ function ProductBrowser(props: {
           Data: {dataProjectName}
         </Badge>
       </div>
-      {/* The native browser view is glued to this slot's rect by the host. */}
-      <div ref={slotRef} className="min-h-0 flex-1 bg-gray-2" />
+      <div className="flex min-h-0 flex-1 flex-row">
+        {/* The native browser view is glued to this slot's rect by the host. */}
+        <div ref={slotRef} className="min-h-0 min-w-0 flex-1 bg-gray-2" />
+        {selected && (
+          <ElementDetailsPanel
+            viewId={viewId}
+            selected={selected}
+            dataProjectId={environment.dataProjectId}
+            onClose={clearSelected}
+          />
+        )}
+      </div>
     </div>
   );
 }

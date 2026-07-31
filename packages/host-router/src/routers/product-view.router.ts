@@ -1,6 +1,8 @@
 import { PRODUCT_VIEW_SERVICE } from "@posthog/core/product-view/identifiers";
 import type { IProductViewService } from "@posthog/core/product-view/productView";
 import {
+  elementDetailSchema,
+  getElementDetailInput,
   navigateProductViewInput,
   openProductViewInput,
   productUrlSuggestionSchema,
@@ -103,6 +105,11 @@ export const productViewRouter = router({
   suggestUrls: publicProcedure
     .output(z.array(productUrlSuggestionSchema))
     .query(({ ctx }) => view(ctx.container).suggestProductUrls()),
+
+  getElementDetail: publicProcedure
+    .input(getElementDetailInput)
+    .output(elementDetailSchema)
+    .query(({ ctx, input }) => view(ctx.container).getElementDetail(input)),
 
   onEvents: publicProcedure.subscription(async function* (opts) {
     for await (const event of view(opts.ctx.container).events(opts.signal)) {

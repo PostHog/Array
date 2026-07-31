@@ -236,5 +236,123 @@ export class ElectronEmbeddedBrowser
         element: payload.element,
       });
     });
+
+    // Real interactions (ambient clicks, never blocked) — used to attribute
+    // the network requests that follow to the element that triggered them.
+    let lastInteraction: { selectorHash: string; at: number } | null = null;
+    wc.ipc.on("product-view:interaction", (_event, payload) => {
+      if (typeof payload?.selectorHash !== "string") return;
+      lastInteraction = { selectorHash: payload.selectorHash, at: Date.now() };
+    });
+
+    this.attachNetworkCapture(viewId, view, () => {
+      if (!lastInteraction) return null;
+      return Date.now() - lastInteraction.at <= INTERACTION_ATTRIBUTION_MS
+        ? lastInteraction.selectorHash
+        : null;
+    });
+  }
+
+  /**
+   * Live network capture over CDP: request timing + the `traceparent` header
+   * (frontend → backend trace correlation). Only fetch/XHR traffic is sampled,
+   * and only these two fields ever leave the adapter — the page's cookies and
+   * auth headers do not. Degrades to no capture when another debugger is
+   * already attached (dev :9222, open devtools).
+   */
+  private attachNetworkCapture(
+    viewId: string,
+    view: WebContentsView,
+    attributedSelectorHash: () => string | null,
+  ): void {
+    const wc = view.webContents;
+    try {
+      wc.debugger.attach("1.3");
+      void wc.debugger.sendCommand("Network.enable");
+    } catch (error) {
+      log.warn("network capture unavailable", { viewId, error });
+      return;
+    }
+
+    interface PendingRequest {
+      url: string;
+      method: string;
+      startedAt: number;
+      traceId: string | null;
+      interactionSelectorHash: string | null;
+      status: number | null;
+    }
+    const pending = new Map<string, PendingRequest>();
+
+    wc.debugger.on("message", (_event, method, params) => {
+      const p = params as {
+        requestId?: string;
+        type?: string;
+        timestamp?: number;
+        request?: {
+          url?: string;
+          method?: string;
+          headers?: Record<string, string>;
+        };
+        response?: { status?: number };
+      };
+      const requestId = p.requestId;
+      if (!requestId) return;
+
+      if (method === "Network.requestWillBeSent") {
+        if (p.type !== "XHR" && p.type !== "Fetch") return;
+        if (pending.size > 500) pending.clear();
+        const headers = p.request?.headers ?? {};
+        const traceparent =
+          headers.traceparent ?? headers.Traceparent ?? headers.TRACEPARENT;
+        const traceId =
+          typeof traceparent === "string"
+            ? (traceparent.split("-")[1] ?? null)
+            : null;
+        pending.set(requestId, {
+          url: p.request?.url ?? "",
+          method: p.request?.method ?? "GET",
+          startedAt: (p.timestamp ?? 0) * 1000,
+          traceId,
+          interactionSelectorHash: attributedSelectorHash(),
+          status: null,
+        });
+      } else if (method === "Network.responseReceived") {
+        const request = pending.get(requestId);
+        if (request) request.status = p.response?.status ?? null;
+      } else if (
+        method === "Network.loadingFinished" ||
+        method === "Network.loadingFailed"
+      ) {
+        const request = pending.get(requestId);
+        if (!request) return;
+        pending.delete(requestId);
+        const endedAt = (p.timestamp ?? 0) * 1000;
+        const duration =
+          request.startedAt > 0 && endedAt > request.startedAt
+            ? Math.round(endedAt - request.startedAt)
+            : null;
+        this.emit("event", {
+          type: "network-sample",
+          sample: {
+            viewId,
+            url: request.url,
+            method: request.method,
+            status: request.status,
+            durationMs: duration,
+            traceId: request.traceId,
+            interactionSelectorHash: request.interactionSelectorHash,
+            timestamp: Date.now(),
+          },
+        });
+      }
+    });
+
+    wc.debugger.on("detach", (_event, reason) => {
+      log.info("network capture detached", { viewId, reason });
+    });
   }
 }
+
+/** How long after a click a network request is still attributed to it. */
+const INTERACTION_ATTRIBUTION_MS = 2000;

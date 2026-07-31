@@ -66,3 +66,56 @@ export const productUrlSuggestionSchema = z.object({
   source: z.enum(["app_urls", "pageview_hosts"]),
   eventCount: z.number().optional(),
 });
+
+export const getElementDetailInput = z.object({
+  viewId: z.string(),
+  pageUrl: z.string().max(4000),
+  element: reportedElementSchema,
+});
+
+const latencySnapshotSchema = z.object({
+  count: z.number(),
+  p50: z.number(),
+  p95: z.number(),
+  p99: z.number(),
+});
+
+const networkRequestSampleSchema = z.object({
+  url: z.string(),
+  method: z.string(),
+  status: z.number().nullable(),
+  durationMs: z.number().nullable(),
+  traceId: z.string().nullable(),
+  interactionSelectorHash: z.string().nullable(),
+  timestamp: z.number(),
+});
+
+/** Everything the details panel renders for one selected element. */
+export const elementDetailSchema = z.object({
+  selectorHash: z.string(),
+  dataProjectId: z.number(),
+  pathname: z.string(),
+  totals: z
+    .object({
+      clicks: z.number(),
+      rageclicks: z.number(),
+      deadclicks: z.number(),
+    })
+    .nullable(),
+  trend: z.array(
+    z.object({ day: z.string(), clicks: z.number(), users: z.number() }),
+  ),
+  errors: z.array(
+    z.object({
+      issueId: z.string(),
+      types: z.array(z.string()),
+      occurrences: z.number(),
+      affectedUsers: z.number(),
+    }),
+  ),
+  sessions: z.array(z.object({ sessionId: z.string(), lastSeen: z.string() })),
+  vitals: z.object({ inpP75: z.number(), lcpP75: z.number() }).nullable(),
+  liveLatency: latencySnapshotSchema.nullable(),
+  recentRequests: z.array(networkRequestSampleSchema),
+});
+export type ElementDetail = z.infer<typeof elementDetailSchema>;

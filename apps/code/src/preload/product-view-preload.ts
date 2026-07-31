@@ -326,6 +326,21 @@ ipcRenderer.on("product-view:set-inspect-mode", (_event, payload) => {
   setInspectMode(Boolean(payload?.enabled));
 });
 
+// Ambient interaction reporting: never blocks or alters the page; the host
+// uses it to attribute the network requests that follow to the element that
+// triggered them (live latency + trace correlation).
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    const candidate = candidateFor(event.target);
+    if (!candidate) return;
+    ipcRenderer.send("product-view:interaction", {
+      selectorHash: describe(candidate).selectorHash,
+    });
+  },
+  { capture: true, passive: true },
+);
+
 window.addEventListener("scroll", scheduleLayout, {
   passive: true,
   capture: true,

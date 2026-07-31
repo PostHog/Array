@@ -13,6 +13,7 @@ import {
   type IEmbeddedBrowser,
 } from "@posthog/platform/embedded-browser";
 import { inject, injectable } from "inversify";
+import type { z } from "zod";
 import { runHogQLQuery } from "../canvas/posthogApi";
 import {
   type ElementUsageStats,
@@ -20,13 +21,29 @@ import {
   shapeElementStatsResponse,
 } from "./elementMatching";
 import { buildOverlayItems } from "./healthScore";
-import { elementStatsQuery } from "./productInsights";
+import { LatencySampleBuffer } from "./latencyAggregation";
+import {
+  buildElementChainFragment,
+  buildElementErrorsQuery,
+  buildElementSessionsQuery,
+  buildElementTrendQuery,
+  buildPageVitalsQuery,
+  elementStatsQuery,
+  shapeErrorRows,
+  shapeSessionRows,
+  shapeTrendRows,
+  shapeVitalsRow,
+} from "./productInsights";
 import {
   buildHostsQuery,
   type ProductUrlSuggestion,
   shapeUrlSuggestions,
 } from "./productSuggestions";
-import { reportedElementsSchema } from "./schemas";
+import {
+  type ElementDetail,
+  reportedElementSchema,
+  reportedElementsSchema,
+} from "./schemas";
 
 export interface IProductViewService {
   open(input: {
@@ -46,6 +63,11 @@ export interface IProductViewService {
   setInspectMode(viewId: string, enabled: boolean): void;
   events(signal?: AbortSignal): AsyncIterable<EmbeddedBrowserEvent>;
   suggestProductUrls(): Promise<ProductUrlSuggestion[]>;
+  getElementDetail(input: {
+    viewId: string;
+    pageUrl: string;
+    element: z.infer<typeof reportedElementSchema>;
+  }): Promise<ElementDetail>;
 }
 
 /** The embedded browser must only ever load plain web pages. */
@@ -81,6 +103,13 @@ export class ProductViewService implements IProductViewService {
   private readonly statsCache = new Map<
     string,
     { at: number; rows: ReturnType<typeof shapeElementStatsResponse> }
+  >();
+  /** Live network latency captured on the embedded pages (CDP). */
+  private readonly latency = new LatencySampleBuffer();
+  /** Recent request samples per view, newest last (details panel waterfall). */
+  private readonly recentSamples = new Map<
+    string,
+    ElementDetail["recentRequests"]
   >();
   private readonly overlayTimers = new Map<
     string,
@@ -133,9 +162,13 @@ export class ProductViewService implements IProductViewService {
             event.pageUrl,
             event.elements,
           );
+        } else if (event.type === "network-sample") {
+          this.recordNetworkSample(event.sample);
         } else if (event.type === "view-destroyed") {
           this.dataProjectByView.delete(event.viewId);
           this.statsByView.delete(event.viewId);
+          this.recentSamples.delete(event.viewId);
+          this.latency.clear(`${event.viewId}|`);
         }
       }
     })().catch((error) => {
@@ -251,6 +284,136 @@ export class ProductViewService implements IProductViewService {
 
   events(signal?: AbortSignal): AsyncIterable<EmbeddedBrowserEvent> {
     return this.embeddedBrowser.events(signal);
+  }
+
+  private recordNetworkSample(sample: {
+    viewId: string;
+    url: string;
+    method: string;
+    status: number | null;
+    durationMs: number | null;
+    traceId: string | null;
+    interactionSelectorHash: string | null;
+    timestamp: number;
+  }): void {
+    if (sample.durationMs != null) {
+      this.latency.add(`${sample.viewId}|page`, sample.durationMs);
+      if (sample.interactionSelectorHash) {
+        this.latency.add(
+          `${sample.viewId}|${sample.interactionSelectorHash}`,
+          sample.durationMs,
+        );
+      }
+    }
+    const ring = this.recentSamples.get(sample.viewId) ?? [];
+    ring.push({
+      url: sample.url,
+      method: sample.method,
+      status: sample.status,
+      durationMs: sample.durationMs,
+      traceId: sample.traceId,
+      interactionSelectorHash: sample.interactionSelectorHash,
+      timestamp: sample.timestamp,
+    });
+    if (ring.length > 100) ring.splice(0, ring.length - 100);
+    this.recentSamples.set(sample.viewId, ring);
+  }
+
+  /**
+   * The full story for one selected element: 30-day usage trend, exceptions
+   * correlated via shared sessions, example replay sessions, page web vitals,
+   * plus live latency/requests captured while browsing. Historical queries run
+   * against the view's data project; anything page-derived is escaped by the
+   * builders.
+   */
+  async getElementDetail(input: {
+    viewId: string;
+    pageUrl: string;
+    element: z.infer<typeof reportedElementSchema>;
+  }): Promise<ElementDetail> {
+    const element = reportedElementSchema.parse(input.element);
+    const projectId =
+      this.dataProjectByView.get(input.viewId) ??
+      this.authService.getState().currentProjectId;
+    if (projectId == null) throw new Error("No PostHog project selected");
+
+    let pathname = "/";
+    try {
+      pathname = new URL(input.pageUrl).pathname;
+    } catch {
+      // keep "/" — detail queries then show page-root context
+    }
+
+    const fragment = buildElementChainFragment(element);
+    const run = async (sql: string): Promise<unknown[]> =>
+      (await this.queryHogQL(projectId, sql)).results;
+
+    const [trend, errors, sessions, vitals] = await Promise.all([
+      fragment
+        ? run(buildElementTrendQuery(pathname, fragment)).then(shapeTrendRows)
+        : Promise.resolve([]),
+      fragment
+        ? run(buildElementErrorsQuery(pathname, fragment)).then(shapeErrorRows)
+        : Promise.resolve([]),
+      fragment
+        ? run(buildElementSessionsQuery(pathname, fragment)).then(
+            shapeSessionRows,
+          )
+        : Promise.resolve([]),
+      run(buildPageVitalsQuery(pathname))
+        .then(shapeVitalsRow)
+        .catch(() => null),
+    ]);
+
+    const allSamples = this.recentSamples.get(input.viewId) ?? [];
+    const attributed = allSamples.filter(
+      (s) => s.interactionSelectorHash === element.selectorHash,
+    );
+    return {
+      selectorHash: element.selectorHash,
+      dataProjectId: projectId,
+      pathname,
+      totals:
+        this.statsByView.get(input.viewId)?.get(element.selectorHash) ?? null,
+      trend,
+      errors,
+      sessions,
+      vitals,
+      liveLatency:
+        this.latency.snapshot(`${input.viewId}|${element.selectorHash}`) ??
+        this.latency.snapshot(`${input.viewId}|page`),
+      recentRequests: (attributed.length > 0 ? attributed : allSamples).slice(
+        -20,
+      ),
+    };
+  }
+
+  /** Raw HogQL against an explicit project (the environment's data project —
+   * not necessarily the signed-in default). */
+  private async queryHogQL(
+    projectId: number,
+    sql: string,
+  ): Promise<{ results: unknown[] }> {
+    const { apiHost } = await this.authService.getValidAccessToken();
+    const response = await this.authService.authenticatedFetch(
+      fetch,
+      `${apiHost}/api/projects/${projectId}/query/`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: {
+            kind: "HogQLQuery",
+            query: sql,
+            tags: { productKey: "max" },
+          },
+          refresh: "blocking",
+        }),
+      },
+    );
+    if (!response.ok) throw new Error(`Query failed (${response.status})`);
+    const body = (await response.json()) as { results?: unknown[] };
+    return { results: Array.isArray(body.results) ? body.results : [] };
   }
 
   /**
