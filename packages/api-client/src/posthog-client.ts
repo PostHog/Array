@@ -5084,12 +5084,15 @@ export class PostHogAPIClient {
   }
 
   async getMcpGatewayMembers(): Promise<McpGatewayMemberSummary[]> {
-    const data = await this.mcpGatewayFetch<McpGatewayMemberSummary[]>({
+    const data = await this.mcpGatewayFetch<{
+      results?: McpGatewayMemberSummary[];
+    }>({
       method: "get",
       path: "mcp_gateway/members/",
+      search: { limit: 500 },
       errorLabel: "Failed to fetch gateway members",
     });
-    return data ?? [];
+    return data.results ?? [];
   }
 
   /** Turn one gateway server off (or back on) for one member. */
