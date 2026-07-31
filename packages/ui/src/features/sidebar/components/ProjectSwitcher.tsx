@@ -198,7 +198,7 @@ export function ProjectSwitcher() {
         render={
           <Item
             size="xs"
-            className="border-border hover:bg-fill-hover aria-expanded:bg-fill-active"
+            className="hover:bg-fill-hover aria-expanded:bg-fill-active"
           >
             <ItemContent className="select-none gap-0">
               <ItemTitle>
