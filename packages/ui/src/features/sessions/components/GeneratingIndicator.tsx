@@ -59,9 +59,11 @@ export function GeneratingIndicator({
 
   useEffect(() => {
     const startTime = startedAt ?? Date.now();
-    const interval = setInterval(() => {
+    const tick = () => {
       setElapsed(Math.max(0, Date.now() - startTime - pausedRef.current));
-    }, 1000);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
 
     return () => clearInterval(interval);
   }, [startedAt]);

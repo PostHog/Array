@@ -14,13 +14,30 @@ export function findProcessTree(
   rootPid: number,
   processTable: readonly ProcessEntry[],
 ): ProcessEntry[] {
+  return findProcessTreeFromIndex(
+    rootPid,
+    processTable,
+    indexProcesses(processTable),
+  );
+}
+
+function indexProcesses(
+  processTable: readonly ProcessEntry[],
+): Map<number, ProcessEntry[]> {
   const children = new Map<number, ProcessEntry[]>();
   for (const entry of processTable) {
     const siblings = children.get(entry.ppid) ?? [];
     siblings.push(entry);
     children.set(entry.ppid, siblings);
   }
+  return children;
+}
 
+function findProcessTreeFromIndex(
+  rootPid: number,
+  processTable: readonly ProcessEntry[],
+  children: ReadonlyMap<number, readonly ProcessEntry[]>,
+): ProcessEntry[] {
   const tree: ProcessEntry[] = [];
   const visit = (pid: number): void => {
     for (const child of children.get(pid) ?? []) {
@@ -96,13 +113,27 @@ export function killUnixProcessTrees(
   ownPgid: number | undefined,
   deps: UnixProcessKillerDeps,
 ): void {
+  const children = indexProcesses(initialProcesses);
   const trees = rootPids
-    .map((pid) => findProcessTree(pid, initialProcesses))
+    .map((pid) => findProcessTreeFromIndex(pid, initialProcesses, children))
     .filter((tree) => tree.length > 0);
   const originalTree = Array.from(
     new Map(trees.flat().map((entry) => [entry.pid, entry])).values(),
   );
-  if (originalTree.length === 0) return;
+  if (originalTree.length === 0) {
+    deps.signal(
+      rootPids.flatMap((pid) => [-pid, pid]),
+      "SIGTERM",
+    );
+    return;
+  }
+  if (ownPgid === undefined) {
+    deps.signal(
+      rootPids.flatMap((pid) => [-pid, pid]),
+      "SIGTERM",
+    );
+    return;
+  }
 
   const targets = findMatchingProcessTargets(
     originalTree,
@@ -140,13 +171,15 @@ function signalTargets(
  */
 export function killProcessTrees(pids: readonly number[]): void {
   if (pids.length === 0) return;
-  try {
-    if (platform() === "win32") {
-      // Windows: use taskkill with /T to kill process tree
-      for (const pid of pids) {
+  if (platform() === "win32") {
+    // Windows: use taskkill with /T to kill process tree
+    for (const pid of pids) {
+      try {
         execSync(`taskkill /PID ${pid} /T /F`, { stdio: "ignore" });
-      }
-    } else {
+      } catch {}
+    }
+  } else {
+    try {
       const processes = snapshotUnixProcesses();
       const ownPgid = processes.find(
         (entry) => entry.pid === process.pid,
@@ -158,8 +191,8 @@ export function killProcessTrees(pids: readonly number[]): void {
           setTimeout(callback, delayMs).unref();
         },
       });
-    }
-  } catch {}
+    } catch {}
+  }
 }
 
 export function killProcessTree(pid: number): void {

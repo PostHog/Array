@@ -7,6 +7,8 @@ import { useSessionSelector } from "../../sessions/useSession";
 
 const EMPTY_SUMMARY: CloudEventSummary = {
   toolCalls: new Map(),
+  revision: 0,
+  changedFilesRevision: 0,
 };
 
 export function useCloudEventSummary(

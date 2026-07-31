@@ -569,6 +569,32 @@ describe("createIncrementalConversationBuilder", () => {
     expect(thought2).not.toBe(thought1);
   });
 
+  it("settles an older turn's thought after a newer turn starts", () => {
+    const inc = createIncrementalConversationBuilder();
+    const beforeCompletion = [
+      userPromptMsg(1, 1, "first"),
+      thoughtChunk(2, "hmm"),
+      userPromptMsg(3, 2, "second"),
+      agentChunk(4, "working"),
+    ];
+    inc.update(beforeCompletion, true);
+
+    const result = inc.update(
+      [...beforeCompletion, promptResponseMsg(5, 1, "cancelled")],
+      true,
+    );
+    const thought = result.items.find(
+      (item) =>
+        item.type === "session_update" &&
+        item.update.sessionUpdate === "agent_thought_chunk",
+    );
+
+    if (thought?.type !== "session_update") {
+      throw new Error("expected thought row");
+    }
+    expect(thought.thoughtComplete).toBe(true);
+  });
+
   it("groups canonical PostHog child metadata under its subagent", () => {
     const inc = createIncrementalConversationBuilder();
     const messages = [

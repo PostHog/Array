@@ -1,4 +1,8 @@
-import { readPrUrls, type WorkspaceMode } from "@posthog/shared";
+import {
+  readPrUrls,
+  type SessionStatus,
+  type WorkspaceMode,
+} from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { getRepositoryInfo } from "./groupTasks";
 import type { TaskData, TaskGroup } from "./sidebarData.types";
@@ -83,7 +87,7 @@ export function filterVisibleTasks(
 }
 
 export interface TaskSession {
-  status?: string;
+  status?: SessionStatus;
   isPromptPending?: boolean;
   pendingPermissions?: { size: number };
   cloudStatus?: TaskRunStatus;

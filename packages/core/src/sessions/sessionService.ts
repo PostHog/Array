@@ -1537,16 +1537,9 @@ function classifyTurnEventKind(
   return "other";
 }
 
-function isPassiveStreamEvent(acpMsg: AcpMessage): boolean {
+function isStreamUpdateEvent(acpMsg: AcpMessage): boolean {
   const msg = acpMsg.message;
-  if (!("method" in msg) || msg.method !== "session/update") return false;
-  const sessionUpdate = (
-    msg as { params?: { update?: { sessionUpdate?: string } } }
-  ).params?.update?.sessionUpdate;
-  return (
-    sessionUpdate === "agent_message_chunk" ||
-    sessionUpdate === "agent_thought_chunk"
-  );
+  return "method" in msg && msg.method === "session/update";
 }
 
 export class SessionService {
@@ -2637,7 +2630,7 @@ export class SessionService {
     };
 
     for (const event of events) {
-      if (isPassiveStreamEvent(event)) {
+      if (isStreamUpdateEvent(event)) {
         passive.push(event);
       } else {
         flushPassive();
@@ -2751,7 +2744,7 @@ export class SessionService {
       {
         onData: (payload: unknown) => {
           const event = payload as AcpMessage;
-          if (isPassiveStreamEvent(event)) {
+          if (isStreamUpdateEvent(event)) {
             this.enqueueSessionEvent(taskRunId, event);
           } else {
             this.flushSessionEventsForTask(taskRunId);

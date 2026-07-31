@@ -133,6 +133,7 @@ export interface ItemBuilder {
    *  reads it after to detect a card being mutated inside an already frozen
    *  (completed) turn, which would otherwise go unseen. */
   lowestTouchedProgressIndex: number;
+  lowestCompletedTurnIndex: number;
   /** Count of tool calls that have reached a terminal status (completed /
    *  failed / cancelled). Increments once per tool call when it first settles.
    *  Drives the generating indicator's status word so it advances on real work
@@ -155,6 +156,7 @@ export function createItemBuilder(): ItemBuilder {
     nextId: () => idCounter++,
     progressCards: new Map(),
     lowestTouchedProgressIndex: Number.POSITIVE_INFINITY,
+    lowestCompletedTurnIndex: Number.POSITIVE_INFINITY,
     completedToolCallCount: 0,
     runStartedRunIds: new Set(),
   };
@@ -582,6 +584,7 @@ function completePromptTurn(
 
   const wasCancelled = turn.stopReason === "cancelled";
   turn.context.turnCancelled = wasCancelled;
+  replaceTurnContextRows(b, turn.context);
 
   if (turn.gitAction.isGitAction && turn.gitAction.actionType) {
     b.items.push({
@@ -603,6 +606,34 @@ function completePromptTurn(
   if (turn.promptId !== -1) {
     b.pendingPrompts.delete(turn.promptId);
   }
+}
+
+function replaceTurnContextRows(b: ItemBuilder, context: TurnContext): void {
+  const visited = new Set<ConversationItem[]>();
+  const replaceRows = (
+    items: ConversationItem[],
+    trackIndex: boolean,
+  ): void => {
+    if (visited.has(items)) return;
+    visited.add(items);
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (item.type !== "session_update") continue;
+      if (item.turnContext === context) {
+        items[index] = { ...item };
+        if (trackIndex) {
+          b.lowestCompletedTurnIndex = Math.min(
+            b.lowestCompletedTurnIndex,
+            index,
+          );
+        }
+      }
+      for (const children of item.turnContext.childItems.values()) {
+        replaceRows(children, false);
+      }
+    }
+  };
+  replaceRows(b.items, true);
 }
 
 function handleNotification(

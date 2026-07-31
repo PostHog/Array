@@ -14,7 +14,10 @@ import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { DirtyTreeDialog } from "../../sessions/components/DirtyTreeDialog";
 import { HandoffConfirmDialog } from "../../sessions/components/HandoffConfirmDialog";
 import { useHandoffDialogStore } from "../../sessions/handoffDialogStore";
-import { useSessionSelector } from "../../sessions/useSession";
+import {
+  useSessionHandoffInProgress,
+  useSessionSelector,
+} from "../../sessions/useSession";
 import {
   GIT_CACHE_KEY_PROVIDER,
   type GitCacheKeyProvider,
@@ -35,10 +38,7 @@ export function CloudGitInteractionHeader({
   taskId,
   task,
 }: CloudGitInteractionHeaderProps) {
-  const inProgress = useSessionSelector(
-    taskId,
-    (session) => session?.handoffInProgress ?? false,
-  );
+  const inProgress = useSessionHandoffInProgress(taskId);
   const cloudBranch = useSessionSelector(
     taskId,
     (session) => session?.cloudBranch ?? null,

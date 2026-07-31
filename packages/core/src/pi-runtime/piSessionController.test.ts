@@ -1332,6 +1332,43 @@ describe("PiSessionController", () => {
     ]);
   });
 
+  it("does not append a chunk twice when it arrives during initial load", async () => {
+    vi.useFakeTimers();
+    let resolveConversation: (events: AgentConversationEvent[]) => void =
+      () => {};
+    const conversation = new Promise<AgentConversationEvent[]>((resolve) => {
+      resolveConversation = resolve;
+    });
+    const chunk: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "hello" },
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const client = createClient();
+    vi.mocked(client.conversation).mockReturnValue(conversation);
+    vi.mocked(client.status).mockResolvedValue({
+      ...(await client.status("task-1")),
+      isStreaming: true,
+    });
+    vi.mocked(client.subscribe).mockImplementation((_taskId, handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(client);
+
+    const connection = controller.connect("task-1");
+    onEvent(chunk);
+    resolveConversation([]);
+    await connection;
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      chunk,
+    ]);
+    vi.useRealTimers();
+  });
+
   it("loads session state and appends normalized runtime events", async () => {
     const initialEvent: AgentConversationEvent = {
       type: "assistant_message_chunk",

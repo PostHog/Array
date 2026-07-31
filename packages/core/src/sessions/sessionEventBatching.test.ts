@@ -213,7 +213,7 @@ describe("streamed event batching", () => {
     expect(h.events()).toHaveLength(2);
   });
 
-  it("flushes passive events in order before an active event", () => {
+  it("batches interleaved text and tool updates in order", () => {
     const h = createHarness();
     const streamed = chunk("a");
     const active = toolCall("tool-1");
@@ -221,10 +221,10 @@ describe("streamed event batching", () => {
     h.emit(streamed);
     h.emit(active);
 
-    expect(h.events()).toEqual([streamed, active]);
-    expect(h.appendEvents).toHaveBeenCalledTimes(2);
+    expect(h.events()).toEqual([]);
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events()).toEqual([streamed, active]);
+    expect(h.appendEvents).toHaveBeenCalledOnce();
   });
 
   it("keeps the turn duration when the prompt mutation clears state before the response flushes", () => {

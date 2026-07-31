@@ -91,7 +91,7 @@ describe("killUnixProcessTrees", () => {
     ]);
   });
 
-  it("does not signal raw ids when the root identity is unavailable", () => {
+  it("falls back to the raw group when the root identity is unavailable", () => {
     const signal = vi.fn();
     const schedule = vi.fn();
 
@@ -101,7 +101,7 @@ describe("killUnixProcessTrees", () => {
       schedule,
     });
 
-    expect(signal).not.toHaveBeenCalled();
+    expect(signal).toHaveBeenCalledWith([-10, 10], "SIGTERM");
     expect(schedule).not.toHaveBeenCalled();
   });
 });

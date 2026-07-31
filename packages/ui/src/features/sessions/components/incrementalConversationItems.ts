@@ -110,6 +110,7 @@ export function createIncrementalConversationBuilder() {
 
     const builder = b as ItemBuilder;
     builder.lowestTouchedProgressIndex = Number.POSITIVE_INFINITY;
+    builder.lowestCompletedTurnIndex = Number.POSITIVE_INFINITY;
     // Thought completion can only change from the turn that was active when
     // this batch started (a turn completed by the batch settles its thoughts
     // on this call, before the index moves to a newer turn).
@@ -145,7 +146,11 @@ export function createIncrementalConversationBuilder() {
 
     markThoughtCompletion(
       builder.items,
-      Math.min(thoughtScanStart, builder.currentTurnStartIndex),
+      Math.min(
+        thoughtScanStart,
+        builder.currentTurnStartIndex,
+        builder.lowestCompletedTurnIndex,
+      ),
     );
 
     // Rows keep their identity across calls — the builder replaces a row

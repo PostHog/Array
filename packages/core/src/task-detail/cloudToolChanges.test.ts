@@ -69,6 +69,24 @@ describe("createCloudEventSummaryTracker", () => {
 
     expect(tracker.update([started, textEvent("hello")])).toBe(first);
   });
+
+  it("retains the changed-files revision for irrelevant streamed content", () => {
+    const tracker = createCloudEventSummaryTracker();
+    const started = toolEvent("tool-1", {
+      title: "Edit file",
+      locations: [{ path: "src/file.ts", line: null }],
+    });
+    const first = tracker.update([started]);
+    const input = toolEvent("tool-1", {
+      content: [
+        { type: "content", content: { type: "text", text: "partial" } },
+      ],
+    });
+
+    const second = tracker.update([started, input]);
+
+    expect(second.changedFilesRevision).toBe(first.changedFilesRevision);
+  });
 });
 
 function diffObj(
