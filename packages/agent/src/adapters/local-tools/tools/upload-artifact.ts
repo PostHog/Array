@@ -2,23 +2,12 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { createSandboxPosthogClient } from "../../../signed-commit-artefacts";
-import {
-  defineLocalTool,
-  type LocalToolResult,
-  qualifiedLocalToolName,
-} from "../registry";
+import { defineLocalTool, type LocalToolResult } from "../registry";
 
 const MAX_ARTIFACT_UPLOAD_BYTES = 30 * 1024 * 1024;
 
-export const UPLOAD_ARTIFACT_TOOL_NAME = "upload_artifact";
-
-/** The qualified tool id as the model and system prompt reference it. */
-export const UPLOAD_ARTIFACT_QUALIFIED_TOOL_NAME = qualifiedLocalToolName(
-  UPLOAD_ARTIFACT_TOOL_NAME,
-);
-
 export const uploadArtifactTool = defineLocalTool({
-  name: UPLOAD_ARTIFACT_TOOL_NAME,
+  name: "upload_artifact",
   description:
     "Deliver a file you created to the user as a downloadable task artifact. " +
     "Call this for every non-code deliverable (reports, images, archives, data files, and similar output) " +

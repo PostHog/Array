@@ -48,7 +48,6 @@ import {
   isPromptTooLongError,
 } from "../adapters/error-classification";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
-import { UPLOAD_ARTIFACT_QUALIFIED_TOOL_NAME } from "../adapters/local-tools/tools/upload-artifact";
 import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -3626,20 +3625,11 @@ Optimize for the fewest shell round trips.
 - Read multiple files at once.
 - Never rerun a command solely to reproduce output you already have.`;
 
-    // Slack sessions cannot deliver artifacts (the Slack host injects a runtime
-    // constraint saying so), so only surface this guidance elsewhere. The
-    // `upload_artifact` tool itself is gated to cloud sessions with a live task
-    // run, which every branch below already is.
     const artifactInstructions = isSlack
       ? ""
       : `
 ## Delivering non-code files (artifacts)
-When you produce a non-code deliverable — a report, chart, image, CSV, archive, rendered
-canvas, or any other file the user should be able to download — call the \`upload_artifact\`
-tool (full name \`${UPLOAD_ARTIFACT_QUALIFIED_TOOL_NAME}\`) with the file's path BEFORE your
-final reply, then mention it in that reply. Uploaded files show up in the user's artifact
-panel as downloads; a file merely left in the workspace does not. Do this for every such
-deliverable. Do NOT upload source code or repository changes — those belong in a commit or PR.`;
+When you create a non-code deliverable the user should be able to download (a report, chart, image, data file, rendered canvas), call the \`upload_artifact\` tool with its path before your final reply, then mention it. Files left in the workspace don't reach the user; uploaded ones show up in their artifact panel. Don't upload source code or repository changes — those belong in a commit or PR.`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
