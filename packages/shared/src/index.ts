@@ -340,7 +340,15 @@ export {
   serializeSkillMarkdown,
   stripFrontmatter,
 } from "./skills";
-export type { PostHogAPIConfig } from "./task";
+export type {
+  ArtifactType,
+  PostHogAPIConfig,
+  TaskRun,
+  TaskRunArtifact,
+  TaskRunArtifactMetadata,
+  TaskRunEnvironment,
+  TaskRunStatus,
+} from "./task";
 export {
   type CreateTaskAutomationOptions,
   createTaskAutomationSchema,
@@ -354,6 +362,7 @@ export {
   updateTaskAutomationSchema,
 } from "./task-automation";
 export type {
+  AlwaysOnSkillRef,
   TaskCreationInput,
   TaskCreationOutput,
 } from "./task-creation-domain";

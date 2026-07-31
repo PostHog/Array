@@ -11,6 +11,7 @@ import type {
   SkillIssue,
 } from "@posthog/core/skills/analyzeSkills";
 import type { SkillInfo, SkillSource } from "@posthog/shared";
+import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
 import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useEffect, useRef } from "react";
 import { SkillListCard } from "./SkillListCard";
@@ -54,6 +55,11 @@ export function SkillCard({
 }: SkillCardProps) {
   const config = SOURCE_CONFIG[skill.source];
   const Icon = config?.icon ?? Package;
+  const alwaysOn = useSettingsStore((state) =>
+    state.alwaysOnSkills.some(
+      (item) => item.source === skill.source && item.path === skill.path,
+    ),
+  );
 
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -72,6 +78,11 @@ export function SkillCard({
       onClick={onClick}
       trailing={
         <>
+          {alwaysOn && (
+            <Badge size="1" variant="soft" color="blue" className="shrink-0">
+              Always on
+            </Badge>
+          )}
           {issues.length > 0 && (
             <Tooltip
               content={

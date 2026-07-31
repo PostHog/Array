@@ -2,6 +2,7 @@ import type { UserRepositoryIntegrationRef } from "@posthog/core/integrations/re
 import type {
   Adapter,
   AgentRuntime,
+  AlwaysOnSkillRef,
   ExecutionMode,
   WorkspaceMode,
 } from "@posthog/shared";
@@ -94,6 +95,8 @@ export interface SyncedCustomInstructions {
   content: string;
   truncated: boolean;
 }
+
+export type AlwaysOnSkillPreference = Omit<AlwaysOnSkillRef, "order">;
 
 // ---------- Store shape ----------
 
@@ -198,6 +201,7 @@ interface SettingsStore {
   // instead of the hand-typed customInstructions above.
   syncCustomInstructionsFromFile: boolean;
   syncedCustomInstructions: SyncedCustomInstructions | null;
+  alwaysOnSkills: AlwaysOnSkillPreference[];
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
   setCustomInstructions: (instructions: string) => void;
@@ -205,6 +209,7 @@ interface SettingsStore {
   setSyncedCustomInstructions: (
     synced: SyncedCustomInstructions | null,
   ) => void;
+  setSkillAlwaysOn: (skill: AlwaysOnSkillPreference, enabled: boolean) => void;
 
   // Diff viewer
   diffOpenMode: DiffOpenMode;
@@ -432,6 +437,7 @@ export const useSettingsStore = create<SettingsStore>()(
       customInstructions: "",
       syncCustomInstructionsFromFile: false,
       syncedCustomInstructions: null,
+      alwaysOnSkills: [],
       setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
       setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
       setCustomInstructions: (instructions) =>
@@ -440,6 +446,21 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ syncCustomInstructionsFromFile: enabled }),
       setSyncedCustomInstructions: (synced) =>
         set({ syncedCustomInstructions: synced }),
+      setSkillAlwaysOn: (skill, enabled) =>
+        set((state) => ({
+          alwaysOnSkills: enabled
+            ? [
+                ...state.alwaysOnSkills.filter(
+                  (item) =>
+                    item.source !== skill.source || item.path !== skill.path,
+                ),
+                skill,
+              ]
+            : state.alwaysOnSkills.filter(
+                (item) =>
+                  item.source !== skill.source || item.path !== skill.path,
+              ),
+        })),
 
       // Diff viewer
       diffOpenMode: "auto",
@@ -597,6 +618,7 @@ export const useSettingsStore = create<SettingsStore>()(
         sendMessagesWith: state.sendMessagesWith,
         customInstructions: state.customInstructions,
         syncCustomInstructionsFromFile: state.syncCustomInstructionsFromFile,
+        alwaysOnSkills: state.alwaysOnSkills,
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,

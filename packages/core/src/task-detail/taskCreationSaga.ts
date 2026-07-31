@@ -73,6 +73,26 @@ function buildCloudFirstMessage(
   };
 }
 
+function addAlwaysOnSkills(
+  transport: CloudPromptTransport,
+  input: TaskCreationInput,
+): CloudPromptTransport {
+  const refs = new Map(
+    (transport.skillBundles ?? []).map((skill) => [
+      `${skill.source}:${skill.path}`,
+      skill,
+    ]),
+  );
+  for (const skill of input.alwaysOnSkills ?? []) {
+    refs.set(`${skill.source}:${skill.path}`, {
+      ...skill,
+      activation: "always",
+      activationOrder: skill.order,
+    });
+  }
+  return { ...transport, skillBundles: [...refs.values()] };
+}
+
 export class TaskCreationSaga extends Saga<
   TaskCreationInput,
   TaskCreationOutput
@@ -376,9 +396,12 @@ export class TaskCreationSaga extends Saga<
                     input.content,
                   )
                 : "";
-              return this.deps.host.getCloudPromptTransport(
-                resolvedContent,
-                input.filePaths,
+              return addAlwaysOnSkills(
+                this.deps.host.getCloudPromptTransport(
+                  resolvedContent,
+                  input.filePaths,
+                ),
+                input,
               );
             };
           const transport = warmPayload
@@ -497,6 +520,13 @@ export class TaskCreationSaga extends Saga<
     const shouldConnect = !isCloudCreate && (!!input.taskId || !!agentCwd);
 
     if (shouldConnect) {
+      const alwaysOnSkillInstructions = input.alwaysOnSkills?.length
+        ? await this.readOnlyStep("resolve_always_on_skills", () =>
+            this.deps.host.renderAlwaysOnSkillInstructions(
+              input.alwaysOnSkills ?? [],
+            ),
+          )
+        : undefined;
       const initialPrompt =
         !isPiRuntime && !input.taskId && input.content
           ? await this.readOnlyStep("build_prompt_blocks", () =>
@@ -553,6 +583,8 @@ export class TaskCreationSaga extends Saga<
             connectParams.contextWindow = input.contextWindow;
           if (input.fastMode !== undefined)
             connectParams.fastMode = input.fastMode;
+          if (alwaysOnSkillInstructions)
+            connectParams.alwaysOnSkillInstructions = alwaysOnSkillInstructions;
           if (importedClaude) {
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";
@@ -716,9 +748,9 @@ export class TaskCreationSaga extends Saga<
     const resolvedContent = input.content
       ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
       : "";
-    const transport = this.deps.host.getCloudPromptTransport(
-      resolvedContent,
-      input.filePaths,
+    const transport = addAlwaysOnSkills(
+      this.deps.host.getCloudPromptTransport(resolvedContent, input.filePaths),
+      input,
     );
     const { pendingUserMessage, augmented } = buildCloudFirstMessage(
       transport.messageText,

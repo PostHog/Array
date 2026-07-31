@@ -107,6 +107,7 @@ export interface AgentSession {
   contextUsed?: number;
   contextSize?: number;
   conversationSummary?: string;
+  alwaysOnSkillInstructions?: string;
   idleKilled?: boolean;
   agentVersion?: string;
   agentIdleForRunId?: string;

@@ -2346,6 +2346,8 @@ describe("AgentServer HTTP Mode", () => {
                   content_sha256: checksum,
                   bundle_format: "zip",
                   schema_version: 1,
+                  activation: "always",
+                  activation_order: 0,
                 },
               },
             ],
@@ -2377,6 +2379,9 @@ describe("AgentServer HTTP Mode", () => {
         'local skill "/local-test-skill"',
       );
       expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
+      expect(sentMeta?.localSkillContext).toContain(
+        "always-on skills apply for the entire session",
+      );
       expect(sentMeta?.localSkillContext).toContain("with context");
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);

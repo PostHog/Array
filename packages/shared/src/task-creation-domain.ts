@@ -10,6 +10,13 @@ import type {
 import type { WorkspaceMode } from "./workspace";
 import type { Workspace } from "./workspace-domain";
 
+export interface AlwaysOnSkillRef {
+  name: string;
+  source: "user" | "repo" | "marketplace" | "codex";
+  path: string;
+  order: number;
+}
+
 // Host-agnostic input/output for the task-creation flow. The renderer
 // TaskCreationSaga owns the orchestration; these are the plain data shapes its
 // consumers (inbox direct-create hooks, deep-link open, task-input) pass and
@@ -83,6 +90,7 @@ export interface TaskCreationInput {
    * first message instead, to avoid double-injecting.
    */
   customInstructions?: string;
+  alwaysOnSkills?: AlwaysOnSkillRef[];
   /**
    * Local (~/.claude.json) MCP servers classified as importable, forwarded to
    * the cloud sandbox in the run-creation payload. Cloud-only; local sessions
