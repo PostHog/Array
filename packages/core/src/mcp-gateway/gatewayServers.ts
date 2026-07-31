@@ -21,6 +21,27 @@ export function railConnectedServers(
   );
 }
 
+interface GatewayServerLike {
+  name: string;
+  description?: string;
+  url: string;
+  category?: string;
+}
+
+function matchesSearchAndCategory(
+  entry: GatewayServerLike,
+  query: string,
+  category: string | null,
+): boolean {
+  if (category && entry.category !== category) return false;
+  if (!query) return true;
+  return (
+    entry.name.toLowerCase().includes(query) ||
+    (entry.description ?? "").toLowerCase().includes(query) ||
+    entry.url.toLowerCase().includes(query)
+  );
+}
+
 /** Home-screen filter: search over name/description/url plus category chip. */
 export function filterGatewayServers(
   servers: McpGatewayServer[],
@@ -28,15 +49,51 @@ export function filterGatewayServers(
   category: string | null,
 ): McpGatewayServer[] {
   const query = search.trim().toLowerCase();
-  return servers.filter((server) => {
-    if (category && server.category !== category) return false;
-    if (!query) return true;
-    return (
-      server.name.toLowerCase().includes(query) ||
-      server.description.toLowerCase().includes(query) ||
-      server.url.toLowerCase().includes(query)
-    );
-  });
+  return servers.filter((server) =>
+    matchesSearchAndCategory(server, query, category),
+  );
+}
+
+/** Same search/category filter, for catalog templates on the home screen. */
+export function filterCatalogTemplates<T extends GatewayServerLike>(
+  templates: T[],
+  search: string,
+  category: string | null,
+): T[] {
+  const query = search.trim().toLowerCase();
+  return templates.filter((template) =>
+    matchesSearchAndCategory(template, query, category),
+  );
+}
+
+/** Trailing-slash-insensitive URL identity for row/template matching. */
+export function normalizeGatewayServerUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+/**
+ * The registry is sparse: a catalog template has a gateway row only once
+ * someone connected to it or an admin toggled it. "Recommended" templates are
+ * the active catalog entries with no row — matched neither by template id nor
+ * by URL (trailing-slash-insensitive) — shown as connect-only cards.
+ */
+export function recommendedCatalogTemplates<
+  T extends { id: string; url: string },
+>(
+  servers: Pick<McpGatewayServer, "template_id" | "url">[],
+  templates: T[],
+): T[] {
+  const rowTemplateIds = new Set<string>();
+  const rowUrls = new Set<string>();
+  for (const server of servers) {
+    if (server.template_id) rowTemplateIds.add(server.template_id);
+    rowUrls.add(normalizeGatewayServerUrl(server.url));
+  }
+  return templates.filter(
+    (template) =>
+      !rowTemplateIds.has(template.id) &&
+      !rowUrls.has(normalizeGatewayServerUrl(template.url)),
+  );
 }
 
 export function countGatewayServersByCategory(

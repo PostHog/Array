@@ -8,6 +8,7 @@ import {
   countGatewayServersByCategory,
   countPoliciesByState,
   defaultAgentGrantPolicy,
+  filterCatalogTemplates,
   filterGatewayServers,
   formatAgo,
   formatAuditTime,
@@ -16,7 +17,9 @@ import {
   isAgentPolicyState,
   isConnectedForYou,
   isPolicyStateAllowedByCeiling,
+  normalizeGatewayServerUrl,
   railConnectedServers,
+  recommendedCatalogTemplates,
   resolvePolicyStateForScope,
 } from "./gatewayServers";
 
@@ -140,6 +143,68 @@ describe("filterGatewayServers", () => {
 
   it("combines search and category", () => {
     expect(filterGatewayServers(servers, "linear", "data")).toEqual([]);
+  });
+});
+
+describe("filterCatalogTemplates", () => {
+  const templates = [
+    { id: "t1", name: "Linear", description: "Tickets", url: "https://a" },
+    { id: "t2", name: "GitHub", url: "https://b", category: "data" },
+  ];
+
+  it("matches name/description/url and tolerates missing fields", () => {
+    expect(filterCatalogTemplates(templates, "tickets", null)).toEqual([
+      templates[0],
+    ]);
+    expect(filterCatalogTemplates(templates, "https://b", null)).toEqual([
+      templates[1],
+    ]);
+  });
+
+  it("applies the category chip", () => {
+    expect(filterCatalogTemplates(templates, "", "data")).toEqual([
+      templates[1],
+    ]);
+  });
+});
+
+describe("normalizeGatewayServerUrl", () => {
+  it.each([
+    ["https://mcp.linear.app/sse/", "https://mcp.linear.app/sse"],
+    ["https://mcp.linear.app/sse", "https://mcp.linear.app/sse"],
+    ["  https://mcp.linear.app// ", "https://mcp.linear.app"],
+  ])("normalizes %s", (input, expected) => {
+    expect(normalizeGatewayServerUrl(input)).toBe(expected);
+  });
+});
+
+describe("recommendedCatalogTemplates", () => {
+  const templates = [
+    { id: "t1", url: "https://mcp.linear.app/sse" },
+    { id: "t2", url: "https://mcp.notion.so/mcp" },
+    { id: "t3", url: "https://mcp.stripe.com" },
+  ];
+
+  it("excludes templates already materialized by template id", () => {
+    const servers = [server({ template_id: "t1", url: "https://elsewhere" })];
+    expect(recommendedCatalogTemplates(servers, templates)).toEqual([
+      templates[1],
+      templates[2],
+    ]);
+  });
+
+  it("excludes templates matched by trailing-slash-insensitive url", () => {
+    const servers = [
+      server({ template_id: null, url: "https://mcp.notion.so/mcp/" }),
+    ];
+    expect(recommendedCatalogTemplates(servers, templates)).toEqual([
+      templates[0],
+      templates[2],
+    ]);
+  });
+
+  it("returns every template when the registry is empty", () => {
+    expect(recommendedCatalogTemplates([], templates)).toEqual(templates);
   });
 });
 

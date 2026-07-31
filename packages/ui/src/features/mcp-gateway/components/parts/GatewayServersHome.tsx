@@ -11,6 +11,7 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { MCP_CATEGORIES } from "@posthog/api-client/posthog-client";
 import {
+  filterCatalogTemplates,
   filterGatewayServers,
   getGatewayConnectionStatus,
 } from "@posthog/core/mcp-gateway/gatewayServers";
@@ -26,6 +27,7 @@ import {
   gatewayUserName,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
+import { useGatewayConfig } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayConfig";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
 import {
@@ -58,14 +60,26 @@ export function GatewayServersHome({
     servers,
     serversLoading,
     templatesById,
+    recommendedTemplates,
     connect,
     connectingServerId,
+    connectTemplate,
+    connectingTemplateId,
   } = useGatewayServers();
+  const { defaultServersEnabled } = useGatewayConfig();
 
   const filtered = useMemo(
     () => filterGatewayServers(servers, query, category),
     [servers, query, category],
   );
+  // Untouched catalog templates render as connect-only cards after the real
+  // rows. When the team default is off, members don't see them at all and
+  // admins see them disabled.
+  const filteredTemplates = useMemo(() => {
+    if (!defaultServersEnabled && !isAdmin) return [];
+    return filterCatalogTemplates(recommendedTemplates, query, category);
+  }, [recommendedTemplates, query, category, defaultServersEnabled, isAdmin]);
+  const totalCount = filtered.length + filteredTemplates.length;
   const hasFilters = query !== "" || category !== null;
 
   return (
@@ -130,7 +144,7 @@ export function GatewayServersHome({
             >
               {entry.label}
               {active && entry.id !== "all" && (
-                <span className="ml-1 text-gray-11">({filtered.length})</span>
+                <span className="ml-1 text-gray-11">({totalCount})</span>
               )}
             </button>
           );
@@ -139,7 +153,7 @@ export function GatewayServersHome({
 
       <Flex align="center" justify="between">
         <Text color="gray" className="text-[13px]">
-          {filtered.length} {filtered.length === 1 ? "server" : "servers"}
+          {totalCount} {totalCount === 1 ? "server" : "servers"}
         </Text>
         {hasFilters && (
           <Button
@@ -160,7 +174,7 @@ export function GatewayServersHome({
         <Flex align="center" justify="center" py="6">
           <Spinner size="2" />
         </Flex>
-      ) : filtered.length === 0 ? (
+      ) : totalCount === 0 ? (
         <Empty className="rounded border border-gray-6 border-dashed py-8">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -187,6 +201,15 @@ export function GatewayServersHome({
               connecting={connectingServerId === server.id}
               onOpen={() => onNavigate({ view: "server", serverId: server.id })}
               onConnect={() => connect(server)}
+            />
+          ))}
+          {filteredTemplates.map((template) => (
+            <RecommendedTemplateCard
+              key={template.id}
+              template={template}
+              disabled={!defaultServersEnabled}
+              connecting={connectingTemplateId === template.id}
+              onConnect={() => connectTemplate(template)}
             />
           ))}
         </Flex>
@@ -282,6 +305,76 @@ function GatewayServerCard({
           >
             Configure
             <CaretRight size={12} />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A catalog template no one has touched — the registry is sparse, so there is
+ * no gateway row to open or toggle. Connect-only: the install materializes
+ * the row. When the team default is off, it renders disabled (admins only).
+ */
+function RecommendedTemplateCard({
+  template,
+  disabled,
+  connecting,
+  onConnect,
+}: {
+  template: McpRecommendedServer;
+  disabled: boolean;
+  connecting: boolean;
+  onConnect: () => void;
+}) {
+  return (
+    <div
+      className={`relative rounded-md border border-gray-5 bg-gray-2 ${disabled ? "opacity-60" : ""}`}
+    >
+      <div className="grid w-full grid-cols-[36px_1fr] items-center gap-3 rounded-md p-4 pr-[132px]">
+        <ServerIcon
+          iconDomain={template.icon_domain}
+          serverUrl={template.url}
+          size={36}
+        />
+        <Flex direction="column" gap="1" className="min-w-0">
+          <Flex align="center" gap="2">
+            <Text truncate className="font-medium text-base">
+              {template.name}
+            </Text>
+            {disabled && (
+              <Badge color="gray" variant="soft" size="1">
+                Off
+              </Badge>
+            )}
+          </Flex>
+          <Text
+            color="gray"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+            className="overflow-hidden text-[13px]"
+          >
+            {template.description || template.url}
+          </Text>
+          {disabled && (
+            <Text color="gray" className="text-xs">
+              Disabled — enable it in Team settings
+            </Text>
+          )}
+        </Flex>
+      </div>
+      <div className="absolute top-4 right-4">
+        {disabled ? null : connecting ? (
+          <Button variant="solid" size="1" disabled>
+            <Spinner size="1" /> Authorizing…
+          </Button>
+        ) : (
+          <Button variant="solid" size="1" onClick={onConnect}>
+            Connect
           </Button>
         )}
       </div>

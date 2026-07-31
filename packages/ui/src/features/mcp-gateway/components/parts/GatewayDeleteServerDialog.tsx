@@ -25,7 +25,8 @@ export function GatewayDeleteServerDialog({
           {deletesForEveryone ? (
             <>
               Delete <Text className="font-bold">{serverName}</Text> for
-              everyone? This removes the custom server from the team gateway.
+              everyone? This disconnects every teammate and removes the custom
+              server from the team gateway.
             </>
           ) : (
             <>

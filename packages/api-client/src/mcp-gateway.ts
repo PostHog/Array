@@ -182,6 +182,11 @@ export interface TeamMcpGatewayConfig {
   allow_custom_servers: boolean;
   /** Whether members may share MCP connections with agents and manage agent tool policies. */
   allow_member_agent_access: boolean;
+  /**
+   * Whether catalog servers the team never touched (no gateway row) are
+   * enabled. Covers templates published after the admin last curated.
+   */
+  default_servers_enabled: boolean;
   /** Empty string until an admin applies a preset from Team settings. */
   member_default_preset: McpPolicyPreset | "";
   agent_default_preset: McpPolicyPreset | "";
@@ -192,6 +197,7 @@ export interface TeamMcpGatewayConfig {
 export interface TeamMcpGatewayConfigUpdate {
   allow_custom_servers?: boolean;
   allow_member_agent_access?: boolean;
+  default_servers_enabled?: boolean;
   member_default_preset?: McpPolicyPreset;
   agent_default_preset?: McpPolicyPreset;
 }

@@ -54,6 +54,8 @@ export function useGatewayConfig() {
     isAdmin: config?.is_admin ?? false,
     allowCustomServers: config?.allow_custom_servers ?? true,
     allowMemberAgentAccess: config?.allow_member_agent_access ?? true,
+    /** Whether untouched (row-less) catalog servers are enabled for the team. */
+    defaultServersEnabled: config?.default_servers_enabled ?? true,
     canManageAgentAccess:
       (config?.is_admin ?? false) ||
       (config?.allow_member_agent_access ?? true),

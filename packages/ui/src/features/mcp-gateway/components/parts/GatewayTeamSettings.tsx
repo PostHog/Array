@@ -1,4 +1,8 @@
 import { Check, MagnifyingGlass, X } from "@phosphor-icons/react";
+import type {
+  McpGatewayServer,
+  McpRecommendedServer,
+} from "@posthog/api-client/posthog-client";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useGatewayConfig } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayConfig";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
@@ -18,34 +22,66 @@ import { useMemo, useState } from "react";
 
 const SERVER_PREVIEW_LIMIT = 10;
 
+/**
+ * One row in the server-access list. The registry is sparse: untouched
+ * catalog templates have no gateway row and follow the team default until an
+ * admin toggles them (which materializes a row).
+ */
+type ServerAccessEntry =
+  | { kind: "server"; server: McpGatewayServer }
+  | { kind: "template"; template: McpRecommendedServer };
+
 interface GatewayTeamSettingsProps {
   onNavigate: (route: GatewayRoute) => void;
 }
 
 /** Admin settings: custom-server gate and server access. */
 export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
-  const { allowCustomServers, allowMemberAgentAccess, updateSettings } =
-    useGatewayConfig();
-  const { servers, updateServer, setAllEnabled } = useGatewayServers();
+  const {
+    allowCustomServers,
+    allowMemberAgentAccess,
+    defaultServersEnabled,
+    updateSettings,
+  } = useGatewayConfig();
+  const {
+    servers,
+    recommendedTemplates,
+    updateServer,
+    setTemplateEnabled,
+    setAllEnabled,
+    setAllEnabledPending,
+  } = useGatewayServers();
   const [serverSearch, setServerSearch] = useState("");
   const [serversExpanded, setServersExpanded] = useState(false);
 
-  const enabledCount = servers.filter(
-    (server) => server.is_team_enabled,
-  ).length;
-  const filteredServers = useMemo(() => {
+  const totalCount = servers.length + recommendedTemplates.length;
+  const enabledCount =
+    servers.filter((server) => server.is_team_enabled).length +
+    (defaultServersEnabled ? recommendedTemplates.length : 0);
+  const filteredEntries = useMemo(() => {
     const search = serverSearch.trim().toLowerCase();
-    return [...servers]
-      .filter((server) => !search || server.name.toLowerCase().includes(search))
+    const entries: ServerAccessEntry[] = [
+      ...servers.map((server) => ({ kind: "server" as const, server })),
+      ...recommendedTemplates.map((template) => ({
+        kind: "template" as const,
+        template,
+      })),
+    ];
+    const entryName = (entry: ServerAccessEntry) =>
+      entry.kind === "server" ? entry.server.name : entry.template.name;
+    return entries
+      .filter(
+        (entry) => !search || entryName(entry).toLowerCase().includes(search),
+      )
       .sort((first, second) =>
-        first.name.localeCompare(second.name, undefined, {
+        entryName(first).localeCompare(entryName(second), undefined, {
           sensitivity: "base",
         }),
       );
-  }, [serverSearch, servers]);
-  const displayedServers = serversExpanded
-    ? filteredServers
-    : filteredServers.slice(0, SERVER_PREVIEW_LIMIT);
+  }, [serverSearch, servers, recommendedTemplates]);
+  const displayedEntries = serversExpanded
+    ? filteredEntries
+    : filteredEntries.slice(0, SERVER_PREVIEW_LIMIT);
 
   return (
     <Flex direction="column" gap="4" className="min-w-0">
@@ -122,11 +158,12 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
       <Text className="font-medium text-base">Server access</Text>
       <Text color="gray" className="text-[13px]">
         Everything is shared with the team by default. Disable everything to
-        curate up from zero, or switch off individual servers.
+        curate up from zero — servers added to the catalog later stay off too —
+        or switch off individual servers.
       </Text>
       <Flex align="center" justify="between" gap="2" wrap="wrap">
         <Text color="gray" className="text-[13px]">
-          {enabledCount} of {servers.length} servers enabled
+          {enabledCount} of {totalCount} servers enabled
         </Text>
         <Flex align="center" gap="2">
           <TextField.Root
@@ -160,7 +197,10 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
             variant="ghost"
             color="gray"
             size="1"
-            disabled={enabledCount === servers.length}
+            disabled={
+              setAllEnabledPending ||
+              (defaultServersEnabled && enabledCount === totalCount)
+            }
             onClick={() => setAllEnabled(true)}
           >
             <Check size={12} /> Enable all
@@ -169,7 +209,10 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
             variant="ghost"
             color="gray"
             size="1"
-            disabled={enabledCount === 0}
+            disabled={
+              setAllEnabledPending ||
+              (!defaultServersEnabled && enabledCount === 0)
+            }
             onClick={() => setAllEnabled(false)}
           >
             <X size={12} /> Disable all
@@ -177,58 +220,105 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
         </Flex>
       </Flex>
       <div className="overflow-hidden rounded border border-gray-5 bg-gray-2">
-        {displayedServers.map((server) => (
-          <Flex
-            key={server.id}
-            align="center"
-            gap="3"
-            className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${server.is_team_enabled ? "" : "opacity-60"}`}
-          >
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-3 rounded-sm text-left outline-none hover:text-gray-12 focus-visible:ring-(--focus-8) focus-visible:ring-2"
-              onClick={() =>
-                onNavigate({ view: "server", serverId: server.id })
-              }
+        {displayedEntries.map((entry) =>
+          entry.kind === "server" ? (
+            <Flex
+              key={entry.server.id}
+              align="center"
+              gap="3"
+              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${entry.server.is_team_enabled ? "" : "opacity-60"}`}
             >
-              <ServerIcon serverUrl={server.url} size={26} />
-              <Flex direction="column" className="min-w-0 flex-1">
-                <Text truncate className="font-medium text-sm">
-                  {server.name}
-                </Text>
-                <Text color="gray" className="text-xs">
-                  {server.tool_count}{" "}
-                  {server.tool_count === 1 ? "tool" : "tools"}
-                </Text>
-              </Flex>
-            </button>
-            <Switch
-              size="1"
-              checked={server.is_team_enabled}
-              onCheckedChange={(enabled) =>
-                updateServer(
-                  {
-                    serverId: server.id,
-                    updates: { is_team_enabled: enabled },
-                  },
-                  {
-                    onSuccess: () => {
-                      if (enabled)
-                        toast.success(`${server.name} enabled for the team`);
-                      else toast.info(`${server.name} disabled`);
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-sm text-left outline-none hover:text-gray-12 focus-visible:ring-(--focus-8) focus-visible:ring-2"
+                onClick={() =>
+                  onNavigate({ view: "server", serverId: entry.server.id })
+                }
+              >
+                <ServerIcon serverUrl={entry.server.url} size={26} />
+                <Flex direction="column" className="min-w-0 flex-1">
+                  <Text truncate className="font-medium text-sm">
+                    {entry.server.name}
+                  </Text>
+                  <Text color="gray" className="text-xs">
+                    {entry.server.tool_count}{" "}
+                    {entry.server.tool_count === 1 ? "tool" : "tools"}
+                  </Text>
+                </Flex>
+              </button>
+              <Switch
+                size="1"
+                checked={entry.server.is_team_enabled}
+                onCheckedChange={(enabled) =>
+                  updateServer(
+                    {
+                      serverId: entry.server.id,
+                      updates: { is_team_enabled: enabled },
                     },
-                  },
-                )
-              }
-            />
-          </Flex>
-        ))}
-        {filteredServers.length === 0 && (
+                    {
+                      onSuccess: () => {
+                        if (enabled)
+                          toast.success(
+                            `${entry.server.name} enabled for the team`,
+                          );
+                        else toast.info(`${entry.server.name} disabled`);
+                      },
+                    },
+                  )
+                }
+              />
+            </Flex>
+          ) : (
+            // Untouched catalog template: no gateway row, so no detail page.
+            // Toggling it materializes a row via set_template_enabled.
+            <Flex
+              key={entry.template.id}
+              align="center"
+              gap="3"
+              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${defaultServersEnabled ? "" : "opacity-60"}`}
+            >
+              <Flex align="center" gap="3" className="min-w-0 flex-1">
+                <ServerIcon
+                  iconDomain={entry.template.icon_domain}
+                  serverUrl={entry.template.url}
+                  size={26}
+                />
+                <Flex direction="column" className="min-w-0 flex-1">
+                  <Text truncate className="font-medium text-sm">
+                    {entry.template.name}
+                  </Text>
+                  <Text color="gray" className="text-xs">
+                    Catalog server — follows the team default
+                  </Text>
+                </Flex>
+              </Flex>
+              <Switch
+                size="1"
+                checked={defaultServersEnabled}
+                onCheckedChange={(enabled) =>
+                  setTemplateEnabled(
+                    { templateId: entry.template.id, enabled },
+                    {
+                      onSuccess: () => {
+                        if (enabled)
+                          toast.success(
+                            `${entry.template.name} enabled for the team`,
+                          );
+                        else toast.info(`${entry.template.name} disabled`);
+                      },
+                    },
+                  )
+                }
+              />
+            </Flex>
+          ),
+        )}
+        {filteredEntries.length === 0 && (
           <Text color="gray" className="block px-3 py-3 text-[13px] italic">
             No servers match &ldquo;{serverSearch}&rdquo;.
           </Text>
         )}
-        {filteredServers.length > SERVER_PREVIEW_LIMIT && (
+        {filteredEntries.length > SERVER_PREVIEW_LIMIT && (
           <button
             type="button"
             className="w-full px-3 py-2 text-center font-medium text-gray-11 text-xs transition-colors hover:bg-gray-3 hover:text-gray-12"

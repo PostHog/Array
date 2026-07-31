@@ -3,6 +3,7 @@ import type {
   McpGatewayServerUpdate,
   McpRecommendedServer,
 } from "@posthog/api-client/posthog-client";
+import { recommendedCatalogTemplates } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   installCustomWithOAuth,
   installTemplateWithOAuth,
@@ -37,7 +38,8 @@ export function useGatewayServers() {
     (client) => client.getMcpGatewayServers(),
   );
 
-  // Catalog templates, only to resolve brand icon domains for gateway rows.
+  // Catalog templates: brand icon domains for gateway rows, plus the
+  // connect-only "recommended" cards for templates with no gateway row.
   const { data: templates } = useAuthenticatedQuery(mcpKeys.servers, (client) =>
     client.getMcpServers(),
   );
@@ -46,6 +48,12 @@ export function useGatewayServers() {
     for (const template of templates ?? []) map.set(template.id, template);
     return map;
   }, [templates]);
+
+  // The registry is sparse — untouched catalog templates have no row.
+  const recommendedTemplates = useMemo(
+    () => recommendedCatalogTemplates(servers ?? [], templates ?? []),
+    [servers, templates],
+  );
 
   const invalidateServers = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: gatewayKeys.servers });
@@ -139,6 +147,27 @@ export function useGatewayServers() {
     },
   );
 
+  // Connect to a catalog template that has no gateway row yet; the backend
+  // materializes the row as part of the install.
+  const connectTemplateMutation = useAuthenticatedMutation(
+    (client, template: McpRecommendedServer) =>
+      installTemplateWithOAuth(client, oauth, { template_id: template.id }),
+    {
+      onSuccess: (data, template) => {
+        if (data && "success" in data && data.success) {
+          toast.success(`Authenticated with ${template.name} as you`);
+        } else if (data && "error" in data && data.error) {
+          toast.error(data.error);
+        }
+        invalidateServers();
+      },
+      onError: (error: Error, template) => {
+        toast.error(error.message || `Could not connect to ${template.name}`);
+        invalidateServers();
+      },
+    },
+  );
+
   const updateServerMutation = useAuthenticatedMutation(
     (client, vars: { serverId: string; updates: McpGatewayServerUpdate }) =>
       client.updateMcpGatewayServer(vars.serverId, vars.updates),
@@ -149,27 +178,31 @@ export function useGatewayServers() {
     },
   );
 
-  const setAllEnabledMutation = useAuthenticatedMutation(
-    async (client, enabled: boolean) => {
-      const targets = (servers ?? []).filter(
-        (server) => server.is_team_enabled !== enabled,
-      );
-      await Promise.all(
-        targets.map((server) =>
-          client.updateMcpGatewayServer(server.id, {
-            is_team_enabled: enabled,
-          }),
-        ),
-      );
-      return enabled;
-    },
+  // Admin: enable/disable an untouched catalog template, materializing (or
+  // updating) its gateway row.
+  const setTemplateEnabledMutation = useAuthenticatedMutation(
+    (client, vars: { templateId: string; enabled: boolean }) =>
+      client.setMcpGatewayTemplateEnabled(vars),
     {
-      onSuccess: (enabled) => {
+      onSuccess: invalidateServers,
+      onError: (error: Error) =>
+        toast.error(error.message || "Failed to update server"),
+    },
+  );
+
+  // One call sets the posture for untouched (and future) catalog servers and
+  // bulk-applies the same state to every existing row.
+  const setAllEnabledMutation = useAuthenticatedMutation(
+    (client, enabled: boolean) =>
+      client.setAllMcpGatewayServersEnabled(enabled),
+    {
+      onSuccess: (_config, enabled) => {
         invalidateServers();
+        queryClient.invalidateQueries({ queryKey: gatewayKeys.config });
         if (enabled) {
           toast.success("Every server is enabled for the team");
         } else {
-          toast.info("All servers disabled — enable them one by one");
+          toast.info("All servers disabled — new catalog servers stay off too");
         }
       },
       onError: (error: Error) =>
@@ -202,10 +235,15 @@ export function useGatewayServers() {
     servers: servers ?? [],
     serversLoading,
     templatesById,
+    recommendedTemplates,
     invalidateServers,
     connect: connectMutation.mutate,
     connectingServerId: connectMutation.isPending
       ? (connectMutation.variables?.id ?? null)
+      : null,
+    connectTemplate: connectTemplateMutation.mutate,
+    connectingTemplateId: connectTemplateMutation.isPending
+      ? (connectTemplateMutation.variables?.id ?? null)
       : null,
     reconnect: reconnectMutation.mutate,
     reconnectPending: reconnectMutation.isPending,
@@ -213,7 +251,9 @@ export function useGatewayServers() {
     disconnectPending: disconnectMutation.isPending,
     toggleYourConnection: toggleYourConnectionMutation.mutate,
     updateServer: updateServerMutation.mutate,
+    setTemplateEnabled: setTemplateEnabledMutation.mutate,
     setAllEnabled: setAllEnabledMutation.mutate,
+    setAllEnabledPending: setAllEnabledMutation.isPending,
     removeServer: removeServerMutation.mutate,
     removeServerPending: removeServerMutation.isPending,
   };

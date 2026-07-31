@@ -4925,6 +4925,21 @@ export class PostHogAPIClient {
     });
   }
 
+  /**
+   * Admin: set the team posture for untouched catalog servers and bulk-apply
+   * the same state to every existing gateway row.
+   */
+  async setAllMcpGatewayServersEnabled(
+    enabled: boolean,
+  ): Promise<TeamMcpGatewayConfig> {
+    return this.mcpGatewayFetch({
+      method: "post",
+      path: "mcp_gateway/config/set_all_servers_enabled/",
+      body: { enabled },
+      errorLabel: "Failed to update servers",
+    });
+  }
+
   async getMcpGatewayServers(): Promise<McpGatewayServer[]> {
     const data = await this.mcpGatewayFetch<{ results?: McpGatewayServer[] }>({
       method: "get",
@@ -4955,6 +4970,26 @@ export class PostHogAPIClient {
     });
   }
 
+  /**
+   * Admin: enable or disable a catalog template the team never touched,
+   * materializing a gateway row for it (or updating the existing one).
+   */
+  async setMcpGatewayTemplateEnabled(options: {
+    templateId: string;
+    enabled: boolean;
+  }): Promise<McpGatewayServer> {
+    return this.mcpGatewayFetch({
+      method: "post",
+      path: "mcp_gateway/servers/set_template_enabled/",
+      body: { template_id: options.templateId, enabled: options.enabled },
+      errorLabel: "Failed to update catalog server",
+    });
+  }
+
+  /**
+   * Disconnect every member and delete the row. The registry is sparse, so a
+   * deleted catalog server simply follows the team default again.
+   */
   async deleteMcpGatewayServer(serverId: string): Promise<void> {
     await this.mcpGatewayFetch<void>({
       method: "delete",
