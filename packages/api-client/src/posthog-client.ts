@@ -130,8 +130,6 @@ import type {
   McpGatewayPolicyScope,
   McpGatewayServer,
   McpGatewayServerUpdate,
-  McpOrgRule,
-  McpPolicyPreset,
   McpResolvedToolPolicy,
   McpServiceAccount,
   McpServiceAccountStatus,
@@ -4913,18 +4911,6 @@ export class PostHogAPIClient {
     });
   }
 
-  async applyMcpGatewayPreset(options: {
-    audience: "members" | "agents";
-    preset: McpPolicyPreset;
-  }): Promise<TeamMcpGatewayConfig> {
-    return this.mcpGatewayFetch({
-      method: "post",
-      path: "mcp_gateway/config/apply_preset/",
-      body: options,
-      errorLabel: "Failed to apply policy baseline",
-    });
-  }
-
   /**
    * Admin: set the team posture for untouched catalog servers and bulk-apply
    * the same state to every existing gateway row.
@@ -5129,38 +5115,6 @@ export class PostHogAPIClient {
       path: `mcp_gateway/members/${userId}/set_access/`,
       body: options,
       errorLabel: "Failed to update member access",
-    });
-  }
-
-  async getMcpGatewayRules(): Promise<McpOrgRule[]> {
-    const data = await this.mcpGatewayFetch<{ results?: McpOrgRule[] }>({
-      method: "get",
-      path: "mcp_gateway/rules/",
-      search: { limit: 500 },
-      errorLabel: "Failed to fetch team rules",
-    });
-    return data.results ?? [];
-  }
-
-  async updateMcpGatewayRule(
-    ruleId: string,
-    updates: Partial<
-      Pick<
-        McpOrgRule,
-        | "name"
-        | "description"
-        | "applies_to"
-        | "effect"
-        | "tool_pattern"
-        | "enabled"
-      >
-    >,
-  ): Promise<McpOrgRule> {
-    return this.mcpGatewayFetch({
-      method: "patch",
-      path: `mcp_gateway/rules/${ruleId}/`,
-      body: updates,
-      errorLabel: "Failed to update team rule",
     });
   }
 

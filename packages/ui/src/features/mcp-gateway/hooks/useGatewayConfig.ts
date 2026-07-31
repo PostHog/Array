@@ -1,7 +1,4 @@
-import type {
-  McpPolicyPreset,
-  TeamMcpGatewayConfigUpdate,
-} from "@posthog/api-client/posthog-client";
+import type { TeamMcpGatewayConfigUpdate } from "@posthog/api-client/posthog-client";
 import { gatewayKeys } from "@posthog/ui/features/mcp-gateway/hooks/gatewayKeys";
 import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMutation";
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
@@ -32,22 +29,6 @@ export function useGatewayConfig() {
     },
   );
 
-  const applyPresetMutation = useAuthenticatedMutation(
-    (
-      client,
-      vars: { audience: "members" | "agents"; preset: McpPolicyPreset },
-    ) => client.applyMcpGatewayPreset(vars),
-    {
-      onSuccess: () => {
-        invalidate();
-        // Presets rewrite scope policies, so any open tool list is stale.
-        queryClient.invalidateQueries({ queryKey: gatewayKeys.servers });
-      },
-      onError: (error: Error) =>
-        toast.error(error.message || "Failed to apply policy baseline"),
-    },
-  );
-
   return {
     config,
     configLoading: isLoading,
@@ -60,7 +41,5 @@ export function useGatewayConfig() {
       (config?.is_admin ?? false) ||
       (config?.allow_member_agent_access ?? true),
     updateSettings: updateSettingsMutation.mutate,
-    applyPreset: applyPresetMutation.mutate,
-    applyPresetPending: applyPresetMutation.isPending,
   };
 }

@@ -40,7 +40,6 @@ export const gatewayKeys = {
     ["mcp", "gateway", "servers", serverId, "tools", scopeKey(scope)] as const,
   accounts: ["mcp", "gateway", "accounts"] as const,
   members: ["mcp", "gateway", "members"] as const,
-  rules: ["mcp", "gateway", "rules"] as const,
   audit: (options: {
     quickFilter: McpAuditQuickFilter;
     actorServiceAccountId?: string;

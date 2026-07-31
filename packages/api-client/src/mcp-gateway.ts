@@ -9,12 +9,9 @@ import type { McpApprovalState, McpCategory } from "./types";
 export type McpGatewayUser = Schemas.UserBasic;
 
 export type McpGatewayScopeType = "team" | "member" | "agent";
-export type McpPolicyPreset = "allow" | "user" | "ask" | "block";
 export type McpServiceAccountStatus = "active" | "paused";
 export type McpAuditDecision = "auto" | "approved" | "pending" | "blocked";
 export type McpAuditQuickFilter = "all" | "agents" | "approvals" | "blocked";
-export type McpOrgRuleAudience = "everyone" | "members" | "agents";
-export type McpOrgRuleEffect = "needs_approval" | "do_not_use";
 export type McpPolicyDecidedBy =
   | "rule"
   | "scope"
@@ -135,19 +132,6 @@ export interface McpServiceAccountWithToken extends McpServiceAccount {
   token: string;
 }
 
-export interface McpOrgRule {
-  id: string;
-  name: string;
-  description: string;
-  applies_to: McpOrgRuleAudience;
-  effect: McpOrgRuleEffect;
-  /** fnmatch pattern against tool names. Blank matches destructive tools heuristically. */
-  tool_pattern: string;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface McpAuditActorServiceAccount {
   id: string;
   name: string;
@@ -187,9 +171,6 @@ export interface TeamMcpGatewayConfig {
    * enabled. Covers templates published after the admin last curated.
    */
   default_servers_enabled: boolean;
-  /** Empty string until an admin applies a preset from Team settings. */
-  member_default_preset: McpPolicyPreset | "";
-  agent_default_preset: McpPolicyPreset | "";
   /** Whether the requesting user can administer the gateway. */
   is_admin: boolean;
 }
@@ -198,8 +179,6 @@ export interface TeamMcpGatewayConfigUpdate {
   allow_custom_servers?: boolean;
   allow_member_agent_access?: boolean;
   default_servers_enabled?: boolean;
-  member_default_preset?: McpPolicyPreset;
-  agent_default_preset?: McpPolicyPreset;
 }
 
 /** One team member's gateway posture (admin overview). */
