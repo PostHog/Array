@@ -1,15 +1,8 @@
-import {
-  ArrowLeft,
-  CaretRight,
-  Check,
-  Key,
-  Users,
-} from "@phosphor-icons/react";
+import { ArrowLeft, CaretRight, Check } from "@phosphor-icons/react";
 import type { McpServiceAccount } from "@posthog/api-client/posthog-client";
 import {
   buildGatewayInstallRequest,
   canSubmitGatewayServer,
-  effectiveCredentialMode,
   GATEWAY_ADD_SERVER_DEFAULTS,
   type GatewayAddServerValues,
 } from "@posthog/core/mcp-gateway/gatewayAddServer";
@@ -59,7 +52,6 @@ export function GatewayAddServer({
 
   const urlInvalid = values.url.trim() !== "" && !isValidMcpUrl(values.url);
   const canSave = canSubmitGatewayServer(values);
-  const sharedCredential = effectiveCredentialMode(values) === "shared";
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -147,8 +139,8 @@ export function GatewayAddServer({
             label="Type"
             hint={
               values.authType === "oauth"
-                ? "Each caller signs in with the provider. The gateway stores and refreshes tokens."
-                : "One key, held by the gateway. Everyone with access shares it — the key is never exposed."
+                ? "Each caller signs in with the provider. The gateway stores and refreshes their tokens."
+                : "Connect with an API key. The key is encrypted at rest and never exposed."
             }
           >
             <Select.Root
@@ -162,9 +154,7 @@ export function GatewayAddServer({
                 <Select.Item value="oauth">
                   OAuth — each caller signs in
                 </Select.Item>
-                <Select.Item value="api_key">
-                  API key — one shared key
-                </Select.Item>
+                <Select.Item value="api_key">API key</Select.Item>
               </Select.Content>
             </Select.Root>
           </Field>
@@ -172,7 +162,7 @@ export function GatewayAddServer({
           {values.authType === "api_key" && (
             <Field
               label="API key"
-              hint="Encrypted at rest. Members and agents call the server without ever seeing the key."
+              hint="Encrypted at rest and never logged or exposed."
             >
               <TextField.Root
                 value={values.apiKey}
@@ -250,58 +240,16 @@ export function GatewayAddServer({
             </Text>
             <Flex direction="column" gap="3">
               {isAdmin && (
-                <>
-                  <ToggleRow
-                    title="Enable for the whole team"
-                    sub={
-                      values.teamEnabled
-                        ? "Every member will see this server once it's added."
-                        : "Only admins will see it until you enable it in Team settings."
-                    }
-                    checked={values.teamEnabled}
-                    onChange={(checked) => set("teamEnabled", checked)}
-                  />
-
-                  {values.authType === "oauth" ? (
-                    <Flex gap="2">
-                      <CredentialModeCard
-                        active={values.credentialMode === "individual"}
-                        icon={<Users size={14} />}
-                        title="Everyone connects their own account"
-                        sub="Members authenticate individually — calls run as each person."
-                        onClick={() => set("credentialMode", "individual")}
-                      />
-                      <CredentialModeCard
-                        active={values.credentialMode === "shared"}
-                        icon={<Key size={14} />}
-                        title="One shared credential"
-                        sub="You connect a service account once; the whole team is pre-authorized."
-                        onClick={() => set("credentialMode", "shared")}
-                      />
-                    </Flex>
-                  ) : (
-                    <Flex
-                      align="center"
-                      gap="2"
-                      className="rounded-md border border-gray-5 bg-gray-2 px-3 py-2"
-                    >
-                      <Key size={13} className="shrink-0 text-gray-11" />
-                      <Text color="gray" className="text-[13px]">
-                        API-key servers always use one shared credential —
-                        everyone with access calls through the key above.
-                      </Text>
-                    </Flex>
-                  )}
-
-                  {sharedCredential && (
-                    <ToggleRow
-                      title="Allow personal connections"
-                      sub="Let members authenticate their own account on top of the shared credential."
-                      checked={values.allowPersonal}
-                      onChange={(checked) => set("allowPersonal", checked)}
-                    />
-                  )}
-                </>
+                <ToggleRow
+                  title="Enable for the whole team"
+                  sub={
+                    values.teamEnabled
+                      ? "Every member will see this server once it's added."
+                      : "Only admins will see it until you enable it in Team settings."
+                  }
+                  checked={values.teamEnabled}
+                  onChange={(checked) => set("teamEnabled", checked)}
+                />
               )}
 
               {canManageAgentAccess && (
@@ -443,41 +391,5 @@ function ToggleRow({
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
     </Flex>
-  );
-}
-
-function CredentialModeCard({
-  active,
-  icon,
-  title,
-  sub,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  title: string;
-  sub: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-1 items-start gap-2 rounded-md border p-3 text-left transition-colors ${
-        active
-          ? "border-(--accent-8) bg-(--accent-2) ring-(--accent-8) ring-1"
-          : "border-gray-5 bg-gray-2 hover:border-gray-7 hover:bg-gray-3"
-      }`}
-    >
-      <span className="mt-0.5 shrink-0 text-gray-11">{icon}</span>
-      <span>
-        <Text as="div" className="font-medium text-sm">
-          {title}
-        </Text>
-        <Text as="div" color="gray" className="text-xs">
-          {sub}
-        </Text>
-      </span>
-    </button>
   );
 }

@@ -4,8 +4,6 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { isValidMcpUrl } from "../mcp-servers/customServerForm";
 
-export type GatewayCredentialMode = "individual" | "shared";
-
 export interface GatewayAddServerValues {
   name: string;
   url: string;
@@ -16,8 +14,6 @@ export interface GatewayAddServerValues {
   clientSecret: string;
   /** Team sharing options are admin-only; agentIds follows the team setting. */
   teamEnabled: boolean;
-  credentialMode: GatewayCredentialMode;
-  allowPersonal: boolean;
   agentIds: string[];
 }
 
@@ -30,8 +26,6 @@ export const GATEWAY_ADD_SERVER_DEFAULTS: GatewayAddServerValues = {
   clientId: "",
   clientSecret: "",
   teamEnabled: true,
-  credentialMode: "individual",
-  allowPersonal: true,
   agentIds: [],
 };
 
@@ -39,13 +33,6 @@ export function canSubmitGatewayServer(
   values: Pick<GatewayAddServerValues, "name" | "url">,
 ): boolean {
   return values.name.trim() !== "" && isValidMcpUrl(values.url);
-}
-
-/** API-key servers always run through one shared key held by the gateway. */
-export function effectiveCredentialMode(
-  values: Pick<GatewayAddServerValues, "authType" | "credentialMode">,
-): GatewayCredentialMode {
-  return values.authType === "api_key" ? "shared" : values.credentialMode;
 }
 
 export interface GatewayInstallRequest extends McpGatewayInstallSharingOptions {
@@ -67,12 +54,12 @@ export function buildGatewayInstallRequest(
   values: GatewayAddServerValues,
   options: { isAdmin: boolean; canManageAgentAccess: boolean },
 ): GatewayInstallRequest {
-  const credentialMode = effectiveCredentialMode(values);
   return {
     name: values.name.trim(),
     url: values.url.trim(),
     description: values.description.trim(),
     auth_type: values.authType,
+    scope: "personal",
     ...(values.authType === "api_key" && values.apiKey
       ? { api_key: values.apiKey }
       : {}),
@@ -82,15 +69,7 @@ export function buildGatewayInstallRequest(
     ...(values.authType === "oauth" && values.clientSecret.trim()
       ? { client_secret: values.clientSecret.trim() }
       : {}),
-    ...(options.isAdmin
-      ? {
-          scope: credentialMode === "shared" ? "shared" : "personal",
-          team_enabled: values.teamEnabled,
-          ...(credentialMode === "shared"
-            ? { allow_personal: values.allowPersonal }
-            : {}),
-        }
-      : {}),
+    ...(options.isAdmin ? { team_enabled: values.teamEnabled } : {}),
     ...(options.canManageAgentAccess && values.agentIds.length
       ? { agent_ids: values.agentIds }
       : {}),

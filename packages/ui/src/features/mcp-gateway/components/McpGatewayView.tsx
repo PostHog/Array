@@ -102,7 +102,7 @@ export function McpGatewayView() {
           />
         );
       case "settings":
-        return <GatewayTeamSettings />;
+        return <GatewayTeamSettings onNavigate={setRoute} />;
       case "audit":
         return <GatewayAuditLog />;
       default:

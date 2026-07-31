@@ -1,4 +1,5 @@
 import { Check, MagnifyingGlass, X } from "@phosphor-icons/react";
+import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useGatewayConfig } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayConfig";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
@@ -17,8 +18,12 @@ import { useMemo, useState } from "react";
 
 const SERVER_PREVIEW_LIMIT = 10;
 
+interface GatewayTeamSettingsProps {
+  onNavigate: (route: GatewayRoute) => void;
+}
+
 /** Admin settings: custom-server gate and server access. */
-export function GatewayTeamSettings() {
+export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
   const { allowCustomServers, allowMemberAgentAccess, updateSettings } =
     useGatewayConfig();
   const { servers, updateServer, setAllEnabled } = useGatewayServers();
@@ -179,17 +184,25 @@ export function GatewayTeamSettings() {
             gap="3"
             className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${server.is_team_enabled ? "" : "opacity-60"}`}
           >
-            <ServerIcon serverUrl={server.url} size={26} />
-            <Flex direction="column" className="min-w-0 flex-1">
-              <Text truncate className="font-medium text-sm">
-                {server.name}
-              </Text>
-              <Text color="gray" className="text-xs">
-                {server.auth_mode === "shared"
-                  ? "Shared credential"
-                  : "Individual accounts"}
-              </Text>
-            </Flex>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-3 rounded-sm text-left outline-none hover:text-gray-12 focus-visible:ring-(--focus-8) focus-visible:ring-2"
+              onClick={() =>
+                onNavigate({ view: "server", serverId: server.id })
+              }
+            >
+              <ServerIcon serverUrl={server.url} size={26} />
+              <Flex direction="column" className="min-w-0 flex-1">
+                <Text truncate className="font-medium text-sm">
+                  {server.name}
+                </Text>
+                <Text color="gray" className="text-xs">
+                  {server.auth_mode === "shared"
+                    ? "Shared credential"
+                    : "Individual accounts"}
+                </Text>
+              </Flex>
+            </button>
             <Switch
               size="1"
               checked={server.is_team_enabled}
