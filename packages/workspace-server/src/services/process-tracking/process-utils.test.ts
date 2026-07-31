@@ -104,4 +104,21 @@ describe("killUnixProcessTrees", () => {
     expect(signal).toHaveBeenCalledWith([-10, 10], "SIGTERM");
     expect(schedule).not.toHaveBeenCalled();
   });
+
+  it("falls back for missing roots in a mixed batch", () => {
+    const signal = vi.fn();
+
+    killUnixProcessTrees(
+      [10, 20],
+      [{ pid: 10, ppid: 1, pgid: 10, startedAt }],
+      1,
+      {
+        currentProcesses: () => [],
+        signal,
+        schedule: vi.fn(),
+      },
+    );
+
+    expect(signal).toHaveBeenCalledWith([-20, 20, -10, 10], "SIGTERM");
+  });
 });

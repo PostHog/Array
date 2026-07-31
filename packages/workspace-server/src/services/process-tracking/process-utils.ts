@@ -114,20 +114,16 @@ export function killUnixProcessTrees(
   deps: UnixProcessKillerDeps,
 ): void {
   const children = indexProcesses(initialProcesses);
-  const trees = rootPids
-    .map((pid) => findProcessTreeFromIndex(pid, initialProcesses, children))
-    .filter((tree) => tree.length > 0);
+  const missingRootPids: number[] = [];
+  const trees = rootPids.flatMap((pid) => {
+    const tree = findProcessTreeFromIndex(pid, initialProcesses, children);
+    if (tree.length === 0) missingRootPids.push(pid);
+    return tree;
+  });
   const originalTree = Array.from(
     new Map(trees.flat().map((entry) => [entry.pid, entry])).values(),
   );
-  if (originalTree.length === 0) {
-    deps.signal(
-      rootPids.flatMap((pid) => [-pid, pid]),
-      "SIGTERM",
-    );
-    return;
-  }
-  if (ownPgid === undefined) {
+  if (originalTree.length === 0 || ownPgid === undefined) {
     deps.signal(
       rootPids.flatMap((pid) => [-pid, pid]),
       "SIGTERM",
@@ -135,11 +131,10 @@ export function killUnixProcessTrees(
     return;
   }
 
-  const targets = findMatchingProcessTargets(
-    originalTree,
-    initialProcesses,
-    ownPgid,
-  );
+  const targets = [
+    ...missingRootPids.flatMap((pid) => [-pid, pid]),
+    ...findMatchingProcessTargets(originalTree, initialProcesses, ownPgid),
+  ];
   deps.signal(targets, "SIGTERM");
   deps.schedule(() => {
     deps.signal(
