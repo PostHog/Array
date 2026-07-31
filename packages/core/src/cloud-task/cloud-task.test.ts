@@ -2435,18 +2435,35 @@ describe("CloudTaskEngine", () => {
     let streamCall = 0;
     const encoder = new TextEncoder();
     const abortedFirstConnection = { value: false };
-    mockStreamFetch.mockImplementation((_input: unknown, init?: RequestInit) => {
-      streamCall += 1;
-      if (streamCall === 1) {
+    mockStreamFetch.mockImplementation(
+      (_input: unknown, init?: RequestInit) => {
+        streamCall += 1;
+        if (streamCall === 1) {
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              // Never enqueue or close on our own; the read() promise awaits forever until the
+              // idle watchdog aborts it below, mirroring how a real fetch's reader rejects once
+              // its AbortSignal fires.
+              init?.signal?.addEventListener("abort", () => {
+                abortedFirstConnection.value = true;
+                controller.error(new DOMException("Aborted", "AbortError"));
+              });
+            },
+          });
+          return Promise.resolve(
+            new Response(stream, {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            }),
+          );
+        }
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            // Never enqueue or close on our own; the read() promise awaits forever until the
-            // idle watchdog aborts it below, mirroring how a real fetch's reader rejects once
-            // its AbortSignal fires.
-            init?.signal?.addEventListener("abort", () => {
-              abortedFirstConnection.value = true;
-              controller.error(new DOMException("Aborted", "AbortError"));
-            });
+            controller.enqueue(
+              encoder.encode(
+                'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+              ),
+            );
           },
         });
         return Promise.resolve(
@@ -2455,21 +2472,8 @@ describe("CloudTaskEngine", () => {
             headers: { "Content-Type": "text/event-stream" },
           }),
         );
-      }
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            encoder.encode('event: keepalive\ndata: {"type":"keepalive"}\n\n'),
-          );
-        },
-      });
-      return Promise.resolve(
-        new Response(stream, {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream" },
-        }),
-      );
-    });
+      },
+    );
 
     service.watch({
       taskId: "task-1",
