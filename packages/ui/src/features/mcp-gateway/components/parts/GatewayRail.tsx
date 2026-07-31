@@ -147,29 +147,33 @@ export function GatewayRail({
             })
           )}
 
-          <RailSectionLabel
-            label="Shared with you"
-            count={sharedWithYou.length}
-          />
-          {sharedWithYou.map((server) => (
-            <RailServerRow
-              key={server.id}
-              server={server}
-              templatesById={templatesById}
-              active={activeServerId === server.id}
-              sub={
-                isAdmin
-                  ? (server.shared_credential?.managed_by?.email ??
-                    "Shared credential")
-                  : "Pre-authorized"
-              }
-              subMono={isAdmin && !!server.shared_credential?.managed_by}
-              shared
-              onClick={() =>
-                onNavigate({ view: "server", serverId: server.id })
-              }
-            />
-          ))}
+          {sharedWithYou.length > 0 && (
+            <>
+              <RailSectionLabel
+                label="Shared with you"
+                count={sharedWithYou.length}
+              />
+              {sharedWithYou.map((server) => (
+                <RailServerRow
+                  key={server.id}
+                  server={server}
+                  templatesById={templatesById}
+                  active={activeServerId === server.id}
+                  sub={
+                    isAdmin
+                      ? (server.shared_credential?.managed_by?.email ??
+                        "Shared credential")
+                      : "Pre-authorized"
+                  }
+                  subMono={isAdmin && !!server.shared_credential?.managed_by}
+                  shared
+                  onClick={() =>
+                    onNavigate({ view: "server", serverId: server.id })
+                  }
+                />
+              ))}
+            </>
+          )}
 
           <div className="mx-2 my-3 border-gray-5 border-t" />
           <RailSectionLabel label="Manage" />
