@@ -5,7 +5,6 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  agentHandlePreview,
   countGatewayServersByCategory,
   countPoliciesByState,
   defaultAgentGrantPolicy,
@@ -343,16 +342,5 @@ describe("defaultAgentGrantPolicy", () => {
     ["search", "approved"],
   ] as const)("%s → %s", (tool, expected) => {
     expect(defaultAgentGrantPolicy(tool)).toBe(expected);
-  });
-});
-
-describe("agentHandlePreview", () => {
-  it.each([
-    ["Docs Agent", "svc-docs-agent"],
-    ["  Support!! Bot  ", "svc-support-bot"],
-    ["---", null],
-    ["", null],
-  ])("%s → %s", (name, expected) => {
-    expect(agentHandlePreview(name)).toBe(expected);
   });
 });

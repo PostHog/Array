@@ -58,7 +58,7 @@ export interface McpGatewaySharedCredential {
 export interface McpGatewayAgentAccess {
   service_account_id: string;
   name: string;
-  /** Agent identity handle, e.g. svc-support. */
+  /** Agent identity handle, e.g. posthog-support. */
   handle: string;
   status: McpServiceAccountStatus;
   last_active_at: string | null;
@@ -137,7 +137,7 @@ export interface McpServiceAccount {
   id: string;
   name: string;
   description: string;
-  /** Stable identity handle the agent authenticates as, e.g. svc-docs-agent. */
+  /** Stable identity handle the agent authenticates as, e.g. posthog-support. */
   handle: string;
   status: McpServiceAccountStatus;
   /** Masked bearer token; the full token is only shown once. */

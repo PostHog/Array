@@ -185,13 +185,3 @@ const DESTRUCTIVE_TOOL_RE =
 export function defaultAgentGrantPolicy(toolName: string): McpApprovalState {
   return DESTRUCTIVE_TOOL_RE.test(toolName) ? "do_not_use" : "approved";
 }
-
-/** Identity handle a new agent will authenticate as, e.g. "svc-docs-agent". */
-export function agentHandlePreview(name: string): string | null {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return slug ? `svc-${slug}` : null;
-}
