@@ -46,6 +46,7 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
   const {
     servers,
     recommendedTemplates,
+    templatesById,
     updateServer,
     setTemplateEnabled,
     setAllEnabled,
@@ -235,7 +236,15 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
                   onNavigate({ view: "server", serverId: entry.server.id })
                 }
               >
-                <ServerIcon serverUrl={entry.server.url} size={26} />
+                <ServerIcon
+                  iconDomain={
+                    entry.server.template_id
+                      ? templatesById.get(entry.server.template_id)?.icon_domain
+                      : undefined
+                  }
+                  serverUrl={entry.server.url}
+                  size={26}
+                />
                 <Flex direction="column" className="min-w-0 flex-1">
                   <Text truncate className="font-medium text-sm">
                     {entry.server.name}
