@@ -328,23 +328,17 @@ describe("getGatewayServerRemovalAction", () => {
     hedgehog_config: null,
   });
 
+  // Members never receive `connections` (it is admin-only), so every
+  // non-admin case keeps the default empty roster — the real API shape.
   it.each([
     [
       "deletes a personally added custom server",
       server({
         created_by: gatewayUser(1),
         your_connection: connection(),
-        connections: [
-          {
-            installation_id: "inst-1",
-            user: gatewayUser(1),
-            last_used_at: null,
-            pending_oauth: false,
-            needs_reauth: false,
-          },
-        ],
       }),
       false,
+      1,
       "delete_for_you",
     ],
     [
@@ -352,17 +346,29 @@ describe("getGatewayServerRemovalAction", () => {
       server({
         created_by: gatewayUser(2),
         your_connection: connection(),
-        connections: [
-          {
-            installation_id: "inst-1",
-            user: gatewayUser(1),
-            last_used_at: null,
-            pending_oauth: false,
-            needs_reauth: false,
-          },
-        ],
       }),
       false,
+      1,
+      "disconnect",
+    ],
+    [
+      "disconnects from a custom server with no recorded creator",
+      server({
+        created_by: null,
+        your_connection: connection(),
+      }),
+      false,
+      1,
+      "disconnect",
+    ],
+    [
+      "disconnects when the current user is unknown",
+      server({
+        created_by: gatewayUser(1),
+        your_connection: connection(),
+      }),
+      false,
+      null,
       "disconnect",
     ],
     [
@@ -371,39 +377,36 @@ describe("getGatewayServerRemovalAction", () => {
         template_id: "template-1",
         created_by: gatewayUser(1),
         your_connection: connection(),
-        connections: [
-          {
-            installation_id: "inst-1",
-            user: gatewayUser(1),
-            last_used_at: null,
-            pending_oauth: false,
-            needs_reauth: false,
-          },
-        ],
       }),
       false,
+      1,
       "disconnect",
     ],
     [
       "deletes a custom server for everyone when requested by an admin",
       server({}),
       true,
+      1,
       "delete_for_everyone",
     ],
     [
       "does not delete a catalog server for an admin without a connection",
       server({ template_id: "template-1" }),
       true,
+      1,
       null,
     ],
     [
       "returns no action without a personal connection",
       server({}),
       false,
+      1,
       null,
     ],
-  ] as const)("%s", (_label, srv, isAdmin, expected) => {
-    expect(getGatewayServerRemovalAction(srv, isAdmin)).toBe(expected);
+  ] as const)("%s", (_label, srv, isAdmin, currentUserId, expected) => {
+    expect(getGatewayServerRemovalAction(srv, isAdmin, currentUserId)).toBe(
+      expected,
+    );
   });
 });
 

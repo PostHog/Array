@@ -165,27 +165,27 @@ export type GatewayServerRemovalAction =
 
 /**
  * Admins remove custom servers from the team gateway. For members, a custom
- * server registered by the owner of the current personal installation is
- * theirs to delete; catalog servers and custom servers registered by somebody
- * else remain team entries, so removing the caller's installation is
- * presented as disconnecting instead.
+ * server they registered themselves is theirs to delete; catalog servers and
+ * custom servers registered by somebody else remain team entries, so removing
+ * the caller's installation is presented as disconnecting instead.
+ *
+ * The caller's identity must come in from the session user —
+ * `server.connections` is admin-only (empty for members), so it cannot
+ * identify a member caller.
  */
 export function getGatewayServerRemovalAction(
   server: McpGatewayServer,
   isAdmin: boolean,
+  currentUserId: number | null,
 ): GatewayServerRemovalAction | null {
   if (isAdmin && server.template_id === null) return "delete_for_everyone";
 
-  const yourConnection = server.your_connection;
-  if (!yourConnection) return null;
+  if (!server.your_connection) return null;
 
-  const yourConnectionSummary = server.connections.find(
-    (connection) =>
-      connection.installation_id === yourConnection.installation_id,
-  );
   const personallyAddedCustomServer =
     server.template_id === null &&
-    server.created_by?.id === yourConnectionSummary?.user.id;
+    server.created_by !== null &&
+    server.created_by.id === currentUserId;
 
   return personallyAddedCustomServer ? "delete_for_you" : "disconnect";
 }

@@ -24,6 +24,8 @@ import {
   getGatewayServerRemovalAction,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import { usableInstallationId } from "@posthog/core/mcp-gateway/gatewayToolDiscovery";
+import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import {
   gatewayUserName,
   RobotAvatar,
@@ -117,6 +119,10 @@ export function GatewayServerDetail({
   });
   const members = useGatewayMembers({ enabled: isAdmin });
   const serviceAccounts = useServiceAccounts();
+  // `server.connections` is admin-only (empty for members), so identifying
+  // the caller as a custom server's creator needs the session user instead.
+  const apiClient = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client: apiClient });
 
   const scopes = useMemo<GatewayPolicyScope[]>(() => {
     if (!server) return [];
@@ -167,7 +173,11 @@ export function GatewayServerDetail({
   const template = server.template_id
     ? gateway.templatesById.get(server.template_id)
     : undefined;
-  const serverRemovalAction = getGatewayServerRemovalAction(server, isAdmin);
+  const serverRemovalAction = getGatewayServerRemovalAction(
+    server,
+    isAdmin,
+    currentUser?.id ?? null,
+  );
   const deletesForEveryone = serverRemovalAction === "delete_for_everyone";
   const deleteInstallationId =
     serverRemovalAction === "delete_for_you"

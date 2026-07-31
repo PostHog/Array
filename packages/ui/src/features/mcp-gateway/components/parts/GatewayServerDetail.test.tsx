@@ -7,6 +7,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   gateway: {} as Record<string, unknown>,
   setMemberAccess: vi.fn(),
+  currentUser: null as { id: number } | null,
+}));
+
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useOptionalAuthenticatedClient: () => null,
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: mocks.currentUser }),
 }));
 
 vi.mock(
@@ -90,6 +99,7 @@ const server = {
 describe("GatewayServerDetail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.currentUser = null;
     mocks.gateway = {
       servers: [server],
       serversLoading: false,
@@ -133,5 +143,48 @@ describe("GatewayServerDetail", () => {
       enabled: true,
       successMessage: "Ada can now use Linear",
     });
+  });
+
+  // Members receive `connections: []` (the roster is admin-only), so the
+  // delete affordance must derive from the session user, not the roster.
+  it("offers a member delete on their own custom server", () => {
+    mocks.currentUser = { id: 7 };
+    const yourServer = {
+      ...server,
+      connections: [],
+      revoked_user_ids: [],
+      created_by: {
+        id: 7,
+        uuid: "user-7",
+        email: "ada@example.com",
+        hedgehog_config: null,
+      },
+      your_connection: {
+        installation_id: "installation-1",
+        is_enabled: true,
+        pending_oauth: false,
+        needs_reauth: false,
+        last_used_at: null,
+      },
+    } as McpGatewayServer;
+    mocks.gateway = { ...mocks.gateway, servers: [yourServer] };
+
+    render(
+      <Theme>
+        <GatewayServerDetail
+          serverId={yourServer.id}
+          isAdmin={false}
+          canManageAgentAccess={false}
+          onNavigate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Delete server" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Disconnect/ }),
+    ).not.toBeInTheDocument();
   });
 });
