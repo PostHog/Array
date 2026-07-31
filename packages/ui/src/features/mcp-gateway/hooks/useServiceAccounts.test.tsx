@@ -12,6 +12,16 @@ const mocks = vi.hoisted(() => ({
   getAccounts: vi.fn(),
   setAccess: vi.fn(),
   infoToast: vi.fn(),
+  currentUser: {
+    id: 7,
+    uuid: "user-uuid-7",
+    distinct_id: "distinct-7",
+    first_name: "Ada",
+    last_name: "Lovelace",
+    email: "ada@posthog.com",
+    is_email_verified: true,
+    hedgehog_config: null,
+  },
 }));
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
@@ -19,6 +29,11 @@ vi.mock("@posthog/ui/features/auth/authClient", () => ({
     getMcpServiceAccounts: mocks.getAccounts,
     setMcpServiceAccountAccess: mocks.setAccess,
   }),
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useCurrentUser: () => ({ data: mocks.currentUser }),
 }));
 
 vi.mock("@posthog/ui/primitives/toast", () => ({
@@ -103,5 +118,46 @@ describe("useServiceAccounts", () => {
     expect(mocks.infoToast).toHaveBeenCalledWith(
       "Support agent no longer has access to Linear",
     );
+  });
+
+  it("stamps the current user as grantor on a fresh grant without a refetch", async () => {
+    queryClient.setQueryData(gatewayKeys.servers, [
+      { ...server, agents: [] } as McpGatewayServer,
+    ]);
+    mocks.setAccess.mockResolvedValue({ ...account, server_ids: [server.id] });
+    const { result } = renderHook(() => useServiceAccounts(), { wrapper });
+
+    await waitFor(() => expect(result.current.accounts).toEqual([account]));
+
+    act(() => {
+      result.current.setAccess({
+        accountId: account.id,
+        serverId: server.id,
+        enabled: true,
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<McpGatewayServer[]>(gatewayKeys.servers)?.[0]
+          ?.agents,
+      ).toHaveLength(1),
+    );
+
+    expect(
+      queryClient.getQueryData<McpGatewayServer[]>(gatewayKeys.servers)?.[0]
+        ?.agents[0],
+    ).toMatchObject({
+      service_account_id: account.id,
+      granted_by: {
+        id: mocks.currentUser.id,
+        uuid: mocks.currentUser.uuid,
+        first_name: "Ada",
+        last_name: "Lovelace",
+        email: "ada@posthog.com",
+        hedgehog_config: null,
+      },
+    });
+    expect(mocks.getAccounts).toHaveBeenCalledTimes(1);
   });
 });
