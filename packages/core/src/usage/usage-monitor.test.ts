@@ -7,23 +7,34 @@ import { UsageMonitorService } from "./usage-monitor";
 
 type ActivitySlice = Pick<
   UsageHost,
-  "onLlmActivity" | "offLlmActivity" | "hasActiveSessions"
+  | "onLlmActivity"
+  | "offLlmActivity"
+  | "hasActiveSessions"
+  | "onWindowFocus"
+  | "offWindowFocus"
 >;
 
 interface MockActivityMonitor extends ActivitySlice {
   fireLlmActivity(): void;
+  fireWindowFocus(): void;
 }
 
 function makeActivityMonitor(opts?: {
   hasActiveSessions?: boolean;
 }): MockActivityMonitor {
   const listeners = new Set<() => void>();
+  const focusListeners = new Set<() => void>();
   return {
     onLlmActivity: (l) => listeners.add(l),
     offLlmActivity: (l) => listeners.delete(l),
     hasActiveSessions: () => opts?.hasActiveSessions ?? false,
+    onWindowFocus: (l) => focusListeners.add(l),
+    offWindowFocus: (l) => focusListeners.delete(l),
     fireLlmActivity: () => {
       for (const l of [...listeners]) l();
+    },
+    fireWindowFocus: () => {
+      for (const l of [...focusListeners]) l();
     },
   };
 }
@@ -429,6 +440,34 @@ describe("UsageMonitorService", () => {
 
     service.stop();
     agent.fireLlmActivity();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(gateway.fetchUsage).toHaveBeenCalledTimes(baseline);
+  });
+
+  it("refreshes when the window regains focus, not just on LLM activity", async () => {
+    const gateway = mockGateway(makeUsage({ burstPercent: 10 }));
+    const agent = makeActivityMonitor();
+    service = makeService(gateway, agent);
+    service.init();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(gateway.fetchUsage).toHaveBeenCalledTimes(1);
+
+    agent.fireWindowFocus();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(gateway.fetchUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it("unsubscribes from window focus events on stop()", async () => {
+    const gateway = mockGateway(makeUsage({ burstPercent: 10 }));
+    const agent = makeActivityMonitor();
+    service = makeService(gateway, agent);
+    service.init();
+    await vi.advanceTimersByTimeAsync(0);
+    const baseline = (gateway.fetchUsage as ReturnType<typeof vi.fn>).mock.calls
+      .length;
+
+    service.stop();
+    agent.fireWindowFocus();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(gateway.fetchUsage).toHaveBeenCalledTimes(baseline);
   });

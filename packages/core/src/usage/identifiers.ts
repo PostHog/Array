@@ -12,6 +12,13 @@ export interface UsageHost {
   offLlmActivity(listener: () => void): void;
   hasActiveSessions(): boolean;
 
+  // Refreshes usage as soon as the user looks at the window again — the only
+  // in-app signal is LLM activity, so usage consumed elsewhere (the website,
+  // another device, a teammate) would otherwise sit stale for up to the
+  // 30-minute backstop while the window was unfocused.
+  onWindowFocus(listener: () => void): void;
+  offWindowFocus(listener: () => void): void;
+
   getThresholdsSeen(): Record<string, string>;
   setThresholdsSeen(value: Record<string, string>): void;
 }

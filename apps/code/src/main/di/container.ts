@@ -111,7 +111,10 @@ import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
 import { DIALOG_SERVICE } from "@posthog/platform/dialog";
 import { FILE_ICON_SERVICE } from "@posthog/platform/file-icon";
 import { IMAGE_PROCESSOR_SERVICE } from "@posthog/platform/image-processor";
-import { MAIN_WINDOW_SERVICE } from "@posthog/platform/main-window";
+import {
+  type IMainWindow,
+  MAIN_WINDOW_SERVICE,
+} from "@posthog/platform/main-window";
 import { NOTIFIER_SERVICE } from "@posthog/platform/notifier";
 import { POWER_MANAGER_SERVICE } from "@posthog/platform/power-manager";
 import { SECURE_STORAGE_SERVICE } from "@posthog/platform/secure-storage";
@@ -680,6 +683,8 @@ container.bind(MAIN_UPDATES_SERVICE).toService(UPDATES_SERVICE);
 container.load(usageMonitorModule);
 container.bind(USAGE_HOST).toDynamicValue((ctx) => {
   const agent = () => ctx.get<AgentService>(AGENT_SERVICE);
+  const mainWindow = () => ctx.get<IMainWindow>(MAIN_WINDOW_SERVICE);
+  const windowFocusUnsubscribers = new WeakMap<() => void, () => void>();
   return {
     fetchUsage: () =>
       ctx.get<LlmGatewayService>(MAIN_LLM_GATEWAY_SERVICE).fetchUsage(),
@@ -688,6 +693,10 @@ container.bind(USAGE_HOST).toDynamicValue((ctx) => {
     offLlmActivity: (listener: () => void) =>
       agent().off(AgentServiceEvent.LlmActivity, listener),
     hasActiveSessions: () => agent().hasActiveSessions(),
+    onWindowFocus: (listener: () => void) =>
+      windowFocusUnsubscribers.set(listener, mainWindow().onFocus(listener)),
+    offWindowFocus: (listener: () => void) =>
+      windowFocusUnsubscribers.get(listener)?.(),
     getThresholdsSeen: () => electronUsageThresholdStore.getThresholdsSeen(),
     setThresholdsSeen: (value: Record<string, string>) =>
       electronUsageThresholdStore.setThresholdsSeen(value),

@@ -31,6 +31,7 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   private latestUsage: UsageOutput | null = null;
 
   private readonly onLlmActivity = (): void => this.requestRefresh();
+  private readonly onWindowFocus = (): void => this.requestRefresh();
 
   constructor(
     @inject(USAGE_HOST)
@@ -83,6 +84,7 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   init(): void {
     this.pruneStaleEntries();
     this.host.onLlmActivity(this.onLlmActivity);
+    this.host.onWindowFocus(this.onWindowFocus);
     void this.fetchOnce();
     this.scheduleBackstop();
   }
@@ -90,6 +92,7 @@ export class UsageMonitorService extends TypedEventEmitter<UsageMonitorEvents> {
   @preDestroy()
   stop(): void {
     this.host.offLlmActivity(this.onLlmActivity);
+    this.host.offWindowFocus(this.onWindowFocus);
     if (this.backstopTimeoutId) {
       clearTimeout(this.backstopTimeoutId);
       this.backstopTimeoutId = null;
