@@ -393,7 +393,7 @@ function ChannelMenu({
   );
 }
 
-// One channel in the list: a "# name" row that navigates to the channel home.
+// One channel in the list: a "# name" row that opens its sidebar.
 // No expansion — the channel's surfaces live in the in-channel top nav.
 function ChannelSection({
   channel,
@@ -434,8 +434,8 @@ function ChannelSection({
 
   return (
     <Box className="group/chan relative" {...hoverProps}>
-      {/* A single, non-expandable row: the "# name" navigates straight to the
-          channel home. Right-clicking opens the same actions as the "..." menu. */}
+      {/* A single, non-expandable row: the "# name" opens the channel sidebar.
+          Right-clicking opens the same actions as the "..." menu. */}
       <ContextMenu>
         <ContextMenuTrigger
           render={
@@ -635,6 +635,7 @@ function useOpenPersonalChannel(): {
   openPersonalChannel: () => Promise<void>;
   isCreating: boolean;
 } {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
   const { channels } = useChannels();
@@ -656,18 +657,20 @@ function useOpenPersonalChannel(): {
     if (!channelId) return;
     showChannelPane();
     setCurrentChannel(channelId);
-    void navigate({ to: "/website/$channelId", params: { channelId } });
+    if (!spacesLayout) {
+      void navigate({ to: "/website/$channelId", params: { channelId } });
+    }
   };
 
   return { ensureFolderId, openPersonalChannel, isCreating };
 }
 
 /**
- * Navigating into a channel, shared by the tree rows and the search results.
- * Slides before navigating: the route effect would get there too, but not until
- * the navigation resolves.
+ * Opening a channel, shared by the tree rows and the search results. In the
+ * Spaces layout this scopes the sidebar without moving the main window.
  */
 function useOpenChannel(): (channel: Channel) => void {
+  const spacesLayout = useChannelsLayout();
   const navigate = useNavigate();
   const setCurrentChannel = useCurrentChannelStore((s) => s.setCurrentChannel);
 
@@ -679,10 +682,12 @@ function useOpenChannel(): (channel: Channel) => void {
     });
     showChannelPane();
     setCurrentChannel(channel.id);
-    void navigate({
-      to: "/website/$channelId",
-      params: { channelId: channel.id },
-    });
+    if (!spacesLayout) {
+      void navigate({
+        to: "/website/$channelId",
+        params: { channelId: channel.id },
+      });
+    }
   };
 }
 
