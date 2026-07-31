@@ -4,7 +4,6 @@ import type {
   McpGatewayServer,
   McpServiceAccount,
 } from "@posthog/api-client/posthog-client";
-import { formatAgo } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   gatewayUserName,
   RobotAvatar,
@@ -178,7 +177,6 @@ function AgentCard({
   const toolCount = servers
     .filter((server) => account.server_ids.includes(server.id))
     .reduce((total, server) => total + server.tool_count, 0);
-  const lastCall = formatAgo(account.last_active_at);
 
   return (
     <div className="relative rounded-[10px] border border-gray-5 bg-gray-1 transition-shadow hover:border-gray-7 hover:shadow-sm">
@@ -204,13 +202,11 @@ function AgentCard({
           checked={active}
           onCheckedChange={(checked) => onToggleStatus(!checked)}
         />
-        <Text color="gray" className="text-[11px]">
-          {active
-            ? lastCall
-              ? `last call ${lastCall}`
-              : "No calls yet"
-            : "Paused — all access off"}
-        </Text>
+        {!active && (
+          <Text color="gray" className="text-[11px]">
+            Paused — all access off
+          </Text>
+        )}
       </div>
     </div>
   );
