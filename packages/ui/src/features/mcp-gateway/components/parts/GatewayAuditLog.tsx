@@ -271,7 +271,7 @@ function AuditRow({ event }: { event: McpAuditEvent }) {
           size="1"
           className="uppercase"
         >
-          {agent ? "agent" : "human"}
+          {agent ? "agent" : user ? "human" : "deleted"}
         </Badge>
       </Flex>
       <Flex align="baseline" gap="2" className="min-w-0">
