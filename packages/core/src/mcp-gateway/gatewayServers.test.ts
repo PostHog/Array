@@ -13,6 +13,7 @@ import {
   formatAgo,
   formatAuditTime,
   getGatewayConnectionStatus,
+  getGatewayRailStatus,
   getGatewayServerRemovalAction,
   isAgentPolicyState,
   isConnectedForYou,
@@ -254,6 +255,68 @@ describe("getGatewayConnectionStatus", () => {
     ],
   ] as const)("returns the status for %s", (_label, value, expected) => {
     expect(getGatewayConnectionStatus(value)).toBe(expected);
+  });
+});
+
+describe("getGatewayRailStatus", () => {
+  it.each([
+    ["no connection", server({}), null],
+    [
+      "a usable connection",
+      server({ your_connection: connection() }),
+      "connected",
+    ],
+    [
+      "a connection pending OAuth",
+      server({ your_connection: connection({ pending_oauth: true }) }),
+      "pending_oauth",
+    ],
+    [
+      "a connection needing reauthorization",
+      server({ your_connection: connection({ needs_reauth: true }) }),
+      "needs_reauth",
+    ],
+    [
+      "a self-disabled connection",
+      server({ your_connection: connection({ is_enabled: false }) }),
+      "self_disabled",
+    ],
+    [
+      "revoked access",
+      server({ is_revoked_for_you: true, your_connection: connection() }),
+      "revoked",
+    ],
+    [
+      "a team-disabled server",
+      server({ is_team_enabled: false, your_connection: connection() }),
+      "team_off",
+    ],
+    [
+      "self-disabled outranking the auth states",
+      server({
+        your_connection: connection({ is_enabled: false, needs_reauth: true }),
+      }),
+      "self_disabled",
+    ],
+    [
+      "revocation outranking self-disable",
+      server({
+        is_revoked_for_you: true,
+        your_connection: connection({ is_enabled: false }),
+      }),
+      "revoked",
+    ],
+    [
+      "the team master switch outranking everything",
+      server({
+        is_team_enabled: false,
+        is_revoked_for_you: true,
+        your_connection: connection({ is_enabled: false, needs_reauth: true }),
+      }),
+      "team_off",
+    ],
+  ] as const)("returns the status for %s", (_label, srv, expected) => {
+    expect(getGatewayRailStatus(srv)).toBe(expected);
   });
 });
 

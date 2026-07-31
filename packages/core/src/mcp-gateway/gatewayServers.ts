@@ -131,6 +131,33 @@ export function getGatewayConnectionStatus(
   return "connected";
 }
 
+export type GatewayRailStatus =
+  | GatewayConnectionStatus
+  | "team_off"
+  | "revoked"
+  | "self_disabled";
+
+/**
+ * Rail-row status: folds the switches the raw connection status can't see —
+ * the admin master switch, per-user revocation, and the caller's own enable
+ * toggle — so a connection that can't be used never reads as connected. The
+ * auth states only matter once all three switches are on. Null when the
+ * caller has no connection.
+ */
+export function getGatewayRailStatus(
+  server: Pick<
+    McpGatewayServer,
+    "is_team_enabled" | "is_revoked_for_you" | "your_connection"
+  >,
+): GatewayRailStatus | null {
+  const connection = server.your_connection;
+  if (!connection) return null;
+  if (!server.is_team_enabled) return "team_off";
+  if (server.is_revoked_for_you) return "revoked";
+  if (!connection.is_enabled) return "self_disabled";
+  return getGatewayConnectionStatus(connection);
+}
+
 export type GatewayServerRemovalAction =
   | "delete_for_everyone"
   | "delete_for_you"

@@ -71,4 +71,56 @@ describe("GatewayRail", () => {
     expect(screen.queryByText("Notion")).not.toBeInTheDocument();
     expect(screen.getByText("No connections yet.")).toBeInTheDocument();
   });
+
+  it.each([
+    [
+      "self-disabled",
+      server({
+        your_connection: {
+          installation_id: "inst-1",
+          is_enabled: false,
+          pending_oauth: false,
+          needs_reauth: false,
+          last_used_at: "2026-01-01T00:00:00Z",
+        },
+      }),
+      "Disabled for you",
+    ],
+    [
+      "team-disabled",
+      server({
+        is_team_enabled: false,
+        your_connection: {
+          installation_id: "inst-1",
+          is_enabled: true,
+          pending_oauth: false,
+          needs_reauth: false,
+          last_used_at: "2026-01-01T00:00:00Z",
+        },
+      }),
+      "Off for the team",
+    ],
+    [
+      "revoked",
+      server({
+        is_revoked_for_you: true,
+        your_connection: {
+          installation_id: "inst-1",
+          is_enabled: true,
+          pending_oauth: false,
+          needs_reauth: false,
+          last_used_at: "2026-01-01T00:00:00Z",
+        },
+      }),
+      "Access revoked",
+    ],
+  ] as const)(
+    "labels a %s server instead of showing it as connected",
+    (_label, srv, expected) => {
+      renderRail([srv]);
+
+      expect(screen.getByText(expected)).toBeInTheDocument();
+      expect(screen.queryByText(/used .* ago/)).not.toBeInTheDocument();
+    },
+  );
 });

@@ -13,8 +13,8 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import {
   formatAgo,
-  type GatewayConnectionStatus,
-  getGatewayConnectionStatus,
+  type GatewayRailStatus,
+  getGatewayRailStatus,
   railConnectedServers,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
@@ -119,17 +119,15 @@ export function GatewayRail({
           ) : (
             yourConnections.map((server) => {
               const connection = server.your_connection;
-              if (!connection) return null;
-              const status = getGatewayConnectionStatus(connection);
+              const status = getGatewayRailStatus(server);
+              if (!connection || !status) return null;
               const usedAgo = formatAgo(connection.last_used_at);
               const sub =
-                status === "needs_reauth"
-                  ? "Reconnect required"
-                  : status === "pending_oauth"
-                    ? "Finish connecting"
-                    : usedAgo
-                      ? `used ${usedAgo}`
-                      : "Connected";
+                status === "connected"
+                  ? usedAgo
+                    ? `used ${usedAgo}`
+                    : "Connected"
+                  : RAIL_STATUS_SUB[status];
               return (
                 <RailServerRow
                   key={server.id}
@@ -224,7 +222,7 @@ function RailServerRow({
   templatesById: Map<string, McpRecommendedServer>;
   active: boolean;
   sub: string;
-  connectionStatus?: GatewayConnectionStatus;
+  connectionStatus?: GatewayRailStatus;
   onClick: () => void;
 }) {
   const template = server.template_id
@@ -267,10 +265,24 @@ function RailServerRow({
   );
 }
 
-const CONNECTION_STATUS_COLOR: Record<GatewayConnectionStatus, string> = {
+const RAIL_STATUS_SUB: Record<
+  Exclude<GatewayRailStatus, "connected">,
+  string
+> = {
+  team_off: "Off for the team",
+  revoked: "Access revoked",
+  self_disabled: "Disabled for you",
+  needs_reauth: "Reconnect required",
+  pending_oauth: "Finish connecting",
+};
+
+const CONNECTION_STATUS_COLOR: Record<GatewayRailStatus, string> = {
   connected: "var(--green-9)",
   pending_oauth: "var(--amber-9)",
   needs_reauth: "var(--red-9)",
+  team_off: "var(--gray-8)",
+  revoked: "var(--gray-8)",
+  self_disabled: "var(--gray-8)",
 };
 
 function RailLink({
