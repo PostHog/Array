@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   FileText,
+  Lightbulb,
   Scroll,
 } from "@phosphor-icons/react";
 import { WorkerPoolContextProvider } from "@pierre/diffs/react";
@@ -83,6 +84,7 @@ import { GitActionMessage } from "@posthog/ui/features/sessions/components/GitAc
 import { GitActionResult } from "@posthog/ui/features/sessions/components/GitActionResult";
 import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 import { mergeConversationItems } from "@posthog/ui/features/sessions/components/mergeConversationItems";
+import { extractAlwaysOnSkills } from "@posthog/ui/features/sessions/components/session-update/alwaysOnSkills";
 import { extractCanvasInstructions } from "@posthog/ui/features/sessions/components/session-update/canvasInstructions";
 import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
 import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
@@ -361,12 +363,20 @@ function UserBubble({
     () => extractCustomInstructions(afterCanvasInstructions),
     [afterCanvasInstructions],
   );
-  const displayContent = customInstructions
+  const afterCustomInstructions = customInstructions
     ? customInstructions.stripped
     : afterCanvasInstructions;
+  const alwaysOnSkills = useMemo(
+    () => extractAlwaysOnSkills(afterCustomInstructions),
+    [afterCustomInstructions],
+  );
+  const displayContent = alwaysOnSkills
+    ? alwaysOnSkills.stripped
+    : afterCustomInstructions;
   const showChannelContextTag = !!channelContext && bluebirdEnabled;
   const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
-  const showHeaderChips = showChannelContextTag || showCanvasInstructionsTag;
+  const showHeaderChips =
+    showChannelContextTag || showCanvasInstructionsTag || !!alwaysOnSkills;
   const taskId = useSessionTaskId();
   const openChannelContextInSplit = usePanelLayoutStore(
     (s) => s.openChannelContextInSplit,
@@ -433,6 +443,12 @@ function UserBubble({
                           })
                       : undefined
                   }
+                />
+              )}
+              {alwaysOnSkills && (
+                <MentionChip
+                  icon={<Lightbulb size={12} />}
+                  label={`Always-on skills (${alwaysOnSkills.mention.names.length})`}
                 />
               )}
             </ChatMessageHeader>

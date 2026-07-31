@@ -2,6 +2,7 @@ import {
   Check,
   Copy,
   FileText,
+  Lightbulb,
   Scroll,
   SlackLogo,
 } from "@phosphor-icons/react";
@@ -15,6 +16,7 @@ import { useFeatureFlag } from "../../../feature-flags/useFeatureFlag";
 import { usePanelLayoutStore } from "../../../panels/panelLayoutStore";
 import type { UserMessageAttachment } from "../../userMessageTypes";
 import { UserMessageAttachments } from "../UserMessageAttachments";
+import { extractAlwaysOnSkills } from "./alwaysOnSkills";
 import { CollapsibleMessageContent } from "./CollapsibleMessageContent";
 import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
@@ -69,7 +71,8 @@ export const UserMessage = memo(function UserMessage({
   // <channel_context>/<canvas_generation_instructions> XML never leaks for
   // flag-off viewers. The user's saved personalization
   // (<user_custom_instructions>) is always-on background, not contextual to this
-  // message, so it's stripped without a tag.
+  // message, so it's stripped without a tag. Always-on skills
+  // (<always_on_skills>) are stripped too, summarized as an inert chip.
   const bluebirdEnabled = useFeatureFlag(
     PROJECT_BLUEBIRD_FLAG,
     import.meta.env.DEV,
@@ -92,9 +95,16 @@ export const UserMessage = memo(function UserMessage({
     () => extractCustomInstructions(afterCanvasInstructions),
     [afterCanvasInstructions],
   );
-  const displayContent = customInstructions
+  const afterCustomInstructions = customInstructions
     ? customInstructions.stripped
     : afterCanvasInstructions;
+  const alwaysOnSkills = useMemo(
+    () => extractAlwaysOnSkills(afterCustomInstructions),
+    [afterCustomInstructions],
+  );
+  const displayContent = alwaysOnSkills
+    ? alwaysOnSkills.stripped
+    : afterCustomInstructions;
   const showChannelContextTag = !!channelContext && bluebirdEnabled;
   const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
   const openChannelContextInSplit = usePanelLayoutStore(
@@ -137,7 +147,9 @@ export const UserMessage = memo(function UserMessage({
           ) : (
             <MarkdownRenderer content={displayContent} />
           )}
-          {(showChannelContextTag || showCanvasInstructionsTag) && (
+          {(showChannelContextTag ||
+            showCanvasInstructionsTag ||
+            !!alwaysOnSkills) && (
             <Flex
               wrap="wrap"
               gap="1"
@@ -174,6 +186,12 @@ export const UserMessage = memo(function UserMessage({
                           })
                       : undefined
                   }
+                />
+              )}
+              {alwaysOnSkills && (
+                <MentionChip
+                  icon={<Lightbulb size={12} />}
+                  label={`Always-on skills (${alwaysOnSkills.mention.names.length})`}
                 />
               )}
             </Flex>
