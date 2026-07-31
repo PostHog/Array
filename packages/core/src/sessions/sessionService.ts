@@ -1539,7 +1539,10 @@ function classifyTurnEventKind(
 
 function isStreamUpdateEvent(acpMsg: AcpMessage): boolean {
   const msg = acpMsg.message;
-  return "method" in msg && msg.method === "session/update";
+  if (!("method" in msg) || msg.method !== "session/update") return false;
+  const update = (msg as { params?: { update?: { sessionUpdate?: string } } })
+    .params?.update;
+  return update?.sessionUpdate !== "config_option_update";
 }
 
 export class SessionService {

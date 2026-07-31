@@ -51,6 +51,32 @@ function toolCall(id: string): AcpMessage {
   } as unknown as AcpMessage;
 }
 
+function configOptionUpdate(): AcpMessage {
+  return {
+    ts: 3,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: RUN_ID,
+        update: {
+          sessionUpdate: "config_option_update",
+          configOptions: [
+            {
+              id: "mode",
+              name: "Mode",
+              category: "mode",
+              type: "select",
+              currentValue: "default",
+              options: [],
+            },
+          ],
+        },
+      },
+    },
+  } as unknown as AcpMessage;
+}
+
 function createHarness() {
   const sessions: Record<string, AgentSession> = {
     [RUN_ID]: {
@@ -143,6 +169,7 @@ function createHarness() {
     service,
     appendEvents,
     notifyPromptComplete,
+    setPersistedConfigOptions: deps.setPersistedConfigOptions,
     updateSession: store.updateSession,
     emit: (event: AcpMessage) => onEvent?.(event),
     events: () => sessions[RUN_ID].events,
@@ -225,6 +252,18 @@ describe("streamed event batching", () => {
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events()).toEqual([streamed, active]);
     expect(h.appendEvents).toHaveBeenCalledOnce();
+  });
+
+  it("applies and persists config option updates immediately", () => {
+    const h = createHarness();
+    const streamed = chunk("a");
+    const configUpdate = configOptionUpdate();
+
+    h.emit(streamed);
+    h.emit(configUpdate);
+
+    expect(h.events()).toEqual([streamed, configUpdate]);
+    expect(h.setPersistedConfigOptions).toHaveBeenCalledOnce();
   });
 
   it("keeps the turn duration when the prompt mutation clears state before the response flushes", () => {
