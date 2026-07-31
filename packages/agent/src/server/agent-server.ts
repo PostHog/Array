@@ -48,6 +48,7 @@ import {
   isPromptTooLongError,
 } from "../adapters/error-classification";
 import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
+import { UPLOAD_ARTIFACT_QUALIFIED_TOOL_NAME } from "../adapters/local-tools/tools/upload-artifact";
 import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -3625,6 +3626,21 @@ Optimize for the fewest shell round trips.
 - Read multiple files at once.
 - Never rerun a command solely to reproduce output you already have.`;
 
+    // Slack sessions cannot deliver artifacts (the Slack host injects a runtime
+    // constraint saying so), so only surface this guidance elsewhere. The
+    // `upload_artifact` tool itself is gated to cloud sessions with a live task
+    // run, which every branch below already is.
+    const artifactInstructions = isSlack
+      ? ""
+      : `
+## Delivering non-code files (artifacts)
+When you produce a non-code deliverable — a report, chart, image, CSV, archive, rendered
+canvas, or any other file the user should be able to download — call the \`upload_artifact\`
+tool (full name \`${UPLOAD_ARTIFACT_QUALIFIED_TOOL_NAME}\`) with the file's path BEFORE your
+final reply, then mention it in that reply. Uploaded files show up in the user's artifact
+panel as downloads; a file merely left in the workspace does not. Do this for every such
+deliverable. Do NOT upload source code or repository changes — those belong in a commit or PR.`;
+
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
     const prMentionSafetyInstruction = `   - **Never guess a GitHub identity.** Do NOT \`@\`-mention, tag, assign, request review from, or attribute the PR to a person (in the title, description, commit message, or reviewers) using a name or handle taken from Slack or this thread. A Slack display name or handle is NOT a GitHub username. Finding a similar-looking handle in the repo's git history, CODEOWNERS, or existing PRs/issues does NOT confirm it belongs to this person: repository presence proves the handle exists, not that it is the person you mean, so treating it as a match still \`@\`-tags an unrelated account (e.g. Slack "Ross" is not necessarily GitHub \`@ross\`, even if some \`@ross\` has committed to the repo). Only \`@\`-mention a GitHub \`@handle\` the user gave you explicitly in this thread. Otherwise refer to people by plain-text name, or omit the mention entirely.`;
@@ -3652,7 +3668,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request unless the user explicitly asks.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
       }
 
@@ -3673,7 +3689,7 @@ After completing the requested changes:
 Important:
 - Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3725,7 +3741,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3743,7 +3759,7 @@ ${publicRepoSafetyInstruction.trimStart()}
 ${prMentionSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Always create the PR as a draft.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3771,7 +3787,7 @@ ${prFooter}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
   }
 
