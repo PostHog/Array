@@ -687,6 +687,9 @@ importers:
       '@posthog/di':
         specifier: workspace:*
         version: link:../../packages/di
+      '@posthog/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       '@posthog/host-router':
         specifier: workspace:*
         version: link:../../packages/host-router
@@ -1615,6 +1618,9 @@ importers:
       '@posthog/git':
         specifier: workspace:*
         version: link:../git
+      '@posthog/harness':
+        specifier: workspace:*
+        version: link:../harness
       '@posthog/platform':
         specifier: workspace:*
         version: link:../platform

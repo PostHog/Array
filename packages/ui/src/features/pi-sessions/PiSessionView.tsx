@@ -5,10 +5,8 @@ import {
 } from "@posthog/core/message-editor/content";
 import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
 import {
-  type PiModelSelection,
   PiOperationError,
   type PiSessionController,
-  type PiThinkingLevel,
 } from "@posthog/core/pi-runtime/piSessionController";
 import { toPiContextUsage } from "@posthog/core/pi-runtime/piSessionUsage";
 import { useService } from "@posthog/di/react";
@@ -22,7 +20,6 @@ import {
   Skeleton,
 } from "@posthog/quill";
 import type { AgentConversationEvent } from "@posthog/shared";
-import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
@@ -44,11 +41,12 @@ import { Box, Flex } from "@radix-ui/themes";
 import { type ReactElement, useCallback, useEffect, useRef } from "react";
 import { useStore } from "zustand";
 import { PiQueuedMessagesDock } from "./PiQueuedMessagesDock";
+import { PiMessagingModeSelector } from "./PiSessionControls";
+import { PiSessionModelControls } from "./PiSessionModelControls";
 import {
-  PiMessagingModeSelector,
-  PiModelSelector,
-  PiThinkingLevelSelector,
-} from "./PiSessionControls";
+  getPiPendingConfig,
+  usePiPendingConfigStore,
+} from "./piPendingConfigStore";
 
 const log = logger.scope("pi-session-view");
 
@@ -66,6 +64,12 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     (state) => state.sessions[taskId],
   );
   const draftActions = useDraftStore((state) => state.actions);
+  const pendingConfig = usePiPendingConfigStore((state) =>
+    getPiPendingConfig(state, taskId, taskRunId),
+  );
+  const clearPendingConfig = usePiPendingConfigStore(
+    (state) => state.clearConfig,
+  );
   const workspace = useWorkspace(taskId);
   const repoPath = workspace?.worktreePath ?? workspace?.folderPath;
   const messagingMode = useMessagingModeStore(
@@ -152,8 +156,11 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
         messagingMode,
       );
       void piSessionController
-        .submit(taskId, message, isStreaming, messagingMode)
+        .submit(taskId, message, isStreaming, messagingMode, pendingConfig)
         .then(() => {
+          if (action === "prompt" && pendingConfig && taskRunId) {
+            clearPendingConfig(taskId, taskRunId);
+          }
           if (action === "compact") {
             toast.success("Pi context compacted");
           }
@@ -168,33 +175,14 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
     },
     [
       handleControllerError,
+      clearPendingConfig,
       isStreaming,
       messagingMode,
+      pendingConfig,
       piSessionController,
       taskId,
+      taskRunId,
     ],
-  );
-
-  const setModel = useCallback(
-    (model: PiModelSelection) => {
-      void piSessionController
-        .setModel(taskId, model)
-        .catch((error) =>
-          handleControllerError(error, "Failed to change Pi model"),
-        );
-    },
-    [handleControllerError, piSessionController, taskId],
-  );
-
-  const setThinkingLevel = useCallback(
-    (level: PiThinkingLevel) => {
-      void piSessionController
-        .setThinkingLevel(taskId, level)
-        .catch((error) =>
-          handleControllerError(error, "Failed to change Pi thinking level"),
-        );
-    },
-    [handleControllerError, piSessionController, taskId],
   );
 
   const toggleMessagingMode = useCallback(() => {
@@ -354,48 +342,11 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   }
 
   const controlsPending = status ? isStreaming || isBashRunning : false;
-  const controlsDisabled =
-    controlsPending ||
-    isCompacting ||
-    session.connectionState !== "connected" ||
-    (session.cloudStatus !== undefined &&
-      isTerminalStatus(session.cloudStatus));
   const hasQueuedMessage =
     session.queue.steering.length + session.queue.followUp.length > 0;
-  let modelSelector: ReactElement = (
-    <Skeleton className="h-7 w-32 bg-foreground/15" />
-  );
-  let reasoningSelector: ReactElement | null = (
-    <Skeleton className="h-7 w-20 bg-foreground/15" />
-  );
   let messagingModeToggle: ReactElement = (
     <Skeleton className="h-7 w-24 bg-foreground/15" />
   );
-
-  if (status && session.modelsLoaded) {
-    modelSelector = (
-      <PiModelSelector
-        models={session.models}
-        currentModel={status.model}
-        disabled={controlsDisabled}
-        onChange={setModel}
-      />
-    );
-  }
-
-  if (status && session.thinkingLevelsLoaded) {
-    const supportsThinking = session.thinkingLevels.some(
-      (level) => level !== "off",
-    );
-    reasoningSelector = supportsThinking ? (
-      <PiThinkingLevelSelector
-        level={status.thinkingLevel}
-        levels={session.thinkingLevels}
-        disabled={controlsDisabled}
-        onChange={setThinkingLevel}
-      />
-    ) : null;
-  }
 
   if (status) {
     messagingModeToggle = (
@@ -465,8 +416,17 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
           }
           enableBashMode
           enableCommands
-          modelSelector={modelSelector}
-          reasoningSelector={reasoningSelector}
+          modelSelector={
+            <PiSessionModelControls
+              taskId={taskId}
+              taskRunId={taskRunId}
+              session={session}
+              controller={piSessionController}
+              isOnline={isOnline}
+              onError={handleControllerError}
+            />
+          }
+          reasoningSelector={null}
           messagingModeToggle={messagingModeToggle}
           onToggleMessagingMode={toggleMessagingMode}
           onPromptRecall={handlePromptRecall}
