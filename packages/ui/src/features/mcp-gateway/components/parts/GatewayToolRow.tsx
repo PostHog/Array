@@ -1,4 +1,4 @@
-import { CaretRight, Lock } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, Lock } from "@phosphor-icons/react";
 import type {
   McpApprovalState,
   McpResolvedToolPolicy,
@@ -8,64 +8,67 @@ import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useState } from "react";
 
 interface GatewayToolRowProps {
-  /** Mono prefix rendered before the tool name, e.g. "internal-wiki". */
-  serverSlug: string;
   policy: McpResolvedToolPolicy;
   editable: boolean;
   onChange: (state: McpApprovalState) => void;
 }
 
 /**
- * One expandable tool row: fully-qualified mono name, description, and the
- * policy control — replaced by a locked pill when an org rule decided the
- * state, or a lock badge + read-only toggle when the admin baseline did.
+ * One expandable tool row: name, description, and the policy control —
+ * replaced by a locked pill when an org rule decided the state, or a lock
+ * badge + read-only toggle when the admin baseline did.
  */
 export function GatewayToolRow({
-  serverSlug,
   policy,
   editable,
   onChange,
 }: GatewayToolRowProps) {
   const [open, setOpen] = useState(false);
+  const hasDescription = !!policy.description?.trim();
   const ruleLocked = policy.locked && policy.decided_by === "rule";
   const adminLocked = policy.locked && policy.decided_by !== "rule";
   const blocked = policy.policy_state === "do_not_use";
 
   return (
-    <div className="border-gray-5 border-b last:border-b-0">
-      <div className="grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2">
+    <div className="rounded border border-border bg-gray-1 transition-colors">
+      <div className="flex w-full min-w-0 items-center gap-3 px-3 py-2">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="min-w-0 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-expanded={open}
         >
-          <Flex align="center" gap="1">
-            <CaretRight
-              size={10}
+          {open ? (
+            <CaretDown
+              size={12}
               weight="bold"
-              className={`shrink-0 text-gray-10 transition-transform ${open ? "rotate-90" : ""}`}
+              className="shrink-0 text-gray-10"
             />
+          ) : (
+            <CaretRight
+              size={12}
+              weight="bold"
+              className="shrink-0 text-gray-10"
+            />
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
             <Text
               truncate
-              className={`font-mono text-[12.5px] ${blocked ? "text-gray-10 line-through" : ""}`}
+              className="select-text font-medium text-sm"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
             >
-              {serverSlug}.{policy.tool_name}
+              {policy.tool_name}
             </Text>
-          </Flex>
-          {policy.description ? (
-            <Text color="gray" truncate as="div" className="pl-[18px] text-xs">
-              {policy.description}
-            </Text>
-          ) : (
             <Text
               color="gray"
               truncate
-              as="div"
-              className="pl-[18px] text-xs italic"
+              style={{ fontStyle: hasDescription ? undefined : "italic" }}
+              className="text-[13px]"
             >
-              No description provided
+              {hasDescription ? policy.description : "No description provided"}
             </Text>
-          )}
+          </div>
         </button>
         <div className="shrink-0">
           {ruleLocked ? (
@@ -108,38 +111,47 @@ export function GatewayToolRow({
         </div>
       </div>
       {open && (
-        <Flex direction="column" gap="2" className="px-3 pb-3 pl-[30px]">
-          <div>
-            <Text
-              color="gray"
-              as="div"
-              className="font-medium text-[10px] uppercase tracking-[0.06em]"
-            >
-              Description
-            </Text>
-            <Text
-              as="div"
-              className={`text-[13px] ${policy.description ? "" : "text-gray-10 italic"}`}
-            >
-              {policy.description || "No description provided."}
-            </Text>
-          </div>
-          {ruleLocked && (
-            <div>
+        <div className="border-gray-5 border-t bg-gray-2 px-3 py-3">
+          <Flex direction="column" gap="3">
+            <Flex direction="column" gap="1">
+              <Text color="gray" className="font-medium text-[13px]">
+                Description
+              </Text>
               <Text
-                color="gray"
-                as="div"
-                className="font-medium text-[10px] uppercase tracking-[0.06em]"
+                className={
+                  hasDescription
+                    ? "whitespace-pre-wrap text-sm"
+                    : "whitespace-pre-wrap text-gray-10 text-sm italic"
+                }
               >
-                Applied rule
+                {hasDescription
+                  ? policy.description
+                  : "No description provided."}
               </Text>
-              <Text as="div" className="text-[13px]">
-                <span className="font-semibold">{policy.rule_name}</span>
-                {policy.rule_description ? ` — ${policy.rule_description}` : ""}
+            </Flex>
+            <Flex direction="column" gap="1">
+              <Text color="gray" className="font-medium text-[13px]">
+                Input schema
               </Text>
-            </div>
-          )}
-        </Flex>
+              <pre className="overflow-x-auto rounded bg-gray-3 p-2 text-xs">
+                {JSON.stringify(policy.input_schema ?? {}, null, 2)}
+              </pre>
+            </Flex>
+            {ruleLocked && (
+              <Flex direction="column" gap="1">
+                <Text color="gray" className="font-medium text-[13px]">
+                  Applied rule
+                </Text>
+                <Text className="text-sm">
+                  <span className="font-semibold">{policy.rule_name}</span>
+                  {policy.rule_description
+                    ? ` — ${policy.rule_description}`
+                    : ""}
+                </Text>
+              </Flex>
+            )}
+          </Flex>
+        </div>
       )}
     </div>
   );

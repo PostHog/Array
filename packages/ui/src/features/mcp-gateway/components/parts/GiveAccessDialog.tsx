@@ -176,7 +176,7 @@ export function GiveAccessDialog({
                     gap="3"
                     className="border-gray-5 border-b px-3 py-1.5 last:border-b-0"
                   >
-                    <Text truncate className="font-mono text-[12.5px]">
+                    <Text truncate className="text-[12.5px]">
                       {policy.tool_name}
                     </Text>
                     {policy.decided_by === "rule" ? (

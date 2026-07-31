@@ -16,6 +16,7 @@ import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useSe
 import {
   Badge,
   Flex,
+  Heading,
   IconButton,
   Switch,
   Text,
@@ -54,12 +55,9 @@ export function GatewayTeamView({
   return (
     <Flex direction="column" gap="4" className="min-w-0">
       <Flex direction="column" gap="1">
-        <Text className="font-bold text-[28px] leading-tight">
-          Team & agents
-        </Text>
+        <Heading className="font-bold text-2xl">Team & agents</Heading>
         <Text color="gray" className="max-w-[560px] text-sm">
-          Everyone that reaches your servers through the gateway — people first,
-          then agents. Click into anyone to control exactly what they can touch.
+          Control access for your team members and PostHog agents.
         </Text>
       </Flex>
 
@@ -86,9 +84,8 @@ export function GatewayTeamView({
           />
         ))}
         {serviceAccounts.accounts.length === 0 && (
-          <Text color="gray" className="px-1 text-[13px] italic">
-            No agents yet. Create one to give an AI agent its own identity and
-            share servers with it.
+          <Text color="gray" className="px-1 text-[13px]">
+            No agents yet.
           </Text>
         )}
       </Flex>
@@ -127,7 +124,7 @@ export function GatewayTeamView({
           </TextField.Slot>
         )}
       </TextField.Root>
-      <div className="rounded-[10px] border border-gray-5">
+      <div className="overflow-hidden rounded border border-gray-5 bg-gray-2">
         {displayedMembers.map((member) => (
           <MemberRow
             key={member.user.id}
@@ -161,7 +158,6 @@ export function GatewayTeamView({
     </Flex>
   );
 }
-
 function AgentCard({
   account,
   servers,
@@ -179,15 +175,15 @@ function AgentCard({
     .reduce((total, server) => total + server.tool_count, 0);
 
   return (
-    <div className="relative rounded-[10px] border border-gray-5 bg-gray-1 transition-shadow hover:border-gray-7 hover:shadow-sm">
+    <div className="relative rounded-md border border-gray-5 bg-gray-2 transition-colors hover:border-gray-7 hover:bg-gray-3">
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full grid-cols-[40px_1fr] items-center gap-3 p-3 pr-[180px] text-left"
+        className="grid w-full grid-cols-[40px_1fr] items-center rounded-md p-4 pr-[180px] text-left"
       >
-        <RobotAvatar size="lg" />
+        <RobotAvatar size="md" />
         <Flex direction="column" className="min-w-0">
-          <Text truncate className="font-semibold text-sm">
+          <Text truncate className="font-medium text-sm">
             {account.name}
           </Text>
           <Text color="gray" className="text-xs">
@@ -227,7 +223,7 @@ function MemberRow({
     <button
       type="button"
       onClick={onOpen}
-      className="grid w-full grid-cols-[26px_1fr_auto_auto_auto] items-center gap-3 border-gray-5 border-b px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-2"
+      className="grid w-full grid-cols-[26px_1fr_auto_auto_auto] items-center gap-3 border-gray-5 border-b px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-3"
     >
       <UserAvatar user={member.user} />
       <Flex direction="column" className="min-w-0">

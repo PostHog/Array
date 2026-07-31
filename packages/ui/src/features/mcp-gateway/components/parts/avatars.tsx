@@ -1,6 +1,6 @@
 import { Robot } from "@phosphor-icons/react";
 import type { McpGatewayUser } from "@posthog/api-client/posthog-client";
-import { Flex } from "@radix-ui/themes";
+import { Avatar, Flex } from "@radix-ui/themes";
 
 export function gatewayUserName(user: McpGatewayUser): string {
   const name = [user.first_name, user.last_name]
@@ -24,18 +24,38 @@ function initialsOf(user: McpGatewayUser): string {
   return user.email.slice(0, 2).toUpperCase();
 }
 
-// Deterministic per-user avatar hue so a member renders the same color on
-// every row without storing anything.
-function hueOf(user: McpGatewayUser): number {
+const USER_AVATAR_COLORS = [
+  "amber",
+  "blue",
+  "cyan",
+  "green",
+  "indigo",
+  "orange",
+  "pink",
+  "purple",
+  "teal",
+] as const;
+
+// Keep a stable color for each member while staying inside the Radix theme
+// palette rather than synthesizing colors outside the design system.
+function avatarColorOf(
+  user: McpGatewayUser,
+): (typeof USER_AVATAR_COLORS)[number] {
   const seed = user.uuid || user.email;
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
-  return Math.abs(hash) % 360;
+  return (
+    USER_AVATAR_COLORS[(hash >>> 0) % USER_AVATAR_COLORS.length] ?? "amber"
+  );
 }
 
-const AVATAR_SIZES = { sm: 20, md: 26, lg: 40 } as const;
+const AVATAR_SIZES = {
+  sm: { radix: "1", pixels: 20 },
+  md: { radix: "2", pixels: 26 },
+  lg: { radix: "3", pixels: 40 },
+} as const;
 
 export function UserAvatar({
   user,
@@ -46,22 +66,21 @@ export function UserAvatar({
   size?: keyof typeof AVATAR_SIZES;
   className?: string;
 }) {
-  const px = AVATAR_SIZES[size];
+  const avatarSize = AVATAR_SIZES[size];
   return (
-    <Flex
-      align="center"
-      justify="center"
+    <Avatar
+      fallback={initialsOf(user)}
+      color={avatarColorOf(user)}
+      radius="full"
+      size={avatarSize.radix}
       title={gatewayUserName(user)}
-      className={`shrink-0 rounded-full font-semibold text-white ${className ?? ""}`}
+      className={`shrink-0 font-semibold ${className ?? ""}`}
       style={{
-        width: px,
-        height: px,
-        fontSize: Math.round(px * 0.38),
-        background: `oklch(58% 0.11 ${hueOf(user)})`,
+        width: avatarSize.pixels,
+        height: avatarSize.pixels,
+        fontSize: Math.round(avatarSize.pixels * 0.38),
       }}
-    >
-      {initialsOf(user)}
-    </Flex>
+    />
   );
 }
 
@@ -72,16 +91,16 @@ export function RobotAvatar({
   size?: keyof typeof AVATAR_SIZES;
   className?: string;
 }) {
-  const px = AVATAR_SIZES[size];
+  const avatarSize = AVATAR_SIZES[size];
   return (
-    <Flex
-      align="center"
-      justify="center"
-      className={`shrink-0 bg-gray-4 text-gray-11 ${className ?? ""}`}
-      style={{ width: px, height: px, borderRadius: Math.round(px * 0.27) }}
-    >
-      <Robot size={Math.round(px * 0.62)} />
-    </Flex>
+    <Avatar
+      fallback={<Robot size={Math.round(avatarSize.pixels * 0.62)} />}
+      color="gray"
+      radius="medium"
+      size={avatarSize.radix}
+      className={`shrink-0 ${className ?? ""}`}
+      style={{ width: avatarSize.pixels, height: avatarSize.pixels }}
+    />
   );
 }
 

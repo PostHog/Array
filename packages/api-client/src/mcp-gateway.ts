@@ -121,6 +121,7 @@ export interface McpToolPolicyEntry {
 export interface McpResolvedToolPolicy {
   tool_name: string;
   description: string;
+  input_schema: unknown;
   policy_state: McpApprovalState;
   /** What the team-level chain yields, ignoring the scope. Null when the team imposes nothing. */
   team_state: McpApprovalState | null;

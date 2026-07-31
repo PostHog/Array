@@ -12,6 +12,8 @@ import {
   filterGatewayServers,
   formatAgo,
   formatAuditTime,
+  getGatewayConnectionStatus,
+  getGatewayServerRemovalAction,
   isConnectedForYou,
   partitionRailServers,
 } from "./gatewayServers";
@@ -70,7 +72,7 @@ describe("partitionRailServers", () => {
     }),
   ];
 
-  it("splits connected individual servers from shared ones", () => {
+  it("splits individual installations from shared servers", () => {
     const { yourConnections, sharedWithYou } = partitionRailServers(
       servers,
       "",
@@ -142,6 +144,12 @@ describe("isConnectedForYou", () => {
       false,
       false,
     ],
+    [
+      "connection needing reauth does not count",
+      server({ your_connection: connection({ needs_reauth: true }) }),
+      false,
+      false,
+    ],
     ["member on shared server", server({ auth_mode: "shared" }), false, true],
     [
       "admin on shared server without own connection",
@@ -155,12 +163,138 @@ describe("isConnectedForYou", () => {
   });
 });
 
+describe("getGatewayConnectionStatus", () => {
+  it.each([
+    ["connected", connection(), "connected"],
+    ["pending OAuth", connection({ pending_oauth: true }), "pending_oauth"],
+    [
+      "needs reauthorization",
+      connection({ needs_reauth: true }),
+      "needs_reauth",
+    ],
+    [
+      "reauthorization takes precedence when both flags are set",
+      connection({ pending_oauth: true, needs_reauth: true }),
+      "needs_reauth",
+    ],
+  ] as const)("returns the status for %s", (_label, value, expected) => {
+    expect(getGatewayConnectionStatus(value)).toBe(expected);
+  });
+});
+
+describe("getGatewayServerRemovalAction", () => {
+  const gatewayUser = (id: number) => ({
+    id,
+    uuid: `user-${id}`,
+    email: `user-${id}@example.com`,
+    hedgehog_config: null,
+  });
+
+  it.each([
+    [
+      "deletes a personally added custom server",
+      server({
+        created_by: gatewayUser(1),
+        your_connection: connection(),
+        connections: [
+          {
+            installation_id: "inst-1",
+            user: gatewayUser(1),
+            last_used_at: null,
+            pending_oauth: false,
+            needs_reauth: false,
+          },
+        ],
+      }),
+      false,
+      "delete_for_you",
+    ],
+    [
+      "disconnects from a custom server added by someone else",
+      server({
+        created_by: gatewayUser(2),
+        your_connection: connection(),
+        connections: [
+          {
+            installation_id: "inst-1",
+            user: gatewayUser(1),
+            last_used_at: null,
+            pending_oauth: false,
+            needs_reauth: false,
+          },
+        ],
+      }),
+      false,
+      "disconnect",
+    ],
+    [
+      "disconnects from a catalog server",
+      server({
+        template_id: "template-1",
+        created_by: gatewayUser(1),
+        your_connection: connection(),
+        connections: [
+          {
+            installation_id: "inst-1",
+            user: gatewayUser(1),
+            last_used_at: null,
+            pending_oauth: false,
+            needs_reauth: false,
+          },
+        ],
+      }),
+      false,
+      "disconnect",
+    ],
+    [
+      "disconnects a personal override from a shared custom server",
+      server({
+        auth_mode: "shared",
+        created_by: gatewayUser(1),
+        your_connection: connection(),
+        connections: [
+          {
+            installation_id: "inst-1",
+            user: gatewayUser(1),
+            last_used_at: null,
+            pending_oauth: false,
+            needs_reauth: false,
+          },
+        ],
+      }),
+      false,
+      "disconnect",
+    ],
+    [
+      "deletes a custom server for everyone when requested by an admin",
+      server({}),
+      true,
+      "delete_for_everyone",
+    ],
+    [
+      "does not delete a catalog server for an admin without a connection",
+      server({ template_id: "template-1" }),
+      true,
+      null,
+    ],
+    [
+      "returns no action without a personal connection",
+      server({}),
+      false,
+      null,
+    ],
+  ] as const)("%s", (_label, srv, isAdmin, expected) => {
+    expect(getGatewayServerRemovalAction(srv, isAdmin)).toBe(expected);
+  });
+});
+
 describe("countPoliciesByState", () => {
   it("counts each state, defaulting to zero", () => {
     const policy = (state: McpResolvedToolPolicy["policy_state"]) =>
       ({
         tool_name: "t",
         description: "",
+        input_schema: {},
         policy_state: state,
         team_state: null,
         locked: false,

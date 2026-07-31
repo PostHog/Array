@@ -58,13 +58,20 @@ export function useGatewayToolPolicies(
   );
 
   const setAllMutation = useAuthenticatedMutation(
-    (client, state: McpApprovalState) => {
-      const editable = (policies ?? []).filter((policy) => !policy.locked);
+    (
+      client,
+      vars: { state: McpApprovalState; toolNames?: readonly string[] },
+    ) => {
+      const targetNames = vars.toolNames ? new Set(vars.toolNames) : null;
+      const editable = (policies ?? []).filter(
+        (policy) =>
+          !policy.locked && (!targetNames || targetNames.has(policy.tool_name)),
+      );
       return client.upsertMcpGatewayToolPolicies(serverId, {
         ...scopeParams(scope),
         policies: editable.map((policy) => ({
           tool_name: policy.tool_name,
-          policy_state: state,
+          policy_state: vars.state,
         })),
       });
     },
@@ -95,7 +102,8 @@ export function useGatewayToolPolicies(
     policies: policies ?? [],
     policiesLoading: isLoading,
     setPolicy: setPolicyMutation.mutate,
-    setAll: setAllMutation.mutate,
+    setAll: (state: McpApprovalState, toolNames?: readonly string[]) =>
+      setAllMutation.mutate({ state, toolNames }),
     setAllPending: setAllMutation.isPending,
     refresh: refreshMutation.mutate,
     refreshPending: refreshMutation.isPending,

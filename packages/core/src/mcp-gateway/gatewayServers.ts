@@ -2,12 +2,13 @@ import type {
   McpApprovalState,
   McpAuditDecision,
   McpGatewayServer,
+  McpGatewayYourConnection,
   McpResolvedToolPolicy,
 } from "@posthog/api-client/posthog-client";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 
 export interface GatewayRailPartition {
-  /** Individual-auth servers the current user has connected. */
+  /** Individual-auth servers with an installation for the current user. */
   yourConnections: McpGatewayServer[];
   /** Shared-credential servers — pre-authorized for the whole team. */
   sharedWithYou: McpGatewayServer[];
@@ -71,10 +72,60 @@ export function isConnectedForYou(
   server: McpGatewayServer,
   isAdmin: boolean,
 ): boolean {
-  if (server.your_connection && !server.your_connection.pending_oauth) {
+  if (
+    server.your_connection &&
+    getGatewayConnectionStatus(server.your_connection) === "connected"
+  ) {
     return true;
   }
   return server.auth_mode === "shared" && !isAdmin;
+}
+
+export type GatewayConnectionStatus =
+  | "connected"
+  | "pending_oauth"
+  | "needs_reauth";
+
+/** A persisted installation row is not necessarily a usable connection. */
+export function getGatewayConnectionStatus(
+  connection: Pick<McpGatewayYourConnection, "pending_oauth" | "needs_reauth">,
+): GatewayConnectionStatus {
+  if (connection.needs_reauth) return "needs_reauth";
+  if (connection.pending_oauth) return "pending_oauth";
+  return "connected";
+}
+
+export type GatewayServerRemovalAction =
+  | "delete_for_everyone"
+  | "delete_for_you"
+  | "disconnect";
+
+/**
+ * Admins remove custom servers from the team gateway. For members, a custom
+ * server registered by the owner of the current personal installation is
+ * theirs to delete; catalog servers and custom servers registered by somebody
+ * else remain team entries, so removing the caller's installation is
+ * presented as disconnecting instead.
+ */
+export function getGatewayServerRemovalAction(
+  server: McpGatewayServer,
+  isAdmin: boolean,
+): GatewayServerRemovalAction | null {
+  if (isAdmin && server.template_id === null) return "delete_for_everyone";
+
+  const yourConnection = server.your_connection;
+  if (!yourConnection || yourConnection.scope !== "personal") return null;
+
+  const yourConnectionSummary = server.connections.find(
+    (connection) =>
+      connection.installation_id === yourConnection.installation_id,
+  );
+  const personallyAddedCustomServer =
+    server.template_id === null &&
+    server.auth_mode === "individual" &&
+    server.created_by?.id === yourConnectionSummary?.user.id;
+
+  return personallyAddedCustomServer ? "delete_for_you" : "disconnect";
 }
 
 export type GatewayPolicyCounts = Record<McpApprovalState, number>;

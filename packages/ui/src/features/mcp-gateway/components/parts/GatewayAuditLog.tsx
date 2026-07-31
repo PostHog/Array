@@ -16,7 +16,15 @@ import {
   useGatewayAudit,
 } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayAudit";
 import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts";
-import { Badge, Button, Flex, Select, Spinner, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Flex,
+  Heading,
+  Select,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
 import { useState } from "react";
 
 const FILTERS: { id: McpAuditQuickFilter; label: string }[] = [
@@ -61,7 +69,7 @@ export function GatewayAuditLog() {
   return (
     <Flex direction="column" gap="4" className="min-w-0">
       <Flex direction="column" gap="1">
-        <Text className="font-bold text-[28px] leading-tight">Audit log</Text>
+        <Heading className="font-bold text-2xl">Audit log</Heading>
         <Text color="gray" className="max-w-[620px] text-sm">
           Every tool call routed through the gateway — each row is one call to a
           tool on one of your team's MCP servers, and how the gateway decided
@@ -72,21 +80,22 @@ export function GatewayAuditLog() {
       <Flex align="center" justify="between" gap="2" wrap="wrap">
         <Flex gap="2" wrap="wrap">
           {FILTERS.map((filter) => (
-            <Button
+            <button
               key={filter.id}
-              variant={quickFilter === filter.id ? "solid" : "surface"}
-              color={quickFilter === filter.id ? undefined : "gray"}
-              size="1"
-              radius="full"
+              type="button"
+              aria-pressed={quickFilter === filter.id}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                quickFilter === filter.id
+                  ? "border-accent-8 bg-accent-4 text-accent-11"
+                  : "border-gray-5 bg-gray-2 text-gray-11 hover:border-gray-7 hover:bg-gray-3"
+              }`}
               onClick={() => setFilter(filter.id)}
             >
               {filter.label}
               {counts && (
-                <Badge variant="soft" radius="full" size="1">
-                  {counts[filter.id]}
-                </Badge>
+                <span className="ml-1 text-gray-11">({counts[filter.id]})</span>
               )}
-            </Button>
+            </button>
           ))}
         </Flex>
         <Select.Root
@@ -139,8 +148,8 @@ export function GatewayAuditLog() {
         )}
       </Flex>
 
-      <div className="rounded-[10px] border border-gray-5">
-        <div className="grid grid-cols-[120px_180px_1fr_auto] gap-3 border-gray-5 border-b px-3 py-2">
+      <div className="overflow-hidden rounded border border-gray-5">
+        <div className="grid grid-cols-[120px_180px_1fr_auto] gap-3 border-gray-5 border-b bg-gray-2 px-3 py-2">
           <Text
             color="gray"
             className="font-medium text-[10px] uppercase tracking-[0.06em]"
@@ -269,7 +278,7 @@ function AuditRow({ event }: { event: McpAuditEvent }) {
         <Text truncate className="font-medium text-xs">
           {event.server_name}
         </Text>
-        <Text color="gray" truncate className="font-mono text-xs">
+        <Text color="gray" truncate className="text-xs">
           {event.tool_name}()
         </Text>
       </Flex>

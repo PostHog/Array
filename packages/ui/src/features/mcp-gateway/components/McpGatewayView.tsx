@@ -14,6 +14,7 @@ import {
 import { useGatewayConfig } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayConfig";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts";
+import { DotPatternBackground } from "@posthog/ui/primitives/DotPatternBackground";
 import { Box, Flex, ScrollArea } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -58,10 +59,6 @@ export function McpGatewayView() {
     configLoading || isRouteAllowed(requestedRoute, { isAdmin, canAddServers })
       ? requestedRoute
       : { view: "servers" };
-
-  const activeAgentCount = serviceAccounts.accounts.filter(
-    (account) => account.status === "active",
-  ).length;
 
   const mainContent = (() => {
     switch (route.view) {
@@ -123,11 +120,11 @@ export function McpGatewayView() {
         templatesById={gateway.templatesById}
         isAdmin={isAdmin}
         canAddServers={canAddServers}
-        activeAgentCount={activeAgentCount}
         route={route}
         onNavigate={setRoute}
       />
-      <Box className="min-h-0 min-w-0 flex-1">
+      <Box className="relative min-h-0 min-w-0 flex-1">
+        <DotPatternBackground />
         <ScrollArea className="h-full w-full">
           <Box p="6" mx="auto" className="relative z-[1] max-w-[960px]">
             {mainContent}

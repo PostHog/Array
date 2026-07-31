@@ -14,6 +14,8 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import {
   formatAgo,
+  type GatewayConnectionStatus,
+  getGatewayConnectionStatus,
   partitionRailServers,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
@@ -33,7 +35,6 @@ interface GatewayRailProps {
   templatesById: Map<string, McpRecommendedServer>;
   isAdmin: boolean;
   canAddServers: boolean;
-  activeAgentCount: number;
   route: GatewayRoute;
   onNavigate: (route: GatewayRoute) => void;
 }
@@ -43,7 +44,6 @@ export function GatewayRail({
   templatesById,
   isAdmin,
   canAddServers,
-  activeAgentCount,
   route,
   onNavigate,
 }: GatewayRailProps) {
@@ -66,7 +66,7 @@ export function GatewayRail({
         pb="2"
         className="border-b border-b-(--gray-5)"
       >
-        <Text className="font-bold text-sm">Gateway</Text>
+        <Text className="font-bold text-sm">MCP servers</Text>
         {canAddServers && (
           <IconButton
             variant="ghost"
@@ -105,32 +105,46 @@ export function GatewayRail({
       </Flex>
 
       <ScrollArea className="min-h-0 flex-1">
-        <Flex direction="column" px="2" pb="3">
+        <Flex direction="column" gap="1" px="2" pb="3">
           <RailSectionLabel
             label="Your connections"
             count={yourConnections.length}
           />
           {yourConnections.length === 0 ? (
-            <Text color="gray" className="px-[10px] py-[6px] text-xs italic">
-              Nothing connected yet.
+            <Text
+              color="gray"
+              className="px-[10px] py-[8px] text-[13px] italic"
+            >
+              No personal connections yet.
             </Text>
           ) : (
-            yourConnections.map((server) => (
-              <RailServerRow
-                key={server.id}
-                server={server}
-                templatesById={templatesById}
-                active={activeServerId === server.id}
-                sub={
-                  formatAgo(server.your_connection?.last_used_at ?? null)
-                    ? `used ${formatAgo(server.your_connection?.last_used_at ?? null)}`
-                    : "Connected"
-                }
-                onClick={() =>
-                  onNavigate({ view: "server", serverId: server.id })
-                }
-              />
-            ))
+            yourConnections.map((server) => {
+              const connection = server.your_connection;
+              if (!connection) return null;
+              const status = getGatewayConnectionStatus(connection);
+              const usedAgo = formatAgo(connection.last_used_at);
+              const sub =
+                status === "needs_reauth"
+                  ? "Reconnect required"
+                  : status === "pending_oauth"
+                    ? "Finish connecting"
+                    : usedAgo
+                      ? `used ${usedAgo}`
+                      : "Connected";
+              return (
+                <RailServerRow
+                  key={server.id}
+                  server={server}
+                  templatesById={templatesById}
+                  active={activeServerId === server.id}
+                  sub={sub}
+                  connectionStatus={status}
+                  onClick={() =>
+                    onNavigate({ view: "server", serverId: server.id })
+                  }
+                />
+              );
+            })
           )}
 
           <RailSectionLabel
@@ -191,20 +205,6 @@ export function GatewayRail({
           )}
         </Flex>
       </ScrollArea>
-
-      <Flex
-        align="center"
-        gap="2"
-        px="3"
-        py="2"
-        className="border-gray-5 border-t"
-      >
-        <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-(--green-9)" />
-        <Text color="gray" className="truncate text-[11px]">
-          Gateway healthy · {activeAgentCount} agent
-          {activeAgentCount === 1 ? "" : "s"} active
-        </Text>
-      </Flex>
     </aside>
   );
 }
@@ -244,6 +244,7 @@ function RailServerRow({
   sub,
   subMono,
   shared,
+  connectionStatus,
   onClick,
 }: {
   server: McpGatewayServer;
@@ -252,6 +253,7 @@ function RailServerRow({
   sub: string;
   subMono?: boolean;
   shared?: boolean;
+  connectionStatus?: GatewayConnectionStatus;
   onClick: () => void;
 }) {
   const template = server.template_id
@@ -261,7 +263,7 @@ function RailServerRow({
     <button
       type="button"
       onClick={onClick}
-      className={`grid grid-cols-[26px_1fr_auto] items-center gap-2 rounded px-2 py-1.5 text-left transition-colors ${
+      className={`grid grid-cols-[28px_1fr_auto] items-center gap-2 rounded px-2 py-1.5 text-left transition-colors ${
         active
           ? "bg-gray-1 text-gray-12 shadow-sm"
           : "text-gray-11 hover:bg-gray-3"
@@ -270,10 +272,10 @@ function RailServerRow({
       <ServerIcon
         iconDomain={template?.icon_domain}
         serverUrl={server.url}
-        size={26}
+        size={28}
       />
       <Flex direction="column" className="min-w-0 leading-[1.2]">
-        <Text truncate className="font-medium text-[12.5px]">
+        <Text truncate className="font-medium text-[13px]">
           {server.name}
         </Text>
         <Text
@@ -286,19 +288,25 @@ function RailServerRow({
       </Flex>
       {shared ? (
         <Key size={11} className="text-gray-10" />
-      ) : (
+      ) : connectionStatus ? (
         <span
           aria-hidden="true"
-          className="h-[6px] w-[6px] rounded-full bg-(--green-9)"
+          className="h-[6px] w-[6px] rounded-full"
           style={{
-            boxShadow:
-              "0 0 0 3px color-mix(in oklch, var(--green-9) 20%, transparent)",
+            background: CONNECTION_STATUS_COLOR[connectionStatus],
+            boxShadow: `0 0 0 3px color-mix(in oklch, ${CONNECTION_STATUS_COLOR[connectionStatus]} 20%, transparent)`,
           }}
         />
-      )}
+      ) : null}
     </button>
   );
 }
+
+const CONNECTION_STATUS_COLOR: Record<GatewayConnectionStatus, string> = {
+  connected: "var(--green-9)",
+  pending_oauth: "var(--amber-9)",
+  needs_reauth: "var(--red-9)",
+};
 
 function RailLink({
   icon: Icon,
@@ -316,9 +324,7 @@ function RailLink({
       type="button"
       onClick={onClick}
       className={`flex items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] transition-colors ${
-        active
-          ? "bg-gray-1 text-gray-12 shadow-sm"
-          : "text-gray-11 hover:bg-gray-3"
+        active ? "bg-gray-1 text-gray-12" : "text-gray-11 hover:bg-gray-3"
       }`}
     >
       <Icon size={14} className={active ? "text-accent-11" : undefined} />

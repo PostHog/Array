@@ -1,17 +1,25 @@
-import { Check, Gear, Key, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import {
+  CaretRight,
+  Check,
+  Key,
+  MagnifyingGlass,
+  Plus,
+  X,
+} from "@phosphor-icons/react";
 import type {
   McpGatewayServer,
   McpRecommendedServer,
 } from "@posthog/api-client/posthog-client";
 import { MCP_CATEGORIES } from "@posthog/api-client/posthog-client";
 import {
-  countGatewayServersByCategory,
   filterGatewayServers,
+  getGatewayConnectionStatus,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
 import {
@@ -26,6 +34,7 @@ import {
   Badge,
   Button,
   Flex,
+  Heading,
   IconButton,
   Spinner,
   Text,
@@ -59,20 +68,16 @@ export function GatewayServersHome({
     () => filterGatewayServers(servers, query, category),
     [servers, query, category],
   );
-  const categoryCounts = useMemo(
-    () => countGatewayServersByCategory(servers),
-    [servers],
-  );
+  const hasFilters = query !== "" || category !== null;
 
   return (
     <Flex direction="column" gap="4" className="min-w-0">
       <Flex align="start" justify="between" gap="3">
-        <Flex direction="column" gap="1">
-          <Text className="font-bold text-[28px] leading-tight">Servers</Text>
+        <Flex direction="column" gap="1" className="min-w-0">
+          <Heading className="font-bold text-2xl">Servers</Heading>
           <Text color="gray" className="max-w-[560px] text-sm">
-            {isAdmin
-              ? "Every MCP server your team runs through the gateway. Connect your own account, or use a credential your admins share with the whole team."
-              : "Browse and connect MCP servers that extend your agent with tools, data and integrations."}
+            Browse and connect MCP servers that extend your agent with tools,
+            data and integrations.
           </Text>
         </Flex>
         {canAddServers && (
@@ -91,37 +96,66 @@ export function GatewayServersHome({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search team servers…"
-        size="3"
+        size="2"
       >
         <TextField.Slot>
           <MagnifyingGlass size={14} />
         </TextField.Slot>
+        {query && (
+          <TextField.Slot>
+            <IconButton
+              variant="ghost"
+              size="1"
+              aria-label="Clear server search"
+              onClick={() => setQuery("")}
+            >
+              <X size={12} />
+            </IconButton>
+          </TextField.Slot>
+        )}
       </TextField.Root>
 
       <Flex gap="2" wrap="wrap">
         {MCP_CATEGORIES.map((entry) => {
           const id = entry.id === "all" ? null : entry.id;
           const active = category === id;
-          const count =
-            id === null ? servers.length : (categoryCounts[id] ?? 0);
           return (
-            <Button
+            <button
               key={entry.id}
-              variant={active ? "solid" : "surface"}
-              color={active ? undefined : "gray"}
-              size="1"
-              radius="full"
+              type="button"
               onClick={() => setCategory(id)}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                active
+                  ? "border-accent-8 bg-accent-4 text-accent-11"
+                  : "border-gray-5 bg-gray-2 text-gray-11 hover:border-gray-7 hover:bg-gray-3"
+              }`}
             >
               {entry.label}
-              {active && (
-                <Badge variant="soft" radius="full" size="1">
-                  {count}
-                </Badge>
+              {active && entry.id !== "all" && (
+                <span className="ml-1 text-gray-11">({filtered.length})</span>
               )}
-            </Button>
+            </button>
           );
         })}
+      </Flex>
+
+      <Flex align="center" justify="between">
+        <Text color="gray" className="text-[13px]">
+          {filtered.length} {filtered.length === 1 ? "server" : "servers"}
+        </Text>
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            size="1"
+            color="gray"
+            onClick={() => {
+              setQuery("");
+              setCategory(null);
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
       </Flex>
 
       {serversLoading && servers.length === 0 ? (
@@ -131,6 +165,9 @@ export function GatewayServersHome({
       ) : filtered.length === 0 ? (
         <Empty className="rounded border border-gray-6 border-dashed py-8">
           <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <MagnifyingGlass size={28} />
+            </EmptyMedia>
             <EmptyTitle>No servers match.</EmptyTitle>
             <EmptyDescription>
               Try a different search, or ask an admin to add a server.
@@ -138,7 +175,7 @@ export function GatewayServersHome({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Flex direction="column" gap="2">
+        <Flex direction="column" gap="3">
           {filtered.map((server) => (
             <GatewayServerCard
               key={server.id}
@@ -178,27 +215,28 @@ function GatewayServerCard({
   const shared = server.auth_mode === "shared";
   const off = !server.is_team_enabled;
   const personal =
-    !!server.your_connection && !server.your_connection.pending_oauth;
+    !!server.your_connection &&
+    getGatewayConnectionStatus(server.your_connection) === "connected";
   const connectedForYou = personal || (shared && !isAdmin);
   const needsAuth = !shared && !personal && !off;
 
   return (
     <div
-      className={`relative rounded-[10px] border border-gray-5 bg-gray-1 transition-shadow hover:border-gray-7 hover:shadow-sm ${off ? "opacity-60" : ""}`}
+      className={`relative rounded-md border border-gray-5 bg-gray-2 transition-colors hover:border-gray-7 hover:bg-gray-3 ${off ? "opacity-60" : ""}`}
     >
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full grid-cols-[42px_1fr] items-center gap-3 p-3 pr-[132px] text-left"
+        className="grid w-full grid-cols-[36px_1fr] items-center gap-3 rounded-md p-4 pr-[132px] text-left"
       >
         <ServerIcon
           iconDomain={template?.icon_domain}
           serverUrl={server.url}
-          size={42}
+          size={36}
         />
         <Flex direction="column" gap="1" className="min-w-0">
           <Flex align="center" gap="2">
-            <Text truncate className="font-semibold text-sm">
+            <Text truncate className="font-medium text-base">
               {server.name}
             </Text>
             {off ? (
@@ -220,33 +258,42 @@ function GatewayServerCard({
               </Badge>
             )}
           </Flex>
-          <Text color="gray" truncate className="text-[12.5px]">
+          <Text
+            color="gray"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+            className="overflow-hidden text-[13px]"
+          >
             {server.description || server.url}
           </Text>
           {isAdmin && <CardPeopleRow server={server} off={off} />}
         </Flex>
       </button>
-      <div className="-translate-y-1/2 absolute top-1/2 right-3">
+      <div className="absolute top-4 right-4">
         {off ? null : needsAuth ? (
           connecting ? (
-            <Button variant="outline" color="gray" size="2" disabled>
+            <Button variant="solid" size="1" disabled>
               <Spinner size="1" /> Authorizing…
             </Button>
           ) : (
-            <Button variant="outline" color="gray" size="2" onClick={onConnect}>
+            <Button variant="solid" size="1" onClick={onConnect}>
               Connect
             </Button>
           )
         ) : (
-          <IconButton
+          <Button
             variant="soft"
             color="gray"
-            size="2"
+            size="1"
             title="Configure"
             onClick={onOpen}
           >
-            <Gear size={13} />
-          </IconButton>
+            Configure
+            <CaretRight size={12} />
+          </Button>
         )}
       </div>
     </div>

@@ -4,10 +4,12 @@ import {
   ArrowUpRight,
   Check,
   Key,
+  MagnifyingGlass,
   Plus,
   Prohibit,
   Robot,
   Shield,
+  Trash,
   User,
   Users,
   X,
@@ -19,12 +21,14 @@ import type {
 import {
   countPoliciesByState,
   formatAgo,
+  getGatewayServerRemovalAction,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   gatewayUserName,
   RobotAvatar,
   UserAvatar,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
+import { GatewayDeleteServerDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayDeleteServerDialog";
 import { GatewayToolRow } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayToolRow";
 import { GiveAccessDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GiveAccessDialog";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
@@ -44,12 +48,16 @@ import {
   Button,
   Flex,
   IconButton,
+  Separator,
   Spinner,
   Switch,
   Text,
+  TextField,
   Tooltip,
 } from "@radix-ui/themes";
 import { useMemo, useState } from "react";
+
+const TOOL_PREVIEW_LIMIT = 10;
 
 interface GatewayServerDetailProps {
   serverId: string;
@@ -66,16 +74,6 @@ function sameScope(a: GatewayPolicyScope, b: GatewayPolicyScope): boolean {
   );
 }
 
-function serverSlug(server: McpGatewayServer): string {
-  return (
-    server.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "server"
-  );
-}
-
 export function GatewayServerDetail({
   serverId,
   initialScope,
@@ -88,10 +86,23 @@ export function GatewayServerDetail({
     initialScope ?? YOU_SCOPE,
   );
   const [giveAccessOpen, setGiveAccessOpen] = useState(false);
+  const [deleteServerOpen, setDeleteServerOpen] = useState(false);
+  const [toolSearch, setToolSearch] = useState("");
+  const [toolsExpanded, setToolsExpanded] = useState(false);
 
   const tools = useGatewayToolPolicies(serverId, scope, {
     enabled: !!server,
   });
+  const filteredPolicies = useMemo(() => {
+    const search = toolSearch.trim().toLowerCase();
+    if (!search) return tools.policies;
+    return tools.policies.filter((policy) =>
+      policy.tool_name.toLowerCase().includes(search),
+    );
+  }, [toolSearch, tools.policies]);
+  const displayedPolicies = toolsExpanded
+    ? filteredPolicies
+    : filteredPolicies.slice(0, TOOL_PREVIEW_LIMIT);
   // Team-scope rows seed the give-access dialog's per-tool defaults.
   const teamTools = useGatewayToolPolicies(serverId, TEAM_SCOPE, {
     enabled: !!server && isAdmin,
@@ -146,17 +157,39 @@ export function GatewayServerDetail({
   const template = server.template_id
     ? gateway.templatesById.get(server.template_id)
     : undefined;
+  const serverRemovalAction = getGatewayServerRemovalAction(server, isAdmin);
+  const deletesForEveryone = serverRemovalAction === "delete_for_everyone";
+  const deleteInstallationId =
+    serverRemovalAction === "delete_for_you"
+      ? (yourConnection?.installation_id ?? null)
+      : null;
 
   const counts = countPoliciesByState(tools.policies);
   const editableCount = tools.policies.filter(
     (policy) => !policy.locked,
   ).length;
+  const filteredEditablePolicies = filteredPolicies.filter(
+    (policy) => !policy.locked,
+  );
+  const hasToolSearch = toolSearch.trim().length > 0;
+  const bulkEditableCount = hasToolSearch
+    ? filteredEditablePolicies.length
+    : editableCount;
   const scopeEditable = isAdmin || editableCount > 0;
   // Refreshing tools needs a live installation to ask the upstream server.
   const refreshInstallationId =
     yourConnection?.installation_id ??
     server.shared_credential?.installation_id ??
     null;
+
+  const setBulkPolicy = (state: McpApprovalState) => {
+    tools.setAll(
+      state,
+      hasToolSearch
+        ? filteredEditablePolicies.map((policy) => policy.tool_name)
+        : undefined,
+    );
+  };
 
   const connectButton = connecting ? (
     <Button variant="solid" size="2" disabled>
@@ -188,15 +221,15 @@ export function GatewayServerDetail({
       <BackButton onNavigate={onNavigate} />
 
       {/* Hero */}
-      <Flex align="start" gap="3" className="border-gray-5 border-b pb-4">
+      <Flex align="start" gap="3">
         <ServerIcon
           iconDomain={template?.icon_domain}
           serverUrl={server.url}
-          size={52}
+          size={56}
         />
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Flex align="center" gap="2">
-            <Text truncate className="font-semibold text-[22px]">
+            <Text truncate className="font-bold text-xl">
               {server.name}
             </Text>
             {shared && isAdmin && (
@@ -234,6 +267,19 @@ export function GatewayServerDetail({
           </Flex>
         </Flex>
         <Flex direction="column" align="end" gap="2" className="shrink-0">
+          {(deletesForEveryone || deleteInstallationId) && (
+            <Tooltip content="Delete server">
+              <IconButton
+                variant="ghost"
+                color="red"
+                size="2"
+                aria-label="Delete server"
+                onClick={() => setDeleteServerOpen(true)}
+              >
+                <Trash size={14} />
+              </IconButton>
+            </Tooltip>
+          )}
           {!isAdmin && shared && yourConnection && (
             <Tooltip
               content={
@@ -255,20 +301,26 @@ export function GatewayServerDetail({
             </Tooltip>
           )}
           {!shared &&
-            (yourConnection && !needsReconnect ? (
-              <Button
-                variant="ghost"
-                color="gray"
-                size="2"
-                onClick={() =>
-                  gateway.disconnect({
-                    installationId: yourConnection.installation_id,
-                    serverName: server.name,
-                  })
-                }
-              >
-                <X size={12} /> Disconnect
-              </Button>
+            (yourConnection ? (
+              <Flex direction="column" align="end" gap="2">
+                {!deletesForEveryone && !deleteInstallationId && (
+                  <Button
+                    variant="ghost"
+                    color="gray"
+                    size="2"
+                    disabled={gateway.disconnectPending}
+                    onClick={() =>
+                      gateway.disconnect({
+                        installationId: yourConnection.installation_id,
+                        serverName: server.name,
+                      })
+                    }
+                  >
+                    <X size={12} /> Disconnect
+                  </Button>
+                )}
+                {needsReconnect && connectButton}
+              </Flex>
             ) : (
               connectButton
             ))}
@@ -295,12 +347,14 @@ export function GatewayServerDetail({
         </Flex>
       </Flex>
 
+      <Separator size="4" />
+
       {/* Member on a shared server: credential state card */}
       {!isAdmin && shared && (
         <Flex
           align="start"
           gap="3"
-          className="rounded-[10px] border border-(--accent-6) bg-(--accent-2) p-3"
+          className="rounded-md border border-(--accent-6) bg-(--accent-2) p-3"
         >
           <Flex
             align="center"
@@ -310,7 +364,7 @@ export function GatewayServerDetail({
             <Key size={15} />
           </Flex>
           <Flex direction="column" gap="1">
-            <Text className="font-semibold text-sm">
+            <Text className="font-medium text-sm">
               {!selfEnabled
                 ? "Disabled for you"
                 : personal
@@ -335,14 +389,6 @@ export function GatewayServerDetail({
       {isAdmin && (
         <AccessSection
           server={server}
-          memberCount={
-            shared
-              ? Math.max(
-                  members.members.length - server.revoked_user_ids.length,
-                  0,
-                )
-              : server.connections.length
-          }
           gateway={gateway}
           onShareWithAgent={() => setGiveAccessOpen(true)}
           onRevokeMember={(userId, name) =>
@@ -364,10 +410,10 @@ export function GatewayServerDetail({
         />
       )}
 
-      {/* Tool policies */}
-      <Flex align="center" justify="between" wrap="wrap" gap="2">
+      {/* Tools */}
+      <Flex align="center" justify="between" wrap="wrap" gap="2" mt="2">
         <Flex align="center" gap="2">
-          <Text className="font-medium text-base">Tool policies</Text>
+          <Text className="font-medium text-base">Tools</Text>
           <Badge color="gray" variant="soft" size="1">
             {tools.policies.length}
           </Badge>
@@ -392,8 +438,9 @@ export function GatewayServerDetail({
         {!isAdmin && scopeEditable && (
           <BulkTrio
             label="Set all"
-            disabled={tools.setAllPending || editableCount === 0}
-            onSet={tools.setAll}
+            filtered={hasToolSearch}
+            disabled={tools.setAllPending || bulkEditableCount === 0}
+            onSet={setBulkPolicy}
           />
         )}
       </Flex>
@@ -403,7 +450,7 @@ export function GatewayServerDetail({
           align="center"
           gap="2"
           wrap="wrap"
-          className="rounded-[10px] border border-gray-5 bg-gray-2 px-3 py-2"
+          className="rounded-md border border-gray-5 bg-gray-2 px-3 py-2"
         >
           <Text color="gray" className="text-xs">
             Policy for
@@ -417,7 +464,10 @@ export function GatewayServerDetail({
                 color={active ? undefined : "gray"}
                 size="1"
                 radius="full"
-                onClick={() => setScope(entry)}
+                onClick={() => {
+                  setScope(entry);
+                  setToolsExpanded(false);
+                }}
               >
                 {entry.scopeType === "agent" ? (
                   <Robot size={11} />
@@ -433,8 +483,9 @@ export function GatewayServerDetail({
           <div className="ml-auto flex items-center gap-1">
             <BulkTrio
               label={`Set all for ${scope.label}`}
-              disabled={tools.setAllPending || editableCount === 0}
-              onSet={tools.setAll}
+              filtered={hasToolSearch}
+              disabled={tools.setAllPending || bulkEditableCount === 0}
+              onSet={setBulkPolicy}
             />
             {refreshInstallationId && (
               <Tooltip content="Refresh tools from server">
@@ -457,6 +508,37 @@ export function GatewayServerDetail({
         </Flex>
       )}
 
+      {tools.policies.length > 5 && (
+        <TextField.Root
+          value={toolSearch}
+          onChange={(event) => {
+            setToolSearch(event.target.value);
+            setToolsExpanded(false);
+          }}
+          placeholder="Search tools..."
+          size="2"
+        >
+          <TextField.Slot>
+            <MagnifyingGlass size={14} />
+          </TextField.Slot>
+          {toolSearch && (
+            <TextField.Slot>
+              <IconButton
+                variant="ghost"
+                size="1"
+                aria-label="Clear tool search"
+                onClick={() => {
+                  setToolSearch("");
+                  setToolsExpanded(false);
+                }}
+              >
+                <X size={12} />
+              </IconButton>
+            </TextField.Slot>
+          )}
+        </TextField.Root>
+      )}
+
       {tools.policiesLoading && tools.policies.length === 0 ? (
         <Flex align="center" justify="center" py="6">
           <Spinner size="2" />
@@ -474,12 +556,17 @@ export function GatewayServerDetail({
             Connect the server, then refresh its tools.
           </Text>
         </Flex>
+      ) : filteredPolicies.length === 0 ? (
+        <Flex align="center" justify="center" py="4">
+          <Text color="gray" className="text-sm">
+            No tools match &ldquo;{toolSearch}&rdquo;
+          </Text>
+        </Flex>
       ) : (
-        <div className="rounded-[10px] border border-gray-5">
-          {tools.policies.map((policy) => (
+        <Flex direction="column" gap="2">
+          {displayedPolicies.map((policy) => (
             <GatewayToolRow
               key={policy.tool_name}
-              serverSlug={serverSlug(server)}
               policy={policy}
               editable={scopeEditable && !policy.locked}
               onChange={(state) =>
@@ -487,7 +574,16 @@ export function GatewayServerDetail({
               }
             />
           ))}
-        </div>
+          {filteredPolicies.length > TOOL_PREVIEW_LIMIT && (
+            <button
+              type="button"
+              className="w-full px-3 py-2 text-center font-medium text-gray-11 text-xs transition-colors hover:bg-gray-2 hover:text-gray-12"
+              onClick={() => setToolsExpanded((expanded) => !expanded)}
+            >
+              {toolsExpanded ? "View less" : "View more"}
+            </button>
+          )}
+        </Flex>
       )}
 
       <GiveAccessDialog
@@ -510,6 +606,37 @@ export function GatewayServerDetail({
               successMessage: `${account?.name ?? "Agent"} can now use ${server.name}`,
             },
             { onSuccess: () => setGiveAccessOpen(false) },
+          );
+        }}
+      />
+      <GatewayDeleteServerDialog
+        open={deleteServerOpen}
+        serverName={server.name}
+        deletesForEveryone={deletesForEveryone}
+        pending={
+          deletesForEveryone
+            ? gateway.removeServerPending
+            : gateway.disconnectPending
+        }
+        onOpenChange={setDeleteServerOpen}
+        onConfirm={() => {
+          if (deletesForEveryone) {
+            gateway.removeServer(
+              { serverId: server.id, serverName: server.name },
+              { onSuccess: () => onNavigate({ view: "servers" }) },
+            );
+            return;
+          }
+          if (!deleteInstallationId) return;
+          gateway.disconnect(
+            {
+              installationId: deleteInstallationId,
+              serverName: server.name,
+              action: "delete",
+            },
+            {
+              onSuccess: () => onNavigate({ view: "servers" }),
+            },
           );
         }}
       />
@@ -539,10 +666,12 @@ function BackButton({
 
 function BulkTrio({
   label,
+  filtered,
   disabled,
   onSet,
 }: {
   label: string;
+  filtered?: boolean;
   disabled: boolean;
   onSet: (state: McpApprovalState) => void;
 }) {
@@ -551,7 +680,9 @@ function BulkTrio({
       <Text color="gray" className="text-xs">
         {label}
       </Text>
-      <Tooltip content="Auto-approve all">
+      <Tooltip
+        content={filtered ? "Auto-approve filtered" : "Auto-approve all"}
+      >
         <IconButton
           variant="soft"
           color="green"
@@ -562,7 +693,13 @@ function BulkTrio({
           <Check size={11} weight="bold" />
         </IconButton>
       </Tooltip>
-      <Tooltip content="Require approval for all">
+      <Tooltip
+        content={
+          filtered
+            ? "Require approval for filtered"
+            : "Require approval for all"
+        }
+      >
         <IconButton
           variant="soft"
           color="amber"
@@ -573,7 +710,7 @@ function BulkTrio({
           <Shield size={11} weight="bold" />
         </IconButton>
       </Tooltip>
-      <Tooltip content="Block all">
+      <Tooltip content={filtered ? "Block filtered" : "Block all"}>
         <IconButton
           variant="soft"
           color="red"
@@ -590,7 +727,6 @@ function BulkTrio({
 
 interface AccessSectionProps {
   server: McpGatewayServer;
-  memberCount: number;
   gateway: ReturnType<typeof useGatewayServers>;
   onShareWithAgent: () => void;
   onRevokeMember: (userId: number, firstName: string) => void;
@@ -599,7 +735,6 @@ interface AccessSectionProps {
 
 function AccessSection({
   server,
-  memberCount,
   gateway,
   onShareWithAgent,
   onRevokeMember,
@@ -610,21 +745,13 @@ function AccessSection({
 
   return (
     <Flex direction="column" gap="2">
-      <Flex align="center" gap="2">
-        <Text className="font-medium text-base">Access</Text>
-        <Badge color="gray" variant="soft" size="1">
-          {memberCount} people
-          {server.agents.length
-            ? ` · ${server.agents.length} agent${server.agents.length > 1 ? "s" : ""}`
-            : ""}
-        </Badge>
-      </Flex>
+      <Text className="font-medium text-base">Access</Text>
 
       <Flex
         align="center"
         justify="between"
         gap="3"
-        className="rounded-[10px] border border-gray-5 p-3"
+        className="rounded-md border border-gray-5 p-3"
       >
         <div>
           <Text as="div" className="font-medium text-sm">
@@ -659,7 +786,7 @@ function AccessSection({
         <Flex
           align="start"
           gap="3"
-          className="rounded-[10px] border border-gray-5 p-3"
+          className="rounded-md border border-gray-5 p-3"
         >
           <Flex
             align="center"
@@ -705,7 +832,7 @@ function AccessSection({
           align="center"
           justify="between"
           gap="3"
-          className="rounded-[10px] border border-gray-5 p-3"
+          className="rounded-md border border-gray-5 p-3"
         >
           <div>
             <Text as="div" className="font-medium text-sm">
@@ -745,7 +872,7 @@ function AccessSection({
       <Flex align="center" gap="2" mt="1" className="tracking-[0.06em]">
         <Text
           color="gray"
-          className="font-medium text-[10px] uppercase leading-none"
+          className="font-medium text-xs uppercase leading-none"
         >
           People connected
         </Text>
@@ -760,7 +887,7 @@ function AccessSection({
             : "No one has connected yet."}
         </Text>
       ) : (
-        <div className="rounded-[10px] border border-gray-5">
+        <div className="overflow-hidden rounded-md border border-gray-5">
           {server.connections.map((connection) => {
             const isYou = connection.installation_id === yourInstallationId;
             const usedAgo = formatAgo(connection.last_used_at);
@@ -769,7 +896,7 @@ function AccessSection({
                 key={connection.installation_id}
                 align="center"
                 gap="3"
-                className={`group border-gray-5 border-b px-3 py-2 last:border-b-0 ${isYou ? "bg-(--accent-2)" : ""}`}
+                className="group border-gray-5 border-b px-3 py-2 last:border-b-0"
               >
                 <UserAvatar user={connection.user} />
                 <Flex direction="column" className="min-w-0 flex-1">
@@ -778,7 +905,12 @@ function AccessSection({
                       {gatewayUserName(connection.user)}
                     </Text>
                     {isYou && (
-                      <Badge color="indigo" variant="soft" size="1">
+                      <Badge
+                        color="indigo"
+                        variant="soft"
+                        size="1"
+                        className="px-1 py-0 text-[10px] leading-4"
+                      >
                         You
                       </Badge>
                     )}
@@ -827,10 +959,10 @@ function AccessSection({
         </div>
       )}
 
-      <Flex align="center" gap="2" mt="1" className="tracking-[0.06em]">
+      <Flex align="center" gap="2" mt="4" className="tracking-[0.06em]">
         <Text
           color="gray"
-          className="font-medium text-[10px] uppercase leading-none"
+          className="font-medium text-xs uppercase leading-none"
         >
           Agents
         </Text>
@@ -853,7 +985,7 @@ function AccessSection({
           call {server.name} under its own tool policies.
         </Text>
       ) : (
-        <div className="rounded-[10px] border border-gray-5">
+        <div className="rounded-md border border-gray-5">
           {server.agents.map((agent) => (
             <Flex
               key={agent.service_account_id}

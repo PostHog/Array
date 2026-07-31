@@ -17,6 +17,7 @@ import {
   Badge,
   Button,
   Flex,
+  Separator,
   Spinner,
   Switch,
   Text,
@@ -79,16 +80,16 @@ export function GatewayAgentDetail({
     <Flex direction="column" gap="4" className="min-w-0">
       <BackButton onNavigate={onNavigate} />
 
-      <Flex align="start" gap="3" className="border-gray-5 border-b pb-4">
+      <Flex align="start" gap="3">
         <RobotAvatar size="lg" />
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Flex align="center" gap="2">
-            <Text truncate className="font-semibold text-[22px]">
+            <Text truncate className="font-bold text-xl">
               {account.name}
             </Text>
             {active ? (
               <Badge color="green" variant="soft" size="1">
-                ● Active
+                Active
               </Badge>
             ) : (
               <Badge color="amber" variant="soft" size="1">
@@ -121,9 +122,10 @@ export function GatewayAgentDetail({
           {active ? "Pause agent" : "Resume agent"}
         </Button>
       </Flex>
+      <Separator size="4" />
 
       <Text className="font-medium text-base">Identity</Text>
-      <div className="rounded-[10px] border border-gray-5">
+      <div className="overflow-hidden rounded border border-gray-5">
         <KvRow label="Authenticates as">
           <Text className="font-mono text-[13px]">{account.handle}</Text>
         </KvRow>
@@ -153,7 +155,7 @@ export function GatewayAgentDetail({
           {account.server_ids.length} of {servers.length}
         </Badge>
       </Flex>
-      <div className="rounded-[10px] border border-gray-5">
+      <div className="overflow-hidden rounded border border-gray-5">
         {servers.map((server) => {
           const on = account.server_ids.includes(server.id);
           const template = server.template_id
@@ -164,7 +166,7 @@ export function GatewayAgentDetail({
               key={server.id}
               align="center"
               gap="3"
-              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${on ? "" : "opacity-60"}`}
+              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${on ? "" : "bg-gray-2 opacity-60"}`}
             >
               <ServerIcon
                 iconDomain={template?.icon_domain}
@@ -225,8 +227,8 @@ export function GatewayAgentDetail({
       </div>
 
       <Text className="font-medium text-base">Recent tool calls</Text>
-      <div className="rounded-[10px] border border-gray-5">
-        <div className="grid grid-cols-[130px_1fr_auto] gap-3 border-gray-5 border-b px-3 py-2">
+      <div className="overflow-hidden rounded border border-gray-5">
+        <div className="grid grid-cols-[130px_1fr_auto] gap-3 border-gray-5 border-b bg-gray-2 px-3 py-2">
           <Text
             color="gray"
             className="font-medium text-[10px] uppercase tracking-[0.06em]"
@@ -267,7 +269,7 @@ export function GatewayAgentDetail({
                 <Text truncate className="font-medium text-xs">
                   {event.server_name}
                 </Text>
-                <Text color="gray" truncate className="font-mono text-xs">
+                <Text color="gray" truncate className="text-xs">
                   {event.tool_name}()
                 </Text>
               </Flex>

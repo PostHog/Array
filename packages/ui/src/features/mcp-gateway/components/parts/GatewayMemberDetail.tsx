@@ -8,7 +8,15 @@ import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute
 import { useGatewayMembers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayMembers";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
-import { Badge, Button, Flex, Spinner, Switch, Text } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Flex,
+  Separator,
+  Spinner,
+  Switch,
+  Text,
+} from "@radix-ui/themes";
 
 /** Admin view of one member: which servers they can reach, per-server revoke. */
 export function GatewayMemberDetail({
@@ -52,11 +60,11 @@ export function GatewayMemberDetail({
     <Flex direction="column" gap="4" className="min-w-0">
       <BackButton onNavigate={onNavigate} />
 
-      <Flex align="start" gap="3" className="border-gray-5 border-b pb-4">
+      <Flex align="start" gap="3">
         <UserAvatar user={member.user} size="lg" />
         <Flex direction="column" gap="1" className="min-w-0 flex-1">
           <Flex align="center" gap="2">
-            <Text truncate className="font-semibold text-[22px]">
+            <Text truncate className="font-bold text-xl">
               {name}
             </Text>
             <Badge
@@ -75,6 +83,7 @@ export function GatewayMemberDetail({
           </Text>
         </Flex>
       </Flex>
+      <Separator size="4" />
 
       <Flex align="center" gap="2">
         <Text className="font-medium text-base">Server access</Text>
@@ -82,7 +91,7 @@ export function GatewayMemberDetail({
           {allowedCount} of {servers.length}
         </Badge>
       </Flex>
-      <div className="rounded-[10px] border border-gray-5">
+      <div className="overflow-hidden rounded border border-gray-5">
         {servers.map((server) => {
           const on = !revoked.has(server.id);
           const template = server.template_id
@@ -104,7 +113,7 @@ export function GatewayMemberDetail({
               key={server.id}
               align="center"
               gap="3"
-              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${on ? "" : "opacity-60"}`}
+              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${on ? "" : "bg-gray-2 opacity-60"}`}
             >
               <ServerIcon
                 iconDomain={template?.icon_domain}

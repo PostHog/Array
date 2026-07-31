@@ -99,15 +99,30 @@ export function useGatewayServers() {
   );
 
   const disconnectMutation = useAuthenticatedMutation(
-    (client, vars: { installationId: string; serverName: string }) =>
-      client.uninstallMcpServer(vars.installationId),
+    (
+      client,
+      vars: {
+        installationId: string;
+        serverName: string;
+        action?: "delete" | "disconnect";
+      },
+    ) => client.uninstallMcpServer(vars.installationId),
     {
       onSuccess: (_data, vars) => {
-        toast.info(`Disconnected from ${vars.serverName}`);
+        toast.info(
+          vars.action === "delete"
+            ? `${vars.serverName} deleted for you`
+            : `Disconnected from ${vars.serverName}`,
+        );
         invalidateServers();
       },
-      onError: (error: Error) =>
-        toast.error(error.message || "Failed to disconnect"),
+      onError: (error: Error, vars) =>
+        toast.error(
+          error.message ||
+            (vars.action === "delete"
+              ? "Failed to delete server"
+              : "Failed to disconnect"),
+        ),
     },
   );
 
@@ -167,7 +182,7 @@ export function useGatewayServers() {
       client.deleteMcpGatewayServer(vars.serverId),
     {
       onSuccess: (_data, vars) => {
-        toast.info(`${vars.serverName} removed from the gateway`);
+        toast.info(`${vars.serverName} deleted for everyone`);
         invalidateServers();
       },
       onError: (error: Error) =>
@@ -195,9 +210,11 @@ export function useGatewayServers() {
     reconnect: reconnectMutation.mutate,
     reconnectPending: reconnectMutation.isPending,
     disconnect: disconnectMutation.mutate,
+    disconnectPending: disconnectMutation.isPending,
     toggleYourConnection: toggleYourConnectionMutation.mutate,
     updateServer: updateServerMutation.mutate,
     setAllEnabled: setAllEnabledMutation.mutate,
     removeServer: removeServerMutation.mutate,
+    removeServerPending: removeServerMutation.isPending,
   };
 }
