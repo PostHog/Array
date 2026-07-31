@@ -20,6 +20,7 @@ import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
 import { extractCustomInstructions } from "./customInstructions";
 import {
+  collapsePiSkillInvocation,
   hasFileMentions,
   MentionChip,
   parseFileMentions,
@@ -92,9 +93,9 @@ export const UserMessage = memo(function UserMessage({
     () => extractCustomInstructions(afterCanvasInstructions),
     [afterCanvasInstructions],
   );
-  const displayContent = customInstructions
-    ? customInstructions.stripped
-    : afterCanvasInstructions;
+  const displayContent = collapsePiSkillInvocation(
+    customInstructions ? customInstructions.stripped : afterCanvasInstructions,
+  );
   const showChannelContextTag = !!channelContext && bluebirdEnabled;
   const showCanvasInstructionsTag = !!canvasInstructions && bluebirdEnabled;
   const openChannelContextInSplit = usePanelLayoutStore(
