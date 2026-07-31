@@ -2374,14 +2374,13 @@ describe("AgentServer HTTP Mode", () => {
       )?.text;
 
       expect(sentText).toBe("/local-test-skill with context");
-      expect(sentMeta?.localSkillContext).toContain(
-        'local skill "/local-test-skill"',
-      );
       expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
       expect(sentMeta?.localSkillContext).toContain(
         "always-on skills apply for the entire session",
       );
-      expect(sentMeta?.localSkillContext).toContain("with context");
+      expect(
+        String(sentMeta?.localSkillContext).match(/LOCAL_SKILL_MARKER/g),
+      ).toHaveLength(1);
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
     }, 20000);
 

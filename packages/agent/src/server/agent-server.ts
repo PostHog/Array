@@ -2887,6 +2887,14 @@ export class AgentServer {
         : null;
 
     if (invocation) {
+      if (
+        alwaysOnSkills.some((skill) => skill.skillName === invocation.skillName)
+      ) {
+        return {
+          skillName: invocation.skillName,
+          context: alwaysOnContext ?? "",
+        };
+      }
       const hasMatchingArtifact = artifacts.some(
         (artifact) =>
           artifact.type === "skill_bundle" &&
@@ -2921,7 +2929,7 @@ export class AgentServer {
       .join("\n");
     const attachedContext = this.buildAttachedSkillsPromptContext(
       runId,
-      artifacts,
+      artifacts.filter((artifact) => artifact.metadata?.always_on !== true),
       messageText,
     );
     if (!alwaysOnContext) return attachedContext;

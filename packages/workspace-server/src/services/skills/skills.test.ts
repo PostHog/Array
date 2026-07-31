@@ -922,10 +922,28 @@ describe("renderAlwaysOnSkillInstructions", () => {
       { name: "first", source: "repo", path: first },
     ]);
 
-    expect(rendered.indexOf("## first")).toBeLessThan(
-      rendered.indexOf("## second"),
+    expect(rendered.instructions?.indexOf("## first")).toBeLessThan(
+      rendered.instructions?.indexOf("## second") ?? -1,
     );
-    expect(rendered).toContain(`Installed at: ${first}`);
-    expect(rendered).not.toContain("description: about first");
+    expect(rendered.instructions).toContain(`Installed at: ${first}`);
+    expect(rendered.instructions).not.toContain("description: about first");
+    expect(rendered.failures).toEqual([]);
+  });
+
+  it("renders readable skills and reports unreadable skills separately", async () => {
+    const readable = await createSkill(repoSkillsDir, "readable");
+
+    const rendered = await makeService().renderAlwaysOnSkillInstructions([
+      {
+        name: "missing",
+        source: "repo",
+        path: path.join(repoSkillsDir, "missing"),
+      },
+      { name: "readable", source: "repo", path: readable },
+    ]);
+
+    expect(rendered.instructions).toContain("## readable");
+    expect(rendered.failures).toHaveLength(1);
+    expect(rendered.failures[0]?.skill.name).toBe("missing");
   });
 });
