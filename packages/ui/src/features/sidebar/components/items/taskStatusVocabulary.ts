@@ -1,11 +1,11 @@
 import {
   ArrowSquareIn,
-  ChatCircle,
   Cloud,
   GitBranch,
   GitMerge,
   GitPullRequest,
   type Icon,
+  Laptop,
 } from "@phosphor-icons/react";
 import {
   getOriginProductMeta,
@@ -209,7 +209,7 @@ export function taskBadges(props: TaskStatusInput): TaskBadge[] {
     });
   }
   if (props.workspaceMode === "cloud") {
-    badges.push({ key: "cloud", Icon: Cloud, label: "Cloud run" });
+    badges.push({ key: "cloud", Icon: Cloud, label: "Cloud" });
   }
   if (props.prState === "merged") {
     badges.push({
@@ -257,7 +257,7 @@ export function taskBadges(props: TaskStatusInput): TaskBadge[] {
     });
   }
   if (badges.length === 0) {
-    badges.push({ key: "local", Icon: ChatCircle, label: "Local task" });
+    badges.push({ key: "local", Icon: Laptop, label: "Local" });
   }
   return badges;
 }

@@ -123,7 +123,7 @@ export function PinnedBadge() {
         className="cursor-default"
       >
         <AvatarFallback className="bg-transparent">
-          <PushPin size={9} className="text-muted-foreground/80" />
+          <PushPin size={9} className="text-primary" />
         </AvatarFallback>
       </Avatar>
     </RowTooltip>
