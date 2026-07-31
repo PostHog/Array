@@ -108,7 +108,7 @@ export function ArtifactPreview({
   );
   const commentsQuery = useCommentsQuery(commentTarget);
   const { members } = useOrgMembers();
-  const createComment = useCreateComment(commentTarget);
+  const createComment = useCreateComment(commentTarget, taskId);
   const requestCommentFocus = useCommentNavigationStore(
     (state) => state.requestCommentFocus,
   );
