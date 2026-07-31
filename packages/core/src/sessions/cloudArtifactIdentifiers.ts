@@ -51,7 +51,6 @@ export interface CloudSkillBundleRef {
   name: string;
   source: UploadableSkillSource;
   path: string;
-  alwaysOn?: boolean;
 }
 
 export interface LocalSkillBundle {

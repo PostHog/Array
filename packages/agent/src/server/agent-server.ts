@@ -395,7 +395,6 @@ export class AgentServer {
   private warmAutoPublishResolved = false;
   private installedSkillBundles = new Set<string>();
   private installedSkillBundleInfo = new Map<string, InstalledSkillBundle>();
-  private alwaysOnSkillsActivatedSessionId: string | null = null;
   private installingSkillBundles = new Map<string, Promise<void>>();
   // Guards against concurrent session initialization. autoInitializeSession() and
   // the GET /events SSE handler can both call initializeSession() — the SSE connection
@@ -2839,44 +2838,8 @@ export class AgentServer {
     runId: string,
     artifacts: TaskRunArtifact[],
   ): LocalSkillPromptContext | null {
-    const alwaysOnSkills = artifacts
-      .filter(
-        (artifact) =>
-          artifact.type === "skill_bundle" &&
-          artifact.metadata?.always_on === true,
-      )
-      .sort((left, right) =>
-        `${left.metadata?.skill_source}:${left.metadata?.skill_name}`.localeCompare(
-          `${right.metadata?.skill_source}:${right.metadata?.skill_name}`,
-        ),
-      )
-      .map((artifact) =>
-        this.installedSkillBundleInfo.get(
-          this.getInstalledSkillBundleInfoKey(
-            runId,
-            artifact.metadata?.skill_name ?? "",
-          ),
-        ),
-      )
-      .filter((skill): skill is InstalledSkillBundle => !!skill);
-    const sessionId = this.session?.acpSessionId;
-    const shouldActivateAlwaysOnSkills =
-      alwaysOnSkills.length > 0 &&
-      !!sessionId &&
-      this.alwaysOnSkillsActivatedSessionId !== sessionId;
-    const alwaysOnContext = shouldActivateAlwaysOnSkills
-      ? [
-          "Always-on skills apply for the entire session. Before proceeding, read each SKILL.md below from the filesystem in the listed order and follow its instructions for the entire session.",
-          ...alwaysOnSkills.map(
-            (skill) => `- /${skill.skillName}: ${skill.skillRoot}/SKILL.md`,
-          ),
-        ].join("\n")
-      : null;
-    if (shouldActivateAlwaysOnSkills && sessionId) {
-      this.alwaysOnSkillsActivatedSessionId = sessionId;
-    }
     if (contentBlocks.length === 0) {
-      return alwaysOnContext ? { context: alwaysOnContext } : null;
+      return null;
     }
 
     const textBlockIndex = contentBlocks.findIndex(
@@ -2891,23 +2854,6 @@ export class AgentServer {
         : null;
 
     if (invocation) {
-      const invokedAlwaysOnSkill = alwaysOnSkills.find(
-        (skill) => skill.skillName === invocation.skillName,
-      );
-      if (invokedAlwaysOnSkill) {
-        const invokedContext = this.buildInstalledSkillPrompt(
-          invokedAlwaysOnSkill,
-          invocation.args,
-          this.getCoInstalledSkillBundles(runId, invocation.skillName),
-          false,
-        );
-        return {
-          skillName: invocation.skillName,
-          context: alwaysOnContext
-            ? `${alwaysOnContext}\n\n${invokedContext}`
-            : invokedContext,
-        };
-      }
       const hasMatchingArtifact = artifacts.some(
         (artifact) =>
           artifact.type === "skill_bundle" &&
@@ -2919,16 +2865,13 @@ export class AgentServer {
           )
         : undefined;
       if (installedSkill) {
-        const invokedContext = this.buildInstalledSkillPrompt(
-          installedSkill,
-          invocation.args,
-          this.getCoInstalledSkillBundles(runId, invocation.skillName),
-        );
         return {
           skillName: invocation.skillName,
-          context: alwaysOnContext
-            ? `${alwaysOnContext}\n\n${invokedContext}`
-            : invokedContext,
+          context: this.buildInstalledSkillPrompt(
+            installedSkill,
+            invocation.args,
+            this.getCoInstalledSkillBundles(runId, invocation.skillName),
+          ),
         };
       }
     }
@@ -2940,17 +2883,7 @@ export class AgentServer {
       )
       .map((block) => block.text)
       .join("\n");
-    const attachedContext = this.buildAttachedSkillsPromptContext(
-      runId,
-      artifacts.filter((artifact) => artifact.metadata?.always_on !== true),
-      messageText,
-    );
-    if (!alwaysOnContext) return attachedContext;
-    return {
-      context: attachedContext
-        ? `${alwaysOnContext}\n\n${attachedContext.context}`
-        : alwaysOnContext,
-    };
+    return this.buildAttachedSkillsPromptContext(runId, artifacts, messageText);
   }
 
   /**
@@ -3049,19 +2982,14 @@ export class AgentServer {
     skill: InstalledSkillBundle,
     args: string | undefined,
     coInstalledSkills: InstalledSkillBundle[] = [],
-    includeDefinition = true,
   ): string {
     return [
       `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
       "",
-      ...(includeDefinition
-        ? [
-            `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
-            skill.skillDefinition.trim(),
-            `--- END LOCAL SKILL ${skill.skillName} ---`,
-            "",
-          ]
-        : []),
+      `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+      skill.skillDefinition.trim(),
+      `--- END LOCAL SKILL ${skill.skillName} ---`,
+      "",
       `Installed skill path: ${skill.skillRoot}`,
       ...(coInstalledSkills.length > 0
         ? [

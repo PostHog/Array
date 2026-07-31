@@ -21,6 +21,7 @@ const mockHost = vi.hoisted(() => ({
   detectRepo: vi.fn(),
   getCloudPromptTransport: vi.fn(),
   resolveLocalSkillCommandPrompt: vi.fn(async (prompt: string) => prompt),
+  renderAlwaysOnSkillInstructions: vi.fn(),
   takeWarmTaskLease: vi.fn(
     (): { taskId: string; runId: string } | null => null,
   ),
@@ -118,6 +119,7 @@ describe("TaskCreationSaga", () => {
     mockHost.getWorkspace.mockResolvedValue(null);
     mockHost.getFolders.mockResolvedValue([]);
     mockHost.uploadRunAttachments.mockResolvedValue([]);
+    mockHost.renderAlwaysOnSkillInstructions.mockResolvedValue(undefined);
     mockHost.linkTaskBranch.mockResolvedValue(undefined);
     mockHost.recordClaudeCliImport.mockResolvedValue(undefined);
     mockHost.deleteClaudeCliImport.mockResolvedValue(undefined);
@@ -243,6 +245,49 @@ describe("TaskCreationSaga", () => {
     );
   });
 
+  it("folds always-on skill instructions into the first cloud message", async () => {
+    const startedTask = createTask({ latest_run: createRun() });
+    const startTaskRun = vi.fn().mockResolvedValue(startedTask);
+    mockHost.renderAlwaysOnSkillInstructions.mockResolvedValue(
+      "<always_on_skills>Be concise.</always_on_skills>",
+    );
+
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createTask()),
+      createTaskRun: vi.fn().mockResolvedValue(createRun()),
+      startTaskRun,
+    });
+    const skill = {
+      name: "concise",
+      source: "user" as const,
+      path: "/skills/concise",
+    };
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      alwaysOnSkills: [skill],
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockHost.renderAlwaysOnSkillInstructions).toHaveBeenCalledWith([
+      skill,
+    ]);
+    expect(startTaskRun).toHaveBeenCalledWith(
+      "task-123",
+      "run-123",
+      expect.objectContaining({
+        pendingUserMessage:
+          "Ship the fix\n\n<always_on_skills>Be concise.</always_on_skills>",
+      }),
+    );
+    expect(mockHost.getCloudPromptTransport).toHaveBeenCalledWith(
+      "Ship the fix",
+      undefined,
+    );
+  });
+
   it("folds custom personalization into the cloud prompt and stashes it for the optimistic placeholder", async () => {
     const createdTask = createTask();
     const startedTask = createTask({ latest_run: createRun() });
@@ -351,6 +396,37 @@ describe("TaskCreationSaga", () => {
     expect(sessionService.connectToTask).toHaveBeenCalledWith(
       expect.objectContaining({ repoPath: "/tmp/scratch/task-123" }),
     );
+  });
+
+  it("adds always-on skill instructions to the initial local prompt", async () => {
+    mockHost.renderAlwaysOnSkillInstructions.mockResolvedValue(
+      "<always_on_skills>Be concise.</always_on_skills>",
+    );
+    const saga = makeSaga({
+      createTask: vi.fn().mockResolvedValue(createTask()),
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      workspaceMode: "local",
+      allowNoRepo: true,
+      alwaysOnSkills: [
+        { name: "concise", source: "user", path: "/skills/concise" },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    const connectParams = vi.mocked(sessionService.connectToTask).mock
+      .calls[0][0];
+    expect(connectParams.initialPrompt).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text",
+          text: "<always_on_skills>Be concise.</always_on_skills>",
+        },
+      ]),
+    );
+    expect(connectParams).not.toHaveProperty("alwaysOnSkills");
   });
 
   it("starts a Pi session without creating an ACP session", async () => {

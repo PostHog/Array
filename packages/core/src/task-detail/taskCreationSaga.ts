@@ -1,6 +1,5 @@
 import { PI_THINKING_LEVELS } from "@posthog/agent/pi/types";
 import {
-  buildChannelContextBlock,
   buildChannelContextText,
   buildCustomInstructionsText,
   buildPromptBlocks,
@@ -54,6 +53,7 @@ interface WarmActivationPayload {
 function buildCloudFirstMessage(
   messageText: string | undefined,
   input: TaskCreationInput,
+  alwaysOnSkillInstructions?: string,
 ): { pendingUserMessage?: string; augmented: boolean } {
   const customInstructionsText = messageText
     ? buildCustomInstructionsText(input.customInstructions)
@@ -64,30 +64,22 @@ function buildCloudFirstMessage(
     input.channelContextId,
   );
   const pendingUserMessage =
-    [messageText, customInstructionsText, channelContextText]
+    [
+      messageText,
+      customInstructionsText,
+      alwaysOnSkillInstructions,
+      channelContextText,
+    ]
       .filter((part): part is string => !!part)
       .join("\n\n") || undefined;
   return {
     pendingUserMessage,
-    augmented: !!(customInstructionsText || channelContextText),
+    augmented: !!(
+      customInstructionsText ||
+      alwaysOnSkillInstructions ||
+      channelContextText
+    ),
   };
-}
-
-function addAlwaysOnSkills(
-  transport: CloudPromptTransport,
-  input: TaskCreationInput,
-): CloudPromptTransport {
-  const refs = [
-    ...(transport.skillBundles ?? []),
-    ...(input.alwaysOnSkills ?? []).map((skill) => ({
-      ...skill,
-      alwaysOn: true,
-    })),
-  ];
-  const deduplicated = new Map(
-    refs.map((skill) => [`${skill.source}:${skill.path}`, skill]),
-  );
-  return { ...transport, skillBundles: [...deduplicated.values()] };
 }
 
 export class TaskCreationSaga extends Saga<
@@ -116,10 +108,16 @@ export class TaskCreationSaga extends Saga<
     const importedClaude = isPiRuntime
       ? undefined
       : await this.importClaudeSession(input);
+    const alwaysOnSkills = input.alwaysOnSkills;
+    const alwaysOnSkillInstructions = alwaysOnSkills?.length
+      ? await this.readOnlyStep("render_always_on_skills", () =>
+          this.deps.host.renderAlwaysOnSkillInstructions(alwaysOnSkills),
+        )
+      : undefined;
 
     const warmPayload =
       !isPiRuntime && !taskId && input.workspaceMode === "cloud"
-        ? await this.prepareWarmActivation(input)
+        ? await this.prepareWarmActivation(input, alwaysOnSkillInstructions)
         : null;
 
     let task = taskId
@@ -393,12 +391,9 @@ export class TaskCreationSaga extends Saga<
                     input.content,
                   )
                 : "";
-              return addAlwaysOnSkills(
-                this.deps.host.getCloudPromptTransport(
-                  resolvedContent,
-                  input.filePaths,
-                ),
-                input,
+              return this.deps.host.getCloudPromptTransport(
+                resolvedContent,
+                input.filePaths,
               );
             };
           const transport = warmPayload
@@ -407,7 +402,11 @@ export class TaskCreationSaga extends Saga<
 
           const { pendingUserMessage, augmented } = warmPayload
             ? warmPayload
-            : buildCloudFirstMessage(transport?.messageText, input);
+            : buildCloudFirstMessage(
+                transport?.messageText,
+                input,
+                alwaysOnSkillInstructions,
+              );
 
           // The sandbox echoes pendingUserMessage back once it boots; until then
           // the optimistic placeholder would show the bare task description with
@@ -531,13 +530,22 @@ export class TaskCreationSaga extends Saga<
       // Append the channel's CONTEXT.md as optional background, so tasks made
       // in a channel start with the shared context the agent would otherwise
       // have to rediscover. Kept after the user's prompt so the request leads.
-      const channelContextBlock = buildChannelContextBlock(
+      const channelContextText = buildChannelContextText(
         input.channelContext,
         input.channelName,
         input.channelContextId,
       );
-      if (initialPrompt && channelContextBlock) {
-        initialPrompt.push(channelContextBlock);
+      const supplementaryContext = [
+        alwaysOnSkillInstructions,
+        channelContextText,
+      ].filter((text): text is string => !!text);
+      if (initialPrompt) {
+        initialPrompt.push(
+          ...supplementaryContext.map((text) => ({
+            type: "text" as const,
+            text,
+          })),
+        );
       }
 
       await this.step({
@@ -551,7 +559,9 @@ export class TaskCreationSaga extends Saga<
             await this.deps.piRunner.create({
               taskId: task.id,
               cwd: agentCwd ?? "",
-              prompt: input.content ?? "",
+              prompt: [input.content, ...supplementaryContext]
+                .filter((text): text is string => !!text)
+                .join("\n\n"),
               model: input.model,
               thinkingLevel,
             });
@@ -573,8 +583,6 @@ export class TaskCreationSaga extends Saga<
             connectParams.contextWindow = input.contextWindow;
           if (input.fastMode !== undefined)
             connectParams.fastMode = input.fastMode;
-          if (input.alwaysOnSkills?.length)
-            connectParams.alwaysOnSkills = input.alwaysOnSkills;
           if (importedClaude) {
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";
@@ -730,6 +738,7 @@ export class TaskCreationSaga extends Saga<
   // deliver the first message without its attachments.
   private async prepareWarmActivation(
     input: TaskCreationInput,
+    alwaysOnSkillInstructions?: string,
   ): Promise<WarmActivationPayload | null> {
     if (!input.content && !input.filePaths?.length) {
       return null;
@@ -738,13 +747,14 @@ export class TaskCreationSaga extends Saga<
     const resolvedContent = input.content
       ? await this.deps.host.resolveLocalSkillCommandPrompt(input.content)
       : "";
-    const transport = addAlwaysOnSkills(
-      this.deps.host.getCloudPromptTransport(resolvedContent, input.filePaths),
-      input,
+    const transport = this.deps.host.getCloudPromptTransport(
+      resolvedContent,
+      input.filePaths,
     );
     const { pendingUserMessage, augmented } = buildCloudFirstMessage(
       transport.messageText,
       input,
+      alwaysOnSkillInstructions,
     );
     const base: WarmActivationPayload = {
       transport,

@@ -2320,22 +2320,6 @@ describe("AgentServer HTTP Mode", () => {
       serverInternals.posthogAPI.downloadArtifact = downloadArtifact;
 
       const token = createToken();
-      const artifact = {
-        id: "skill-artifact-1",
-        name: "local-test-skill.zip",
-        type: "skill_bundle",
-        source: "posthog_code_skill",
-        storage_path: "tasks/artifacts/local-test-skill.zip",
-        content_type: "application/zip",
-        metadata: {
-          skill_name: "local-test-skill",
-          skill_source: "user",
-          content_sha256: checksum,
-          bundle_format: "zip",
-          schema_version: 1,
-          always_on: true,
-        },
-      };
       const response = await fetch(`http://localhost:${port}/command`, {
         method: "POST",
         headers: {
@@ -2348,7 +2332,23 @@ describe("AgentServer HTTP Mode", () => {
           method: "user_message",
           params: {
             content: "/local-test-skill with context",
-            artifacts: [artifact],
+            artifacts: [
+              {
+                id: "skill-artifact-1",
+                name: "local-test-skill.zip",
+                type: "skill_bundle",
+                source: "posthog_code_skill",
+                storage_path: "tasks/artifacts/local-test-skill.zip",
+                content_type: "application/zip",
+                metadata: {
+                  skill_name: "local-test-skill",
+                  skill_source: "user",
+                  content_sha256: checksum,
+                  bundle_format: "zip",
+                  schema_version: 1,
+                },
+              },
+            ],
           },
         }),
       });
@@ -2374,38 +2374,11 @@ describe("AgentServer HTTP Mode", () => {
 
       expect(sentText).toBe("/local-test-skill with context");
       expect(sentMeta?.localSkillContext).toContain(
-        "Always-on skills apply for the entire session",
+        'local skill "/local-test-skill"',
       );
-      expect(sentMeta?.localSkillContext).toContain(
-        "/skills/local-test-skill/SKILL.md",
-      );
-      expect(sentMeta?.localSkillContext).toContain(
-        "User request:\nwith context",
-      );
-      expect(sentMeta?.localSkillContext).not.toContain("LOCAL_SKILL_MARKER");
+      expect(sentMeta?.localSkillContext).toContain("LOCAL_SKILL_MARKER");
+      expect(sentMeta?.localSkillContext).toContain("with context");
       expect(sentMeta?.localSkillName).toBe("local-test-skill");
-
-      await fetch(`http://localhost:${port}/command`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: "skill-followup",
-          method: "user_message",
-          params: {
-            content: "Follow up",
-            artifacts: [artifact],
-          },
-        }),
-      });
-
-      expect(prompt).toHaveBeenCalledTimes(2);
-      expect(
-        prompt.mock.calls[1]?.[0]._meta?.localSkillContext,
-      ).toBeUndefined();
     }, 20000);
 
     it("lists co-installed dependency skills with their paths in the skill context", async () => {

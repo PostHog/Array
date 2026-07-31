@@ -13,7 +13,6 @@ import {
   type AcpMessage,
   type Adapter,
   type AgentSession,
-  type AlwaysOnSkillRef,
   type CloudRegion,
   classifyGatewayLimitError,
   type ExecutionMode,
@@ -357,14 +356,6 @@ export interface SessionServiceDeps {
     options: SessionConfigOption[],
   ) => void;
   removePersistedConfigOptions: (taskRunId: string) => void;
-  getPersistedAlwaysOnSkills?: (
-    taskRunId: string,
-  ) => AlwaysOnSkillRef[] | undefined;
-  setPersistedAlwaysOnSkills?: (
-    taskRunId: string,
-    skills: AlwaysOnSkillRef[],
-  ) => void;
-  removePersistedAlwaysOnSkills?: (taskRunId: string) => void;
   adapterStore: {
     getAdapter(taskRunId: string): Adapter | undefined;
     setAdapter(taskRunId: string, adapter: Adapter): void;
@@ -413,7 +404,6 @@ export interface ConnectParams {
   reasoningLevel?: string;
   contextWindow?: "200k" | "1m";
   fastMode?: boolean;
-  alwaysOnSkills?: AlwaysOnSkillRef[];
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -1742,7 +1732,6 @@ export class SessionService {
       contextWindow,
       fastMode,
       importedSessionId,
-      alwaysOnSkills,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
     const taskTitle = task.title || task.description || "Task";
@@ -1831,7 +1820,6 @@ export class SessionService {
           repoPath,
           auth,
           logResult,
-          alwaysOnSkills,
         );
       } else {
         if (!this.d.getIsOnline()) {
@@ -1858,7 +1846,6 @@ export class SessionService {
           importedSessionId,
           contextWindow,
           fastMode,
-          alwaysOnSkills,
         );
       }
     } catch (error) {
@@ -1966,7 +1953,6 @@ export class SessionService {
       sessionId?: string;
       adapter?: Adapter;
     },
-    alwaysOnSkills?: AlwaysOnSkillRef[],
   ): Promise<boolean> {
     const { rawEntries, sessionId, adapter } =
       prefetchedLogs ?? (await this.fetchSessionLogs(logUrl, taskRunId));
@@ -1977,8 +1963,6 @@ export class SessionService {
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
 
     const previous = this.d.store.getSessions()[taskRunId];
-    const resolvedAlwaysOnSkills =
-      alwaysOnSkills ?? this.d.getPersistedAlwaysOnSkills?.(taskRunId);
 
     const session = createBaseSession(taskRunId, taskId, taskTitle);
     // Repainting from the log must not blank a transcript we already hold:
@@ -2091,7 +2075,6 @@ export class SessionService {
         contextWindow: persistedContextWindow,
         fastMode: persistedFastMode,
         customInstructions: customInstructions || undefined,
-        alwaysOnSkills: resolvedAlwaysOnSkills,
       });
 
       if (result) {
@@ -2219,7 +2202,6 @@ export class SessionService {
       // permanent disconnect (archive, delete, fresh session) may drop them.
       this.d.adapterStore.removeAdapter(taskRunId);
       this.d.removePersistedConfigOptions(taskRunId);
-      this.d.removePersistedAlwaysOnSkills?.(taskRunId);
     }
   }
 
@@ -2410,7 +2392,6 @@ export class SessionService {
     importedSessionId?: string,
     contextWindow?: "200k" | "1m",
     fastMode?: boolean,
-    alwaysOnSkills?: AlwaysOnSkillRef[],
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2437,7 +2418,6 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
-      alwaysOnSkills,
       rtkEnabled: rtkEnabledLocal,
       spokenNarration: spokenNarrationEnabled === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
@@ -2458,9 +2438,6 @@ export class SessionService {
     session.reasoningLevel = reasoningLevel;
     session.contextWindow = contextWindow;
     session.fastMode = fastMode;
-    if (alwaysOnSkills?.length) {
-      this.d.setPersistedAlwaysOnSkills?.(taskRun.id, alwaysOnSkills);
-    }
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.

@@ -233,7 +233,6 @@ export interface TaskRunArtifactMetadata {
   content_sha256: string;
   bundle_format: "zip";
   schema_version: number;
-  always_on?: boolean;
 }
 
 export interface TaskRunArtifact {

@@ -173,7 +173,6 @@ export class CloudArtifactService {
       ...(await this.loadCloudAttachments(filePaths)),
       ...(await this.loadCloudSkillBundles(skillBundles)),
     ];
-    if (attachments.length === 0) return [];
     const preparedArtifacts = await client.prepareTaskRunArtifactUploads(
       taskId,
       runId,
@@ -233,30 +232,8 @@ export class CloudArtifactService {
     if (skillBundleRefs.length === 0) {
       return [];
     }
-    const explicitRefs = skillBundleRefs.filter((ref) => !ref.alwaysOn);
-    const alwaysOnRefs = skillBundleRefs.filter((ref) => ref.alwaysOn);
-    const explicit = await this.loadCloudSkillBundleRefs(explicitRefs);
-    const alwaysOn = (
-      await Promise.all(
-        alwaysOnRefs.map((ref) =>
-          this.loadCloudSkillBundleRefs([ref]).catch(() => []),
-        ),
-      )
-    ).flat();
-    const deduplicated = new Map(
-      [...explicit, ...alwaysOn].map((attachment) => [
-        attachment.filePath,
-        attachment,
-      ]),
-    );
-    return [...deduplicated.values()];
-  }
-
-  private async loadCloudSkillBundleRefs(
-    refs: CloudSkillBundleRef[],
-  ): Promise<LoadedCloudAttachment[]> {
-    if (refs.length === 0) return [];
-    const expandedRefs = await this.resolveSkillBundleDependencies(refs);
+    const expandedRefs =
+      await this.resolveSkillBundleDependencies(skillBundleRefs);
     return Promise.all(
       expandedRefs.map(async (skillBundleRef) => {
         const bundle = await this.bundleLocalSkill(skillBundleRef);
@@ -287,7 +264,6 @@ export class CloudArtifactService {
               content_sha256: bundle.contentSha256,
               bundle_format: "zip",
               schema_version: 1,
-              ...(skillBundleRef.alwaysOn ? { always_on: true } : {}),
             },
           },
         };

@@ -84,9 +84,6 @@ import type { PosthogPluginService } from "../posthog-plugin/posthog-plugin";
 import { PROCESS_TRACKING_SERVICE } from "../process-tracking/identifiers";
 import type { ProcessTrackingService } from "../process-tracking/process-tracking";
 import { loadSessionEnvOverrides } from "../session-env/loader";
-import { SKILLS_SERVICE } from "../skills/identifiers";
-import type { SkillBundleRef } from "../skills/schemas";
-import type { SkillsService } from "../skills/skills";
 import { isScratchPath } from "../workspace/scratch";
 import type { AgentAuthAdapter, McpToolInstallations } from "./auth-adapter";
 import { cleanupCodexHome, prepareCodexHome } from "./codex-home";
@@ -275,7 +272,6 @@ interface SessionConfig {
   permissionMode?: string;
   /** Custom instructions injected into the system prompt */
   customInstructions?: string;
-  alwaysOnSkills?: SkillBundleRef[];
   /** Replaces the PostHog system prompt entirely (constrained surfaces). */
   systemPromptOverride?: string;
   /** Tool names denied for this session (passed to the Claude SDK). */
@@ -438,8 +434,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     private readonly workspaceSettings: IWorkspaceSettings,
     @inject(FOLDERS_SERVICE)
     private readonly foldersService: FoldersService,
-    @inject(SKILLS_SERVICE)
-    private readonly skillsService: SkillsService,
     @inject(AGENT_LOGGER)
     loggerFactory: AgentLogger,
   ) {
@@ -620,7 +614,6 @@ export class AgentService extends TypedEventEmitter<AgentServiceEvents> {
     credentials: Credentials,
     taskId: string,
     customInstructions?: string,
-    alwaysOnSkillInstructions?: string,
     additionalDirectories?: string[],
     systemPromptOverride?: string,
     channelMode?: boolean,
@@ -707,10 +700,6 @@ If a repository IS genuinely required, attach one in this priority order:
       prompt += `\n\nUser custom instructions:\n${customInstructions}`;
     }
 
-    if (alwaysOnSkillInstructions) {
-      prompt += `\n\n${alwaysOnSkillInstructions}`;
-    }
-
     if (additionalDirectories?.length) {
       const escapeXml = (s: string) =>
         s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -791,7 +780,6 @@ If a repository IS genuinely required, attach one in this priority order:
       adapter,
       permissionMode,
       customInstructions,
-      alwaysOnSkills,
       systemPromptOverride,
       disallowedTools,
       settingSources,
@@ -871,22 +859,10 @@ If a repository IS genuinely required, attach one in this priority order:
     let hydratedResumeContext: string | undefined;
 
     try {
-      const renderedAlwaysOnSkills = alwaysOnSkills?.length
-        ? await this.skillsService.renderAlwaysOnSkillInstructions(
-            alwaysOnSkills,
-          )
-        : undefined;
-      for (const failure of renderedAlwaysOnSkills?.failures ?? []) {
-        this.log.warn("Failed to load always-on skill", {
-          skill: failure.skill.name,
-          error: failure.error,
-        });
-      }
       const systemPrompt = this.buildSystemPrompt(
         credentials,
         taskId,
         customInstructions,
-        renderedAlwaysOnSkills?.instructions,
         additionalDirectories,
         systemPromptOverride,
         channelMode,
@@ -2162,8 +2138,6 @@ For git operations while detached:
         "permissionMode" in params ? params.permissionMode : undefined,
       customInstructions:
         "customInstructions" in params ? params.customInstructions : undefined,
-      alwaysOnSkills:
-        "alwaysOnSkills" in params ? params.alwaysOnSkills : undefined,
       systemPromptOverride:
         "systemPromptOverride" in params
           ? params.systemPromptOverride
