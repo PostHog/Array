@@ -39,6 +39,7 @@ import { onboardingImportRouter } from "@posthog/host-router/routers/onboarding-
 import { osRouter } from "@posthog/host-router/routers/os.router";
 import { piSessionRouter } from "@posthog/host-router/routers/pi-session.router";
 import { processTrackingRouter } from "@posthog/host-router/routers/process-tracking.router";
+import { productViewRouter } from "@posthog/host-router/routers/product-view.router";
 import { provisioningRouter } from "@posthog/host-router/routers/provisioning.router";
 import { releaseFeedRouter } from "@posthog/host-router/routers/release-feed.router";
 import { secureStoreRouter } from "@posthog/host-router/routers/secure-store.router";
@@ -102,6 +103,7 @@ export const trpcRouter = router({
   os: osRouter,
   piSession: piSessionRouter,
   processTracking: processTrackingRouter,
+  productView: productViewRouter,
   provisioning: provisioningRouter,
   sleep: sleepRouter,
   suspension: suspensionRouter,

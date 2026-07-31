@@ -36,3 +36,6 @@ export const CLAUDE_SESSION_IMPORT_REPOSITORY = Symbol.for(
 export const BROWSER_TABS_REPOSITORY = Symbol.for(
   "posthog.workspace.browserTabsRepository",
 );
+export const PRODUCT_ENVIRONMENTS_REPOSITORY = Symbol.for(
+  "posthog.workspace.productEnvironmentsRepository",
+);

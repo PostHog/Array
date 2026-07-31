@@ -64,6 +64,7 @@ import {
   navigateToCommandCenter,
   navigateToInbox,
   navigateToLoops,
+  navigateToProductView,
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { openTask, openTaskInput } from "@posthog/ui/router/useOpenTask";
@@ -74,6 +75,7 @@ import {
   DesktopIcon,
   FileTextIcon,
   GearIcon,
+  GlobeIcon,
   HomeIcon,
   LightningBoltIcon,
   MagnifyingGlassIcon,
@@ -283,6 +285,17 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         onRun: () => {
           closeSettingsDialog();
           navigateToCommandCenter();
+        },
+      },
+      {
+        id: "product-view",
+        label: "Product",
+        keywords: "browser site website live overlay analytics product view",
+        icon: <GlobeIcon className="h-3 w-3 text-gray-11" />,
+        action: "open-product-view",
+        onRun: () => {
+          closeSettingsDialog();
+          navigateToProductView();
         },
       },
       ...(loopsEnabled

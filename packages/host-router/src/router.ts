@@ -38,6 +38,7 @@ import { onboardingImportRouter } from "./routers/onboarding-import.router";
 import { osRouter } from "./routers/os.router";
 import { piSessionRouter } from "./routers/pi-session.router";
 import { processTrackingRouter } from "./routers/process-tracking.router";
+import { productViewRouter } from "./routers/product-view.router";
 import { provisioningRouter } from "./routers/provisioning.router";
 import { releaseFeedRouter } from "./routers/release-feed.router";
 import { secureStoreRouter } from "./routers/secure-store.router";
@@ -93,6 +94,7 @@ export const hostRouter = router({
   os: osRouter,
   piSession: piSessionRouter,
   processTracking: processTrackingRouter,
+  productView: productViewRouter,
   provisioning: provisioningRouter,
   secureStore: secureStoreRouter,
   shell: shellRouter,

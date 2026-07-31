@@ -25,6 +25,7 @@ import {
   MCP_RELAY_EXECUTOR,
 } from "@posthog/core/cloud-task/identifiers";
 import { contextMenuCoreModule } from "@posthog/core/context-menu/context-menu.module";
+import { productViewCoreModule } from "@posthog/core/product-view/product-view.module";
 import {
   CONTEXT_MENU_CONTROLLER,
   CONTEXT_MENU_EXTERNAL_APPS_SERVICE,
@@ -105,6 +106,7 @@ import { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
+import { EMBEDDED_BROWSER } from "@posthog/platform/embedded-browser";
 import { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
 import { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
@@ -154,6 +156,7 @@ import {
 import { authProxyModule } from "@posthog/workspace-server/services/auth-proxy/auth-proxy.module";
 import { AUTH_PROXY_AUTH } from "@posthog/workspace-server/services/auth-proxy/identifiers";
 import { browserTabsModule } from "@posthog/workspace-server/services/browser-tabs/browser-tabs.module";
+import { productEnvironmentsModule } from "@posthog/workspace-server/services/product-view/product-view.module";
 import { claudeCliSessionsModule } from "@posthog/workspace-server/services/claude-cli-sessions/claude-cli-sessions.module";
 import { enrichmentModule } from "@posthog/workspace-server/services/enrichment/enrichment.module";
 import {
@@ -238,6 +241,7 @@ import { ElectronAppMetrics } from "../platform-adapters/electron-app-metrics";
 import { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
+import { ElectronEmbeddedBrowser } from "../platform-adapters/electron-embedded-browser";
 import { ElectronCrypto } from "../platform-adapters/electron-crypto";
 import { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import { ElectronDialog } from "../platform-adapters/electron-dialog";
@@ -357,6 +361,7 @@ container.bind(POWER_MANAGER_SERVICE).to(ElectronPowerManager);
 container.bind(UPDATER_SERVICE).to(ElectronUpdater);
 container.bind(NOTIFIER_SERVICE).to(ElectronNotifier);
 container.bind(CONTEXT_MENU_SERVICE).to(ElectronContextMenu);
+container.bind(EMBEDDED_BROWSER).to(ElectronEmbeddedBrowser);
 container.bind(BUNDLED_RESOURCES_SERVICE).to(ElectronBundledResources);
 container.bind(IMAGE_PROCESSOR_SERVICE).to(ElectronImageProcessor);
 container.bind(WORKSPACE_SETTINGS_SERVICE).to(ElectronWorkspaceSettings);
@@ -812,6 +817,12 @@ container.load(canvasCoreModule);
 // Browser tabs for the Channels canvas surface. Authoritative sqlite-backed
 // service in the main process; resolved by the host-router browserTabs router.
 container.load(browserTabsModule);
+
+// Product View: the embedded-browser orchestration service (core) and the
+// per-project product-environment registry (workspace-server sqlite), both
+// resolved by the host-router productView router.
+container.load(productViewCoreModule);
+container.load(productEnvironmentsModule);
 
 container.bind(MAIN_DEV_FLAGS_SERVICE).to(DevFlagsService);
 container.bind(MAIN_DEV_METRICS_SERVICE).to(DevMetricsService);

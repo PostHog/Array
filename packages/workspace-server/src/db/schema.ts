@@ -263,3 +263,29 @@ export const browserTabs = sqliteTable(
   },
   (t) => [index("browser_tabs_window_idx").on(t.windowId)],
 );
+
+/**
+ * Product View environments: the sites a PostHog project's Product tab can
+ * browse (live origin or localhost dev server), each paired with the PostHog
+ * project whose analytics overlay onto the page. Page source and data source
+ * are deliberately decoupled — a local checkout can render prod analytics.
+ */
+export const productEnvironments = sqliteTable(
+  "product_environments",
+  {
+    id: id(),
+    /** PostHog project this environment belongs to (whose picker lists it). */
+    projectId: integer().notNull(),
+    label: text().notNull(),
+    /** Bare http(s) origin the embedded browser opens. */
+    pageOrigin: text().notNull(),
+    /** PostHog project whose analytics overlay onto the page. */
+    dataProjectId: integer().notNull(),
+    /** Last URL visited in this environment, for tab restore. */
+    currentUrl: text(),
+    /** Epoch ms. */
+    createdAt: integer().notNull(),
+    lastActiveAt: integer().notNull(),
+  },
+  (t) => [index("product_environments_project_idx").on(t.projectId)],
+);

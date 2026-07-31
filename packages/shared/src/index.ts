@@ -65,6 +65,10 @@ export {
   type WindowBounds,
   windowBoundsSchema,
 } from "./browser-tabs-schemas";
+export {
+  type ProductEnvironment,
+  productEnvironmentSchema,
+} from "./product-view-schemas";
 export type { CloudRunSource, PrAuthorshipMode } from "./cloud";
 export {
   CLOUD_PROMPT_PREFIX,

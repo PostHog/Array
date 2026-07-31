@@ -57,6 +57,7 @@ export type CommandMenuAction =
   | "open-command-center"
   | "open-inbox"
   | "open-loops"
+  | "open-product-view"
   | "open-usage"
   | "search-files"
   | "open-file"

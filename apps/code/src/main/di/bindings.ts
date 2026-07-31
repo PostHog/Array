@@ -115,6 +115,7 @@ import type { APP_METRICS_SERVICE } from "@posthog/platform/app-metrics";
 import type { BUNDLED_RESOURCES_SERVICE } from "@posthog/platform/bundled-resources";
 import type { CLIPBOARD_SERVICE } from "@posthog/platform/clipboard";
 import type { CONTEXT_MENU_SERVICE } from "@posthog/platform/context-menu";
+import type { EMBEDDED_BROWSER } from "@posthog/platform/embedded-browser";
 import type { CRYPTO_SERVICE } from "@posthog/platform/crypto";
 import type { DEEP_LINK_SERVICE } from "@posthog/platform/deep-link";
 import type { DEV_HOST_ACTIONS_SERVICE } from "@posthog/platform/dev-host-actions";
@@ -233,6 +234,7 @@ import type { ElectronAppMetrics } from "../platform-adapters/electron-app-metri
 import type { ElectronBundledResources } from "../platform-adapters/electron-bundled-resources";
 import type { ElectronClipboard } from "../platform-adapters/electron-clipboard";
 import type { ElectronContextMenu } from "../platform-adapters/electron-context-menu";
+import type { ElectronEmbeddedBrowser } from "../platform-adapters/electron-embedded-browser";
 import type { ElectronCrypto } from "../platform-adapters/electron-crypto";
 import type { ElectronDevHostActions } from "../platform-adapters/electron-dev-host-actions";
 import type { ElectronDialog } from "../platform-adapters/electron-dialog";
@@ -333,6 +335,7 @@ export interface MainBindings {
   [UPDATER_SERVICE]: ElectronUpdater;
   [NOTIFIER_SERVICE]: ElectronNotifier;
   [CONTEXT_MENU_SERVICE]: ElectronContextMenu;
+  [EMBEDDED_BROWSER]: ElectronEmbeddedBrowser;
   [BUNDLED_RESOURCES_SERVICE]: ElectronBundledResources;
   [IMAGE_PROCESSOR_SERVICE]: ElectronImageProcessor;
   [WORKSPACE_SETTINGS_SERVICE]: ElectronWorkspaceSettings;

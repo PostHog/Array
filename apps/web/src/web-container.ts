@@ -459,7 +459,10 @@ container.bind(POWER_MANAGER_SERVICE).toConstantValue(webPowerManager);
 // otherwise reach for local folders/worktrees/terminal.
 container
   .bind(HOST_CAPABILITIES)
-  .toConstantValue({ localWorkspaces: false } satisfies HostCapabilities);
+  .toConstantValue({
+    localWorkspaces: false,
+    embeddedBrowser: false,
+  } satisfies HostCapabilities);
 
 container.load(authUiModule);
 

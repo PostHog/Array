@@ -11,6 +11,13 @@ export interface HostCapabilities {
    * (connected-GitHub-org) repositories and cloud workspaces.
    */
   readonly localWorkspaces: boolean;
+  /**
+   * Whether the host can embed a live browser view inside the app window
+   * (the Product View surface). Desktop (Electron) attaches a
+   * `WebContentsView`; the web host cannot embed arbitrary cross-origin
+   * sites, so the UI hides the Product entry points there.
+   */
+  readonly embeddedBrowser: boolean;
 }
 
 export const HOST_CAPABILITIES = Symbol.for(

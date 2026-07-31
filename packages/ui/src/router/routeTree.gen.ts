@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WebsiteRouteImport } from './routes/website'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SkillsRouteImport } from './routes/skills'
+import { Route as ProductRouteImport } from './routes/product'
 import { Route as McpServersRouteImport } from './routes/mcp-servers'
 import { Route as CommandCenterRouteImport } from './routes/command-center'
 import { Route as IndexRouteImport } from './routes/index'
@@ -93,6 +94,11 @@ const UsageRoute = UsageRouteImport.update({
 const SkillsRoute = SkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductRoute = ProductRouteImport.update({
+  id: '/product',
+  path: '/product',
   getParentRoute: () => rootRouteImport,
 } as any)
 const McpServersRoute = McpServersRouteImport.update({
@@ -457,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
+  '/product': typeof ProductRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
@@ -529,6 +536,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
+  '/product': typeof ProductRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
   '/code/archived': typeof CodeArchivedRoute
@@ -590,6 +598,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/command-center': typeof CommandCenterRoute
   '/mcp-servers': typeof McpServersRoute
+  '/product': typeof ProductRoute
   '/skills': typeof SkillsRoute
   '/usage': typeof UsageRoute
   '/website': typeof WebsiteRouteWithChildren
@@ -664,6 +673,7 @@ export interface FileRouteTypes {
     | '/'
     | '/command-center'
     | '/mcp-servers'
+    | '/product'
     | '/skills'
     | '/usage'
     | '/website'
@@ -736,6 +746,7 @@ export interface FileRouteTypes {
     | '/'
     | '/command-center'
     | '/mcp-servers'
+    | '/product'
     | '/skills'
     | '/usage'
     | '/code/archived'
@@ -796,6 +807,7 @@ export interface FileRouteTypes {
     | '/'
     | '/command-center'
     | '/mcp-servers'
+    | '/product'
     | '/skills'
     | '/usage'
     | '/website'
@@ -869,6 +881,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CommandCenterRoute: typeof CommandCenterRoute
   McpServersRoute: typeof McpServersRoute
+  ProductRoute: typeof ProductRoute
   SkillsRoute: typeof SkillsRoute
   UsageRoute: typeof UsageRoute
   WebsiteRoute: typeof WebsiteRouteWithChildren
@@ -908,6 +921,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product': {
+      id: '/product'
+      path: '/product'
+      fullPath: '/product'
+      preLoaderRoute: typeof ProductRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mcp-servers': {
@@ -1621,6 +1641,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CommandCenterRoute: CommandCenterRoute,
   McpServersRoute: McpServersRoute,
+  ProductRoute: ProductRoute,
   SkillsRoute: SkillsRoute,
   UsageRoute: UsageRoute,
   WebsiteRoute: WebsiteRouteWithChildren,

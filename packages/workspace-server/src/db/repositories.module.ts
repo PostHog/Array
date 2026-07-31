@@ -7,6 +7,7 @@ import {
   BROWSER_TABS_REPOSITORY,
   CLAUDE_SESSION_IMPORT_REPOSITORY,
   DEFAULT_ADDITIONAL_DIRECTORY_REPOSITORY,
+  PRODUCT_ENVIRONMENTS_REPOSITORY,
   REPOSITORY_REPOSITORY,
   SUSPENSION_REPOSITORY,
   TASK_METADATA_REPOSITORY,
@@ -20,6 +21,7 @@ import { AutoresearchRunRepository } from "./repositories/autoresearch-run-repos
 import { BrowserTabsRepository } from "./repositories/browser-tabs-repository";
 import { ClaudeSessionImportRepository } from "./repositories/claude-session-import-repository";
 import { DefaultAdditionalDirectoryRepository } from "./repositories/default-additional-directory-repository";
+import { ProductEnvironmentsRepository } from "./repositories/product-environments-repository";
 import { RepositoryRepository } from "./repositories/repository-repository";
 import { SuspensionRepositoryImpl } from "./repositories/suspension-repository";
 import { TaskMetadataRepository } from "./repositories/task-metadata-repository";
@@ -47,4 +49,7 @@ export const repositoriesModule = new ContainerModule(({ bind }) => {
     .to(ClaudeSessionImportRepository)
     .inSingletonScope();
   bind(BROWSER_TABS_REPOSITORY).to(BrowserTabsRepository).inSingletonScope();
+  bind(PRODUCT_ENVIRONMENTS_REPOSITORY)
+    .to(ProductEnvironmentsRepository)
+    .inSingletonScope();
 });
