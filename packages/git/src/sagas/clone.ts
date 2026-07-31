@@ -9,6 +9,7 @@ export interface CloneInput {
   targetPath: string;
   branch?: string;
   shallow?: boolean;
+  env?: Record<string, string>;
   signal?: AbortSignal;
   onProgress?: (
     stage: string,
@@ -26,7 +27,8 @@ export class CloneSaga extends Saga<CloneInput, CloneOutput> {
   readonly sagaName = "CloneSaga";
 
   protected async execute(input: CloneInput): Promise<CloneOutput> {
-    const { repoUrl, targetPath, branch, shallow, signal, onProgress } = input;
+    const { repoUrl, targetPath, branch, shallow, env, signal, onProgress } =
+      input;
     const manager = getGitOperationManager();
     const targetParent = path.dirname(targetPath);
     await fs.mkdir(targetParent, { recursive: true });
@@ -51,7 +53,9 @@ export class CloneSaga extends Saga<CloneInput, CloneOutput> {
             if (branch) {
               cloneArgs.push("--branch", branch);
             }
-            await git.env(getCleanEnv()).clone(repoUrl, targetPath, cloneArgs);
+            await git
+              .env({ ...getCleanEnv(), ...env })
+              .clone(repoUrl, targetPath, cloneArgs);
           },
           rollback: async () => {
             try {

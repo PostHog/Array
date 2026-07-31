@@ -43,11 +43,17 @@ describe("CloneSaga", () => {
   });
 
   it("clones the requested branch with one commit and no tags", async () => {
+    const cleanRemoteUrl = "https://github.com/PostHog/posthog.git";
     const result = await new CloneSaga().run({
-      repoUrl: pathToFileURL(sourcePath).href,
+      repoUrl: cleanRemoteUrl,
       targetPath,
       branch: "feature",
       shallow: true,
+      env: {
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: `url.${pathToFileURL(sourcePath).href}.insteadOf`,
+        GIT_CONFIG_VALUE_0: cleanRemoteUrl,
+      },
     });
 
     if (!result.success) {
@@ -62,5 +68,8 @@ describe("CloneSaga", () => {
     );
     await expect(git.raw(["rev-list", "--count", "HEAD"])).resolves.toBe("1");
     await expect(git.tags()).resolves.toMatchObject({ all: [] });
+    await expect(
+      git.remote(["get-url", "origin"]).then((origin) => origin?.trim()),
+    ).resolves.toBe(cleanRemoteUrl);
   });
 });

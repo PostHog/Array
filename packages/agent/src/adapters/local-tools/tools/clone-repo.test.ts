@@ -42,20 +42,66 @@ describe("clone_repo", () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
-  it("requests a shallow clone of the selected branch", async () => {
+  it("authenticates a shallow clone without persisting the token in origin", async () => {
+    mocks.cloneRun.mockImplementationOnce(async (input) => {
+      await mkdir(input.targetPath, { recursive: true });
+      const git = createGitClient(input.targetPath);
+      await git.init();
+      await git.addRemote("origin", input.repoUrl);
+      return { success: true, data: { targetPath: input.targetPath } };
+    });
+
     const result = await cloneRepoTool.handler(
       { cwd, token: "test-token" },
       { repo: "PostHog/posthog", branch: "feature" },
     );
 
     expect(result.isError).toBeUndefined();
-    expect(mocks.cloneRun).toHaveBeenCalledWith({
-      repoUrl:
-        "https://x-access-token:test-token@github.com/PostHog/posthog.git",
+    const cloneInput = mocks.cloneRun.mock.calls[0]?.[0];
+    expect(cloneInput).toMatchObject({
+      repoUrl: "https://github.com/PostHog/posthog.git",
       targetPath: path.join(cwd, "repos", "PostHog", "posthog"),
       branch: "feature",
       shallow: true,
     });
+    expect(cloneInput.env).toMatchObject({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "http.extraHeader",
+    });
+    expect(cloneInput.env.GIT_CONFIG_VALUE_0).not.toContain("test-token");
+    expect(
+      Buffer.from(
+        cloneInput.env.GIT_CONFIG_VALUE_0.replace("AUTHORIZATION: basic ", ""),
+        "base64",
+      ).toString("utf8"),
+    ).toBe("x-access-token:test-token");
+    const targetGit = createGitClient(
+      path.join(cwd, "repos", "PostHog", "posthog"),
+    );
+    expect((await targetGit.remote(["get-url", "origin"]))?.trim()).toBe(
+      "https://github.com/PostHog/posthog.git",
+    );
+  });
+
+  it("removes credentials from an existing clone origin", async () => {
+    const targetPath = path.join(cwd, "repos", "PostHog", "posthog");
+    await mkdir(targetPath, { recursive: true });
+    const git = createGitClient(targetPath);
+    await git.init();
+    await git.addRemote(
+      "origin",
+      "https://x-access-token:stale-token@github.com/PostHog/posthog.git",
+    );
+
+    const result = await cloneRepoTool.handler(
+      { cwd, token: "test-token" },
+      { repo: "PostHog/posthog" },
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect((await git.remote(["get-url", "origin"]))?.trim()).toBe(
+      "https://github.com/PostHog/posthog.git",
+    );
   });
 
   it("fetches a missing branch into an existing shallow clone", async () => {
