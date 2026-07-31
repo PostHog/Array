@@ -31,7 +31,10 @@ import { useConnectivity } from "../../../hooks/useConnectivity";
 import { toast } from "../../../primitives/toast";
 import { track } from "../../../shell/analytics";
 import { logger } from "../../../shell/logger";
-import { pendingTaskPromptStoreApi } from "../../../shell/pendingTaskPromptStore";
+import {
+  generatePendingTaskKey,
+  pendingTaskPromptStoreApi,
+} from "../../../shell/pendingTaskPromptStore";
 import { titleAttachmentStoreApi } from "../../../shell/titleAttachmentStore";
 import { useAuthStateValue } from "../../auth/store";
 import { assertCloudUsageAvailable } from "../../billing/preflightCloudUsage";
@@ -77,6 +80,8 @@ interface UseTaskCreationOptions {
   runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   customImageId?: string;
@@ -179,6 +184,8 @@ export function useTaskCreation({
   runtime = "acp",
   model,
   reasoningLevel,
+  contextWindow,
+  fastMode,
   environmentId,
   sandboxEnvironmentId,
   customImageId,
@@ -319,7 +326,7 @@ export function useTaskCreation({
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
-        ? (globalThis.crypto?.randomUUID?.() ?? `pending-${Date.now()}`)
+        ? generatePendingTaskKey()
         : null;
 
       if (pendingTaskKey) {
@@ -372,6 +379,8 @@ export function useTaskCreation({
           runtime,
           model,
           reasoningLevel,
+          contextWindow,
+          fastMode,
           environmentId,
           sandboxEnvironmentId,
           customImageId,
@@ -547,6 +556,8 @@ export function useTaskCreation({
       runtime,
       model,
       reasoningLevel,
+      contextWindow,
+      fastMode,
       environmentId,
       sandboxEnvironmentId,
       customImageId,

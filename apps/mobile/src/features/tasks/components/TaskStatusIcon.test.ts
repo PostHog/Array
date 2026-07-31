@@ -1,5 +1,5 @@
+import type { Task } from "@posthog/shared";
 import { describe, expect, it } from "vitest";
-import type { Task } from "../types";
 import { getTaskStatusIconKind } from "./taskStatusIconKind";
 
 function makeTask(latestRun?: Partial<NonNullable<Task["latest_run"]>>): Task {
@@ -35,14 +35,36 @@ function makeTask(latestRun?: Partial<NonNullable<Task["latest_run"]>>): Task {
 }
 
 describe("getTaskStatusIconKind", () => {
-  it("prioritizes PR over cloud status", () => {
+  it.each([
+    ["pr_url only", { pr_url: "https://github.com/PostHog/code/pull/1" }],
+    ["pr_urls only", { pr_urls: ["https://github.com/PostHog/code/pull/2"] }],
+    [
+      "both fields",
+      {
+        pr_url: "https://github.com/PostHog/code/pull/1",
+        pr_urls: ["https://github.com/PostHog/code/pull/2"],
+      },
+    ],
+  ])("prioritizes PR over cloud status (%s)", (_label, output) => {
     const task = makeTask({
       environment: "cloud",
       status: "in_progress",
-      output: { pr_url: "https://github.com/PostHog/code/pull/123" },
+      output,
     });
 
     expect(getTaskStatusIconKind(task)).toBe("pr");
+  });
+
+  it.each([
+    ["output has no PR fields", { commit: "abc123" }],
+    ["pr_urls is empty", { pr_urls: [] }],
+    ["pr_url is an empty string", { pr_url: "" }],
+  ])("does not return pr when %s", (_label, output) => {
+    expect(
+      getTaskStatusIconKind(
+        makeTask({ environment: "cloud", status: "in_progress", output }),
+      ),
+    ).toBe("chat");
   });
 
   it("shows chat for cloud tasks without a PR, regardless of run status", () => {
@@ -51,25 +73,16 @@ describe("getTaskStatusIconKind", () => {
         makeTask({ environment: "cloud", status: "queued" }),
       ),
     ).toBe("chat");
-
     expect(
       getTaskStatusIconKind(
         makeTask({ environment: "cloud", status: "in_progress" }),
       ),
     ).toBe("chat");
-
-    expect(
-      getTaskStatusIconKind(
-        makeTask({ environment: "cloud", status: "started" }),
-      ),
-    ).toBe("chat");
-
     expect(
       getTaskStatusIconKind(
         makeTask({ environment: "cloud", status: "completed" }),
       ),
     ).toBe("chat");
-
     expect(
       getTaskStatusIconKind(
         makeTask({ environment: "cloud", status: "cancelled" }),
@@ -83,7 +96,6 @@ describe("getTaskStatusIconKind", () => {
         makeTask({ environment: "local", status: "in_progress" }),
       ),
     ).toBe("running");
-
     expect(
       getTaskStatusIconKind(
         makeTask({ environment: "local", status: "failed" }),

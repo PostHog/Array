@@ -50,3 +50,7 @@ export function buildGithubRefPlaceholderChip(
     ? githubPullRequestToMentionChip(source)
     : githubIssueToMentionChip(source);
 }
+
+export function isLoadingGithubRefTitle(title: string): boolean {
+  return /^Loading(?:\.{3}|…)$/i.test(title.trim());
+}

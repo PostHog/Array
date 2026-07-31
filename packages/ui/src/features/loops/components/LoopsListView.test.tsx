@@ -64,6 +64,9 @@ describe("LoopsListViewPresentation", () => {
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
 
+  // The triggers sit in the page header and the panels stay in the scrolling
+  // body — one Tabs root spanning both, so switching has to keep working
+  // across that split.
   it("groups loops by ownership rather than visibility", async () => {
     const currentUser: UserBasic = {
       id: 1,
@@ -107,5 +110,20 @@ describe("LoopsListViewPresentation", () => {
     await waitFor(() =>
       expect(screen.queryByText("personal loop")).not.toBeInTheDocument(),
     );
+  });
+
+  it("hides the header trigger strip while loops are loading", () => {
+    render(
+      <Theme>
+        <LoopsListViewPresentation
+          loops={[]}
+          isLoading
+          onStartBlank={vi.fn()}
+          onStartFromTemplate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
 });

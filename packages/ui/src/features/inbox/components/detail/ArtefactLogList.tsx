@@ -3,6 +3,7 @@ import {
   CaretDownIcon,
   CaretRightIcon,
 } from "@phosphor-icons/react";
+import { attributionLabel } from "@posthog/core/inbox/activityLog";
 import type {
   ActionabilityJudgmentContent,
   AnySignalReportArtefact,
@@ -70,16 +71,6 @@ function languageFromPath(filePath: string): string {
  * Who produced the artefact: a user's name, "agent" for task-attributed writes,
  * or null for system (pipeline) writes and pre-attribution rows.
  */
-function attributionLabel(artefact: AnySignalReportArtefact): string | null {
-  if (artefact.created_by) {
-    return artefact.created_by.first_name?.trim() || artefact.created_by.email;
-  }
-  if (artefact.task_id) {
-    return "agent";
-  }
-  return null;
-}
-
 // The generic `SignalReportArtefact` fallback carries `type: string`, so it stays
 // in every narrowed branch and breaks discriminated-union narrowing — the runtime
 // `type` dispatch is authoritative (content is set alongside type in the

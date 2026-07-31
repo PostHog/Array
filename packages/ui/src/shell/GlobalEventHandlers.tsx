@@ -1,12 +1,15 @@
+import { PI_SESSION_CONTROLLER } from "@posthog/core/pi-runtime/identifiers";
+import type { PiSessionController } from "@posthog/core/pi-runtime/piSessionController";
 import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
-import { useService } from "@posthog/di/react";
+import { useService, useServiceOptional } from "@posthog/di/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import { PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { getDefaultReviewMode } from "@posthog/ui/features/code-review/getDefaultReviewMode";
 import { useReviewNavigationStore } from "@posthog/ui/features/code-review/reviewNavigationStore";
 import { SHORTCUTS } from "@posthog/ui/features/command/keyboard-shortcuts";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
@@ -47,6 +50,9 @@ export function GlobalEventHandlers({
 }: GlobalEventHandlersProps) {
   const trpcReact = useHostTRPC();
   const sessionService = useService<SessionService>(SESSION_SERVICE);
+  const piSessionController = useServiceOptional<PiSessionController>(
+    PI_SESSION_CONTROLLER,
+  );
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
   const openSettingsDialog = openSettings;
   const view = useAppView();
@@ -184,7 +190,10 @@ export function GlobalEventHandlers({
   const handleToggleReview = useCallback(() => {
     if (!currentTaskId) return;
     const mode = getReviewMode(currentTaskId);
-    setReviewMode(currentTaskId, mode === "closed" ? "split" : "closed");
+    setReviewMode(
+      currentTaskId,
+      mode === "closed" ? getDefaultReviewMode() : "closed",
+    );
   }, [currentTaskId, getReviewMode, setReviewMode]);
 
   useHotkeys(
@@ -285,10 +294,11 @@ export function GlobalEventHandlers({
     const handleFocus = () => {
       loadFolders();
       sessionService.retryUnhealthyCloudSessions();
+      piSessionController?.retryUnhealthyCloudSessions();
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, [loadFolders, sessionService]);
+  }, [loadFolders, piSessionController, sessionService]);
 
   // Freeze perpetual CSS animations while the window is backgrounded (see the
   // `.ph-window-blurred` rule in globals.css). Driven by the shared focus store

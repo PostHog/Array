@@ -2,7 +2,7 @@ import { Plugs } from "@phosphor-icons/react";
 import {
   getPostHogExecDisplay,
   isPostHogExecTool,
-} from "../../posthog-mcp/utils/posthog-exec-display";
+} from "@posthog/core/sessions/posthogExecDisplay";
 import { useChatThreadChrome } from "../../sessions/components/chat-thread/chatThreadChrome";
 import { ToolRow } from "../../sessions/components/session-update/ToolRow";
 import {

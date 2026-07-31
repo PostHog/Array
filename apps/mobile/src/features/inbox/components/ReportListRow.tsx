@@ -1,9 +1,9 @@
 import { Text } from "@components/text";
+import type { SignalReport } from "@posthog/shared/domain-types";
 import { memo } from "react";
 import { Pressable, View } from "react-native";
 import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { useThemeColors } from "@/lib/theme";
-import type { SignalReport } from "../types";
 import { formatReportTimestamp } from "../utils";
 
 interface ReportListRowProps {
@@ -70,7 +70,7 @@ function ReportListRowComponent({ report, onPress }: ReportListRowProps) {
           numberOfLines={2}
           ellipsizeMode="tail"
         >
-          {report.title ?? "Untitled signal"}
+          {report.title ?? "Untitled report"}
         </Text>
 
         <View className="mt-1 flex-row items-center gap-2">

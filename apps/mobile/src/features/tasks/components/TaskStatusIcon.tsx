@@ -1,3 +1,4 @@
+import type { Task } from "@posthog/shared";
 import {
   ChatCircle,
   CheckCircle,
@@ -9,7 +10,6 @@ import {
 import { memo, useEffect, useRef } from "react";
 import { Animated, Easing } from "react-native";
 import { useThemeColors } from "@/lib/theme";
-import type { Task } from "../types";
 import { getTaskStatusIconKind } from "./taskStatusIconKind";
 
 interface TaskStatusIconProps {

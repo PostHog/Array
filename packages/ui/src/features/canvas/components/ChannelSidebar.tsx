@@ -1,15 +1,14 @@
 import {
-  BookOpenTextIcon,
   ChatsCircleIcon,
   FunnelSimple as FunnelSimpleIcon,
   MagnifyingGlass,
   PackageIcon,
-  RepeatIcon,
 } from "@phosphor-icons/react";
 import type { CreatedByFilter } from "@posthog/core/canvas/channelItems";
 import { filterChannelItems } from "@posthog/core/canvas/channelItems";
 import { RUN_STATUS_FILTER_OPTIONS } from "@posthog/core/canvas/runStatus";
 import {
+  Button,
   cn,
   DropdownMenu,
   DropdownMenuContent,
@@ -32,17 +31,22 @@ import type { TaskRunStatus } from "@posthog/shared/domain-types";
 import { ChannelBackRow } from "@posthog/ui/features/canvas/components/ChannelBackRow";
 import { ChannelItemRow } from "@posthog/ui/features/canvas/components/ChannelItemRow";
 import { ChannelsFab } from "@posthog/ui/features/canvas/components/ChannelsFab";
+import {
+  type ChannelPageKey,
+  channelPageLabel,
+} from "@posthog/ui/features/canvas/components/channelPages";
 import { useChannelItems } from "@posthog/ui/features/canvas/hooks/useChannelItems";
+import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
+import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { useCommandCenterStore } from "@posthog/ui/features/command-center/commandCenterStore";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
-import { useTaskContextMenu } from "@posthog/ui/features/tasks/useTaskContextMenu";
 import { useRenameTask } from "@posthog/ui/features/tasks/useTaskMutations";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { navigateToCommandCenter } from "@posthog/ui/router/navigationBridge";
 import { logger } from "@posthog/ui/shell/logger";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
   [
@@ -51,11 +55,11 @@ const CREATED_BY_OPTIONS: readonly { value: CreatedByFilter; label: string }[] =
     { value: "others", label: "Other people" },
   ] as const;
 
-const HEADER_ICON_BUTTON_CLASS =
-  "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-fill-hover hover:text-foreground";
-
+// The header's icon buttons are quill's ghost button at the 20px scale; only the
+// sticky state is ours, because quill styles the transient open state (hover,
+// popup) but has no notion of "search is showing" or "a filter is applied".
 const cnHeaderButton = (active: boolean) =>
-  cn(HEADER_ICON_BUTTON_CLASS, active && "bg-fill-selected text-foreground");
+  cn("text-muted-foreground", active && "bg-fill-selected text-foreground");
 
 const RECENTS_CAP = 30;
 const log = logger.scope("channel-sidebar");
@@ -67,6 +71,7 @@ function RecentSectionHeader({
   onQueryChange,
   createdByFilter,
   onCreatedByChange,
+  showCreatedBy,
   statusFilter,
   onStatusChange,
   filtersActive,
@@ -77,35 +82,39 @@ function RecentSectionHeader({
   onQueryChange: (value: string) => void;
   createdByFilter: CreatedByFilter;
   onCreatedByChange: (value: CreatedByFilter) => void;
+  /** False in #me, where every session is yours and the filter says nothing. */
+  showCreatedBy: boolean;
   statusFilter: TaskRunStatus | null;
   onStatusChange: (value: TaskRunStatus | null) => void;
   filtersActive: boolean;
 }) {
   return (
     <>
-      <div className="flex items-center gap-0.5 pr-1">
+      <div className="flex items-center gap-0.5">
         <div className="min-w-0 flex-1">
-          <MenuLabel>Recent</MenuLabel>
+          <MenuLabel>Sessions</MenuLabel>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="default"
+          size="icon-xs"
           aria-label="Search"
           aria-pressed={searchOpen}
           onClick={onToggleSearch}
           className={cnHeaderButton(searchOpen)}
         >
           <MagnifyingGlass size={12} />
-        </button>
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <button
-                type="button"
+              <Button
+                variant="default"
+                size="icon-xs"
                 aria-label="Filter"
                 className={cnHeaderButton(filtersActive)}
               >
                 <FunnelSimpleIcon size={12} />
-              </button>
+              </Button>
             }
           />
           <DropdownMenuContent
@@ -114,20 +123,30 @@ function RecentSectionHeader({
             sideOffset={6}
             className="min-w-fit"
           >
-            <MenuLabel>Created by</MenuLabel>
-            <DropdownMenuRadioGroup
-              value={createdByFilter}
-              onValueChange={(value) =>
-                onCreatedByChange(value as CreatedByFilter)
-              }
-            >
-              {CREATED_BY_OPTIONS.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
+            {/* #me holds only your own sessions, so "created by" can only ever
+                answer "you" — the whole group is dropped rather than shown with
+                two options that empty the list. */}
+            {showCreatedBy && (
+              <>
+                <MenuLabel>Created by</MenuLabel>
+                <DropdownMenuRadioGroup
+                  value={createdByFilter}
+                  onValueChange={(value) =>
+                    onCreatedByChange(value as CreatedByFilter)
+                  }
+                >
+                  {CREATED_BY_OPTIONS.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <MenuLabel>Status</MenuLabel>
             <DropdownMenuRadioGroup
               value={statusFilter ?? "any"}
@@ -156,7 +175,7 @@ function RecentSectionHeader({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search…"
-            aria-label="Search recent items"
+            aria-label="Search sessions"
             className="h-6 text-[12px]"
           />
         </div>
@@ -172,7 +191,7 @@ const SKELETON_ROW_WIDTHS = [60, 80, 40, 75, 50, 66] as const;
 function ChannelItemsSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-px">
-      {/* Stands in for the "Recent" MenuLabel, so it carries that label's scale. */}
+      {/* Stands in for the "Sessions" MenuLabel, so it carries that label's scale. */}
       <SkeletonText
         lines={1}
         maxWidth={100}
@@ -234,8 +253,10 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
 
   const { items, actions, me, isLoading, channelMissing } =
     useChannelItems(channelId);
-  const { showContextMenu, editingTaskId, setEditingTaskId } =
-    useTaskContextMenu();
+  // Inline rename is the only thing left of the old native-menu hook here: the
+  // row's menu is a quill one now, so this surface no longer reaches into the
+  // main process to draw it.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const { renameTask } = useRenameTask();
   const commandCenterCells = useCommandCenterStore((state) => state.cells);
   const assignTaskToCommandCenter = useCommandCenterStore(
@@ -252,7 +273,17 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
   const [createdByFilter, setCreatedByFilter] =
     useState<CreatedByFilter>("anyone");
   const [statusFilter, setStatusFilter] = useState<TaskRunStatus | null>(null);
-  const filtersActive = createdByFilter !== "anyone" || statusFilter !== null;
+  // Every session in #me is yours, so the author filter has nothing to sort by.
+  // The state survives a space switch, so the value is neutralised here as well
+  // as hidden — otherwise "Other people" carried in from a shared space would
+  // empty this list with no visible control to undo it.
+  const { channels } = useChannels();
+  const isPersonalChannel =
+    channels.find((c) => c.id === channelId)?.name === PERSONAL_CHANNEL_NAME;
+  const createdBy: CreatedByFilter = isPersonalChannel
+    ? "anyone"
+    : createdByFilter;
+  const filtersActive = createdBy !== "anyone" || statusFilter !== null;
 
   const base = `/website/${channelId}`;
   // Activeness is a key comparison rather than a flag baked into each item, so
@@ -264,15 +295,22 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     return task ? `task:${task[1]}` : null;
   }, [pathname]);
 
-  const pinnedItems = useMemo(() => items.filter((i) => i.pinned), [items]);
-  const recentItems = useMemo(
-    () =>
-      filterChannelItems(
-        items.filter((i) => !i.pinned),
-        { query, createdBy: createdByFilter, status: statusFilter, me },
-      ).slice(0, RECENTS_CAP),
-    [items, query, createdByFilter, statusFilter, me],
-  );
+  // One list, pins included — a pin is a mark on a session, not a different kind
+  // of thing, and the row's own badge says so. They sort to the top because a pin
+  // is a request not to lose the thing: below the recency order it would fall off
+  // the end of the cap.
+  const recentItems = useMemo(() => {
+    const matching = filterChannelItems(items, {
+      query,
+      createdBy,
+      status: statusFilter,
+      me,
+    });
+    return [
+      ...matching.filter((i) => i.pinned),
+      ...matching.filter((i) => !i.pinned),
+    ].slice(0, RECENTS_CAP);
+  }, [items, query, createdBy, statusFilter, me]);
 
   const narrowed = filtersActive || searchOpen;
   const listState = listStateOf({
@@ -281,41 +319,40 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     itemCount: items.length,
     narrowed,
   });
-  // The list's two sections, which only exist once there are items. With
-  // everything pinned there's nothing left to list — but keep the header while
-  // it's narrowed, so you can undo whatever emptied it.
-  const showPinned = listState === "ready" && pinnedItems.length > 0;
-  const showRecent =
-    listState === "ready" && (items.some((i) => !i.pinned) || narrowed);
+  // The one section, which only exists once there are items — but its header
+  // stays while the list is narrowed, so you can undo whatever emptied it.
+  const showRecent = listState === "ready";
+
+  // The first free command-centre cell, or nothing if every cell is taken by a
+  // task that still exists.
+  const commandCenterAssigner = (taskId: string) => {
+    const cellIndex = commandCenterCells.findIndex(
+      (cellTaskId) => cellTaskId == null || !allTaskIds.has(cellTaskId),
+    );
+    if (cellIndex === -1) return undefined;
+    return () => {
+      assignTaskToCommandCenter(cellIndex, taskId);
+      navigateToCommandCenter();
+    };
+  };
 
   const taskRow = (item: (typeof items)[number]) => (
     <ChannelItemRow
       key={item.key}
       item={item}
+      channelId={channelId}
       isActive={item.key === activeKey}
       actions={actions}
       isEditing={item.kind === "task" && editingTaskId === item.id}
-      onContextMenu={
-        item.kind === "task"
-          ? (event) =>
-              void showContextMenu(item, event, {
-                isPinned: item.pinned,
-                isInCommandCenter: commandCenterCells.includes(item.id),
-                hasEmptyCommandCenterCell: commandCenterCells.some(
-                  (taskId) => taskId == null || !allTaskIds.has(taskId),
-                ),
-                showArchivePrior: false,
-                onTogglePin: () => actions.togglePin(item),
-                onArchive: () => actions.archive(item),
-                onAddToCommandCenter: () => {
-                  const cellIndex = commandCenterCells.findIndex(
-                    (taskId) => taskId == null || !allTaskIds.has(taskId),
-                  );
-                  if (cellIndex === -1) return;
-                  assignTaskToCommandCenter(cellIndex, item.id);
-                  navigateToCommandCenter();
-                },
-              })
+      onRename={
+        item.kind === "task" ? () => setEditingTaskId(item.id) : undefined
+      }
+      // Undefined disables the menu item: a full command centre has nowhere to
+      // put the task, and an action that silently does nothing is worse than a
+      // greyed-out one.
+      onAddToCommandCenter={
+        item.kind === "task" && !commandCenterCells.includes(item.id)
+          ? commandCenterAssigner(item.id)
           : undefined
       }
       onEditSubmit={
@@ -338,36 +375,49 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
     />
   );
 
+  // Label comes from the shared space-page table, so a sidebar row and the
+  // header breadcrumb for the same page can never disagree. No icon: this is a
+  // four-row list of words, and glyphs here only compete with the status dots
+  // in the sessions list below for the eye's attention.
   const sectionRow = (
-    label: string,
-    icon: ReactNode,
+    page: ChannelPageKey,
     to: string,
     onClick: () => void,
   ) => (
     <SidebarItem
       depth={0}
-      icon={icon}
-      label={label}
+      label={channelPageLabel(page)}
       isActive={pathname === to}
       onClick={onClick}
     />
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col border-border border-t pt-1">
       <ChannelBackRow channelId={channelId} />
 
       <div className="flex flex-col gap-px px-2 pt-2">
+        {/* Starting a session is what you came here to do, so it leads the
+            pane's list of places rather than hiding behind one of them. */}
+        <SidebarItem
+          depth={0}
+          label="New session"
+          isActive={pathname === `${base}/new`}
+          onClick={() =>
+            void navigate({
+              to: "/website/$channelId/new",
+              params: { channelId },
+            })
+          }
+        />
         {sectionRow(
-          "Feed",
-          <ChatsCircleIcon size={16} />,
+          "home",
           base,
           () =>
             void navigate({ to: "/website/$channelId", params: { channelId } }),
         )}
         {sectionRow(
-          "Context",
-          <BookOpenTextIcon size={16} />,
+          "context",
           `${base}/context`,
           () =>
             void navigate({
@@ -377,8 +427,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
         )}
         {loopsEnabled &&
           sectionRow(
-            "Loops",
-            <RepeatIcon size={16} />,
+            "loops",
             `${base}/loops`,
             () =>
               void navigate({
@@ -387,8 +436,7 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
               }),
           )}
         {sectionRow(
-          "Artifacts",
-          <PackageIcon size={16} />,
+          "artifacts",
           `${base}/artifacts`,
           () =>
             void navigate({
@@ -420,15 +468,6 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
             </Empty>
           )}
 
-          {showPinned && (
-            <>
-              <MenuLabel>Pinned</MenuLabel>
-              <div className="flex flex-col gap-px">
-                {pinnedItems.map(taskRow)}
-              </div>
-            </>
-          )}
-
           {showRecent && (
             <>
               <RecentSectionHeader
@@ -439,8 +478,9 @@ export function ChannelSidebar({ channelId }: { channelId: string }) {
                 }}
                 query={query}
                 onQueryChange={setQuery}
-                createdByFilter={createdByFilter}
+                createdByFilter={createdBy}
                 onCreatedByChange={setCreatedByFilter}
+                showCreatedBy={!isPersonalChannel}
                 statusFilter={statusFilter}
                 onStatusChange={setStatusFilter}
                 filtersActive={filtersActive}

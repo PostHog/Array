@@ -1,3 +1,7 @@
+import type {
+  SignalReport,
+  SignalReportsResponse,
+} from "@posthog/shared/domain-types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
@@ -11,12 +15,13 @@ const getAvailableSuggestedReviewers = vi.fn(async (_query?: string) => ({
   results: [],
   count: 0,
 }));
-vi.mock("../api", () => ({
-  getAvailableSuggestedReviewers: (query?: string) =>
-    getAvailableSuggestedReviewers(query),
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({
+    getAvailableSuggestedReviewers: (query?: string) =>
+      getAvailableSuggestedReviewers(query),
+  }),
 }));
 
-import type { SignalReport, SignalReportsResponse } from "../types";
 import {
   getReportsNextPageParam,
   useAvailableSuggestedReviewers,

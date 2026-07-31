@@ -1,7 +1,30 @@
 import { Text } from "@components/text";
+import { getCloudReasoningConfigOptionId } from "@posthog/core/sessions/cloudSessionConfig";
+import { getDefaultExecutionModeForAdapter } from "@posthog/core/sessions/executionModes";
+import {
+  countUserMessages,
+  getSessionActivityPhase,
+} from "@posthog/core/sessions/sessionActivity";
+import type { CloudComposerSelection } from "@posthog/core/task-detail/composerModelPolicy";
+import { isTaskRunning } from "@posthog/core/tasks/taskArchive";
+import {
+  type Adapter,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  type ExecutionMode,
+  isModalModelId,
+  isSupportedReasoningEffort,
+  KIMI_MODEL_FLAG,
+  readPrUrls,
+  type SupportedReasoningEffort,
+  serializeCloudPrompt,
+  type Task,
+} from "@posthog/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFeatureFlag } from "posthog-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,7 +37,6 @@ import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { FloatingBackButton } from "@/components/FloatingBackButton";
 import { usePreferencesStore } from "@/features/preferences/stores/preferencesStore";
-import { getTask, runTaskInCloud } from "@/features/tasks/api";
 import { CustomImageBadge } from "@/features/tasks/components/CustomImageBadge";
 import { FloatingTaskHeader } from "@/features/tasks/components/FloatingTaskHeader";
 import { PrDiffStatsBadge } from "@/features/tasks/components/PrDiffStatsBadge";
@@ -22,15 +44,10 @@ import { PrStatusBadge } from "@/features/tasks/components/PrStatusBadge";
 import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
-import { serializeCloudPrompt } from "@/features/tasks/composer/attachments/cloudPrompt";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import {
-  DEFAULT_EXECUTION_MODE,
-  DEFAULT_MODEL,
-  DEFAULT_REASONING,
-  type ExecutionMode,
-  modelSupportsReasoning,
-  type ReasoningEffort,
+  type ContextWindow,
+  DEFAULT_CONTEXT_WINDOW,
 } from "@/features/tasks/composer/options";
 import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
@@ -51,15 +68,8 @@ import {
 } from "@/features/tasks/stores/pendingTaskPromptStore";
 import { useTaskSessionStore } from "@/features/tasks/stores/taskSessionStore";
 import { useTaskStore } from "@/features/tasks/stores/taskStore";
-import type { Task } from "@/features/tasks/types";
-import {
-  confirmStopRun,
-  isTaskRunning,
-} from "@/features/tasks/utils/archiveGuard";
-import {
-  countUserMessages,
-  getSessionActivityPhase,
-} from "@/features/tasks/utils/sessionActivity";
+import { confirmStopRun } from "@/features/tasks/utils/archiveGuard";
+import { buildCloudTaskRunConfig } from "@/features/tasks/utils/cloudTaskRunConfig";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import {
   ANALYTICS_EVENTS,
@@ -67,6 +77,7 @@ import {
   useAnalytics,
 } from "@/lib/analytics";
 import { logger } from "@/lib/logger";
+import { getPostHogApiClient } from "@/lib/posthogApiClient";
 import { useThemeColors } from "@/lib/theme";
 
 const log = logger.scope("task-detail");
@@ -169,11 +180,52 @@ export default function TaskDetailScreen() {
   const [initialComposerMessage, setInitialComposerMessage] = useState<
     string | undefined
   >();
+  const composerAdapter: Adapter =
+    task?.latest_run?.runtime_adapter &&
+    !session?.terminalStatus &&
+    composerConfig?.adapter !== task.latest_run.runtime_adapter
+      ? task.latest_run.runtime_adapter
+      : (composerConfig?.adapter ??
+        task?.latest_run?.runtime_adapter ??
+        "claude");
+  const composerConfigMatchesAdapter =
+    composerConfig?.adapter === undefined
+      ? composerAdapter === "claude"
+      : composerConfig.adapter === composerAdapter;
   const composerMode: ExecutionMode =
-    composerConfig?.mode ?? DEFAULT_EXECUTION_MODE;
-  const composerModel = composerConfig?.model ?? DEFAULT_MODEL;
-  const composerReasoning: ReasoningEffort =
-    composerConfig?.reasoning ?? DEFAULT_REASONING;
+    (composerConfigMatchesAdapter ? composerConfig?.mode : undefined) ??
+    getDefaultExecutionModeForAdapter(composerAdapter);
+  const kimiEnabled = !!useFeatureFlag(KIMI_MODEL_FLAG);
+  const persistedComposerModel =
+    (composerConfigMatchesAdapter ? composerConfig?.model : undefined) ??
+    task?.latest_run?.model ??
+    (composerAdapter === "codex" ? DEFAULT_CODEX_MODEL : DEFAULT_GATEWAY_MODEL);
+  // Fall a persisted Kimi selection back to the default when the flag is off so
+  // a hidden model never gets sent on the retry-after-terminal path. The
+  // composer independently re-resolves against the live config once mounted.
+  const composerModel =
+    !kimiEnabled && isModalModelId(persistedComposerModel)
+      ? DEFAULT_GATEWAY_MODEL
+      : persistedComposerModel;
+  const requestedComposerReasoning = composerConfigMatchesAdapter
+    ? composerConfig?.reasoning
+    : undefined;
+  const composerReasoning: SupportedReasoningEffort =
+    requestedComposerReasoning &&
+    isSupportedReasoningEffort(
+      composerAdapter,
+      composerModel,
+      requestedComposerReasoning,
+    )
+      ? requestedComposerReasoning
+      : DEFAULT_REASONING_EFFORT;
+  const composerContextWindow: ContextWindow =
+    (composerConfigMatchesAdapter
+      ? composerConfig?.contextWindow
+      : undefined) ?? DEFAULT_CONTEXT_WINDOW;
+  const composerFastMode: boolean =
+    (composerConfigMatchesAdapter ? composerConfig?.fastMode : undefined) ??
+    false;
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
@@ -221,7 +273,8 @@ export default function TaskDetailScreen() {
     setLoading(true);
     setError(null);
 
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((fetchedTask) => {
         if (cancelled) return;
         setTask(fetchedTask);
@@ -252,7 +305,8 @@ export default function TaskDetailScreen() {
     if (retrying) return;
 
     let cancelled = false;
-    getTask(taskId)
+    getPostHogApiClient()
+      .getTask(taskId)
       .then((freshTask) => {
         if (cancelled) return;
         setTask(freshTask);
@@ -314,16 +368,23 @@ export default function TaskDetailScreen() {
               )
             : text;
 
-        const supportsReasoning = modelSupportsReasoning(composerModel);
-        const updatedTask = await runTaskInCloud(taskId, {
-          resumeFromRunId: task.latest_run?.id,
-          pendingUserMessage,
-          runtimeAdapter: "claude",
-          model: composerModel,
-          reasoningEffort: supportsReasoning ? composerReasoning : undefined,
-          initialPermissionMode: composerMode,
-          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-        });
+        const updatedTask = await getPostHogApiClient().runTaskInCloud(
+          taskId,
+          undefined,
+          {
+            resumeFromRunId: task.latest_run?.id,
+            pendingUserMessage,
+            ...buildCloudTaskRunConfig({
+              adapter: composerAdapter,
+              mode: composerMode,
+              model: composerModel,
+              reasoning: composerReasoning,
+              contextWindow: composerContextWindow,
+              fastMode: composerFastMode,
+            }),
+            rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+          },
+        );
         setTask(updatedTask);
         await connectToTask(updatedTask);
         updateTaskInCache(updatedTask);
@@ -346,8 +407,11 @@ export default function TaskDetailScreen() {
       connectToTask,
       updateTaskInCache,
       composerMode,
+      composerAdapter,
       composerModel,
       composerReasoning,
+      composerContextWindow,
+      composerFastMode,
     ],
   );
 
@@ -502,6 +566,21 @@ export default function TaskDetailScreen() {
     [taskId, setComposerConfig, setConfigOption],
   );
 
+  const handleAdapterChange = useCallback(
+    (selection: CloudComposerSelection) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, {
+        ...selection,
+        contextWindow: DEFAULT_CONTEXT_WINDOW,
+        fastMode: false,
+      });
+      usePreferencesStore
+        .getState()
+        .resetLastUsedAgentConfig(selection.mode, selection.reasoning);
+    },
+    [taskId, setComposerConfig],
+  );
+
   const handleModelChange = useCallback(
     (value: string) => {
       if (!taskId) return;
@@ -512,13 +591,35 @@ export default function TaskDetailScreen() {
   );
 
   const handleReasoningChange = useCallback(
-    (value: ReasoningEffort) => {
+    (value: SupportedReasoningEffort) => {
       if (!taskId) return;
       setComposerConfig(taskId, { reasoning: value });
-      setConfigOption(taskId, "effort", value).catch(() => {});
+      setConfigOption(
+        taskId,
+        getCloudReasoningConfigOptionId(composerAdapter),
+        value,
+      ).catch(() => {});
       usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
-    [taskId, setComposerConfig, setConfigOption],
+    [taskId, composerAdapter, setComposerConfig, setConfigOption],
+  );
+
+  const handleContextWindowChange = useCallback(
+    (value: ContextWindow) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { contextWindow: value });
+      usePreferencesStore.getState().setLastUsedContextWindow(value);
+    },
+    [taskId, setComposerConfig],
+  );
+
+  const handleFastModeChange = useCallback(
+    (value: boolean) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { fastMode: value });
+      usePreferencesStore.getState().setLastUsedFastMode(value);
+    },
+    [taskId, setComposerConfig],
   );
 
   const handleStop = useCallback(() => {
@@ -565,10 +666,22 @@ export default function TaskDetailScreen() {
       setRetrying(true);
       disconnectFromTask(taskId);
 
-      const updatedTask = await runTaskInCloud(taskId, {
-        resumeFromRunId: task.latest_run?.id,
-        rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
-      });
+      const updatedTask = await getPostHogApiClient().runTaskInCloud(
+        taskId,
+        undefined,
+        {
+          resumeFromRunId: task.latest_run?.id,
+          ...buildCloudTaskRunConfig({
+            adapter: composerAdapter,
+            mode: composerMode,
+            model: composerModel,
+            reasoning: composerReasoning,
+            contextWindow: composerContextWindow,
+            fastMode: composerFastMode,
+          }),
+          rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
+        },
+      );
       setTask(updatedTask);
       await connectToTask(updatedTask);
       updateTaskInCache(updatedTask);
@@ -582,7 +695,19 @@ export default function TaskDetailScreen() {
         "Could not restart the task. Please try again.",
       );
     }
-  }, [taskId, task, disconnectFromTask, connectToTask, updateTaskInCache]);
+  }, [
+    taskId,
+    task,
+    disconnectFromTask,
+    connectToTask,
+    updateTaskInCache,
+    composerAdapter,
+    composerModel,
+    composerReasoning,
+    composerMode,
+    composerContextWindow,
+    composerFastMode,
+  ]);
 
   // Clear retrying once the agent finishes a turn or the run terminates.
   useEffect(() => {
@@ -613,7 +738,7 @@ export default function TaskDetailScreen() {
     [router],
   );
 
-  const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
+  const prUrl = readPrUrls(task?.latest_run?.output)[0];
 
   const activityPhase = getSessionActivityPhase({ retrying, session });
   const isConnecting = activityPhase === "connecting";
@@ -712,6 +837,7 @@ export default function TaskDetailScreen() {
         <TaskSessionView
           events={session?.events ?? []}
           taskId={taskId}
+          runId={task?.latest_run?.id}
           pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}
@@ -776,6 +902,9 @@ export default function TaskDetailScreen() {
             />
           ) : null}
           <TaskChatComposer
+            key={taskId}
+            adapter={composerAdapter}
+            canChangeAdapter={!!session?.terminalStatus}
             onSend={handleSendPrompt}
             restoredDraft={restoredDraft}
             editing={!!editingQueuedId}
@@ -789,9 +918,14 @@ export default function TaskDetailScreen() {
             mode={composerMode}
             model={composerModel}
             reasoning={composerReasoning}
+            contextWindow={composerContextWindow}
+            fastMode={composerFastMode}
+            onAdapterChange={handleAdapterChange}
             onModeChange={handleModeChange}
             onModelChange={handleModelChange}
             onReasoningChange={handleReasoningChange}
+            onContextWindowChange={handleContextWindowChange}
+            onFastModeChange={handleFastModeChange}
             messagingMode={messagingMode}
             queuedCount={queuedCount}
             onToggleMessagingMode={toggleMessagingMode}

@@ -1,4 +1,6 @@
 import { Text } from "@components/text";
+import { TaskAutomationValidationError } from "@posthog/api-client/posthog-client";
+import { parseSkillTemplateId } from "@posthog/core/automations/automationTemplatePresentation";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -10,7 +12,6 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { TaskAutomationValidationError } from "@/features/tasks/api";
 import { AutomationDetail } from "@/features/tasks/components/AutomationDetail";
 import { AutomationForm } from "@/features/tasks/components/AutomationForm";
 import {
@@ -20,7 +21,6 @@ import {
   useUpdateTaskAutomation,
 } from "@/features/tasks/hooks/useAutomations";
 import { useTask } from "@/features/tasks/hooks/useTasks";
-import { parseSkillTemplateId } from "@/features/tasks/skills/skillTemplateIds";
 import { useThemeColors } from "@/lib/theme";
 
 export default function AutomationDetailScreen() {

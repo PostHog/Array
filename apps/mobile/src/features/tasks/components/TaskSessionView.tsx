@@ -1,3 +1,4 @@
+import { pickThinkingActivity } from "@posthog/core/sessions/thinkingActivities";
 import {
   ArrowDown,
   Brain,
@@ -20,7 +21,6 @@ import {
   ToolMessage,
   type ToolStatus,
 } from "@/features/chat";
-import { getRandomThinkingActivity } from "@/features/chat/utils/thinkingMessages";
 import { useThemeColors } from "@/lib/theme";
 import type {
   CloudPendingPermissionRequest,
@@ -34,6 +34,7 @@ import { CloudMessageAttachment } from "./CloudMessageAttachment";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 import { PlanStatusBar } from "./PlanStatusBar";
 import { QuestionCard } from "./QuestionCard";
+import { TaskArtifacts } from "./TaskArtifacts";
 import { TerminalStatusBanner } from "./TerminalStatusBanner";
 
 interface PermissionResponseArgs {
@@ -56,6 +57,8 @@ interface OptimisticUserMessage {
 interface TaskSessionViewProps {
   events: SessionEvent[];
   taskId?: string;
+  // Latest run id, used to list the run's generated output artifacts.
+  runId?: string;
   pendingPermissions?: Record<string, CloudPendingPermissionRequest>;
   isConnecting?: boolean;
   isThinking?: boolean;
@@ -734,7 +737,9 @@ function useElapsedTimer() {
 
 function ThinkingIndicator() {
   const [dots, setDots] = useState(1);
-  const [activity, setActivity] = useState(getRandomThinkingActivity);
+  const [activity, setActivity] = useState(() =>
+    pickThinkingActivity(Math.random()),
+  );
   const elapsed = useElapsedTimer();
   const themeColors = useThemeColors();
 
@@ -747,7 +752,7 @@ function ThinkingIndicator() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActivity(getRandomThinkingActivity());
+      setActivity(pickThinkingActivity(Math.random()));
     }, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -802,6 +807,7 @@ function ConnectingIndicator() {
 export function TaskSessionView({
   events,
   taskId,
+  runId,
   pendingPermissions,
   isConnecting,
   isThinking,
@@ -1015,6 +1021,28 @@ export function TaskSessionView({
     ],
   );
 
+  // Memoized so a live session's frequent re-renders (streaming, timers) don't
+  // reconcile the banner + artifacts subtree on every tick.
+  const listHeader = useMemo(
+    () => (
+      <>
+        {terminalStatus ? (
+          <TerminalStatusBanner
+            terminalStatus={terminalStatus}
+            lastError={lastError}
+            onRetry={onRetry}
+          />
+        ) : null}
+        <TaskArtifacts
+          taskId={taskId}
+          runId={runId}
+          enabled={!!terminalStatus}
+        />
+      </>
+    ),
+    [terminalStatus, lastError, onRetry, taskId, runId],
+  );
+
   return (
     <View className="flex-1">
       <PlanStatusBar plan={plan} />
@@ -1033,15 +1061,7 @@ export function TaskSessionView({
         maxToRenderPerBatch={15}
         windowSize={21}
         initialNumToRender={30}
-        ListHeaderComponent={
-          terminalStatus ? (
-            <TerminalStatusBanner
-              terminalStatus={terminalStatus}
-              lastError={lastError}
-              onRetry={onRetry}
-            />
-          ) : null
-        }
+        ListHeaderComponent={listHeader}
       />
       {/* Thinking/connecting indicators pinned to the bottom of the list area.
           The Composer is a sibling below TaskSessionView in flex flow, so

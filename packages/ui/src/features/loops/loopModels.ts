@@ -1,7 +1,12 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { getReasoningEffortOptions } from "@posthog/agent/adapters/reasoning-effort";
 import type { LoopSchemas } from "@posthog/api-client/loops";
-import { flattenSelectOptions, isRestrictedModelOption } from "@posthog/shared";
+import {
+  flattenSelectOptions,
+  isDefaultSelectOption,
+  isRestrictedModelOption,
+  selectOptionDocsUrl,
+} from "@posthog/shared";
 
 export interface LoopModelOption {
   value: string;
@@ -117,10 +122,20 @@ export function loopModelOptions(
 export function loopReasoningEffortOptions(
   adapter: LoopSchemas.LoopRuntimeAdapterEnum,
   model: string,
-): { value: LoopSchemas.LoopReasoningEffortEnum; label: string }[] {
+): {
+  value: LoopSchemas.LoopReasoningEffortEnum;
+  label: string;
+  isDefault?: boolean;
+  docsUrl?: string;
+}[] {
   const effectiveModel = model || LOOP_DEFAULT_MODELS[adapter].id;
   const options = getReasoningEffortOptions(adapter, effectiveModel) ?? [];
-  return options.map((option) => ({ value: option.value, label: option.name }));
+  return options.map((option) => ({
+    value: option.value,
+    label: option.name,
+    isDefault: isDefaultSelectOption(option._meta),
+    docsUrl: selectOptionDocsUrl(option._meta),
+  }));
 }
 
 /** The effort unchanged when the effective model supports it, else null

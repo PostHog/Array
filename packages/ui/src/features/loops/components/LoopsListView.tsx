@@ -1,9 +1,4 @@
-import {
-  ChatCircleDotsIcon,
-  CloudIcon,
-  PlusIcon,
-  RepeatIcon,
-} from "@phosphor-icons/react";
+import { ChatCircleDotsIcon, CloudIcon, PlusIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@posthog/quill";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
@@ -14,14 +9,24 @@ import { useOrgMembers } from "@posthog/ui/features/canvas/hooks/useOrgMembers";
 import { StopCloudRunDialog } from "@posthog/ui/features/sessions/components/StopCloudRunDialog";
 import { useSetHeaderContent } from "@posthog/ui/hooks/useSetHeaderContent";
 import { Button } from "@posthog/ui/primitives/Button";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderChip,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderNav,
+  PageHeaderTitle,
+  PageHeaderTitleRow,
+} from "@posthog/ui/primitives/PageHeader";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   navigateToNewLoop,
   navigateToTaskDetail,
 } from "@posthog/ui/router/navigationBridge";
 import { track } from "@posthog/ui/shell/analytics";
-import { Flex, Heading, Text } from "@radix-ui/themes";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Flex, Text } from "@radix-ui/themes";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useLoopBuilderSessions } from "../hooks/useLoopBuilderSessions";
 import { useLoopLimits, useLoops } from "../hooks/useLoops";
 import {
@@ -67,7 +72,11 @@ function startLoopFromTemplate(template: LoopTemplate): void {
   navigateToNewLoop();
 }
 
-export function LoopsListView() {
+export function LoopsListView({
+  headerContent = null,
+}: {
+  headerContent?: ReactNode;
+}) {
   const { data: loops, isLoading, isError, error } = useLoops();
   const authenticatedClient = useOptionalAuthenticatedClient();
   const {
@@ -86,20 +95,9 @@ export function LoopsListView() {
     listError = currentUserQueryError;
   }
 
-  const headerContent = useMemo(
-    () => (
-      <Flex align="center" gap="2" className="w-full min-w-0">
-        <RepeatIcon size={12} className="shrink-0 text-gray-10" />
-        <Text
-          className="truncate whitespace-nowrap font-medium text-[13px]"
-          title="Loops"
-        >
-          Loops
-        </Text>
-      </Flex>
-    ),
-    [],
-  );
+  // The standalone page names itself in-page and has no breadcrumb. When the
+  // registry is hosted inside a space, its caller supplies that navigation
+  // context instead.
   useSetHeaderContent(headerContent);
 
   const { sessions: builderSessions, isSettled: builderSessionsSettled } =
@@ -210,8 +208,26 @@ export function LoopsListViewPresentation({
       (currentUserId === null || loop.created_by_id !== currentUserId),
   );
 
-  return (
-    <Flex direction="column" className="h-full min-h-0">
+  const createButton = (
+    <Button
+      variant="soft"
+      color="gray"
+      size="2"
+      onClick={onStartBlank}
+      disabled={limitReason != null}
+      disabledReason={limitReason}
+    >
+      <PlusIcon size={14} />
+      Create manually
+    </Button>
+  );
+
+  // Only the loaded, non-empty list has tabs to show — the skeleton, the error
+  // notice and the empty state all render without them.
+  const hasTabs = !isLoading && !error && loops.length > 0;
+
+  const body = (
+    <>
       <div className="min-h-0 flex-1 overflow-auto">
         <Flex
           direction="column"
@@ -219,43 +235,6 @@ export function LoopsListViewPresentation({
           className="@container mx-auto w-full max-w-5xl px-8 py-8"
         >
           <Flex direction="column" gap="4">
-            <div className="flex @min-[640px]:flex-row flex-col items-start @min-[640px]:items-center justify-between gap-3">
-              <Flex direction="column" gap="1" className="min-w-0">
-                <Flex align="center" gap="2" wrap="wrap">
-                  <Heading className="font-bold text-2xl">Loops</Heading>
-                  <Flex
-                    align="center"
-                    className="gap-1.5 rounded-full bg-(--accent-a3) px-2.5 py-1"
-                  >
-                    <CloudIcon
-                      size={12}
-                      weight="fill"
-                      className="text-(--accent-11)"
-                    />
-                    <Text className="whitespace-nowrap font-medium text-(--accent-11) text-[11px]">
-                      Runs entirely in the cloud
-                    </Text>
-                  </Flex>
-                </Flex>
-                <Text color="gray" className="max-w-2xl text-sm">
-                  Put your work on autopilot. Loops run on a schedule, on an API
-                  call, or when something happens on GitHub. You can finally
-                  close the laptop!
-                </Text>
-              </Flex>
-              <Button
-                variant="soft"
-                color="gray"
-                size="2"
-                onClick={onStartBlank}
-                disabled={limitReason != null}
-                disabledReason={limitReason}
-              >
-                <PlusIcon size={14} />
-                Create manually
-              </Button>
-            </div>
-
             {isLoading ? (
               <LoopsSkeleton />
             ) : error ? (
@@ -268,7 +247,8 @@ export function LoopsListViewPresentation({
                 }
               />
             ) : loops.length > 0 ? (
-              <LoopListTabs
+              // Triggers live in the page header; only the panels sit here.
+              <LoopTabPanels
                 personalLoops={personalLoops}
                 teamLoops={teamLoops}
                 members={members}
@@ -302,11 +282,71 @@ export function LoopsListViewPresentation({
           <LoopBuilderComposer disabledReason={limitReason} />
         </Flex>
       </div>
-    </Flex>
+    </>
+  );
+
+  // One Tabs root spanning header and body: the trigger strip sits in the
+  // header's sub-nav, its panels stay down in the scrolling body.
+  return (
+    <Tabs
+      defaultValue="personal"
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
+      <PageHeader>
+        <PageHeaderHeading>
+          <PageHeaderTitleRow>
+            <PageHeaderTitle>Loops</PageHeaderTitle>
+            <PageHeaderChip icon={<CloudIcon size={12} weight="fill" />}>
+              Runs entirely in the cloud
+            </PageHeaderChip>
+            <PageHeaderActions>{createButton}</PageHeaderActions>
+          </PageHeaderTitleRow>
+          <PageHeaderDescription>
+            Put your work on autopilot. Loops run on a schedule, on an API call,
+            or when something happens on GitHub. You can finally close the
+            laptop!
+          </PageHeaderDescription>
+        </PageHeaderHeading>
+        {hasTabs && (
+          <PageHeaderNav>
+            <LoopTabsList
+              personalCount={personalLoops.length}
+              teamCount={teamLoops.length}
+            />
+          </PageHeaderNav>
+        )}
+      </PageHeader>
+      {body}
+    </Tabs>
   );
 }
 
-function LoopListTabs({
+/** The trigger strip. Rendered inside the page header. */
+function LoopTabsList({
+  personalCount,
+  teamCount,
+}: {
+  personalCount: number;
+  teamCount: number;
+}) {
+  return (
+    <TabsList variant="line" className="h-auto gap-0.5">
+      <TabsTrigger value="personal" className="gap-1.5 px-2.5 py-2">
+        <span className="font-medium text-[13px]">
+          My loops ({personalCount})
+        </span>
+      </TabsTrigger>
+      <TabsTrigger value="team" className="gap-1.5 px-2.5 py-2">
+        <span className="font-medium text-[13px]">
+          Team loops ({teamCount})
+        </span>
+      </TabsTrigger>
+    </TabsList>
+  );
+}
+
+/** The panels. Always in the scrolling body, wherever the triggers live. */
+function LoopTabPanels({
   personalLoops,
   teamLoops,
   members,
@@ -322,19 +362,7 @@ function LoopListTabs({
   membersComplete: boolean;
 }) {
   return (
-    <Tabs defaultValue="personal" className="flex flex-col gap-5">
-      <TabsList variant="line" className="h-auto gap-0.5">
-        <TabsTrigger value="personal" className="gap-1.5 px-2.5 py-2">
-          <span className="font-medium text-[13px]">
-            My loops ({personalLoops.length})
-          </span>
-        </TabsTrigger>
-        <TabsTrigger value="team" className="gap-1.5 px-2.5 py-2">
-          <span className="font-medium text-[13px]">
-            Team loops ({teamLoops.length})
-          </span>
-        </TabsTrigger>
-      </TabsList>
+    <>
       <TabsContent value="personal">
         {personalLoops.length > 0 ? (
           <LoopListSection
@@ -364,7 +392,7 @@ function LoopListTabs({
           />
         )}
       </TabsContent>
-    </Tabs>
+    </>
   );
 }
 

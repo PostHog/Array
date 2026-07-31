@@ -1,4 +1,7 @@
-import { CLOUD_USAGE_LIMIT_ERROR_MESSAGE } from "@posthog/api-client/posthog-client";
+import {
+  CLOUD_USAGE_LIMIT_ERROR_MESSAGE,
+  type TaskSessionStorageAccess,
+} from "@posthog/api-client/posthog-client";
 import {
   SESSION_SERVICE,
   type SessionService,
@@ -9,12 +12,12 @@ import type {
   TaskCreationInput,
   TaskCreationOutput,
 } from "@posthog/shared";
-import type { Task } from "@posthog/shared/domain-types";
+import type { Task, TaskRun } from "@posthog/shared/domain-types";
 import { inject, injectable } from "inversify";
+import { extractFilePaths, xmlToContent } from "../message-editor/content";
 import { PI_RUNNER } from "../pi-runtime/identifiers";
 import type { PiRunner } from "../pi-runtime/piRunner";
 import { TASK_CREATION_EFFECTS, TASK_CREATION_HOST } from "./identifiers";
-import { PiTaskCreator } from "./piTaskCreator";
 import type { TaskCreationEffects } from "./taskCreationEffects";
 import type { ITaskCreationHost } from "./taskCreationHost";
 import { TaskCreationSaga } from "./taskCreationSaga";
@@ -54,6 +57,45 @@ export class TaskService {
   }
 
   private readonly log: ReturnType<RootLogger["scope"]>;
+
+  async prepareCloudPiMessage(
+    taskId: string,
+    runId: string,
+    serializedContent: string,
+  ): Promise<{ content: string; artifactIds: string[] }> {
+    const editorContent = xmlToContent(serializedContent);
+    const filePaths = extractFilePaths(editorContent);
+    const resolvedContent =
+      await this.host.resolveLocalSkillCommandPrompt(serializedContent);
+    const transport = this.host.getCloudPromptTransport(
+      resolvedContent,
+      filePaths,
+    );
+    const hasAttachments =
+      transport.filePaths.length > 0 || transport.skillBundles.length > 0;
+    if (!hasAttachments) {
+      return {
+        content: transport.messageText ?? transport.promptText,
+        artifactIds: [],
+      };
+    }
+
+    const client = await this.host.getAuthenticatedClient();
+    if (!client) {
+      throw new Error("Not authenticated");
+    }
+    const artifactIds = await this.host.uploadRunAttachments(
+      client,
+      taskId,
+      runId,
+      transport.filePaths,
+      transport.skillBundles,
+    );
+    return {
+      content: transport.messageText ?? transport.promptText,
+      artifactIds,
+    };
+  }
 
   public async createTask(
     input: TaskCreationInput,
@@ -108,31 +150,18 @@ export class TaskService {
       }
     }
 
-    let result: CreateTaskResult;
-    if (input.runtime === "pi") {
-      const creator = new PiTaskCreator(
-        {
-          posthogClient,
-          host: this.host,
-          piRunner: this.piRunner,
-          onTaskReady,
-        },
-        this.log,
-      );
-      result = await creator.run(input);
-    } else {
-      const creator = new TaskCreationSaga(
-        {
-          posthogClient,
-          host: this.host,
-          sessionService: this.sessionService,
-          track: (event, props) => this.host.track(event, props),
-          onTaskReady,
-        },
-        this.log,
-      );
-      result = await creator.run(input);
-    }
+    const creator = new TaskCreationSaga(
+      {
+        posthogClient,
+        host: this.host,
+        sessionService: this.sessionService,
+        piRunner: this.piRunner,
+        track: (event, props) => this.host.track(event, props),
+        onTaskReady,
+      },
+      this.log,
+    );
+    const result = await creator.run(input);
 
     if (result.success) {
       this.effects.onWorkspaceCreated(result.data);
@@ -140,6 +169,46 @@ export class TaskService {
     }
 
     return result;
+  }
+
+  public async getTask(taskId: string, taskRunId?: string): Promise<Task> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    const task = await posthogClient.getTask(taskId);
+    if (taskRunId) {
+      task.latest_run = await posthogClient.getTaskRun(taskId, taskRunId);
+    }
+
+    return task;
+  }
+
+  public async getCloudPiTaskSessionStorage(
+    taskId: string,
+    taskRunId: string,
+  ): Promise<TaskSessionStorageAccess | null> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    return posthogClient.getTaskSessionStorageAccess(taskId, taskRunId);
+  }
+
+  public async resumeCloudPiRun(
+    taskId: string,
+    taskRunId: string,
+  ): Promise<TaskRun> {
+    const posthogClient = await this.host.getAuthenticatedClient();
+    if (!posthogClient) {
+      throw new Error("Not authenticated");
+    }
+
+    const run = await posthogClient.resumeRunInCloud(taskId, taskRunId);
+    this.effects.onRunResumed(taskId, run);
+    return run;
   }
 
   public async openTask(
@@ -174,6 +243,13 @@ export class TaskService {
 
     const runtime = task.runtime === "pi" ? "pi" : "acp";
     const existingWorkspace = await this.host.getWorkspace(taskId);
+    if (runtime === "pi" && task.latest_run?.environment === "cloud") {
+      return {
+        success: true,
+        data: { task, workspace: existingWorkspace },
+      };
+    }
+
     if (existingWorkspace) {
       this.log.info("Workspace already exists, fetching task only", { taskId });
       try {
@@ -223,6 +299,7 @@ export class TaskService {
         posthogClient,
         host: this.host,
         sessionService: this.sessionService,
+        piRunner: this.piRunner,
         track: (event, props) => this.host.track(event, props),
       },
       this.log,

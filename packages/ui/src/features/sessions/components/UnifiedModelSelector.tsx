@@ -79,7 +79,8 @@ export function UnifiedModelSelector({
 
   const currentValue = selectOption?.currentValue;
   const currentLabel =
-    options.find((opt) => opt.value === currentValue)?.name ?? currentValue;
+    options.find((option) => option.value === currentValue)?.name ??
+    currentValue;
 
   const otherAdapter = getOtherAdapter(adapter);
 

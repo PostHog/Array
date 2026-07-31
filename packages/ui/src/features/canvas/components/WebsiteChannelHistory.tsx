@@ -42,7 +42,10 @@ export function WebsiteChannelHistory({ channelId }: { channelId: string }) {
   }, [channelId]);
 
   useSetHeaderContent(
-    useMemo(() => <ChannelHeader channelId={channelId} />, [channelId]),
+    useMemo(
+      () => <ChannelHeader channelId={channelId} page="history" />,
+      [channelId],
+    ),
   );
 
   const { dashboards } = useDashboards(channelId);

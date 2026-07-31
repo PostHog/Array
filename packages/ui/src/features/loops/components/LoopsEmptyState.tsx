@@ -12,8 +12,8 @@ const GETTING_STARTED_STEPS = [
 export function LoopsEmptyState({ contextName }: { contextName?: string }) {
   return (
     <div className="@container">
-      <div className="flex @min-[720px]:flex-row flex-col items-center @min-[720px]:gap-0 gap-6 rounded-(--radius-3) border border-gray-6 border-dashed @min-[720px]:px-8 px-5 py-8">
-        <Flex justify="center" className="@min-[720px]:w-2/5 w-full shrink-0">
+      <div className="flex @min-[560px]:flex-row flex-col items-center @min-[560px]:gap-0 gap-6 rounded-(--radius-3) border border-gray-6 border-dashed @min-[560px]:px-8 px-5 py-8">
+        <Flex justify="center" className="@min-[560px]:w-2/5 w-full shrink-0">
           <img src={loopHog} alt="" className="h-auto w-52 object-contain" />
         </Flex>
         <Flex

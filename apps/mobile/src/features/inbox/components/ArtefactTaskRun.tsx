@@ -1,11 +1,11 @@
 import { Text } from "@components/text";
+import { taskRunLabel } from "@posthog/core/inbox/activityLog";
+import type { TaskRunArtefactContent } from "@posthog/shared/domain-types";
 import { useRouter } from "expo-router";
 import { CaretRight } from "phosphor-react-native";
 import { Pressable, View } from "react-native";
 import { useTask } from "@/features/tasks";
 import { useThemeColors } from "@/lib/theme";
-import { taskRunLabel } from "../activityLog";
-import type { TaskRunArtefactContent } from "../types";
 
 export function ArtefactTaskRun({
   content,

@@ -1,37 +1,24 @@
+import type { RootLogger, ScopedLogger } from "@posthog/di/logger";
+import type { IAnalytics } from "@posthog/platform/analytics";
 import {
-  ROOT_LOGGER,
-  type RootLogger,
-  type ScopedLogger,
-} from "@posthog/di/logger";
-import {
-  ANALYTICS_SERVICE,
-  type IAnalytics,
-} from "@posthog/platform/analytics";
-import type { StoredLogEntry } from "@posthog/shared";
-import {
+  type CloudTaskPermissionRequestUpdate,
+  isTerminalStatus,
   mcpToolKey,
   posthogToolMeta,
+  type StoredLogEntry,
   serializeError,
+  type TaskRunStatus,
   TypedEventEmitter,
 } from "@posthog/shared";
 import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
-import { inject, injectable, optional, preDestroy } from "inversify";
-import type { CloudTaskPermissionRequestUpdate } from "./cloud-task-types";
-import {
-  CLOUD_TASK_AUTH,
-  type ICloudTaskAuth,
-  MCP_RELAY_EXECUTOR,
-  type McpRelayExecutor,
-} from "./identifiers";
+import type { ICloudTaskAuth, McpRelayExecutor } from "./identifiers";
 import {
   CloudTaskEvent,
   type CloudTaskEvents,
-  isTerminalStatus,
   type SendCommandInput,
   type SendCommandOutput,
   type StopInput,
   type StopOutput,
-  type TaskRunStatus,
   type WatchInput,
 } from "./schemas";
 import { type SseEvent, SseEventParser } from "./sse-parser";
@@ -47,6 +34,7 @@ const SSE_HEALTHY_CONNECTION_MS = 60_000;
 const EVENT_BATCH_FLUSH_MS = 16;
 const EVENT_BATCH_MAX_SIZE = 50;
 const SESSION_LOG_PAGE_LIMIT = 5_000;
+const ARCHIVED_LOG_FETCH_TIMEOUT_MS = 15_000;
 const MAX_HANDLED_RELAY_REQUEST_IDS = 1_000;
 const MCP_RELAY_METHODS_WITHOUT_APPROVAL = new Set([
   "initialize",
@@ -94,6 +82,7 @@ class BackendStreamError extends Error {
 
 interface TaskRunResponse {
   id: string;
+  log_url?: string | null;
   status: TaskRunStatus;
   stage?: string | null;
   output?: Record<string, unknown> | null;
@@ -435,23 +424,45 @@ function sandboxAlivePayload(watcher: { lastSandboxAlive: boolean | null }): {
     : { sandboxAlive: watcher.lastSandboxAlive };
 }
 
-@injectable()
-export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
+export interface CloudTaskEngineDependencies {
+  auth: ICloudTaskAuth;
+  analytics: IAnalytics;
+  logger: RootLogger;
+  mcpRelayExecutor?: McpRelayExecutor | null;
+  streamFetch?: CloudTaskFetch;
+}
+
+export type CloudTaskFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export function createCloudTaskEngine(
+  dependencies: CloudTaskEngineDependencies,
+): CloudTaskEngine {
+  return new CloudTaskEngine(dependencies);
+}
+
+export class CloudTaskEngine extends TypedEventEmitter<CloudTaskEvents> {
   private watchers = new Map<string, WatcherState>();
   private readonly log: ScopedLogger;
+  private readonly auth: ICloudTaskAuth;
+  private readonly analytics: IAnalytics;
+  private readonly mcpRelayExecutor: McpRelayExecutor | null;
+  private readonly streamFetch: CloudTaskFetch;
 
-  constructor(
-    @inject(CLOUD_TASK_AUTH)
-    private readonly auth: ICloudTaskAuth,
-    @inject(ANALYTICS_SERVICE)
-    private readonly analytics: IAnalytics,
-    @inject(ROOT_LOGGER)
-    logger: RootLogger,
-    @inject(MCP_RELAY_EXECUTOR)
-    @optional()
-    private readonly mcpRelayExecutor: McpRelayExecutor | null = null,
-  ) {
+  constructor({
+    auth,
+    analytics,
+    logger,
+    mcpRelayExecutor = null,
+    streamFetch = globalThis.fetch.bind(globalThis),
+  }: CloudTaskEngineDependencies) {
     super();
+    this.auth = auth;
+    this.analytics = analytics;
+    this.mcpRelayExecutor = mcpRelayExecutor;
+    this.streamFetch = streamFetch;
     this.log = logger.scope("cloud-task");
   }
 
@@ -706,6 +717,10 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
+  getCloudContext(): Promise<{ apiHost: string; teamId: number } | null> {
+    return this.auth.getCloudContext();
+  }
+
   watch(input: WatchInput): void {
     const key = watcherKey(input.taskId, input.runId);
 
@@ -770,6 +785,22 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     void this.bootstrapWatcher(key);
   }
 
+  reconnectIfDisconnected(taskId: string, runId: string): void {
+    const key = watcherKey(taskId, runId);
+    const watcher = this.watchers.get(key);
+    if (
+      !watcher ||
+      watcher.sseAbortController ||
+      watcher.reconnectTimeoutId ||
+      watcher.isBootstrapping ||
+      isTerminalStatus(watcher.lastStatus)
+    ) {
+      return;
+    }
+
+    void this.connectSse(key);
+  }
+
   // Resets a watcher to its pre-bootstrap state so bootstrapWatcher can rebuild it from server truth.
   private resetWatcherForRebootstrap(watcher: WatcherState): void {
     watcher.reconnectAttempts = 0;
@@ -825,7 +856,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       jsonrpc: "2.0",
       method: input.method,
       params: input.params ?? {},
-      id: `posthog-code-${Date.now()}`,
+      id: input.id ?? globalThis.crypto.randomUUID(),
     };
 
     try {
@@ -835,6 +866,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5 * 60_000),
       });
 
       if (!response.ok) {
@@ -861,7 +893,13 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
           status: response.status,
           error: errorMessage,
         });
-        return { success: false, error: errorMessage };
+        const retryable = [400, 502, 503, 504].includes(response.status);
+        return {
+          success: false,
+          error: errorMessage,
+          status: response.status,
+          retryable,
+        };
       }
 
       const data = (await response.json()) as {
@@ -896,7 +934,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
         method: input.method,
         error: errorMessage,
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: errorMessage, retryable: true };
     }
   }
 
@@ -959,7 +997,6 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     }
   }
 
-  @preDestroy()
   unwatchAll(): void {
     for (const key of [...this.watchers.keys()]) {
       this.stopWatcher(key);
@@ -1077,12 +1114,17 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       watcher.totalEntryCount = watcher.resumeFromEntryCount;
       watcher.hasEmittedSnapshot = true;
       watcher.isBootstrapping = false;
-      void this.connectSse(key, { startLatest: true });
+      // The renderer dedupes this leaf replay against its hydrated resume chain; starting at latest
+      // can lose entries persisted between that hydration request and the stream connection.
+      void this.connectSse(key);
       return;
     }
 
     if (isTerminalStatus(run.status)) {
-      const historicalEntries = await this.fetchAllSessionLogs(watcher);
+      let historicalEntries = await this.fetchAllSessionLogs(watcher);
+      if (historicalEntries?.length === 0 && run.log_url) {
+        historicalEntries = await this.fetchArchivedLogs(run.log_url);
+      }
       const terminalWatcher = this.watchers.get(key);
       if (!terminalWatcher || terminalWatcher !== watcher) return;
       if (watcher.failed) return;
@@ -1306,7 +1348,7 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
     try {
       // The proxy authenticates with the run-scoped Bearer token; the Django leg uses the session.
       const response = usingProxy
-        ? await fetch(url.toString(), {
+        ? await this.streamFetch(url.toString(), {
             method: "GET",
             headers,
             signal: controller.signal,
@@ -2127,6 +2169,32 @@ export class CloudTaskService extends TypedEventEmitter<CloudTaskEvents> {
       }
 
       offset += page.entries.length;
+    }
+  }
+
+  private async fetchArchivedLogs(
+    logUrl: string,
+  ): Promise<StoredLogEntry[] | null> {
+    try {
+      const response = await this.streamFetch(logUrl, {
+        signal: AbortSignal.timeout(ARCHIVED_LOG_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      const content = await response.text();
+      if (!content.trim()) return [];
+      return content
+        .trim()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line) as StoredLogEntry];
+          } catch {
+            return [];
+          }
+        });
+    } catch (error) {
+      this.log.warn("Cloud task archived logs fetch error", { error });
+      return null;
     }
   }
 

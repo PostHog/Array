@@ -19,6 +19,7 @@ export type {
   AgentToolKind,
 } from "./agent-conversation";
 export * from "./agent-runtime";
+export { AGENT_SLUG_PATTERN, isValidAgentSlug } from "./agent-slug";
 export * from "./analytics-events";
 export { type ArchivedTask, archivedTaskSchema } from "./archive-domain";
 export { withTimeout } from "./async";
@@ -138,6 +139,7 @@ export {
 export * from "./enrichment";
 export {
   classifyGatewayLimitError,
+  classifyPromptFailure,
   type GatewayLimitCause,
   getErrorMessage,
   isAuthError,
@@ -146,6 +148,8 @@ export {
   isRateLimitError,
   isTransientUpstreamError,
   NotAuthenticatedError,
+  type PromptFailure,
+  type PromptFailureKind,
   type SerializedError,
   serializeError,
 } from "./errors";
@@ -219,10 +223,14 @@ export {
   splitMentionSegments,
 } from "./mentions";
 export {
+  DEFAULT_OPTION_META_KEY,
   defaultEligibleModel,
+  isDefaultSelectOption,
   isRestrictedModelOption,
+  OPTION_DOCS_URL_META_KEY,
   RESTRICTED_MODEL_META_KEY,
   restrictedModelMeta,
+  selectOptionDocsUrl,
 } from "./models";
 export {
   getOauthClientIdFromRegion,
@@ -259,11 +267,15 @@ export {
   isPrivateIpv6Literal,
 } from "./private-network";
 export {
+  type CapabilityNotch,
   DEFAULT_REASONING_EFFORT,
+  getCapabilityLadder,
   getReasoningEffortOptions,
   isSupportedReasoningEffort,
   type ReasoningEffortOption,
   type SupportedReasoningEffort,
+  supports1MContext,
+  supportsFastMode,
 } from "./reasoning-effort";
 export {
   type CloudRegion,
@@ -347,9 +359,11 @@ export type {
 } from "./task-creation-domain";
 export {
   formatClockTime,
+  formatDaySeparatorLabel,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
+  getLocalDayKey,
   getRelativeDateGroup,
 } from "./time";
 export {

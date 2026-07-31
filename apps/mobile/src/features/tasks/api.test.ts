@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockFetch } = vi.hoisted(() => ({
+const { mockFetch, mockRunTaskInCloud } = vi.hoisted(() => ({
   mockFetch: vi.fn(),
+  mockRunTaskInCloud: vi.fn(),
 }));
 
 vi.mock("expo/fetch", () => ({
@@ -9,6 +10,16 @@ vi.mock("expo/fetch", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  HttpError: class HttpError extends Error {
+    constructor(
+      readonly status: number,
+      readonly statusText: string,
+      message: string,
+    ) {
+      super(message);
+      this.name = "HttpError";
+    }
+  },
   getBaseUrl: () => "https://app.posthog.test",
   getProjectId: () => 42,
   getAccessToken: () => "token",
@@ -22,6 +33,10 @@ vi.mock("@/lib/api", () => ({
         ...((init?.headers as Record<string, string> | undefined) ?? {}),
       },
     }),
+}));
+
+vi.mock("@/lib/posthogApiClient", () => ({
+  getPostHogApiClient: () => ({ runTaskInCloud: mockRunTaskInCloud }),
 }));
 
 import {
@@ -38,10 +53,8 @@ function bodyOf(call: unknown): Record<string, unknown> {
 
 describe("runTaskInCloud", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
-    mockFetch.mockResolvedValue(
-      new Response(JSON.stringify({ id: "task-1" }), { status: 200 }),
-    );
+    mockRunTaskInCloud.mockReset();
+    mockRunTaskInCloud.mockResolvedValue({ id: "task-1" });
   });
 
   it.each([true, false])(
@@ -49,23 +62,28 @@ describe("runTaskInCloud", () => {
     async (flag) => {
       await runTaskInCloud("task-1", { autoPublish: flag });
 
-      expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
-        auto_publish: flag,
-      });
+      expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+        "task-1",
+        undefined,
+        expect.objectContaining({ autoPublish: flag }),
+      );
     },
   );
 
   it("omits auto_publish when not provided", async () => {
     await runTaskInCloud("task-1", { model: "claude-opus-4-8" });
 
-    expect(bodyOf(mockFetch.mock.calls[0])).not.toHaveProperty("auto_publish");
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "task-1",
+      undefined,
+      expect.objectContaining({ autoPublish: undefined }),
+    );
   });
 
   it("sends no body for the plain initial run", async () => {
     await runTaskInCloud("task-1");
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(init.body).toBeUndefined();
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith("task-1");
   });
 
   it("forwards the selected sandbox environment and custom image", async () => {
@@ -74,10 +92,14 @@ describe("runTaskInCloud", () => {
       customImageId: "image-123",
     });
 
-    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
-      sandbox_environment_id: "environment-123",
-      custom_image_id: "image-123",
-    });
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "task-1",
+      undefined,
+      expect.objectContaining({
+        sandboxEnvironmentId: "environment-123",
+        customImageId: "image-123",
+      }),
+    );
   });
 
   it("omits the sandbox environment and custom image when unset", async () => {
@@ -87,24 +109,34 @@ describe("runTaskInCloud", () => {
       customImageId: null,
     });
 
-    const body = bodyOf(mockFetch.mock.calls[0]);
-    expect(body).not.toHaveProperty("sandbox_environment_id");
-    expect(body).not.toHaveProperty("custom_image_id");
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "task-1",
+      undefined,
+      expect.objectContaining({
+        sandboxEnvironmentId: undefined,
+        customImageId: undefined,
+      }),
+    );
   });
 
   it("sends rtk_enabled=false when the run opts out", async () => {
     await runTaskInCloud("task-1", { rtkEnabled: false });
 
-    expect(bodyOf(mockFetch.mock.calls[0])).toMatchObject({
-      rtk_enabled: false,
-    });
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "task-1",
+      undefined,
+      expect.objectContaining({ rtkEnabled: false }),
+    );
   });
 
   it("omits rtk_enabled when the run keeps compression on", async () => {
     await runTaskInCloud("task-1", { rtkEnabled: true });
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(init.body).toBeUndefined();
+    expect(mockRunTaskInCloud).toHaveBeenCalledWith(
+      "task-1",
+      undefined,
+      expect.objectContaining({ rtkEnabled: true }),
+    );
   });
 });
 

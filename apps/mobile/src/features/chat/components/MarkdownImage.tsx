@@ -1,4 +1,4 @@
-import { ImageBroken } from "phosphor-react-native";
+import { ArrowSquareOut, ImageBroken } from "phosphor-react-native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { openExternalUrl } from "@/lib/openExternalUrl";
@@ -7,6 +7,12 @@ import { useThemeColors } from "@/lib/theme";
 interface MarkdownImageProps {
   url: string;
   alt?: string;
+  // When true, remote (http/https) images are not fetched automatically.
+  // Untrusted content (e.g. a generated artifact) could otherwise make the
+  // device issue requests to arbitrary Internet or local-network URLs just by
+  // being previewed. Instead we render a placeholder that only opens the image
+  // externally on an explicit user tap.
+  disableRemoteImages?: boolean;
 }
 
 type LoadState =
@@ -16,11 +22,21 @@ type LoadState =
 
 const MAX_HEIGHT = 320;
 
-export function MarkdownImage({ url, alt }: MarkdownImageProps) {
+function isRemoteUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
+export function MarkdownImage({
+  url,
+  alt,
+  disableRemoteImages,
+}: MarkdownImageProps) {
   const themeColors = useThemeColors();
+  const deferred = Boolean(disableRemoteImages) && isRemoteUrl(url);
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
+    if (deferred) return;
     let cancelled = false;
     setState({ status: "loading" });
     Image.getSize(
@@ -38,7 +54,23 @@ export function MarkdownImage({ url, alt }: MarkdownImageProps) {
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, deferred]);
+
+  if (deferred) {
+    return (
+      <Pressable
+        onPress={() => openExternalUrl(url)}
+        accessibilityRole="button"
+        accessibilityLabel={alt ? `Open image: ${alt}` : "Open image"}
+        className="flex-row items-center gap-2 rounded-md border border-gray-6 bg-gray-2 px-3 py-2 active:opacity-70"
+      >
+        <ArrowSquareOut size={16} color={themeColors.gray[9]} />
+        <Text className="flex-1 text-[12px] text-gray-11" numberOfLines={1}>
+          {alt || "Tap to open image"}
+        </Text>
+      </Pressable>
+    );
+  }
 
   if (state.status === "error") {
     return (

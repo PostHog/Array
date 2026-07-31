@@ -1,15 +1,13 @@
 import { Text } from "@components/text";
-import { EXTERNAL_INBOX_SOURCES } from "@posthog/shared";
+import { INBOX_PIPELINE_STATUSES } from "@posthog/core/inbox/reportFiltering";
+import { inboxStatusLabel } from "@posthog/core/inbox/reportPresentation";
+import { EXTERNAL_INBOX_SOURCES, type SourceProduct } from "@posthog/shared";
+import type { SignalReportPriority } from "@posthog/shared/domain-types";
 import { Check } from "phosphor-react-native";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useScreenInsets } from "@/hooks/useScreenInsets";
 import { useThemeColors } from "@/lib/theme";
-import {
-  type SourceProduct,
-  useInboxFilterStore,
-} from "../stores/inboxFilterStore";
-import type { SignalReportPriority, SignalReportStatus } from "../types";
-import { inboxStatusLabel } from "../utils";
+import { useInboxFilterStore } from "../stores/inboxFilterStore";
 
 interface FilterSheetProps {
   visible: boolean;
@@ -27,15 +25,6 @@ const SORT_OPTIONS: SortOption[] = [
   { label: "Strongest signal", field: "total_weight", direction: "desc" },
   { label: "Newest first", field: "created_at", direction: "desc" },
   { label: "Oldest first", field: "created_at", direction: "asc" },
-];
-
-const FILTERABLE_STATUSES: SignalReportStatus[] = [
-  "ready",
-  "pending_input",
-  "in_progress",
-  "failed",
-  "candidate",
-  "potential",
 ];
 
 function useStatusDotColors(): Record<string, string> {
@@ -74,9 +63,11 @@ export const SOURCE_PRODUCT_OPTIONS: { value: SourceProduct; label: string }[] =
     { value: "session_replay", label: "Session replay" },
     { value: "error_tracking", label: "Error tracking" },
     { value: "llm_analytics", label: "AI observability" },
+    { value: "github", label: "GitHub" },
+    { value: "linear", label: "Linear" },
+    { value: "zendesk", label: "Zendesk" },
     { value: "conversations", label: "Conversations" },
     { value: "signals_scout", label: "Scout" },
-    { value: "health_checks", label: "Health checks" },
     ...EXTERNAL_INBOX_SOURCES.map((source) => ({
       value: source.product,
       label: source.label,
@@ -141,7 +132,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
   const hasActiveFilters =
     sourceProductFilter.length > 0 ||
     priorityFilter.length > 0 ||
-    statusFilter.length < FILTERABLE_STATUSES.length;
+    statusFilter.length < INBOX_PIPELINE_STATUSES.length;
 
   return (
     <Modal
@@ -199,7 +190,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps) {
           {/* Status */}
           <SectionHeader title="Status" />
           <View className="mb-5">
-            {FILTERABLE_STATUSES.map((status) => (
+            {INBOX_PIPELINE_STATUSES.map((status) => (
               <OptionRow
                 key={status}
                 label={inboxStatusLabel(status)}

@@ -1,3 +1,5 @@
+import type { LlmGatewayService } from "@posthog/core/llm-gateway/llm-gateway";
+import { TitleGeneratorService } from "@posthog/core/sessions/titleGeneratorService";
 import type { Task } from "@posthog/shared/domain-types";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +10,9 @@ const mockEnrichDescription = vi.hoisted(() =>
 const mockGenerateTitle = vi.hoisted(() => vi.fn());
 const mockGetQueriesData = vi.hoisted(() => vi.fn(() => [] as unknown[]));
 const mockIsAuthenticated = vi.hoisted(() => ({ value: true }));
+const mockCurrentUser = vi.hoisted(() => ({
+  value: { id: 1 } as { id: number } | undefined,
+}));
 const mockUpdateTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const mockSetQueriesData = vi.hoisted(() => vi.fn());
 const mockSetQueryData = vi.hoisted(() => vi.fn());
@@ -44,6 +49,10 @@ vi.mock("@posthog/ui/features/auth/store", () => ({
         ? { status: "authenticated", cloudRegion: "us-east-1" }
         : { status: "anonymous", cloudRegion: null },
     ),
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: mockCurrentUser.value }),
 }));
 
 vi.mock("@posthog/core/sessions/sessionEvents", () => ({
@@ -114,6 +123,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
     created_at: "2026-05-28T00:00:00.000Z",
     updated_at: "2026-05-28T00:00:00.000Z",
     origin_product: "user_created",
+    created_by: {
+      id: 1,
+      uuid: "user-1",
+      email: "user@example.com",
+    },
     ...overrides,
   } as Task;
 }
@@ -134,6 +148,7 @@ describe("useChatTitleGenerator", () => {
     vi.clearAllMocks();
     useTitleGenerationStore.setState({ byTaskId: {} });
     mockIsAuthenticated.value = true;
+    mockCurrentUser.value = { id: 1 };
     mockPrompts.value = [];
     mockSessionSummary.value = undefined;
     mockTitleAttachmentPaths.value = [];
@@ -147,6 +162,14 @@ describe("useChatTitleGenerator", () => {
     renderHook(() =>
       useChatTitleGenerator(createTask({ title: "Custom task title" })),
     );
+    expect(mockGenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("waits for task creator identity before generating", () => {
+    mockCurrentUser.value = undefined;
+
+    renderHook(() => useChatTitleGenerator(createTask()));
+
     expect(mockGenerateTitle).not.toHaveBeenCalled();
   });
 
@@ -167,6 +190,34 @@ describe("useChatTitleGenerator", () => {
     await waitFor(() => {
       expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
         title: "Fix login bug",
+      });
+    });
+    expect(mockGenerateTitle).toHaveBeenCalledWith("Fix the login bug", {
+      resolveGithubPrTitles: true,
+    });
+  });
+
+  it("does not resolve GitHub metadata from a teammate's description", async () => {
+    mockGenerateTitle.mockResolvedValue({
+      title: "Review PR #123",
+      summary: "Reviewing a pull request",
+    });
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          created_by: {
+            id: 2,
+            uuid: "user-2",
+            email: "teammate@example.com",
+          },
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockGenerateTitle).toHaveBeenCalledWith("Fix the login bug", {
+        resolveGithubPrTitles: false,
       });
     });
   });
@@ -228,6 +279,40 @@ describe("useChatTitleGenerator", () => {
       { queryKey: ["tasks", "summaries"] },
       expect.any(Function),
     );
+  });
+
+  it("persists the PR title when the model only returns a summary", async () => {
+    const prPrompt =
+      '<github_pr number="123" title="Fix login redirect" url="https://github.com/org/repo/pull/123" />';
+    const prompt = vi.fn().mockResolvedValue({
+      content: "SUMMARY: Reviewing the existing pull request.",
+    });
+    const generator = new TitleGeneratorService(
+      { prompt } as unknown as LlmGatewayService,
+      { readAbsoluteFile: vi.fn() },
+      { getGithubPullRequestTitle: vi.fn().mockResolvedValue(null) },
+      { error: vi.fn() },
+    );
+    mockGenerateTitle.mockImplementation((content: string) =>
+      generator.generateTitleAndSummary(content),
+    );
+    mockPrompts.value = [prPrompt];
+
+    renderHook(() =>
+      useChatTitleGenerator(
+        createTask({
+          title: "@#123 - Fix login redirect",
+          description: prPrompt,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateTask).toHaveBeenCalledWith(TASK_ID, {
+        title: "Review PR #123: Fix login redirect",
+      });
+    });
+    expect(prompt).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -300,7 +385,9 @@ describe("useChatTitleGenerator", () => {
         '1. <file path="/tmp/code.ts" />',
         [],
       );
-      expect(mockGenerateTitle).toHaveBeenCalledWith("enriched content");
+      expect(mockGenerateTitle).toHaveBeenCalledWith("enriched content", {
+        resolveGithubPrTitles: true,
+      });
     });
   });
 

@@ -15,6 +15,7 @@ import { useService } from "@posthog/di/react";
 import type { Task } from "@posthog/shared/domain-types";
 import { useOptionalAuthenticatedClient } from "@posthog/ui/features/auth/authClient";
 import { useAuthStateValue } from "@posthog/ui/features/auth/store";
+import { useCurrentUser } from "@posthog/ui/features/auth/useCurrentUser";
 import {
   sessionStoreSetters,
   useSessionStore,
@@ -49,6 +50,7 @@ export function useChatTitleGenerator(task: Task): void {
   );
   const queryClient = useQueryClient();
   const client = useOptionalAuthenticatedClient();
+  const { data: currentUser } = useCurrentUser({ client });
   const isAuthenticated = useAuthStateValue(
     (state) => state.status === "authenticated" && !!state.cloudRegion,
   );
@@ -62,7 +64,7 @@ export function useChatTitleGenerator(task: Task): void {
   });
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || (task.created_by && !currentUser)) return;
 
     const bookkeeping = titleGenerationStoreApi.get(taskId);
     if (bookkeeping.inFlight) return;
@@ -110,7 +112,11 @@ export function useChatTitleGenerator(task: Task): void {
           rawContent,
           attachmentPaths,
         );
-        const result = await titleGenerator.generateTitleAndSummary(content);
+        const result = await titleGenerator.generateTitleAndSummary(content, {
+          resolveGithubPrTitles:
+            shouldGenerateFromPrompts ||
+            (!!currentUser && task.created_by?.id === currentUser.id),
+        });
         if (result) {
           // Drop the stash once a title has been successfully produced so the
           // map doesn't grow across a long-lived session. Keeping it on failure
@@ -195,5 +201,6 @@ export function useChatTitleGenerator(task: Task): void {
     queryClient,
     sessionService,
     titleGenerator,
+    currentUser,
   ]);
 }

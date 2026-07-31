@@ -1,22 +1,26 @@
-import type { TaskRunStatus } from "@posthog/shared";
+import type { CloudTaskUpdatePayload } from "@posthog/shared";
 import { z } from "zod";
-import type { CloudTaskUpdatePayload } from "./cloud-task-types";
 
-export type { CloudTaskUpdatePayload, TaskRunStatus };
+export {
+  type CloudTaskUpdatePayload,
+  isTerminalStatus,
+  type TaskRunStatus,
+  TERMINAL_STATUSES,
+} from "@posthog/shared";
 
-export const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
-
-export function isTerminalStatus(
-  status: TaskRunStatus | string | null | undefined,
-): boolean {
-  return (
-    status !== null &&
-    status !== undefined &&
-    TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])
-  );
-}
+export const cloudContextOutput = z
+  .object({ apiHost: z.string(), teamId: z.number() })
+  .nullable();
 
 // --- Events ---
+
+export const progressNotificationParams = z.object({
+  step: z.string().min(1),
+  status: z.enum(["in_progress", "completed", "failed"]),
+  label: z.string().min(1),
+  group: z.string().min(1),
+  detail: z.string().optional(),
+});
 
 export const CloudTaskEvent = {
   Update: "cloud-task-update",
@@ -55,6 +59,7 @@ export const onUpdateInput = z.object({
 
 export const sendCommandInput = z.object({
   taskId: z.string(),
+  id: z.string().optional(),
   runId: z.string(),
   apiHost: z.string(),
   teamId: z.number(),
@@ -65,6 +70,9 @@ export const sendCommandInput = z.object({
     "permission_response",
     "set_config_option",
     "mcp_response",
+    "pi/rpc",
+    "queue_get",
+    "queue_clear",
   ]),
   params: z.record(z.string(), z.unknown()).optional(),
 });
@@ -84,6 +92,8 @@ export const sendCommandOutput = z.object({
   success: z.boolean(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  status: z.number().optional(),
+  retryable: z.boolean().optional(),
 });
 
 export type SendCommandOutput = z.infer<typeof sendCommandOutput>;

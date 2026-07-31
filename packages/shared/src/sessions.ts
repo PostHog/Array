@@ -50,6 +50,7 @@ export interface AgentSession {
   taskRunId: string;
   taskId: string;
   taskTitle: string;
+  isTaskAuthor?: boolean;
   channel: string;
   events: AcpMessage[];
   startedAt: number;
@@ -71,6 +72,8 @@ export interface AgentSession {
   model?: string;
   executionMode?: ExecutionMode;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   configOptions?: SessionConfigOption[];
   /**
    * Adapter's negotiated steering capability (`_meta.posthog.steering` from

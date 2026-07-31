@@ -47,6 +47,7 @@ import {
   classifyAgentError,
   isPromptTooLongError,
 } from "../adapters/error-classification";
+import { isSupportedReasoningEffort } from "../adapters/reasoning-effort";
 import { appendRtkGuidanceForCodex } from "../adapters/rtk-guidance";
 import {
   SIGNED_COMMIT_QUALIFIED_TOOL_NAME,
@@ -400,6 +401,7 @@ export class AgentServer {
   // often arrives while newSession() is still awaited (this.session is still null),
   // causing a second session to be created and duplicate Slack messages to be sent.
   private initializationPromise: Promise<void> | null = null;
+  private initializingTelemetry: OtelRunTelemetry | undefined;
   private pendingEvents: Record<string, unknown>[] = [];
   /** ACP notifications emitted by newSession/resumeSession before this.session is assigned. */
   private preSessionEvents: Record<string, unknown>[] = [];
@@ -407,6 +409,9 @@ export class AgentServer {
   private pendingCompactContinuationMessageIds = new Set<string>();
   private inFlightMessageDeliveries = new Map<string, Promise<unknown>>();
   private activeOwnedTurnCount = 0;
+  // Normal follow-ups own turns in arrival order. Explicit steering bypasses
+  // this tail so it can still reach the active adapter turn immediately.
+  private nonSteerDeliveryTail: Promise<void> = Promise.resolve();
   private pendingPermissions = new Map<
     string,
     {
@@ -1091,6 +1096,7 @@ export class AgentServer {
           this.inFlightMessageDeliveries.set(messageId, deliveryOutcome);
         }
         let deliveryCommitted = retryCompactContinuation;
+        let releaseNonSteerDelivery: (() => void) | undefined;
         const commitDelivery = (): void => {
           deliveryCommitted = true;
           if (!messageId) return;
@@ -1105,6 +1111,9 @@ export class AgentServer {
         };
 
         try {
+          if (params.steer !== true) {
+            releaseNonSteerDelivery = await this.acquireNonSteerDeliveryTurn();
+          }
           this.logger.debug("Received user_message command", {
             hasContent:
               typeof params.content === "string"
@@ -1302,6 +1311,7 @@ export class AgentServer {
           rejectDelivery(error);
           throw error;
         } finally {
+          releaseNonSteerDelivery?.();
           if (
             messageId &&
             this.inFlightMessageDeliveries.get(messageId) === deliveryOutcome
@@ -1487,9 +1497,36 @@ export class AgentServer {
       payload,
       sseController,
     );
+    const initStartedAt = Date.now();
     try {
       await this.initializationPromise;
+    } catch (error) {
+      const telemetry = this.initializingTelemetry;
+      telemetry?.append(payload.run_id, {
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED,
+          params: {
+            runtimeAdapter: this.getRuntimeAdapter(),
+            initializationPhase: "session_setup",
+            initMs: Date.now() - initStartedAt,
+            requestedModel: this.config.model,
+            gatewayConfigured: Boolean(
+              process.env.LLM_GATEWAY_URL || this.config.apiUrl,
+            ),
+            errorType:
+              error instanceof Error && error.name === "TimeoutError"
+                ? "timeout"
+                : "error",
+          },
+        },
+      });
+      await telemetry?.shutdown();
+      throw error;
     } finally {
+      this.initializingTelemetry = undefined;
       this.initializationPromise = null;
     }
   }
@@ -1603,6 +1640,7 @@ export class AgentServer {
       deviceInfo,
       runtimeAdapter,
     );
+    this.initializingTelemetry = telemetry;
 
     const logWriter = new SessionLogWriter({
       posthogAPI,
@@ -1630,7 +1668,16 @@ export class AgentServer {
               // adapter uses the @openai/codex vendored binary.
               binaryPath: process.env.POSTHOG_CODEX_BINARY_PATH,
               model: this.config.model ?? DEFAULT_CODEX_MODEL,
-              reasoningEffort: this.config.reasoningEffort,
+              // Claude-only levels like ultracode must not leak into codex.
+              reasoningEffort:
+                this.config.reasoningEffort &&
+                isSupportedReasoningEffort(
+                  "codex",
+                  this.config.model ?? DEFAULT_CODEX_MODEL,
+                  this.config.reasoningEffort,
+                )
+                  ? this.config.reasoningEffort
+                  : undefined,
               developerInstructions: codexInstructions,
               httpHeaders: gatewayEnv.openaiCustomHeaders,
             }
@@ -1707,6 +1754,14 @@ export class AgentServer {
       permissionMode: initialPermissionMode,
       posthogExecPermissionRegex: this.posthogExecPermissionRegexSource,
       ...(this.config.baseBranch && { baseBranch: this.config.baseBranch }),
+      ...(runtimeAdapter === "claude" &&
+        this.config.contextWindow && {
+          contextWindow: this.config.contextWindow,
+        }),
+      ...(runtimeAdapter === "claude" &&
+        this.config.fastMode !== undefined && {
+          fastMode: this.config.fastMode,
+        }),
       ...this.buildClaudeCodeSessionMeta(runtimeAdapter),
     };
 
@@ -1821,6 +1876,7 @@ export class AgentServer {
       pendingHandoffGitState: undefined,
       sessionMeta: effectiveSessionMeta,
     };
+    this.initializingTelemetry = undefined;
     this.flushPreSessionEvents();
 
     this.logger = new Logger({
@@ -1928,6 +1984,16 @@ export class AgentServer {
     } finally {
       this.activeOwnedTurnCount -= 1;
     }
+  }
+
+  private async acquireNonSteerDeliveryTurn(): Promise<() => void> {
+    const previous = this.nonSteerDeliveryTail;
+    let release!: () => void;
+    this.nonSteerDeliveryTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    return release;
   }
 
   /**
@@ -3492,7 +3558,7 @@ You are replying in a Slack thread. Slack readers want short, skimmable answers 
 - This is a default, not a hard rule. If the user (or their saved memory) asks for more depth or a specific format, follow that instead.
 
 # Mentioning users
-To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one.
+To ping a Slack user, reuse a \`<@U…|displayname>\` token that already appears in the message context — copy it verbatim, including the \`U…\` ID. Do NOT construct a mention token from a name, and do NOT substitute the display name (or any other string) for the \`U…\` ID — \`<@Jane|Jane Doe>\` is not a valid mention; only the form with the real ID like \`<@U01ABCDEF23|Jane Doe>\` is. If the person you want to refer to has no \`<@U…|displayname>\` token anywhere in the thread context, write their name as plain text instead of inventing one. These \`<@U…>\` tokens are Slack-only: never carry one — or a name or handle derived from it — into a GitHub PR, commit message, or review request as an \`@\`-mention. A Slack display name or handle is NOT a GitHub username; see the pull-request instructions below.
 
 # Suggesting code changes
 You can also open pull requests directly from this Slack thread. When the user's question describes a problem with a plausible code-side fix — a bug visible in errors or logs, missing or broken instrumentation, a broken funnel step traceable to UI code, a stale config that lives in a repo — end your reply with a one-sentence offer to open a PR for the fix and ask if they want you to proceed. Skip the offer for pure data lookups with no actionable code change (e.g. "what was DAU yesterday?"), and skip it when the fix would clearly live outside any repo you can reach.
@@ -3559,8 +3625,13 @@ Optimize for the fewest shell round trips.
 - Read multiple files at once.
 - Never rerun a command solely to reproduce output you already have.`;
 
+    const artifactInstructions = `
+## Delivering non-code files (artifacts)
+When you create a non-code file the user should be able to download (such as a report, chart, image, archive, or data file), call the \`upload_artifact\` tool with its path before your final reply. In your final reply, link to the download URL returned by the tool—never link to the file's local workspace path. Files left in the workspace don't reach the user. Don't upload source code or repository changes—those belong in a commit or PR.`;
+
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
     const publicRepoSafetyInstruction = `   - **Public-repo safety.** Treat the target repository as public-readable unless you have verified otherwise. The PR title, description, and commit messages must not contain private operational scale (exact event counts, internal row volumes, customer-usage percentages), customer names / emails / companies, references to internal tickets or incidents, the contents of Slack threads (do not quote or paraphrase what was said), or unreleased roadmap details. Linking to the originating Slack thread is fine and encouraged — Slack links are auth-gated and useful as context — as are channel references like "raised in #team-foo". Describe findings qualitatively ("present on nearly all X events, absent from Y") rather than with quantitative figures pulled from analytics queries — the reasoning that uses those numbers can stay in the thread; the PR copy cannot.`;
+    const prMentionSafetyInstruction = `   - **Never guess a GitHub identity.** Do NOT \`@\`-mention, tag, assign, request review from, or attribute the PR to a person (in the title, description, commit message, or reviewers) using a name or handle taken from Slack or this thread. A Slack display name or handle is NOT a GitHub username. Finding a similar-looking handle in the repo's git history, CODEOWNERS, or existing PRs/issues does NOT confirm it belongs to this person: repository presence proves the handle exists, not that it is the person you mean, so treating it as a match still \`@\`-tags an unrelated account (e.g. Slack "Ross" is not necessarily GitHub \`@ross\`, even if some \`@ross\` has committed to the repo). Only \`@\`-mention a GitHub \`@handle\` the user gave you explicitly in this thread. Otherwise refer to people by plain-text name, or omit the mention entirely.`;
     // Slack- and inbox-originated PRs are attributed to PostHog, not the
     // PostHog Code desktop app — they come from the Slack app / Self-driving
     // inbox, which users know as "PostHog".
@@ -3585,7 +3656,7 @@ Do the requested work, but stop with local changes ready for review.
 Important:
 - Do NOT create new commits, push to the branch, or update the pull request unless the user explicitly asks.
 - Do NOT create a new branch or a new pull request unless the user explicitly asks.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
       }
 
@@ -3606,7 +3677,7 @@ After completing the requested changes:
 Important:
 - Do NOT create a new branch or a new pull request unless the user explicitly asks.
 - Do NOT push fixes for review comments without replying to and resolving each related thread.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3626,6 +3697,7 @@ When the user asks to clone or work in a GitHub repository:
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
 ${publicRepoSafetyInstruction.trimStart()}
+${prMentionSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Always create the PR as a draft. Do not ask for confirmation before publishing completed code changes`
             : `
@@ -3636,6 +3708,7 @@ When the user explicitly asks to clone or work in a GitHub repository:
 - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction.trimStart()}
 ${publicRepoSafetyInstruction.trimStart()}
+${prMentionSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Do NOT create branches, commits, push changes, or open pull requests unless the user explicitly asks for that`;
 
@@ -3656,7 +3729,7 @@ ${publishInstructions}
 
 Important:
 - Prefer using MCP tools to answer questions with real data over giving generic advice.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3671,9 +3744,10 @@ Important:
 - If the user explicitly asks you to open a pull request: pick a new branch name prefixed with \`posthog-code/\`, stage your changes with \`git add\`, and call the \`git_signed_commit\` tool with \`branch\` set to that name and a clear \`message\` (do NOT use \`git commit\`/\`git push\` — they are blocked). Before opening the PR, check the repo for a PR template at \`.github/pull_request_template.md\` (or variants; fall back to the org's \`.github\` repo via \`gh api\`) and use it as the body structure, and search for matching open issues with \`gh issue list --search\` to include \`Closes #<n>\` / \`Refs #<n>\` links. Keep the description brief overall — summarize only the most important changes.
 ${whyContextInstruction.trimStart()}
 ${publicRepoSafetyInstruction.trimStart()}
+${prMentionSafetyInstruction.trimStart()}
 - End the PR description with a horizontal rule followed by this footer line: ${prFooter}
 - Always create the PR as a draft.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
     }
 
@@ -3689,6 +3763,7 @@ Otherwise, after completing the requested changes:
    - Keep the PR description brief overall. Summarize only the most important changes — do NOT enumerate every change you made. A few sentences or bullets is plenty.
 ${whyContextInstruction}
 ${publicRepoSafetyInstruction}
+${prMentionSafetyInstruction}
    - Check the repo for a PR template at \`.github/pull_request_template.md\` (also try \`.github/PULL_REQUEST_TEMPLATE.md\`, \`docs/pull_request_template.md\`, and root variants). If one exists, use its exact section headings as the PR body — do NOT fall back to a generic Summary/Test plan format.
    - If no repo-level template exists, check the org's \`.github\` repo via \`gh api /repos/<owner>/.github/contents/.github/pull_request_template.md\` (and other common paths) and use that as a fallback.
    - Search for matching open issues with \`gh issue list --state open --search '<keywords>'\` (derive keywords from the branch name, commits, and changed files; \`gh issue view <n>\` to confirm relevance). For every issue this PR would resolve, include a \`Closes #<n>\` line in the body so GitHub auto-links and auto-closes it on merge. For issues that are related but not fully resolved, use \`Refs #<n>\` instead.
@@ -3700,7 +3775,7 @@ ${prFooter}
 
 Important:
 - Always create the PR as a draft. Do not ask for confirmation.
-${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}
+${signedCommitInstructions}${prLinkInstructions}${shellEfficiencyInstructions}${artifactInstructions}
 `;
   }
 

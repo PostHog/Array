@@ -9,7 +9,11 @@ const mocks = vi.hoisted(() => {
     startActivityHeartbeat: vi.fn(() => () => {}),
     reconcileTaskConnection: vi.fn(() => () => {}),
   };
-  return { sessionService, unregisterMountedTask };
+  return {
+    currentUser: { uuid: "user-1" } as { uuid: string } | undefined,
+    sessionService,
+    unregisterMountedTask,
+  };
 });
 
 vi.mock("@posthog/di/react", () => ({
@@ -34,6 +38,14 @@ vi.mock("@posthog/ui/features/auth/store", () => ({
     }),
 }));
 
+vi.mock("@posthog/ui/features/auth/authClient", () => ({
+  useOptionalAuthenticatedClient: () => ({}),
+}));
+
+vi.mock("@posthog/ui/features/auth/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: mocks.currentUser }),
+}));
+
 vi.mock("./useChatTitleGenerator", () => ({
   useChatTitleGenerator: vi.fn(),
 }));
@@ -56,7 +68,9 @@ function connectionProps(taskId: string) {
 
 describe("useSessionConnection mounted-task registration", () => {
   beforeEach(() => {
+    mocks.currentUser = { uuid: "user-1" };
     mocks.sessionService.registerMountedTask.mockClear();
+    mocks.sessionService.reconcileTaskConnection.mockClear();
     mocks.unregisterMountedTask.mockClear();
   });
 
@@ -90,5 +104,37 @@ describe("useSessionConnection mounted-task registration", () => {
 
     unmount();
     expect(mocks.unregisterMountedTask).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      "the current user is still loading",
+      undefined,
+      { uuid: "author" },
+      undefined,
+    ],
+    ["the task has no author", { uuid: "user-1" }, undefined, undefined],
+    [
+      "the current user is the author",
+      { uuid: "user-1" },
+      { uuid: "user-1" },
+      true,
+    ],
+    [
+      "another user authored the task",
+      { uuid: "user-1" },
+      { uuid: "user-2" },
+      false,
+    ],
+  ])("sets authorship when %s", (_case, currentUser, createdBy, expected) => {
+    mocks.currentUser = currentUser;
+    const props = connectionProps("task-1");
+    props.task.created_by = createdBy as Task["created_by"];
+
+    renderHook(() => useSessionConnection(props));
+
+    expect(mocks.sessionService.reconcileTaskConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ isTaskAuthor: expected }),
+    );
   });
 });

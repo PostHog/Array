@@ -1,9 +1,19 @@
-import { isContentlessTask, type Task } from "@posthog/shared/domain-types";
+import { isContentlessTask } from "@posthog/shared/domain-types";
 
 export type TaskActivitySortMode = "created" | "updated";
 
+export interface TaskActivityInput {
+  title: string;
+  slug: string;
+  description?: string | null;
+  internal?: boolean;
+  created_at: string;
+  updated_at?: string | null;
+  latest_run?: { updated_at: string };
+}
+
 export function taskActivityTimestamp(
-  task: Pick<Task, "created_at" | "updated_at" | "latest_run">,
+  task: Pick<TaskActivityInput, "created_at" | "updated_at" | "latest_run">,
   sortMode: TaskActivitySortMode,
 ): number {
   if (sortMode === "created") {
@@ -17,12 +27,12 @@ export function taskActivityTimestamp(
   );
 }
 
-export function filterAndSortTasks(
-  tasks: readonly Task[],
+export function filterAndSortTasks<TaskType extends TaskActivityInput>(
+  tasks: readonly TaskType[],
   sortMode: TaskActivitySortMode,
   showInternal: boolean,
   filter: string,
-): Task[] {
+): TaskType[] {
   const normalizedFilter = filter.toLowerCase();
 
   return tasks

@@ -6,10 +6,10 @@ packages:
 catalog:
   '@hono/node-server': ^1.13.7
   '@hono/trpc-server': ^0.3.4
-  '@earendil-works/pi-agent-core': 0.80.6
-  '@earendil-works/pi-ai': 0.80.6
-  '@earendil-works/pi-coding-agent': 0.80.6
-  '@earendil-works/pi-tui': 0.80.6
+  '@earendil-works/pi-agent-core': 0.83.0
+  '@earendil-works/pi-ai': 0.83.0
+  '@earendil-works/pi-coding-agent': 0.83.0
+  '@earendil-works/pi-tui': 0.83.0
   '@parcel/watcher': ^2.5.6
   '@phosphor-icons/react': ^2.1.10
   '@posthog/quill': 0.3.0-beta.24
@@ -83,8 +83,7 @@ overrides:
   # Dedupe the zod 4.x line to one version so cross-package schema types stay
   # nameable (TS2742). Scoped to 4.x; 3.x consumers are untouched.
   'zod@^4.0.0': 4.4.3
-  # Keep one React across the monorepo so apps/code and apps/mobile share an
-  # instance (react-test-renderer must match react).
+  # Keep one React across the monorepo so shared packages resolve one runtime.
   react: 19.2.6
   react-dom: 19.2.6
   react-test-renderer: 19.2.6

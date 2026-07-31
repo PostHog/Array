@@ -24,8 +24,6 @@ export const SHORTCUTS = {
   // takes slot 1 instead.
   SWITCH_STARRED_CHANNEL:
     "mod+1,mod+2,mod+3,mod+4,mod+5,mod+6,mod+7,mod+8,mod+9",
-  OPEN_IN_EDITOR: "mod+o",
-  COPY_PATH: "mod+shift+c",
   TOGGLE_FOCUS: "mod+r",
   PASTE_AS_FILE: "mod+shift+v",
   INBOX: "mod+i",
@@ -208,20 +206,6 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     id: "close-tab",
     keys: SHORTCUTS.CLOSE_TAB,
     description: "Close active tab",
-    category: "panels",
-    context: "Task detail",
-  },
-  {
-    id: "open-in-editor",
-    keys: SHORTCUTS.OPEN_IN_EDITOR,
-    description: "Open in external editor",
-    category: "panels",
-    context: "Task detail",
-  },
-  {
-    id: "copy-path",
-    keys: SHORTCUTS.COPY_PATH,
-    description: "Copy file path",
     category: "panels",
     context: "Task detail",
   },

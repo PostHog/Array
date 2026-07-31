@@ -1,6 +1,6 @@
 import { Text } from "@components/text";
+import type { TaskRun } from "@posthog/shared";
 import { View } from "react-native";
-import type { TaskRun } from "../types";
 import { getAutomationStatusPresentation } from "../utils/automationStatus";
 
 interface AutomationStatusBadgeProps {

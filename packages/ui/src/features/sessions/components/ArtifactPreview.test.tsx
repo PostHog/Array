@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPreview } from "./ArtifactPreview";
 import {
@@ -195,6 +201,13 @@ describe("ArtifactPreview", () => {
         10,
       );
       expect(percentage).toBeGreaterThan(100);
+    });
+
+    // react-zoom-pan-pinch never clears its ~180ms wheel-stop alignment timer
+    // on unmount; fired after jsdom teardown its requestAnimationFrame call
+    // crashes the run, so wait it out here.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
     });
   });
 

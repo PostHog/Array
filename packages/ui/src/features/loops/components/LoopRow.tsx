@@ -1,9 +1,10 @@
-import { CaretRightIcon, RepeatIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import type { LoopSchemas } from "@posthog/api-client/loops";
 import { formatRelativeTimeLong } from "@posthog/shared";
 import type { UserBasic } from "@posthog/shared/domain-types";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import { Badge } from "@posthog/ui/primitives/Badge";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import { Flex, Text } from "@radix-ui/themes";
 import { Link } from "@tanstack/react-router";
 import {
@@ -62,10 +63,10 @@ export function LoopRow({
       to="/code/loops/$loopId"
       params={{ loopId: loop.id }}
       state={{ loopListOrigin: true }}
-      className="flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
+      className="group flex items-center justify-between gap-3 rounded-(--radius-2) border border-border bg-(--color-panel-solid) px-4 py-3.5 no-underline transition-colors duration-150 hover:border-(--gray-6) hover:bg-(--gray-2)"
     >
       <Flex align="center" gap="3" className="min-w-0">
-        <RepeatIcon size={20} className="shrink-0 text-gray-11" />
+        <LoopIcon size={20} className="shrink-0 text-gray-11" />
         <Flex direction="column" gap="1" className="min-w-0">
           <Flex align="center" gap="2" className="min-w-0">
             <Text className="truncate font-medium text-[13px] text-gray-12">

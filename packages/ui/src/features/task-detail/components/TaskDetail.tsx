@@ -16,8 +16,6 @@ import { useFileSearchStore } from "../../command/fileSearchStore";
 import { useRepoFileWatcher } from "../../file-watcher/useRepoFileWatcher";
 import { clearGitReviewQueries } from "../../git-interaction/gitCacheKeys";
 import { PanelLayout } from "../../panels/components/PanelLayout";
-import { usePanelLayoutStore } from "../../panels/panelLayoutStore";
-import { getLeafPanel, parseTabId } from "../../panels/panelStoreHelpers";
 import { PiSessionView } from "../../pi-sessions/PiSessionView";
 import { MIN_CHAT_WIDTH } from "../../sessions/constants";
 import { useCwd } from "../../sidebar/useCwd";
@@ -27,7 +25,6 @@ import { useWorkspaceEvents } from "../../workspace/useWorkspaceEvents";
 import { HeaderTitleEditor } from "../HeaderTitleEditor";
 import { useTaskData } from "../hooks/useTaskData";
 import { CustomImageBadge } from "./CustomImageBadge";
-import { ExternalAppsOpener } from "./ExternalAppsOpener";
 import { WorkspaceModeBadge } from "./WorkspaceModeBadge";
 
 const MIN_REVIEW_WIDTH = 300;
@@ -51,33 +48,11 @@ export function TaskDetail({
   channelId,
 }: TaskDetailProps) {
   const taskId = initialTask.id;
-
   const { task } = useTaskData({ taskId, initialTask });
   const runtime = task.runtime === "pi" ? "pi" : "acp";
+  const selectedTaskRunId = task.latest_run?.id;
 
   const effectiveRepoPath = useCwd(taskId);
-
-  const activeRelativePath = usePanelLayoutStore((state) => {
-    const layout = state.getLayout(taskId);
-    if (!layout) return null;
-
-    const panelId = layout.focusedPanelId;
-    if (!panelId) return null;
-
-    const panel = getLeafPanel(layout.panelTree, panelId);
-    if (!panel) return null;
-
-    const parsed = parseTabId(panel.content.activeTabId);
-    if (parsed.type === "file") {
-      return parsed.value;
-    }
-    return null;
-  });
-
-  const openTargetPath =
-    activeRelativePath && effectiveRepoPath
-      ? [effectiveRepoPath, activeRelativePath].join("/").replace(/\/+/g, "/")
-      : effectiveRepoPath;
 
   const openFilePicker = useFileSearchStore((state) => state.openPicker);
 
@@ -129,15 +104,10 @@ export function TaskDetail({
   // Memoized so the headerContent memo below isn't busted by unrelated renders.
   const trailing = useMemo(
     () =>
-      channelId || openTargetPath ? (
-        <Flex align="center" gap="2">
-          {channelId && (
-            <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
-          )}
-          {openTargetPath && <ExternalAppsOpener targetPath={openTargetPath} />}
-        </Flex>
+      channelId ? (
+        <CopyThreadLinkButton channelId={channelId} taskId={taskId} />
       ) : null,
-    [channelId, taskId, openTargetPath],
+    [channelId, taskId],
   );
   const workspace = useWorkspace(taskId);
   const workspaceMode = workspace?.mode;
@@ -273,7 +243,13 @@ export function TaskDetail({
     <Box data-task-detail-id={taskId} height="100%" ref={containerRef}>
       <Flex height="100%">
         <Box className={`min-w-0 flex-1 ${isExpanded ? "hidden" : ""}`}>
-          {runtime === "pi" && <PiSessionView taskId={taskId} />}
+          {runtime === "pi" && (
+            <PiSessionView
+              taskId={taskId}
+              taskRunId={selectedTaskRunId}
+              isCloud={isCloud}
+            />
+          )}
           {runtime === "acp" && <PanelLayout taskId={taskId} task={task} />}
         </Box>
 

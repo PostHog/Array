@@ -24,8 +24,8 @@ vi.mock("@/features/chat", () => ({
   deriveToolKind: () => "other",
 }));
 
-vi.mock("@/features/chat/utils/thinkingMessages", () => ({
-  getRandomThinkingActivity: () => "Thinking",
+vi.mock("@posthog/core/sessions/thinkingActivities", () => ({
+  pickThinkingActivity: () => "Thinking",
 }));
 
 vi.mock("@/lib/theme", () => ({
@@ -54,6 +54,11 @@ vi.mock("./PlanApprovalCard", () => ({
 vi.mock("./CloudMessageAttachment", () => ({
   CloudMessageAttachment: (props: Record<string, unknown>) =>
     createElement("CloudMessageAttachment", props),
+}));
+
+vi.mock("./TaskArtifacts", () => ({
+  TaskArtifacts: (props: Record<string, unknown>) =>
+    createElement("TaskArtifacts", props),
 }));
 
 function renderTaskSessionView(

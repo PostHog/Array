@@ -2,7 +2,6 @@ import {
   BellIcon,
   EnvelopeSimple,
   Lightning,
-  RepeatIcon,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import {
@@ -31,6 +30,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { useInboxAllReports } from "@posthog/ui/features/inbox/hooks/useInboxAllReports";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { CountBadge } from "@posthog/ui/primitives/CountBadge";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import {
   navigateToActivity,
   navigateToInbox,
@@ -39,7 +39,12 @@ import {
 } from "@posthog/ui/router/navigationBridge";
 import { useAppView } from "@posthog/ui/router/useAppView";
 import { track } from "@posthog/ui/shell/analytics";
-import { type ComponentPropsWithRef, type ReactNode, useState } from "react";
+import {
+  type ComponentPropsWithRef,
+  type ReactElement,
+  type ReactNode,
+  useState,
+} from "react";
 import { ActivityHoverCard } from "./ActivityHoverCard";
 
 const INBOX_REFETCH_INTERVAL_MS = 60_000;
@@ -76,7 +81,7 @@ function NavIcon({
             aria-label={label}
             data-selected={isActive || undefined}
             onClick={onClick}
-            className="relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground"
+            className="group relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground"
           >
             {icon}
             {badge}
@@ -98,6 +103,10 @@ interface NavButtonProps extends ComponentPropsWithRef<"button"> {
   badge?: ReactNode;
 }
 
+// Same quill Button as NavIcon above — this variant only exists because the
+// Activity entry is a Popover trigger, so it needs to forward the trigger's
+// props and ref. Hand-rolling the button here left it a size larger than its
+// neighbours.
 function NavButton({
   icon,
   label,
@@ -109,30 +118,71 @@ function NavButton({
   ...buttonProps
 }: NavButtonProps) {
   return (
-    <button
+    <Button
       {...buttonProps}
       ref={ref}
       type="button"
+      variant="default"
+      size="icon"
       aria-label={label}
+      data-selected={isActive || undefined}
       onClick={onClick}
       className={cn(
-        "relative flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-100",
-        isActive
-          ? "bg-fill-selected text-foreground"
-          : "text-muted-foreground hover:bg-fill-hover hover:text-foreground",
+        "relative shrink-0 text-muted-foreground data-selected:bg-fill-selected data-selected:text-foreground",
         className,
       )}
     >
       {icon}
       {badge}
-    </button>
+    </Button>
   );
+}
+
+function ActivityHoverPopover({ trigger }: { trigger: ReactElement }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        openOnHover
+        delay={300}
+        closeDelay={100}
+        onClick={(event) => event.preventBaseUIHandler()}
+        render={trigger}
+      />
+      {open && (
+        <ActivityHoverCard side="bottom" onClose={() => setOpen(false)} />
+      )}
+    </Popover>
+  );
+}
+
+function ActivityNavItem({
+  isActive,
+  unreadCount,
+  onNavigate,
+}: {
+  isActive: boolean;
+  unreadCount: number;
+  onNavigate: () => void;
+}) {
+  const bell = (
+    <NavButton
+      icon={<BellIcon size={16} weight={isActive ? "fill" : "regular"} />}
+      label="Activity"
+      isActive={isActive}
+      onClick={onNavigate}
+      badge={<CountBadge count={unreadCount} className={ICON_BADGE_CLASS} />}
+    />
+  );
+
+  if (isActive) return bell;
+  return <ActivityHoverPopover trigger={bell} />;
 }
 
 export function ChannelNav() {
   const view = useAppView();
   const loopsEnabled = useFeatureFlag(LOOPS_FLAG, import.meta.env.DEV);
-  const [activityOpen, setActivityOpen] = useState(false);
 
   const { counts } = useInboxAllReports({
     ignoreFilters: true,
@@ -161,7 +211,7 @@ export function ChannelNav() {
     // cannot do that — the skip window is provider state, and isolated
     // providers never share it.
     <TooltipProvider delay={400}>
-      <div className="flex shrink-0 gap-2 px-2 pt-2 pb-1">
+      <div className="flex shrink-0 gap-2 p-2">
         <NavIcon
           icon={
             <EnvelopeSimple size={16} weight={isInbox ? "fill" : "regular"} />
@@ -174,44 +224,11 @@ export function ChannelNav() {
             <CountBadge count={counts.pulls} className={ICON_BADGE_CLASS} />
           }
         />
-        <Popover
-          open={!isActivity && activityOpen}
-          onOpenChange={(open) => setActivityOpen(!isActivity && open)}
-        >
-          <PopoverTrigger
-            openOnHover
-            delay={300}
-            closeDelay={100}
-            render={
-              <NavButton
-                icon={
-                  <BellIcon
-                    size={16}
-                    weight={isActivity ? "fill" : "regular"}
-                  />
-                }
-                label="Activity"
-                isActive={isActivity}
-                onClick={() => {
-                  setActivityOpen(false);
-                  withTrack("activity", navigateToActivity)();
-                }}
-                badge={
-                  <CountBadge
-                    count={unseenActivity}
-                    className={ICON_BADGE_CLASS}
-                  />
-                }
-              />
-            }
-          />
-          {!isActivity && activityOpen && (
-            <ActivityHoverCard
-              side="bottom"
-              onClose={() => setActivityOpen(false)}
-            />
-          )}
-        </Popover>
+        <ActivityNavItem
+          isActive={isActivity}
+          unreadCount={unseenActivity}
+          onNavigate={withTrack("activity", navigateToActivity)}
+        />
         <NavIcon
           icon={
             <Lightning
@@ -233,7 +250,7 @@ export function ChannelNav() {
         {loopsEnabled ? (
           <NavIcon
             icon={
-              <RepeatIcon
+              <LoopIcon
                 size={16}
                 weight={view.type === "loops" ? "fill" : "regular"}
               />

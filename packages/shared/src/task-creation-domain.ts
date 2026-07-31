@@ -39,6 +39,8 @@ export interface TaskCreationInput {
   runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   environmentId?: string;
   sandboxEnvironmentId?: string;
   customImageId?: string;

@@ -1,4 +1,5 @@
-import { CHANNELS_LAYOUT_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
+import { CHANNELS_LAYOUT_FLAG } from "@posthog/shared";
+import { useBluebirdFlag } from "@posthog/ui/features/feature-flags/useBluebirdFlag";
 import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 
 /**
@@ -6,10 +7,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
  * No dev default, so dev matches prod; bluebird keeps its own backend guard.
  */
 export function useChannelsLayout(): boolean {
-  const bluebirdEnabled = useFeatureFlag(
-    PROJECT_BLUEBIRD_FLAG,
-    import.meta.env.DEV,
-  );
+  const bluebirdEnabled = useBluebirdFlag();
   const layoutEnabled = useFeatureFlag(
     CHANNELS_LAYOUT_FLAG,
     import.meta.env.DEV,

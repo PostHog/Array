@@ -1,10 +1,14 @@
 import {
   CheckCircleIcon,
+  FileTextIcon,
   PlusCircleIcon,
   XCircleIcon,
 } from "@phosphor-icons/react";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   cn,
   ThreadItem,
   ThreadItemAuthor,
@@ -21,6 +25,7 @@ import type {
 } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { UserAvatar } from "@posthog/ui/features/auth/UserAvatar";
+import { MentionText } from "@posthog/ui/features/canvas/components/MentionText";
 import {
   ThreadArtifactRow,
   ThreadMessageRow,
@@ -28,6 +33,8 @@ import {
 import { ThreadTimestamp } from "@posthog/ui/features/canvas/components/ThreadTimestamp";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
 import type { buildConversationItems } from "@posthog/ui/features/sessions/components/buildConversationItems";
+import { extractChannelContext } from "@posthog/ui/features/sessions/components/session-update/channelContext";
+import { extractCustomInstructions } from "@posthog/ui/features/sessions/components/session-update/customInstructions";
 import { useThreadNavigationStore } from "@posthog/ui/features/sessions/threadNavigationStore";
 import { Fragment, type KeyboardEvent, type ReactNode, useMemo } from "react";
 
@@ -73,6 +80,16 @@ function UserMessageRow({
   onSelect?: () => void;
 }) {
   const name = author ? userDisplayName(author) : "You";
+  const channelContext = useMemo(
+    () => extractChannelContext(content),
+    [content],
+  );
+  const afterChannelContext = channelContext?.stripped ?? content;
+  const customInstructions = useMemo(
+    () => extractCustomInstructions(afterChannelContext),
+    [afterChannelContext],
+  );
+  const displayContent = customInstructions?.stripped ?? afterChannelContext;
   // The row itself is the hit target. `ThreadItem` renders an <article>, which a
   // <button> may not wrap and which can't become one (quill's primitive takes no
   // `render`), so it carries the button role and its own key handling.
@@ -108,10 +125,28 @@ function UserMessageRow({
           <ThreadItemAuthor className="text-[13px]">{name}</ThreadItemAuthor>
           <ThreadTimestamp dateTime={timestamp} />
         </ThreadItemHeader>
-        {/* `whitespace-pre-wrap` makes the clamp land on the first *written*
-            line rather than the first wrapped one. */}
-        <ThreadItemBody className="mt-1.5 line-clamp-1 whitespace-pre-wrap text-[13px]">
-          {content}
+        <ThreadItemBody className="mt-1.5 whitespace-pre-wrap break-words text-[13px]">
+          <MentionText content={displayContent} />
+          {channelContext && (
+            <Collapsible className="mt-2 min-w-0 bg-transparent hover:bg-transparent data-open:bg-transparent">
+              <CollapsibleTrigger
+                className="min-h-0 w-full bg-transparent px-0 py-1 text-left hover:bg-transparent aria-expanded:bg-transparent"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <FileTextIcon size={12} />
+                <span className="truncate text-xs">
+                  {channelContext.mention.name
+                    ? `#${channelContext.mention.name} `
+                    : ""}
+                  CONTEXT.md
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-2 text-muted-foreground text-xs">
+                {channelContext.mention.body}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
         </ThreadItemBody>
       </ThreadItemContent>
     </ThreadItem>

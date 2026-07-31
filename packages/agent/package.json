@@ -32,6 +32,14 @@
       "types": "./dist/pi/rpc-client.d.ts",
       "import": "./dist/pi/rpc-client.js"
     },
+    "./pi/rpc-transport": {
+      "types": "./dist/pi/rpc-transport.d.ts",
+      "import": "./dist/pi/rpc-transport.js"
+    },
+    "./pi/remote-rpc-client": {
+      "types": "./dist/pi/remote-rpc-client.d.ts",
+      "import": "./dist/pi/remote-rpc-client.js"
+    },
     "./pi/conversation": {
       "types": "./dist/pi/conversation/translatePiConversation.d.ts",
       "import": "./dist/pi/conversation/translatePiConversation.js"
@@ -114,7 +122,7 @@
     }
   },
   "bin": {
-    "agent-server": "./dist/server/bin.cjs"
+    "agent-server": "./dist/server/bin.js"
   },
   "type": "module",
   "keywords": [

@@ -3,9 +3,20 @@ import Constants from "expo-constants";
 import { useAuthStore } from "@/features/auth";
 import { logger } from "@/lib/logger";
 
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly statusText: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 // Derive the init shape directly from expo/fetch so we don't import from
 // expo's internal build output (which can move between versions).
-type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
+export type FetchInit = NonNullable<Parameters<typeof fetch>[1]>;
 
 const log = logger.scope("api");
 
@@ -66,7 +77,7 @@ export function createTimeoutSignal(ms: number): AbortSignal {
 // pending refresh across all callers and reset it once it settles.
 let pendingRefresh: Promise<void> | null = null;
 
-async function refreshAccessTokenOnce(): Promise<void> {
+export async function refreshAccessTokenOnce(): Promise<void> {
   if (pendingRefresh) return pendingRefresh;
   const promise = useAuthStore
     .getState()

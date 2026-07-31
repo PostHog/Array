@@ -87,7 +87,7 @@ export interface BuildResult {
 interface ProgressCardState {
   /** Step key → full step entry. Key order reflects arrival order. */
   steps: Map<string, Step>;
-  /** Reference to the pushed render item; mutated in place as events arrive. */
+  /** Replaced when steps change so memoized rows observe live progress. */
   renderItem: {
     sessionUpdate: "progress_group";
     steps: Step[];
@@ -372,6 +372,11 @@ export function processAgentConversationEvent(
     return;
   }
 
+  if (event.type === "progress") {
+    handleProgress(b, event, event.timestamp, false);
+    return;
+  }
+
   if (event.type === "runtime_status") {
     handleRuntimeStatus(b, event, event.timestamp);
     return;
@@ -400,6 +405,10 @@ export function processAgentConversationEvent(
         event.timestamp,
       );
     }
+    return;
+  }
+
+  if (event.type === "queue_update") {
     return;
   }
 
@@ -795,19 +804,42 @@ function ensureProgressCardForGroup(
   return card;
 }
 
-function syncProgressCard(card: ProgressCardState, b: ItemBuilder) {
+function syncProgressCard(
+  card: ProgressCardState,
+  b: ItemBuilder,
+  waitForRunStarted = true,
+) {
   const gateAgentStep =
-    card.runId !== "" && !b.runStartedRunIds.has(card.runId);
+    waitForRunStarted &&
+    card.runId !== "" &&
+    !b.runStartedRunIds.has(card.runId);
   const ordered: Step[] = Array.from(card.steps.values()).map((step) =>
     step.key === "agent" && step.status === "completed" && gateAgentStep
       ? { ...step, status: "in_progress" as StepStatus }
       : step,
   );
-  card.renderItem.steps = ordered;
-  card.renderItem.isActive = ordered.some((s) => s.status === "in_progress");
+  const renderItem = {
+    sessionUpdate: "progress_group" as const,
+    steps: ordered,
+    isActive: ordered.some((step) => step.status === "in_progress"),
+  };
+  card.renderItem = renderItem;
+
+  const item = b.items[card.itemIndex];
+  if (
+    item?.type === "session_update" &&
+    item.update.sessionUpdate === "progress_group"
+  ) {
+    b.items[card.itemIndex] = { ...item, update: renderItem };
+  }
 }
 
-function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
+function handleProgress(
+  b: ItemBuilder,
+  rawParams: unknown,
+  ts: number,
+  waitForRunStarted = true,
+) {
   const params = rawParams as
     | {
         step?: string;
@@ -831,7 +863,7 @@ function handleProgress(b: ItemBuilder, rawParams: unknown, ts: number) {
     label: params.label,
     detail: params.detail,
   });
-  syncProgressCard(card, b);
+  syncProgressCard(card, b, waitForRunStarted);
 }
 
 function normalizeStepStatus(raw: string | undefined): StepStatus {
