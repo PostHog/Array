@@ -135,9 +135,9 @@ even though the flag is enabled in your PostHog project, check
 (`http://localhost:8010`, not `localhost:8010`). posthog-js concatenates the
 host into request URLs verbatim, so a scheme-less value produces URLs like
 `localhost:8010/flags/…` that the browser rejects as an invalid protocol —
-every flag fetch fails silently and `isFeatureEnabled` returns `false` for
-everything. Prefer `node scripts/use-local-posthog.mjs` over hand-editing; it
-writes the correct form.
+every flag fetch fails silently and `isFeatureEnabled` returns `undefined` for
+everything (flags never loaded). Prefer `node scripts/use-local-posthog.mjs`
+over hand-editing; it writes the correct form.
 
 To confirm what the running app sees, run in the renderer console (or via CDP):
 
