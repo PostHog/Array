@@ -112,10 +112,15 @@ export function createIncrementalChatRowGrouper() {
         }
       }
 
-      const prefixUnchanged =
-        rebuildStart === 0 ||
-        cachedItems[rebuildStart - 1] === items[rebuildStart - 1];
-      if (!prefixUnchanged) rebuildStart = 0;
+      // The builder replaces rows in place anywhere in the list (a status
+      // completing, a shell result arriving, a thought settling), so every
+      // retained item must be identity-checked — pointer compares, cheap.
+      for (let i = 0; i < rebuildStart; i++) {
+        if (cachedItems[i] !== items[i]) {
+          rebuildStart = 0;
+          break;
+        }
+      }
 
       let boundaryId = items[rebuildStart]?.id;
       let cachedBoundaryIndex = boundaryId

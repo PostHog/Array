@@ -3,14 +3,12 @@ import {
   type BuildConversationOptions,
   type BuildResult,
   buildConversationItems,
-  type ConversationItem,
   createItemBuilder,
   finalizeBuilder,
   type ItemBuilder,
   markThoughtCompletion,
   processEvent,
   readLastTurnInfo,
-  type TurnContext,
 } from "./buildConversationItems";
 
 /**
@@ -112,6 +110,10 @@ export function createIncrementalConversationBuilder() {
 
     const builder = b as ItemBuilder;
     builder.lowestTouchedProgressIndex = Number.POSITIVE_INFINITY;
+    // Thought completion can only change from the turn that was active when
+    // this batch started (a turn completed by the batch settles its thoughts
+    // on this call, before the index moves to a newer turn).
+    const thoughtScanStart = builder.currentTurnStartIndex;
     for (let i = processedCount; i < events.length; i++) {
       processEvent(builder, events[i], options);
     }
@@ -141,10 +143,18 @@ export function createIncrementalConversationBuilder() {
       turn.context.turnComplete = true;
     }
 
-    markThoughtCompletion(builder.items);
+    markThoughtCompletion(
+      builder.items,
+      Math.min(thoughtScanStart, builder.currentTurnStartIndex),
+    );
 
+    // Rows keep their identity across calls — the builder replaces a row
+    // object whenever its content changes (tool merges, child streams,
+    // progress cards), so memoized views re-render exactly the changed rows.
+    // Turn flags and `thoughtComplete` are surfaced as value props by the
+    // renderers, not via row identity.
     return {
-      items: assembleItems(builder, activeStart),
+      items: builder.items.slice(),
       lastTurnInfo: readLastTurnInfoForOutput(builder),
       isCompacting: builder.isCompacting,
       completedToolCallCount: builder.completedToolCallCount,
@@ -152,50 +162,6 @@ export function createIncrementalConversationBuilder() {
   }
 
   return { update, reset };
-}
-
-function assembleItems(
-  b: ItemBuilder,
-  activeStart: number,
-): ConversationItem[] {
-  // Completed turns: reuse the builder's own objects. They aren't rebuilt
-  // across calls, so their identity is stable and memoized rows skip work.
-  const out = b.items.slice(0, activeStart);
-  if (activeStart >= b.items.length) return out;
-
-  const turn = b.currentTurn;
-  // The active turn streams: clone its rows onto a fresh shared context each
-  // call so their memoized views re-render and read the latest tool/child
-  // state — matching the all-new-objects behavior a full rebuild gives the
-  // live turn. Non-update rows (the user message, git actions) never change,
-  // so pass them through by reference.
-  const activeContext: TurnContext | null = turn
-    ? {
-        toolCalls: new Map(turn.context.toolCalls),
-        childItems: new Map(turn.context.childItems),
-        turnCancelled: turn.context.turnCancelled,
-        turnComplete: turn.context.turnComplete,
-      }
-    : null;
-
-  for (let i = activeStart; i < b.items.length; i++) {
-    const item = b.items[i];
-    // Only rows of the active turn get the fresh context. A prompt can open
-    // its turn *before* a trailing progress card from the previous turn (see
-    // `handlePromptRequest`), so the active range may hold older-turn rows —
-    // those keep their own (frozen) context, matching a full rebuild.
-    if (
-      item.type === "session_update" &&
-      activeContext &&
-      turn &&
-      item.turnContext === turn.context
-    ) {
-      out.push({ ...item, turnContext: activeContext });
-    } else {
-      out.push(item);
-    }
-  }
-  return out;
 }
 
 function readLastTurnInfoForOutput(b: ItemBuilder) {

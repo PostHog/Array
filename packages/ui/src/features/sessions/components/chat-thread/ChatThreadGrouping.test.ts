@@ -54,6 +54,24 @@ describe("createIncrementalChatRowGrouper", () => {
     ]);
   });
 
+  it("rebuilds when a row inside the retained prefix is replaced in place", () => {
+    // The conversation builder swaps row objects at arbitrary indices (a status
+    // completing, a shell result arriving) — including inside turns the grouper
+    // already cached. The cached rows must not survive such a replacement.
+    const grouper = createIncrementalChatRowGrouper();
+    const u1 = userMessage("u1");
+    const status = agentMessage("s1");
+    const u2 = userMessage("u2");
+    grouper.update([u1, status, u2]);
+
+    const replaced = { ...status };
+    const rows = grouper.update([u1, replaced, u2, agentMessage("a2")]);
+
+    const turn = rows[1];
+    if (turn.type !== "agent_turn") throw new Error("expected an agent turn");
+    expect(turn.items[0]).toBe(replaced);
+  });
+
   it("replaces an optimistic boundary whose confirmed item has a new id", () => {
     const grouper = createIncrementalChatRowGrouper();
     const prefix = [userMessage("u1"), agentMessage("a1")];

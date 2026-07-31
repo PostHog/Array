@@ -1470,4 +1470,32 @@ describe("PiSessionController", () => {
     ]);
     vi.useRealTimers();
   });
+
+  it("drops pending chunks when an uncaptured refresh replaces the transcript", async () => {
+    vi.useFakeTimers();
+    const chunk: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "hello" },
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const client = createClient();
+    vi.mocked(client.subscribe).mockImplementation((_taskId, handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(client);
+    await controller.connect("task-1");
+
+    onEvent(chunk);
+    vi.mocked(client.conversation).mockResolvedValue([chunk]);
+    const bash = controller.bash("task-1", "ls");
+    await vi.advanceTimersByTimeAsync(50);
+    await bash;
+
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      chunk,
+    ]);
+    vi.useRealTimers();
+  });
 });
