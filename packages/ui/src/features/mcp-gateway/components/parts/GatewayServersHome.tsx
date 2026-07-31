@@ -11,6 +11,12 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { MCP_CATEGORIES } from "@posthog/api-client/posthog-client";
 import {
+  type GatewayConnectCredentials,
+  gatewayConnectAuthType,
+  gatewayConnectNeedsCredentials,
+  templateConnectNeedsCredentials,
+} from "@posthog/core/mcp-gateway/gatewayConnect";
+import {
   filterCatalogTemplates,
   filterGatewayServers,
   getGatewayConnectionStatus,
@@ -26,6 +32,7 @@ import {
   AvatarStack,
   gatewayUserName,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
+import { GatewayConnectDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayConnectDialog";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useGatewayConfig } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayConfig";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
@@ -49,6 +56,11 @@ interface GatewayServersHomeProps {
   onNavigate: (route: GatewayRoute) => void;
 }
 
+/** A connect that needs credentials first — the dialog's pending target. */
+type ConnectTarget =
+  | { kind: "server"; server: McpGatewayServer }
+  | { kind: "template"; template: McpRecommendedServer };
+
 export function GatewayServersHome({
   isAdmin,
   canAddServers,
@@ -56,6 +68,9 @@ export function GatewayServersHome({
 }: GatewayServersHomeProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [connectTarget, setConnectTarget] = useState<ConnectTarget | null>(
+    null,
+  );
   const {
     servers,
     serversLoading,
@@ -67,6 +82,32 @@ export function GatewayServersHome({
     connectingTemplateId,
   } = useGatewayServers();
   const { defaultServersEnabled } = useGatewayConfig();
+
+  // OAuth connects go straight to the browser round-trip; api-key servers and
+  // custom servers (where each member picks a mechanism) ask for credentials.
+  const handleConnectServer = (server: McpGatewayServer) => {
+    if (gatewayConnectNeedsCredentials(server)) {
+      setConnectTarget({ kind: "server", server });
+    } else {
+      connect({ server });
+    }
+  };
+  const handleConnectTemplate = (template: McpRecommendedServer) => {
+    if (templateConnectNeedsCredentials(template)) {
+      setConnectTarget({ kind: "template", template });
+    } else {
+      connectTemplate({ template });
+    }
+  };
+  const handleConnectSubmit = (credentials: GatewayConnectCredentials) => {
+    if (!connectTarget) return;
+    if (connectTarget.kind === "server") {
+      connect({ server: connectTarget.server, credentials });
+    } else {
+      connectTemplate({ template: connectTarget.template, credentials });
+    }
+    setConnectTarget(null);
+  };
 
   const filtered = useMemo(
     () => filterGatewayServers(servers, query, category),
@@ -200,7 +241,7 @@ export function GatewayServersHome({
               isAdmin={isAdmin}
               connecting={connectingServerId === server.id}
               onOpen={() => onNavigate({ view: "server", serverId: server.id })}
-              onConnect={() => connect(server)}
+              onConnect={() => handleConnectServer(server)}
             />
           ))}
           {filteredTemplates.map((template) => (
@@ -209,10 +250,33 @@ export function GatewayServersHome({
               template={template}
               disabled={!defaultServersEnabled}
               connecting={connectingTemplateId === template.id}
-              onConnect={() => connectTemplate(template)}
+              onConnect={() => handleConnectTemplate(template)}
             />
           ))}
         </Flex>
+      )}
+
+      {connectTarget && (
+        <GatewayConnectDialog
+          key={
+            connectTarget.kind === "server"
+              ? connectTarget.server.id
+              : connectTarget.template.id
+          }
+          open
+          serverName={
+            connectTarget.kind === "server"
+              ? connectTarget.server.name
+              : connectTarget.template.name
+          }
+          fixedAuthType={
+            connectTarget.kind === "server"
+              ? gatewayConnectAuthType(connectTarget.server)
+              : (connectTarget.template.auth_type ?? "oauth")
+          }
+          onSubmit={handleConnectSubmit}
+          onClose={() => setConnectTarget(null)}
+        />
       )}
     </Flex>
   );

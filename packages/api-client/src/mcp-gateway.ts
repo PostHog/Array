@@ -4,7 +4,7 @@
 // ship behind the `mcp-gateway` flag and are not in the generated OpenAPI
 // client yet.
 import type { Schemas } from "./generated";
-import type { McpApprovalState, McpCategory } from "./types";
+import type { McpApprovalState, McpAuthType, McpCategory } from "./types";
 
 export type McpGatewayUser = Schemas.UserBasic;
 
@@ -61,6 +61,11 @@ export interface McpGatewayServer {
   icon_key: string;
   docs_url: string;
   template_id: string | null;
+  /**
+   * Fixed authentication type for catalog templates. Null for custom
+   * servers, where each member chooses when connecting.
+   */
+  template_auth_type: McpAuthType | null;
   tool_count: number;
   /** Members with a connection to this server. Admin-only; empty for members. */
   connections: McpGatewayConnection[];

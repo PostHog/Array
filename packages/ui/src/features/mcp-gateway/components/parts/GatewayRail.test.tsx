@@ -19,6 +19,7 @@ function server(overrides: Partial<McpGatewayServer> = {}): McpGatewayServer {
     icon_key: "",
     docs_url: "",
     template_id: null,
+    template_auth_type: null,
     tool_count: 0,
     connections: [],
     your_connection: null,

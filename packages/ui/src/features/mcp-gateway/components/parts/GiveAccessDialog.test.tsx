@@ -21,6 +21,7 @@ const server: McpGatewayServer = {
   icon_key: "notion",
   docs_url: "",
   template_id: "template-1",
+  template_auth_type: null,
   tool_count: 0,
   connections: [],
   your_connection: null,

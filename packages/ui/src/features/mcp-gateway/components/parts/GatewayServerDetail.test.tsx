@@ -70,6 +70,7 @@ const server = {
   icon_key: "",
   docs_url: "",
   template_id: null,
+  template_auth_type: null,
   tool_count: 0,
   connections: [
     {
@@ -224,5 +225,39 @@ describe("GatewayServerDetail", () => {
     // (label "Set all") must not render alongside it.
     expect(screen.getByText("Set all for Deploy bot")).toBeInTheDocument();
     expect(screen.queryByText("Set all")).not.toBeInTheDocument();
+  });
+
+  it("collects credentials before connecting a custom server", async () => {
+    const user = userEvent.setup();
+    render(
+      <Theme>
+        <GatewayServerDetail
+          serverId={server.id}
+          isAdmin
+          canManageAgentAccess
+          onNavigate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    // Custom servers have no fixed auth mechanism, so connecting must ask
+    // instead of assuming OAuth.
+    await user.click(
+      screen.getByRole("button", { name: "Connect your account" }),
+    );
+    expect(mocks.gateway.connect).not.toHaveBeenCalled();
+    expect(screen.getByText("Authentication")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    expect(mocks.gateway.connect).toHaveBeenCalledWith({
+      server,
+      credentials: {
+        authType: "oauth",
+        apiKey: "",
+        clientId: "",
+        clientSecret: "",
+      },
+    });
   });
 });

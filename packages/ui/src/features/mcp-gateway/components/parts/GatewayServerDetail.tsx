@@ -19,6 +19,11 @@ import type {
   McpGatewayServer,
 } from "@posthog/api-client/posthog-client";
 import {
+  type GatewayConnectCredentials,
+  gatewayConnectAuthType,
+  gatewayConnectNeedsCredentials,
+} from "@posthog/core/mcp-gateway/gatewayConnect";
+import {
   countPoliciesByState,
   formatAgo,
   getGatewayServerRemovalAction,
@@ -31,6 +36,7 @@ import {
   RobotAvatar,
   UserAvatar,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
+import { GatewayConnectDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayConnectDialog";
 import { GatewayDeleteServerDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayDeleteServerDialog";
 import { GatewayToolRow } from "@posthog/ui/features/mcp-gateway/components/parts/GatewayToolRow";
 import { GiveAccessDialog } from "@posthog/ui/features/mcp-gateway/components/parts/GiveAccessDialog";
@@ -91,6 +97,7 @@ export function GatewayServerDetail({
     initialScope ?? YOU_SCOPE,
   );
   const [giveAccessOpen, setGiveAccessOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [deleteServerOpen, setDeleteServerOpen] = useState(false);
   const [toolSearch, setToolSearch] = useState("");
   const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -232,10 +239,25 @@ export function GatewayServerDetail({
       <Key size={12} /> Reconnect your account
     </Button>
   ) : (
-    <Button variant="solid" size="2" onClick={() => gateway.connect(server)}>
+    <Button
+      variant="solid"
+      size="2"
+      onClick={() =>
+        // Custom servers and api-key templates collect credentials first;
+        // plain OAuth templates go straight to the browser round-trip.
+        gatewayConnectNeedsCredentials(server)
+          ? setConnectOpen(true)
+          : gateway.connect({ server })
+      }
+    >
       <Key size={12} /> Connect your account
     </Button>
   );
+
+  const handleConnectSubmit = (credentials: GatewayConnectCredentials) => {
+    gateway.connect({ server, credentials });
+    setConnectOpen(false);
+  };
 
   return (
     <Flex direction="column" gap="4" className="min-w-0">
@@ -582,6 +604,15 @@ export function GatewayServerDetail({
         </Flex>
       )}
 
+      {connectOpen && (
+        <GatewayConnectDialog
+          open
+          serverName={server.name}
+          fixedAuthType={gatewayConnectAuthType(server)}
+          onSubmit={handleConnectSubmit}
+          onClose={() => setConnectOpen(false)}
+        />
+      )}
       <GiveAccessDialog
         open={giveAccessOpen}
         server={server}

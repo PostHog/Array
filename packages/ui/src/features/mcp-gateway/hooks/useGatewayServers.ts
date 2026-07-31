@@ -3,16 +3,16 @@ import type {
   McpGatewayServerUpdate,
   McpRecommendedServer,
 } from "@posthog/api-client/posthog-client";
+import {
+  connectGatewayServer,
+  type GatewayConnectCredentials,
+} from "@posthog/core/mcp-gateway/gatewayConnect";
 import { recommendedCatalogTemplates } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
   discoverGatewayTools,
   type GatewayServerMatch,
 } from "@posthog/core/mcp-gateway/gatewayToolDiscovery";
-import {
-  installCustomWithOAuth,
-  installTemplateWithOAuth,
-  reauthorizeWithOAuth,
-} from "@posthog/core/mcp-servers/installFlow";
+import { reauthorizeWithOAuth } from "@posthog/core/mcp-servers/installFlow";
 import { useHostTRPC, useHostTRPCClient } from "@posthog/host-router/react";
 import { gatewayKeys } from "@posthog/ui/features/mcp-gateway/hooks/gatewayKeys";
 import {
@@ -85,30 +85,31 @@ export function useGatewayServers() {
   );
   const discoverTools = discoverToolsMutation.mutate;
 
+  // Credentials come from the connect dialog: custom servers have no fixed
+  // auth mechanism (each member chooses), api-key templates need the key.
+  // Plain OAuth connects pass none and default to the browser round-trip.
   const connectMutation = useAuthenticatedMutation(
-    (client, server: McpGatewayServer) =>
-      server.template_id
-        ? installTemplateWithOAuth(client, oauth, {
-            template_id: server.template_id,
-          })
-        : installCustomWithOAuth(client, oauth, {
-            name: server.name,
-            url: server.url,
-            description: server.description,
-            auth_type: "oauth",
-          }),
+    (
+      client,
+      vars: {
+        server: McpGatewayServer;
+        credentials?: GatewayConnectCredentials;
+      },
+    ) => connectGatewayServer(client, oauth, vars.server, vars.credentials),
     {
-      onSuccess: (data, server) => {
+      onSuccess: (data, vars) => {
         if (data && "success" in data && data.success) {
-          toast.success(`Authenticated with ${server.name} as you`);
-          discoverTools({ serverId: server.id });
+          toast.success(`Authenticated with ${vars.server.name} as you`);
+          discoverTools({ serverId: vars.server.id });
         } else if (data && "error" in data && data.error) {
           toast.error(data.error);
         }
         invalidateServers();
       },
-      onError: (error: Error, server) => {
-        toast.error(error.message || `Could not connect to ${server.name}`);
+      onError: (error: Error, vars) => {
+        toast.error(
+          error.message || `Could not connect to ${vars.server.name}`,
+        );
         invalidateServers();
       },
     },
@@ -174,22 +175,44 @@ export function useGatewayServers() {
   );
 
   // Connect to a catalog template that has no gateway row yet; the backend
-  // materializes the row as part of the install.
+  // materializes the row as part of the install. API-key templates carry the
+  // member's key from the connect dialog.
   const connectTemplateMutation = useAuthenticatedMutation(
-    (client, template: McpRecommendedServer) =>
-      installTemplateWithOAuth(client, oauth, { template_id: template.id }),
+    (
+      client,
+      vars: {
+        template: McpRecommendedServer;
+        credentials?: GatewayConnectCredentials;
+      },
+    ) =>
+      connectGatewayServer(
+        client,
+        oauth,
+        {
+          template_id: vars.template.id,
+          name: vars.template.name,
+          url: vars.template.url,
+          description: vars.template.description ?? "",
+        },
+        vars.credentials,
+      ),
     {
-      onSuccess: (data, template) => {
+      onSuccess: (data, vars) => {
         if (data && "success" in data && data.success) {
-          toast.success(`Authenticated with ${template.name} as you`);
-          discoverTools({ templateId: template.id, url: template.url });
+          toast.success(`Authenticated with ${vars.template.name} as you`);
+          discoverTools({
+            templateId: vars.template.id,
+            url: vars.template.url,
+          });
         } else if (data && "error" in data && data.error) {
           toast.error(data.error);
         }
         invalidateServers();
       },
-      onError: (error: Error, template) => {
-        toast.error(error.message || `Could not connect to ${template.name}`);
+      onError: (error: Error, vars) => {
+        toast.error(
+          error.message || `Could not connect to ${vars.template.name}`,
+        );
         invalidateServers();
       },
     },
@@ -266,11 +289,11 @@ export function useGatewayServers() {
     invalidateServers,
     connect: connectMutation.mutate,
     connectingServerId: connectMutation.isPending
-      ? (connectMutation.variables?.id ?? null)
+      ? (connectMutation.variables?.server.id ?? null)
       : null,
     connectTemplate: connectTemplateMutation.mutate,
     connectingTemplateId: connectTemplateMutation.isPending
-      ? (connectTemplateMutation.variables?.id ?? null)
+      ? (connectTemplateMutation.variables?.template.id ?? null)
       : null,
     reconnect: reconnectMutation.mutate,
     reconnectPending: reconnectMutation.isPending,
