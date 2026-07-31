@@ -2430,10 +2430,9 @@ describe("CloudTaskEngine", () => {
       .mockImplementation(() => Promise.resolve(makeInProgressRun()));
 
     // First connection hangs forever: no bytes, no error, no EOF, simulating a half-open
-    // socket (laptop sleep, NAT rebind). The second connection stays open and delivers a
-    // keepalive so recovery is observable once the idle watchdog aborts the first.
+    // socket (laptop sleep, NAT rebind). The second connection stays open so recovery is
+    // observable once the idle watchdog aborts the first.
     let streamCall = 0;
-    const encoder = new TextEncoder();
     const abortedFirstConnection = { value: false };
     mockStreamFetch.mockImplementation(
       (_input: unknown, init?: RequestInit) => {
@@ -2458,13 +2457,7 @@ describe("CloudTaskEngine", () => {
           );
         }
         const stream = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(
-              encoder.encode(
-                'event: keepalive\ndata: {"type":"keepalive"}\n\n',
-              ),
-            );
-          },
+          start() {},
         });
         return Promise.resolve(
           new Response(stream, {
@@ -2500,10 +2493,13 @@ describe("CloudTaskEngine", () => {
 
     const watcher = (
       service as unknown as {
-        watchers: Map<string, { failed: boolean }>;
+        watchers: Map<string, { failed: boolean; reconnectAttempts: number }>;
       }
     ).watchers.get("task-1:run-1");
     expect(watcher?.failed).toBe(false);
+    // Silence is a broken transport, not a healthy long-lived connection. It must consume the
+    // reconnect budget so a persistently silent endpoint eventually reaches the circuit breaker.
+    expect(watcher?.reconnectAttempts).toBe(1);
     expect(
       updates.some(
         (u) =>
@@ -2512,6 +2508,115 @@ describe("CloudTaskEngine", () => {
           (u as { kind?: string }).kind === "error",
       ),
     ).toBe(false);
+  });
+
+  it("times out while resolving the stream target and reconnects", async () => {
+    vi.useFakeTimers();
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({ id: "run-1", status: "in_progress" }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      )
+      .mockResolvedValue(
+        createJsonResponse({ id: "run-1", status: "in_progress" }),
+      );
+
+    let tokenCall = 0;
+    const abortedResolution = { value: false };
+    mockStreamTokenFetch.mockImplementation(
+      (_input: unknown, init?: RequestInit) => {
+        tokenCall += 1;
+        if (tokenCall === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              abortedResolution.value = true;
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          });
+        }
+        return Promise.resolve(
+          createJsonResponse({ token: "test-token", stream_base_url: null }),
+        );
+      },
+    );
+    mockStreamFetch.mockImplementation(
+      () =>
+        new Promise<Response>(() => {
+          // The connection-phase watchdog owns this second pending request.
+        }),
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamTokenFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(100_000);
+    await waitFor(() => abortedResolution.value, 20_000);
+    await waitFor(() => mockStreamTokenFetch.mock.calls.length >= 2, 20_000);
+
+    expect(mockStreamTokenFetch.mock.calls[0]?.[1]?.signal).toBeDefined();
+    expect(
+      analyticsMock.track.mock.calls.some(
+        ([eventName]) => eventName === "Cloud stream idle timeout",
+      ),
+    ).toBe(true);
+  });
+
+  it("times out while waiting for stream response headers and reconnects", async () => {
+    vi.useFakeTimers();
+
+    mockNetFetch
+      .mockResolvedValueOnce(
+        createJsonResponse({ id: "run-1", status: "in_progress" }),
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      )
+      .mockResolvedValue(
+        createJsonResponse({ id: "run-1", status: "in_progress" }),
+      );
+
+    let streamCall = 0;
+    const abortedConnection = { value: false };
+    mockStreamFetch.mockImplementation(
+      (_input: unknown, init?: RequestInit) => {
+        streamCall += 1;
+        if (streamCall === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              abortedConnection.value = true;
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          });
+        }
+        return Promise.resolve(createOpenSseResponse(""));
+      },
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+    await vi.advanceTimersByTimeAsync(100_000);
+    await waitFor(() => abortedConnection.value, 20_000);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 20_000);
+
+    expect(
+      analyticsMock.track.mock.calls.some(
+        ([eventName]) => eventName === "Cloud stream idle timeout",
+      ),
+    ).toBe(true);
   });
 
   it("stops a cloud run through the run cancel endpoint", async () => {
