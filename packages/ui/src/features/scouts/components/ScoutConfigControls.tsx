@@ -44,12 +44,19 @@ export function ScoutEnabledSwitch({
 }: ScoutConfigControlsProps) {
   return (
     <Tooltip content={config.enabled ? "Disable scout" : "Enable scout"}>
-      <Switch
-        size="1"
-        checked={config.enabled}
-        onCheckedChange={(checked) => onUpdate(config.id, { enabled: checked })}
-        aria-label={`${config.skill_name} enabled`}
-      />
+      {/* Tooltip stamps its own data-state on its child, which would overwrite
+          the Switch's checked/unchecked state and leave the track stuck on the
+          accent color. Give it a span to stamp. */}
+      <span className="inline-flex">
+        <Switch
+          size="1"
+          checked={config.enabled}
+          onCheckedChange={(checked) =>
+            onUpdate(config.id, { enabled: checked })
+          }
+          aria-label={`${config.skill_name} enabled`}
+        />
+      </span>
     </Tooltip>
   );
 }
