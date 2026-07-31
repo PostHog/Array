@@ -64,6 +64,7 @@ import {
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useCreateAndOpenDashboard } from "@posthog/ui/features/canvas/hooks/useDashboards";
+import { usePersonalSpaceName } from "@posthog/ui/features/canvas/hooks/usePersonalSpaceName";
 import { useStarredChannelSlots } from "@posthog/ui/features/canvas/hooks/useStarredChannelSlots";
 import {
   PERSONAL_CHANNEL_NAME,
@@ -697,6 +698,10 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
   // The "+" dropdown (New task / New canvas), mirroring a shared channel row.
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const isUnread = useIsChannelUnread()(PERSONAL_CHANNEL_NAME);
+  // Shown as the user's own name, so it's clear these are their tasks. The
+  // channel is still "me" for every identity/routing purpose (below).
+  const personalName = usePersonalSpaceName();
+  const hasResolvedName = personalName !== PERSONAL_CHANNEL_NAME;
 
   const meFolder = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   const createAndOpenCanvas = useCreateAndOpenDashboard(meFolder?.id);
@@ -759,8 +764,15 @@ function PersonalChannelRow({ hotkeySlot }: { hotkeySlot?: number }) {
               : "text-muted-foreground group-hover/button:text-foreground",
           )}
         >
-          {PERSONAL_CHANNEL_NAME}
+          {personalName}
         </span>
+        {hasResolvedName && (
+          // A quiet "your space" tag, like Slack's "you" next to your own DM,
+          // so the renamed row still reads as the personal space.
+          <span className="shrink-0 text-[11px] text-muted-foreground/60">
+            your space
+          </span>
+        )}
         {hotkeySlot != null && (
           <Kbd className="!mr-0 ml-auto shrink-0 opacity-50 group-hover/chan:opacity-0">
             {formatHotkey(`mod+${hotkeySlot}`)}
@@ -919,6 +931,7 @@ export function ChannelsList() {
   const channelsLayout = useChannelsLayout();
 
   const isUnread = useIsChannelUnread();
+  const personalName = usePersonalSpaceName();
 
   const [query, setQuery] = useState("");
   const normalizedQuery = channelsLayout ? query.trim().toLowerCase() : "";
@@ -935,7 +948,9 @@ export function ChannelsList() {
   // stand between you and the row you already named, and an empty "Starred"
   // heading reads as a result that isn't there.
   const searchResults = channels.filter((c) => matches(c.name));
-  const meMatches = matches(PERSONAL_CHANNEL_NAME);
+  // The personal row now reads as the user's name, so search it by that too —
+  // otherwise typing your own name wouldn't surface your own space.
+  const meMatches = matches(PERSONAL_CHANNEL_NAME) || matches(personalName);
   const noMatches =
     normalizedQuery !== "" && !meMatches && !searchResults.length;
 

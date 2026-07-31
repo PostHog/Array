@@ -10,6 +10,7 @@ import {
 import { useChannels } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
 import { useMarkChannelSeen } from "@posthog/ui/features/canvas/hooks/useMarkChannelSeen";
+import { useSpaceDisplayName } from "@posthog/ui/features/canvas/hooks/usePersonalSpaceName";
 import { Text } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
@@ -34,6 +35,9 @@ export function ChannelHeader({
   const channelsLayout = useChannelsLayout();
   const { channels } = useChannels();
   const channelName = channels.find((c) => c.id === channelId)?.name;
+  // Display only — the personal space reads as the user's name, every other
+  // space as itself. `channelName` stays the raw name for identity below.
+  const displayName = useSpaceDisplayName(channelName);
   // Every channel surface renders this header, so mark the channel read here.
   useMarkChannelSeen(channelName);
 
@@ -45,6 +49,7 @@ export function ChannelHeader({
   return (
     <ChannelBreadcrumb
       channelName={channelName ?? "Space"}
+      channelLabel={displayName ?? "Space"}
       channelId={channelId}
       leafIcon={page ? channelPageIcon(page, { size: 12 }) : undefined}
       leafLabel={page ? channelPageLabel(page) : undefined}

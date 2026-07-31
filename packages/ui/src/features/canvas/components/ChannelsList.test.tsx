@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   starredPaths: [] as string[],
   channelsLayout: true,
   navigate: vi.fn(),
+  // The personal row's display label; "me" until a signed-in user resolves.
+  personalName: "me",
 }));
 
 vi.mock("@posthog/ui/shell/analytics", () => ({ track: vi.fn() }));
@@ -40,6 +42,11 @@ vi.mock("@posthog/ui/features/canvas/hooks/useTaskChannels", async () => {
   >("@posthog/ui/features/canvas/hooks/useTaskChannels");
   return { ...actual, useTaskChannels: () => ({ channels: [] }) };
 });
+vi.mock("@posthog/ui/features/canvas/hooks/usePersonalSpaceName", () => ({
+  usePersonalSpaceName: () => mocks.personalName,
+  useSpaceDisplayName: (name: string | undefined) =>
+    name === "me" ? mocks.personalName : name,
+}));
 vi.mock("@posthog/ui/features/canvas/components/RenameChannelModal", () => ({
   RenameChannelModal: () => null,
 }));
@@ -73,6 +80,7 @@ describe("ChannelsList", () => {
     mocks.channels = [ME, ENG, DESIGN];
     mocks.starredPaths = [];
     mocks.channelsLayout = true;
+    mocks.personalName = "me";
     // The pane store is module state: reset to its resting value so a test that
     // slides the slider can't hand the next one a pre-focused search box.
     showChannelPane();
@@ -91,6 +99,16 @@ describe("ChannelsList", () => {
     // ChannelHotkeys binds ⌘1-9 to the same slots; the list is where they're
     // advertised now that the switcher popover is gone.
     expect(me.parentElement?.textContent).toMatch(/me(⌘|Ctrl)/);
+  });
+
+  it("shows the personal row as the user's name with a 'your space' tag", () => {
+    mocks.personalName = "Shy";
+    renderList();
+    // The name replaces the raw "me", and the quiet tag keeps it legible as the
+    // personal space (like Slack's "you" next to your own DM).
+    expect(screen.getByText("Shy")).toBeTruthy();
+    expect(screen.getByText("your space")).toBeTruthy();
+    expect(screen.queryByText("me")).toBeNull();
   });
 
   // "Starred" and "Spaces" are headings over the rows. Spaces receive a small

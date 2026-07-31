@@ -14,6 +14,7 @@ import {
   useChannels,
 } from "@posthog/ui/features/canvas/hooks/useChannels";
 import { useChannelsLayout } from "@posthog/ui/features/canvas/hooks/useChannelsLayout";
+import { useSpaceDisplayName } from "@posthog/ui/features/canvas/hooks/usePersonalSpaceName";
 import { PERSONAL_CHANNEL_NAME } from "@posthog/ui/features/canvas/hooks/useTaskChannels";
 import { showChannelList } from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { track } from "@posthog/ui/shell/analytics";
@@ -55,6 +56,9 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
   const spacesLayout = useChannelsLayout();
   const { channels, isLoading } = useChannels();
   const current = channels.find((c) => c.id === channelId);
+  // Display only: the personal space reads as the user's name (the star/glyph
+  // logic below still keys off the raw "me" name).
+  const currentLabel = useSpaceDisplayName(current?.name);
   const showStar = current != null && current.name !== PERSONAL_CHANNEL_NAME;
   const glyph = channelGlyph(current?.name, {
     size: 14,
@@ -101,7 +105,7 @@ export function ChannelBackRow({ channelId }: { channelId: string }) {
               )}
               <span className="min-w-0 flex-1 truncate font-semibold text-[13px] text-foreground">
                 {current ? (
-                  current.name
+                  currentLabel
                 ) : isLoading ? (
                   // A placeholder word here would read as a real channel named
                   // "channel"; a skeleton says "still loading" honestly.

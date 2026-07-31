@@ -13,8 +13,16 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
 interface ChannelBreadcrumbProps {
-  /** The channel (root) segment label. */
+  /**
+   * The channel's raw name, used for the root segment's glyph (e.g. the "me"
+   * space's lock). Also the default label unless `channelLabel` overrides it.
+   */
   channelName: string;
+  /**
+   * What the root segment reads as, when it differs from the raw name — the
+   * personal space shows the user's name but keeps "me" for its glyph/identity.
+   */
+  channelLabel?: string;
   /**
    * When provided, the "# channel" segment links to the channel home, like the
    * sidebar channel row and the channel-view header.
@@ -50,6 +58,7 @@ interface ChannelBreadcrumbProps {
 // the channel home.
 export function ChannelBreadcrumb({
   channelName,
+  channelLabel,
   channelId,
   middle,
   leafIcon,
@@ -80,7 +89,7 @@ export function ChannelBreadcrumb({
             space: spacesLayout,
             className: "shrink-0 text-muted-foreground/80",
           })}
-          label={channelName}
+          label={channelLabel ?? channelName}
           strong
           // Nowhere to go from the space's own index, and no channelId means no
           // route at all — either way the segment stops responding.

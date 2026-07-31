@@ -22,6 +22,10 @@ vi.mock("@posthog/ui/features/canvas/hooks/useChannelStars", () => ({
     toggleStar: mocks.toggleStar,
   }),
 }));
+vi.mock("@posthog/ui/features/canvas/hooks/usePersonalSpaceName", () => ({
+  usePersonalSpaceName: () => "me",
+  useSpaceDisplayName: (name: string | undefined) => name,
+}));
 
 import { useChannelPaneStore } from "@posthog/ui/features/canvas/stores/channelPaneStore";
 import { ChannelBackRow } from "./ChannelBackRow";
