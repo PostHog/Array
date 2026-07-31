@@ -402,12 +402,14 @@ export function GatewayServerDetail({
           gateway={gateway}
           isAdmin={isAdmin}
           onShareWithAgent={() => setGiveAccessOpen(true)}
-          onRevokeMember={(userId, name) =>
+          onSetMemberAccess={(userId, name, enabled) =>
             members.setMemberAccess({
               userId,
               serverId: server.id,
-              enabled: false,
-              successMessage: `${name} can no longer use ${server.name}`,
+              enabled,
+              successMessage: enabled
+                ? `${name} can now use ${server.name}`
+                : `${name} can no longer use ${server.name}`,
             })
           }
           onRevokeAgent={(accountId, name) =>
@@ -749,7 +751,11 @@ interface AccessSectionProps {
   gateway: ReturnType<typeof useGatewayServers>;
   isAdmin: boolean;
   onShareWithAgent: () => void;
-  onRevokeMember: (userId: number, firstName: string) => void;
+  onSetMemberAccess: (
+    userId: number,
+    firstName: string,
+    enabled: boolean,
+  ) => void;
   onRevokeAgent: (accountId: string, name: string) => void;
 }
 
@@ -758,7 +764,7 @@ function AccessSection({
   gateway,
   isAdmin,
   onShareWithAgent,
-  onRevokeMember,
+  onSetMemberAccess,
   onRevokeAgent,
 }: AccessSectionProps) {
   const shared = server.auth_mode === "shared";
@@ -917,13 +923,18 @@ function AccessSection({
             <div className="overflow-hidden rounded-md border border-gray-5 bg-gray-2">
               {server.connections.map((connection) => {
                 const isYou = connection.installation_id === yourInstallationId;
+                const accessRevoked = server.revoked_user_ids.includes(
+                  connection.user.id,
+                );
                 const usedAgo = formatAgo(connection.last_used_at);
                 return (
                   <Flex
                     key={connection.installation_id}
                     align="center"
                     gap="3"
-                    className="group border-gray-5 border-b px-3 py-2 last:border-b-0"
+                    className={`group border-gray-5 border-b px-3 py-2 last:border-b-0 ${
+                      accessRevoked ? "bg-gray-2 opacity-60" : ""
+                    }`}
                   >
                     <UserAvatar user={connection.user} />
                     <Flex direction="column" className="min-w-0 flex-1">
@@ -949,35 +960,48 @@ function AccessSection({
                     {!isYou && (
                       <Button
                         variant="ghost"
-                        color="red"
+                        color={accessRevoked ? "gray" : "red"}
                         size="1"
                         className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                         onClick={() =>
-                          onRevokeMember(
+                          onSetMemberAccess(
                             connection.user.id,
                             gatewayUserName(connection.user).split(" ")[0],
+                            accessRevoked,
                           )
                         }
                       >
-                        <X size={11} /> Revoke
+                        {accessRevoked ? (
+                          <>
+                            <Check size={11} /> Restore
+                          </>
+                        ) : (
+                          <>
+                            <X size={11} /> Revoke
+                          </>
+                        )}
                       </Button>
                     )}
                     <Flex align="center" gap="2" className="shrink-0">
                       <span
                         className={`h-[6px] w-[6px] rounded-full ${
-                          connection.needs_reauth
-                            ? "bg-(--red-9)"
-                            : connection.pending_oauth
-                              ? "bg-(--amber-9)"
-                              : "bg-(--green-9)"
+                          accessRevoked
+                            ? "bg-gray-8"
+                            : connection.needs_reauth
+                              ? "bg-(--red-9)"
+                              : connection.pending_oauth
+                                ? "bg-(--amber-9)"
+                                : "bg-(--green-9)"
                         }`}
                       />
                       <Text color="gray" className="text-xs">
-                        {connection.needs_reauth
-                          ? "Needs reauth"
-                          : connection.pending_oauth
-                            ? "Finishing setup"
-                            : `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`}
+                        {accessRevoked
+                          ? "Access revoked"
+                          : connection.needs_reauth
+                            ? "Needs reauth"
+                            : connection.pending_oauth
+                              ? "Finishing setup"
+                              : `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`}
                       </Text>
                     </Flex>
                   </Flex>

@@ -1,4 +1,6 @@
 import type {
+  McpGatewayServer,
+  McpServiceAccount,
   McpServiceAccountStatus,
   McpServiceAccountWithToken,
   McpToolPolicyEntry,
@@ -113,8 +115,45 @@ export function useServiceAccounts() {
         ...(vars.policies ? { policies: vars.policies } : {}),
       }),
     {
-      onSuccess: (_account, vars) => {
-        invalidate();
+      onSuccess: (account, vars) => {
+        // The response is the updated account, so keep both access views in
+        // sync without racing it against a potentially stale list refetch.
+        queryClient.setQueryData<McpServiceAccount[]>(
+          gatewayKeys.accounts,
+          (current) =>
+            current?.map((entry) =>
+              entry.id === account.id ? account : entry,
+            ),
+        );
+        queryClient.setQueryData<McpGatewayServer[]>(
+          gatewayKeys.servers,
+          (current) =>
+            current?.map((server) => {
+              if (server.id !== vars.serverId) return server;
+              const currentAccess = server.agents.find(
+                (agent) => agent.service_account_id === account.id,
+              );
+              const withoutAccount = server.agents.filter(
+                (agent) => agent.service_account_id !== account.id,
+              );
+              return {
+                ...server,
+                agents: vars.enabled
+                  ? [
+                      ...withoutAccount,
+                      {
+                        service_account_id: account.id,
+                        name: account.name,
+                        handle: account.handle,
+                        status: account.status,
+                        last_active_at: account.last_active_at,
+                        granted_by: currentAccess?.granted_by ?? null,
+                      },
+                    ]
+                  : withoutAccount,
+              };
+            }),
+        );
         if (vars.successMessage) {
           if (vars.enabled) toast.success(vars.successMessage);
           else toast.info(vars.successMessage);

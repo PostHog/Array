@@ -1,0 +1,140 @@
+import type { McpGatewayServer } from "@posthog/api-client/posthog-client";
+import { Theme } from "@radix-ui/themes";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  gateway: {} as Record<string, unknown>,
+  setMemberAccess: vi.fn(),
+}));
+
+vi.mock(
+  "@posthog/ui/features/mcp-gateway/hooks/useGatewayToolPolicies",
+  () => ({
+    useGatewayToolPolicies: () => ({
+      policies: [],
+      policiesLoading: false,
+      setPolicy: vi.fn(),
+      setAll: vi.fn(),
+      setAllPending: false,
+      refresh: vi.fn(),
+      refreshPending: false,
+    }),
+  }),
+);
+
+vi.mock("@posthog/ui/features/mcp-gateway/hooks/useGatewayServers", () => ({
+  useGatewayServers: () => mocks.gateway,
+}));
+
+vi.mock("@posthog/ui/features/mcp-gateway/hooks/useGatewayMembers", () => ({
+  useGatewayMembers: () => ({
+    members: [],
+    membersLoading: false,
+    setMemberAccess: mocks.setMemberAccess,
+  }),
+}));
+
+vi.mock("@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts", () => ({
+  useServiceAccounts: () => ({
+    accounts: [],
+    accountsLoading: false,
+    setAccess: vi.fn(),
+    setAccessPending: false,
+  }),
+}));
+
+vi.mock("@posthog/ui/features/mcp-servers/components/parts/icons", () => ({
+  ServerIcon: () => <div aria-hidden="true" />,
+}));
+
+import { GatewayServerDetail } from "./GatewayServerDetail";
+
+const server = {
+  id: "server-1",
+  name: "Linear",
+  url: "https://mcp.linear.app",
+  description: "",
+  category: "productivity",
+  auth_mode: "individual",
+  is_team_enabled: true,
+  allow_personal_connections: false,
+  icon_key: "",
+  docs_url: "",
+  template_id: null,
+  tool_count: 0,
+  connections: [
+    {
+      installation_id: "installation-1",
+      user: {
+        id: 7,
+        uuid: "user-7",
+        first_name: "Ada",
+        last_name: "Lovelace",
+        email: "ada@example.com",
+        hedgehog_config: null,
+      },
+      last_used_at: null,
+      pending_oauth: false,
+      needs_reauth: false,
+    },
+  ],
+  your_connection: null,
+  shared_credential: null,
+  agents: [],
+  revoked_user_ids: [7],
+  is_revoked_for_you: false,
+  created_by: null,
+  created_at: "2026-07-23T12:00:00Z",
+  updated_at: "2026-07-23T12:00:00Z",
+} as McpGatewayServer;
+
+describe("GatewayServerDetail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.gateway = {
+      servers: [server],
+      serversLoading: false,
+      templatesById: new Map(),
+      connectingServerId: null,
+      reconnectPending: false,
+      disconnectPending: false,
+      removeServerPending: false,
+      connect: vi.fn(),
+      reconnect: vi.fn(),
+      disconnect: vi.fn(),
+      toggleYourConnection: vi.fn(),
+      updateServer: vi.fn(),
+      removeServer: vi.fn(),
+    };
+  });
+
+  it("shows revoked member access and lets an admin restore it", async () => {
+    const user = userEvent.setup();
+    render(
+      <Theme>
+        <GatewayServerDetail
+          serverId={server.id}
+          isAdmin
+          canManageAgentAccess
+          onNavigate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(screen.getByText("Access revoked")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Revoke" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+
+    expect(mocks.setMemberAccess).toHaveBeenCalledWith({
+      userId: 7,
+      serverId: server.id,
+      enabled: true,
+      successMessage: "Ada can now use Linear",
+    });
+  });
+});

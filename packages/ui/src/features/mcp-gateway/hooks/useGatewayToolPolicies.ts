@@ -40,13 +40,16 @@ export function useGatewayToolPolicies(
   );
 
   // The upsert responds with the re-resolved catalog, so write it straight
-  // into the cache instead of refetching.
+  // into the current scope's cache. Other scopes can inherit from this one,
+  // so mark them stale without immediately refetching the just-updated scope
+  // and racing the mutation response with an eventually consistent read.
   const applyResult = useCallback(
     (result: McpResolvedToolPolicy[]) => {
-      queryClient.setQueryData(queryKey, result);
       queryClient.invalidateQueries({
         queryKey: gatewayKeys.serverTools(serverId),
+        refetchType: "none",
       });
+      queryClient.setQueryData(queryKey, result);
     },
     [queryClient, queryKey, serverId],
   );
