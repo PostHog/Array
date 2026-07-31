@@ -49,12 +49,20 @@ export class ProductEnvironmentsService implements IProductEnvironmentsService {
 
   save(input: SaveProductEnvironmentInput): ProductEnvironment {
     const now = Date.now();
-    const existing = input.id ? this.repo.findById(input.id) : null;
+    const pageOrigin = normalizeOrigin(input.pageOrigin);
+    // Re-adding a site that's already registered updates it in place —
+    // running the picker twice must not grow a second identical pill.
+    const existing =
+      (input.id ? this.repo.findById(input.id) : null) ??
+      this.repo
+        .listByProject(input.projectId)
+        .find((env) => env.pageOrigin === pageOrigin) ??
+      null;
     const record: ProductEnvironment = {
       id: existing?.id ?? input.id ?? crypto.randomUUID(),
       projectId: input.projectId,
       label: input.label,
-      pageOrigin: normalizeOrigin(input.pageOrigin),
+      pageOrigin,
       dataProjectId: input.dataProjectId,
       currentUrl: existing?.currentUrl ?? null,
       createdAt: existing?.createdAt ?? now,

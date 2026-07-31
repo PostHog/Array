@@ -7,6 +7,7 @@ import {
   MonitorIcon,
   PlusIcon,
   TrashIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { useHostTRPC } from "@posthog/host-router/react";
 import {
@@ -314,19 +315,32 @@ function EnvironmentPill(props: {
     >
       <ContextMenuTrigger
         render={
-          <Button
-            variant={active ? "primary" : "outline"}
-            size="sm"
-            title={environment.pageOrigin}
-            onClick={onSelect}
-          >
-            {isLocalOrigin(environment.pageOrigin) ? (
-              <MonitorIcon size={14} />
-            ) : (
-              <GlobeIcon size={14} />
-            )}
-            <span className="max-w-32 truncate">{environment.label}</span>
-          </Button>
+          <div className="flex items-center">
+            <Button
+              variant={active ? "primary" : "outline"}
+              size="sm"
+              className="rounded-r-none"
+              title={environment.pageOrigin}
+              onClick={onSelect}
+            >
+              {isLocalOrigin(environment.pageOrigin) ? (
+                <MonitorIcon size={14} />
+              ) : (
+                <GlobeIcon size={14} />
+              )}
+              <span className="max-w-32 truncate">{environment.label}</span>
+            </Button>
+            <Button
+              variant={active ? "primary" : "outline"}
+              size="sm"
+              className="-ml-px rounded-l-none px-1"
+              aria-label={`Remove ${environment.label}`}
+              title="Remove environment"
+              onClick={onRemove}
+            >
+              <XIcon size={12} />
+            </Button>
+          </div>
         }
       />
       <ContextMenuContent>

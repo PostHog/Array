@@ -46,6 +46,27 @@ describe("ProductEnvironmentsService", () => {
     });
   });
 
+  it("dedupes by origin within a project: re-adding updates in place", () => {
+    const first = service.save(input({ label: "Prod" }));
+    const second = service.save(
+      input({ label: "Renamed", pageOrigin: "https://us.posthog.com/login" }),
+    );
+
+    expect(second.id).toBe(first.id);
+    const listed = service.list(2);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].label).toBe("Renamed");
+  });
+
+  it("keeps distinct origins as distinct environments", () => {
+    service.save(input());
+    service.save(
+      input({ label: "Local", pageOrigin: "http://localhost:8000" }),
+    );
+
+    expect(service.list(2)).toHaveLength(2);
+  });
+
   it("scopes list to the requested project", () => {
     service.save(input({ projectId: 2 }));
     service.save(input({ projectId: 3, label: "Other" }));
@@ -105,7 +126,9 @@ describe("ProductEnvironmentsService", () => {
 
   it("lists most recently active first", () => {
     const a = service.save(input({ label: "A" }));
-    const b = service.save(input({ label: "B" }));
+    const b = service.save(
+      input({ label: "B", pageOrigin: "https://eu.posthog.com" }),
+    );
     service.touch(a.id, "https://us.posthog.com/a", 1000);
     service.touch(b.id, "https://us.posthog.com/b", 2000);
 

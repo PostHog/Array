@@ -238,6 +238,8 @@ export class ElectronEmbeddedBrowser
     // popup and the page to share a session, so bouncing it to the system
     // browser can never complete the login. Non-web schemes stay denied.
     wc.setWindowOpenHandler(({ url }) => {
+      // Kept at info so "the SSO popup never opened" is diagnosable from logs.
+      log.info("popup requested", { viewId, url, allowed: isWebUrl(url) });
       if (!isWebUrl(url)) return { action: "deny" };
       return {
         action: "allow",
