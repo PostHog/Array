@@ -108,11 +108,7 @@ overrides:
   # version that is over the 7-day minimumReleaseAge and clears the package's advisories.
   # protobufjs GHSA-xq3m-2v4x-88gg (critical); axios GHSA-gcfj-64vw-6mp9 and related
   # prototype-pollution/SSRF; hono GHSA-88fw-hqm2-52qc; @xmldom/xmldom XML-injection;
-  # node-forge signature-forgery/DoS; simple-git GHSA-r275-fr43-pm7q (critical RCE).
-  # simple-git is pinned to 3.32.3 (the critical fix) rather than latest: 3.36 adds a
-  # block-unsafe plugin that rejects our hardcoded core.fsmonitor perf flag and inherited
-  # GIT_EDITOR/PAGER, breaking git ops app-wide. Clearing the later high (GHSA-hffm-xvc3-vprc,
-  # fixed in 3.36) needs a separate change that opts into those flags everywhere.
+  # node-forge signature-forgery/DoS; simple-git GHSA-r275-fr43-pm7q and GHSA-hffm-xvc3-vprc.
   protobufjs: 7.6.5
   axios: 1.18.1
   hono: 4.12.28
@@ -131,6 +127,9 @@ overrides:
   'brace-expansion@2': 2.1.2
   'ws@7': 7.5.11
   'ws@8': 8.21.0
+  'path-to-regexp@8': 8.4.2
+  qs: 6.15.3
+  smol-toml: 1.6.1
 
 onlyBuiltDependencies:
   - '@parcel/watcher'
