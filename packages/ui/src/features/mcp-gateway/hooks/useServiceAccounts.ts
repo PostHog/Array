@@ -13,8 +13,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 /**
- * Agent service accounts and their mutations. Freshly-issued tokens (creation
- * or rotation) surface once via `newToken` and are discarded on dismiss.
+ * Agent service accounts and their mutations. A freshly-issued token surfaces
+ * once via `newToken` on creation and is discarded on dismiss.
  */
 export function useServiceAccounts() {
   const queryClient = useQueryClient();
@@ -80,20 +80,6 @@ export function useServiceAccounts() {
       },
       onError: (error: Error) =>
         toast.error(error.message || "Failed to delete agent"),
-    },
-  );
-
-  const rotateTokenMutation = useAuthenticatedMutation(
-    (client, accountId: string) =>
-      client.rotateMcpServiceAccountToken(accountId),
-    {
-      onSuccess: (account) => {
-        invalidate();
-        setNewToken(account);
-        toast.success("Token rotated — the previous token no longer works");
-      },
-      onError: (error: Error) =>
-        toast.error(error.message || "Failed to rotate token"),
     },
   );
 
@@ -171,8 +157,6 @@ export function useServiceAccounts() {
     createPending: createMutation.isPending,
     setStatus: setStatusMutation.mutate,
     deleteAccount: deleteMutation.mutate,
-    rotateToken: rotateTokenMutation.mutate,
-    rotatePending: rotateTokenMutation.isPending,
     setAccess: setAccessMutation.mutate,
     setAccessPending: setAccessMutation.isPending,
     newToken,

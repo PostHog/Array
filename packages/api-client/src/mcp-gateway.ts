@@ -131,7 +131,7 @@ export interface McpServiceAccount {
 }
 
 export interface McpServiceAccountWithToken extends McpServiceAccount {
-  /** The full bearer token. Returned exactly once — on creation or rotation. */
+  /** The full bearer token. Returned exactly once — on creation. */
   token: string;
 }
 

@@ -1,19 +1,20 @@
 import { ArrowLeft, Clock, Sliders } from "@phosphor-icons/react";
-import type { McpAuditEvent } from "@posthog/api-client/posthog-client";
+import type {
+  McpAuditEvent,
+  McpGatewayServer,
+} from "@posthog/api-client/posthog-client";
 import {
   AUDIT_DECISION_LABELS,
   formatAgo,
   formatAuditTime,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import { RobotAvatar } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
-import { NewTokenDialog } from "@posthog/ui/features/mcp-gateway/components/parts/NewTokenDialog";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useAgentRecentCalls } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayAudit";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
 import {
-  AlertDialog,
   Badge,
   Button,
   Flex,
@@ -46,7 +47,6 @@ export function GatewayAgentDetail({
   const { servers, templatesById } = useGatewayServers();
   const { events, eventsLoading } = useAgentRecentCalls(accountId);
   const [shownCalls, setShownCalls] = useState(5);
-  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
 
   const account = serviceAccounts.accounts.find(
     (entry) => entry.id === accountId,
@@ -75,6 +75,13 @@ export function GatewayAgentDetail({
     month: "long",
     year: "numeric",
   });
+  // Shared servers float to the top so the agent's actual reach reads first.
+  const sharedServers = servers.filter((server) =>
+    account.server_ids.includes(server.id),
+  );
+  const otherServers = servers.filter(
+    (server) => !account.server_ids.includes(server.id),
+  );
 
   return (
     <Flex direction="column" gap="4" className="min-w-0">
@@ -129,21 +136,6 @@ export function GatewayAgentDetail({
         <KvRow label="Authenticates as">
           <Text className="font-mono text-[13px]">{account.handle}</Text>
         </KvRow>
-        <KvRow label="Agent token">
-          <Flex align="center" gap="2">
-            <Text className="font-mono text-[13px] text-gray-11">
-              {account.token_mask || "mcp_gw_ ••••••••••••••••••••"}
-            </Text>
-            <Button
-              variant="ghost"
-              color="gray"
-              size="1"
-              onClick={() => setRotateConfirmOpen(true)}
-            >
-              Rotate…
-            </Button>
-          </Flex>
-        </KvRow>
         <KvRow label="Created">
           <Text className="text-[13px]">{created}</Text>
         </KvRow>
@@ -156,69 +148,46 @@ export function GatewayAgentDetail({
         </Badge>
       </Flex>
       <div className="overflow-hidden rounded border border-gray-5">
-        {servers.map((server) => {
-          const on = account.server_ids.includes(server.id);
-          const template = server.template_id
-            ? templatesById.get(server.template_id)
-            : undefined;
-          return (
-            <Flex
-              key={server.id}
-              align="center"
-              gap="3"
-              className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${on ? "" : "bg-gray-2 opacity-60"}`}
+        {sharedServers.map((server) => (
+          <ServerAccessRow
+            key={server.id}
+            server={server}
+            account={account}
+            shared
+            iconDomain={
+              server.template_id
+                ? templatesById.get(server.template_id)?.icon_domain
+                : undefined
+            }
+            onNavigate={onNavigate}
+            onSetAccess={serviceAccounts.setAccess}
+          />
+        ))}
+        {sharedServers.length > 0 && otherServers.length > 0 && (
+          <div className="border-gray-5 border-b bg-gray-3 px-3 py-1.5">
+            <Text
+              color="gray"
+              className="font-medium text-[10px] uppercase tracking-[0.06em]"
             >
-              <ServerIcon
-                iconDomain={template?.icon_domain}
-                serverUrl={server.url}
-                size={26}
-              />
-              <Flex direction="column" className="min-w-0 flex-1">
-                <Text truncate className="font-medium text-sm">
-                  {server.name}
-                </Text>
-                <Text color="gray" className="text-xs">
-                  {server.tool_count} tools
-                  {on ? " available to this agent" : ""}
-                </Text>
-              </Flex>
-              {on && (
-                <Button
-                  variant="ghost"
-                  color="gray"
-                  size="1"
-                  onClick={() =>
-                    onNavigate({
-                      view: "server",
-                      serverId: server.id,
-                      scope: {
-                        scopeType: "agent",
-                        scopeServiceAccountId: account.id,
-                        label: account.name,
-                      },
-                    })
-                  }
-                >
-                  <Sliders size={11} /> Tool policies
-                </Button>
-              )}
-              <Switch
-                size="1"
-                checked={on}
-                onCheckedChange={(enabled) =>
-                  serviceAccounts.setAccess({
-                    accountId: account.id,
-                    serverId: server.id,
-                    enabled,
-                    successMessage: enabled
-                      ? `${account.name} can now use ${server.name}`
-                      : `${account.name} no longer has access to ${server.name}`,
-                  })
-                }
-              />
-            </Flex>
-          );
-        })}
+              Not shared
+            </Text>
+          </div>
+        )}
+        {otherServers.map((server) => (
+          <ServerAccessRow
+            key={server.id}
+            server={server}
+            account={account}
+            shared={false}
+            iconDomain={
+              server.template_id
+                ? templatesById.get(server.template_id)?.icon_domain
+                : undefined
+            }
+            onNavigate={onNavigate}
+            onSetAccess={serviceAccounts.setAccess}
+          />
+        ))}
         {servers.length === 0 && (
           <Text color="gray" className="block px-3 py-3 text-[13px] italic">
             No servers registered with the gateway yet.
@@ -296,40 +265,80 @@ export function GatewayAgentDetail({
           </Flex>
         )}
       </div>
+    </Flex>
+  );
+}
 
-      <AlertDialog.Root
-        open={rotateConfirmOpen}
-        onOpenChange={setRotateConfirmOpen}
-      >
-        <AlertDialog.Content maxWidth="420px">
-          <AlertDialog.Title>Rotate gateway token</AlertDialog.Title>
-          <AlertDialog.Description className="text-sm">
-            A new token is minted and the current one stops working immediately.
-            Anything using the old token loses access until you update it.
-          </AlertDialog.Description>
-          <Flex gap="3" mt="4" justify="end">
-            <AlertDialog.Cancel>
-              <Button variant="soft" color="gray">
-                Cancel
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                variant="solid"
-                color="red"
-                disabled={serviceAccounts.rotatePending}
-                onClick={() => serviceAccounts.rotateToken(account.id)}
-              >
-                Rotate token
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
-
-      <NewTokenDialog
-        account={serviceAccounts.newToken}
-        onClose={serviceAccounts.dismissNewToken}
+/** One gateway server with this agent's access toggle. */
+function ServerAccessRow({
+  server,
+  account,
+  shared,
+  iconDomain,
+  onNavigate,
+  onSetAccess,
+}: {
+  server: McpGatewayServer;
+  account: { id: string; name: string };
+  shared: boolean;
+  iconDomain: string | undefined;
+  onNavigate: (route: GatewayRoute) => void;
+  onSetAccess: (vars: {
+    accountId: string;
+    serverId: string;
+    enabled: boolean;
+    successMessage?: string;
+  }) => void;
+}) {
+  return (
+    <Flex
+      align="center"
+      gap="3"
+      className={`border-gray-5 border-b px-3 py-2 last:border-b-0 ${shared ? "" : "bg-gray-2 opacity-60"}`}
+    >
+      <ServerIcon iconDomain={iconDomain} serverUrl={server.url} size={26} />
+      <Flex direction="column" className="min-w-0 flex-1">
+        <Text truncate className="font-medium text-sm">
+          {server.name}
+        </Text>
+        <Text color="gray" className="text-xs">
+          {server.tool_count} tools
+          {shared ? " available to this agent" : ""}
+        </Text>
+      </Flex>
+      {shared && (
+        <Button
+          variant="ghost"
+          color="gray"
+          size="1"
+          onClick={() =>
+            onNavigate({
+              view: "server",
+              serverId: server.id,
+              scope: {
+                scopeType: "agent",
+                scopeServiceAccountId: account.id,
+                label: account.name,
+              },
+            })
+          }
+        >
+          <Sliders size={11} /> Tool policies
+        </Button>
+      )}
+      <Switch
+        size="1"
+        checked={shared}
+        onCheckedChange={(enabled) =>
+          onSetAccess({
+            accountId: account.id,
+            serverId: server.id,
+            enabled,
+            successMessage: enabled
+              ? `${account.name} can now use ${server.name}`
+              : `${account.name} no longer has access to ${server.name}`,
+          })
+        }
       />
     </Flex>
   );

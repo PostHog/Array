@@ -5107,17 +5107,6 @@ export class PostHogAPIClient {
     });
   }
 
-  /** Mints a new token; the previous one stops working immediately. */
-  async rotateMcpServiceAccountToken(
-    accountId: string,
-  ): Promise<McpServiceAccountWithToken> {
-    return this.mcpGatewayFetch({
-      method: "post",
-      path: `mcp_gateway/service_accounts/${accountId}/rotate_token/`,
-      errorLabel: "Failed to rotate token",
-    });
-  }
-
   async getMcpGatewayMembers(): Promise<McpGatewayMemberSummary[]> {
     const data = await this.mcpGatewayFetch<{
       results?: McpGatewayMemberSummary[];
