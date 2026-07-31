@@ -99,6 +99,7 @@ import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference
 import { AgentRuntimeSelect } from "./AgentRuntimeSelect";
 import {
   AlwaysOnSkillChips,
+  UnavailableAlwaysOnSkills,
   useAlwaysOnSkillSelection,
 } from "./AlwaysOnSkillChips";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
@@ -284,12 +285,6 @@ export function TaskInput({
   // from this task's prompt. Re-include whenever the source context changes
   // (e.g. switching channels) so a dismissal doesn't stick across channels.
   const [channelContextDismissed, setChannelContextDismissed] = useState(false);
-  const {
-    includedSkills: includedAlwaysOnSkills,
-    excludedKeys: excludedAlwaysOnSkillKeys,
-    exclude: excludeAlwaysOnSkill,
-    reset: resetAlwaysOnSkillSelection,
-  } = useAlwaysOnSkillSelection();
   const lastChannelContextRef = useRef(channelContext);
   useEffect(() => {
     if (lastChannelContextRef.current !== channelContext) {
@@ -728,6 +723,19 @@ export function TaskInput({
 
   const effectiveRepoPath =
     workspaceMode === "cloud" ? selectedCloudRepository : selectedDirectory;
+  const {
+    includedSkills: includedAlwaysOnSkills,
+    unavailable: unavailableAlwaysOnSkills,
+    exclude: excludeAlwaysOnSkill,
+    reset: resetAlwaysOnSkillSelection,
+  } = useAlwaysOnSkillSelection({
+    discoveredSkills: skills,
+    target:
+      workspaceMode === "cloud"
+        ? { repository: selectedCloudRepository }
+        : { repoPath: selectedDirectory },
+    draftKey: `${sessionId}:${channelId ?? ""}:${effectiveRepoPath ?? ""}`,
+  });
 
   const setSelectedEnvironment = useCallback(
     (envId: string | null) => {
@@ -963,7 +971,7 @@ export function TaskInput({
     channelName,
     channelId,
     channelContextId,
-    excludedAlwaysOnSkillKeys,
+    alwaysOnSkills: includedAlwaysOnSkills,
     allowNoRepo,
   });
 
@@ -1498,7 +1506,8 @@ export function TaskInput({
                   </div>
                 )}
                 {(includeChannelContext ||
-                  includedAlwaysOnSkills.length > 0) && (
+                  includedAlwaysOnSkills.length > 0 ||
+                  unavailableAlwaysOnSkills.length > 0) && (
                   <div className="-mt-px mx-2 flex select-none flex-wrap items-center gap-1.5 rounded-b-md border border-gray-6 border-t-0 bg-gray-2 px-2 py-1 text-[12px] text-gray-11">
                     <span className="shrink-0 text-gray-10">Using:</span>
                     {includeChannelContext && (
@@ -1540,6 +1549,10 @@ export function TaskInput({
                     <AlwaysOnSkillChips
                       skills={includedAlwaysOnSkills}
                       onExclude={excludeAlwaysOnSkill}
+                      disabled={isCreatingTask}
+                    />
+                    <UnavailableAlwaysOnSkills
+                      skills={unavailableAlwaysOnSkills}
                     />
                   </div>
                 )}

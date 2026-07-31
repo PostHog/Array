@@ -15,7 +15,7 @@ const HELPER_SKILLS = [
 
 /** One-line pointer to the two official scout helper skills, opened in-app. */
 export function ScoutHelperSkillLinks({ surface }: { surface: ScoutSurface }) {
-  const { requestSkill } = useSkillsSelectionActions();
+  const { requestSkillByName } = useSkillsSelectionActions();
   return (
     <Text className="text-[12px] text-gray-10">
       Helper skills:{" "}
@@ -31,7 +31,7 @@ export function ScoutHelperSkillLinks({ surface }: { surface: ScoutSurface }) {
                 surface,
                 helper_skill: skill.label,
               });
-              requestSkill(skill.name);
+              requestSkillByName(skill.name);
             }}
             className="text-accent-11 no-underline hover:text-accent-12"
           >

@@ -17,6 +17,7 @@ import { NewSkillDialog } from "./NewSkillDialog";
 import { SkillSection, SOURCE_CONFIG } from "./SkillCard";
 import { SkillDetailPanel } from "./SkillDetailPanel";
 import {
+  useRequestedSkill,
   useRequestedSkillName,
   useSkillsSelectionActions,
 } from "./skillsSelectionStore";
@@ -73,16 +74,23 @@ export function SkillsView() {
   // Another surface (e.g. the scout helper links) can ask to open a specific
   // skill by name; honor it once the skill list has loaded, then clear it.
   const requestedSkillName = useRequestedSkillName();
+  const requestedSkill = useRequestedSkill();
   const { clearRequestedSkill } = useSkillsSelectionActions();
   useEffect(() => {
-    if (!requestedSkillName || skills.length === 0) return;
-    const match = skills.find((s) => s.name === requestedSkillName);
+    if ((!requestedSkill && !requestedSkillName) || skills.length === 0) return;
+    const match = requestedSkill
+      ? skills.find(
+          (skill) =>
+            skill.source === requestedSkill.source &&
+            skill.path === requestedSkill.path,
+        )
+      : skills.find((skill) => skill.name === requestedSkillName);
     if (match) {
       setSelectedPath(match.path);
       setScrollToPath(match.path);
     }
     clearRequestedSkill();
-  }, [requestedSkillName, skills, clearRequestedSkill]);
+  }, [requestedSkill, requestedSkillName, skills, clearRequestedSkill]);
 
   const handleScrolledIntoView = useCallback(() => setScrollToPath(null), []);
 

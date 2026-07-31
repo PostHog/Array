@@ -328,6 +328,7 @@ export type {
   SignalReportStatus,
 } from "./signal-types";
 export type {
+  AlwaysOnSkillTarget,
   ExportedSkill,
   ExportedSkillFile,
   SkillFileEntry,
@@ -336,6 +337,7 @@ export type {
   UploadableSkillSource,
 } from "./skills";
 export {
+  getApplicableAlwaysOnSkills,
   SKILL_EXISTS_MARKER,
   serializeSkillMarkdown,
   stripFrontmatter,

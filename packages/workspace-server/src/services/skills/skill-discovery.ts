@@ -170,7 +170,7 @@ export async function listSkillFiles(
 export async function readSkillMetadataFromDir(
   skillsDir: string,
   source: SkillSource,
-  repoName?: string,
+  repo?: string | { name: string; path: string; repository?: string },
 ): Promise<SkillInfo[]> {
   const skillNames = await findSkillDirs(skillsDir);
   if (skillNames.length === 0) return [];
@@ -189,7 +189,15 @@ export async function readSkillMetadataFromDir(
           description: frontmatter?.description ?? "",
           source,
           path: skillPath,
-          ...(repoName ? { repoName } : {}),
+          ...(typeof repo === "string"
+            ? { repoName: repo }
+            : repo
+              ? {
+                  repoName: repo.name,
+                  repoPath: repo.path,
+                  ...(repo.repository ? { repository: repo.repository } : {}),
+                }
+              : {}),
           editable: isEditableSource(source),
           skillMdBytes: Buffer.byteLength(content, "utf-8"),
         } satisfies SkillInfo;

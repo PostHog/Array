@@ -197,6 +197,49 @@ describe("CloudArtifactService", () => {
     fetchMock.mockRestore();
   });
 
+  it("skips an unavailable always-on skill without failing the upload", async () => {
+    const service = new CloudArtifactService(
+      vi.fn(),
+      vi.fn().mockRejectedValue(new Error("missing skill")),
+      passthroughDeps,
+    );
+
+    await expect(
+      service.uploadRunAttachments(
+        makeClient(),
+        "task-1",
+        "run-1",
+        [],
+        [
+          {
+            name: "missing",
+            source: "user",
+            path: "/tmp/missing",
+            alwaysOn: true,
+          },
+        ],
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it("fails when an explicitly requested skill is unavailable", async () => {
+    const service = new CloudArtifactService(
+      vi.fn(),
+      vi.fn().mockRejectedValue(new Error("missing skill")),
+      passthroughDeps,
+    );
+
+    await expect(
+      service.uploadRunAttachments(
+        makeClient(),
+        "task-1",
+        "run-1",
+        [],
+        [{ name: "missing", source: "user", path: "/tmp/missing" }],
+      ),
+    ).rejects.toThrow("missing skill");
+  });
+
   it("uploads dependency skills the resolver adds to a tagged skill", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

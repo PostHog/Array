@@ -2887,12 +2887,21 @@ export class AgentServer {
         : null;
 
     if (invocation) {
-      if (
-        alwaysOnSkills.some((skill) => skill.skillName === invocation.skillName)
-      ) {
+      const invokedAlwaysOnSkill = alwaysOnSkills.find(
+        (skill) => skill.skillName === invocation.skillName,
+      );
+      if (invokedAlwaysOnSkill) {
+        const invokedContext = this.buildInstalledSkillPrompt(
+          invokedAlwaysOnSkill,
+          invocation.args,
+          this.getCoInstalledSkillBundles(runId, invocation.skillName),
+          false,
+        );
         return {
           skillName: invocation.skillName,
-          context: alwaysOnContext ?? "",
+          context: alwaysOnContext
+            ? `${alwaysOnContext}\n\n${invokedContext}`
+            : invokedContext,
         };
       }
       const hasMatchingArtifact = artifacts.some(
@@ -3036,14 +3045,19 @@ export class AgentServer {
     skill: InstalledSkillBundle,
     args: string | undefined,
     coInstalledSkills: InstalledSkillBundle[] = [],
+    includeDefinition = true,
   ): string {
     return [
       `The user invoked the local skill "/${skill.skillName}". Apply these skill instructions for this turn.`,
       "",
-      `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
-      skill.skillDefinition.trim(),
-      `--- END LOCAL SKILL ${skill.skillName} ---`,
-      "",
+      ...(includeDefinition
+        ? [
+            `--- BEGIN LOCAL SKILL ${skill.skillName} ---`,
+            skill.skillDefinition.trim(),
+            `--- END LOCAL SKILL ${skill.skillName} ---`,
+            "",
+          ]
+        : []),
       `Installed skill path: ${skill.skillRoot}`,
       ...(coInstalledSkills.length > 0
         ? [

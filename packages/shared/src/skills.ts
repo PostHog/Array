@@ -7,10 +7,69 @@ export interface SkillInfo {
   source: SkillSource;
   path: string;
   repoName?: string;
+  repoPath?: string;
+  repository?: string;
   /** Whether the skill lives in a directory we own on the user's behalf. */
   editable: boolean;
   /** Size of SKILL.md in bytes (context-cost signal). */
   skillMdBytes: number;
+}
+
+export interface AlwaysOnSkillTarget {
+  repoPath?: string;
+  repository?: string | null;
+}
+
+export function getApplicableAlwaysOnSkills<
+  T extends {
+    source: string;
+    path: string;
+    repoPath?: string;
+    repository?: string;
+  },
+>(
+  preferences: T[],
+  discoveredSkills: SkillInfo[] | undefined,
+  target: AlwaysOnSkillTarget,
+  excludedKeys: ReadonlySet<string> = new Set(),
+): { applicable: T[]; unavailable: T[] } {
+  const discoveredByKey = new Map(
+    discoveredSkills?.map((skill) => [
+      `${skill.source}:${skill.path}`,
+      skill,
+    ]) ?? [],
+  );
+  const normalizedRepoPath = target.repoPath?.replace(/[\\/]+$/, "");
+  const normalizedRepository = target.repository?.toLowerCase();
+  const applicable: T[] = [];
+  const unavailable: T[] = [];
+
+  for (const preference of preferences) {
+    const key = `${preference.source}:${preference.path}`;
+    if (excludedKeys.has(key)) continue;
+    const discovered = discoveredByKey.get(key);
+
+    if (preference.source === "repo") {
+      const belongsToLocalRepo =
+        !!normalizedRepoPath &&
+        ((discovered?.repoPath ?? preference.repoPath) === normalizedRepoPath ||
+          preference.path.startsWith(`${normalizedRepoPath}/.claude/skills/`) ||
+          preference.path.startsWith(
+            `${normalizedRepoPath}\\.claude\\skills\\`,
+          ));
+      const belongsToCloudRepo =
+        !!normalizedRepository &&
+        (discovered?.repository ?? preference.repository)?.toLowerCase() ===
+          normalizedRepository;
+      if (!belongsToLocalRepo && !belongsToCloudRepo) continue;
+    }
+
+    if (discovered || discoveredSkills === undefined)
+      applicable.push(preference);
+    else unavailable.push(preference);
+  }
+
+  return { applicable, unavailable };
 }
 
 export interface SkillFileEntry {

@@ -25,8 +25,10 @@ import {
   type AgentAdapter,
   useSettingsStore,
 } from "../../settings/settingsStore";
+import { useSkills } from "../../skills/useSkills";
 import {
   AlwaysOnSkillChips,
+  UnavailableAlwaysOnSkills,
   useAlwaysOnSkillSelection,
 } from "../../task-detail/components/AlwaysOnSkillChips";
 import {
@@ -281,12 +283,17 @@ export const ChannelHomeComposer = forwardRef<
   // task-ready callback matches create order and keeps adds/removes balanced —
   // no row is ever orphaned, even if two creates briefly overlap.
   const pendingIdsRef = useRef<string[]>([]);
+  const { data: skills } = useSkills();
   const {
     includedSkills: includedAlwaysOnSkills,
-    excludedKeys: excludedAlwaysOnSkillKeys,
+    unavailable: unavailableAlwaysOnSkills,
     exclude: excludeAlwaysOnSkill,
     reset: resetAlwaysOnSkillSelection,
-  } = useAlwaysOnSkillSelection();
+  } = useAlwaysOnSkillSelection({
+    discoveredSkills: skills,
+    target: {},
+    draftKey: `${sessionId}:${backendChannelId ?? channelId}`,
+  });
 
   const handleTaskCreated = useCallback(
     (task: Task) => {
@@ -320,7 +327,7 @@ export const ChannelHomeComposer = forwardRef<
     channelName,
     channelId: backendChannelId,
     channelContextId: channelId,
-    excludedAlwaysOnSkillKeys,
+    alwaysOnSkills: includedAlwaysOnSkills,
     onTaskCreated: handleTaskCreated,
   });
 
@@ -425,13 +432,16 @@ export const ChannelHomeComposer = forwardRef<
               disabled={isBusy}
             />
           </div>
-          {includedAlwaysOnSkills.length > 0 && (
+          {(includedAlwaysOnSkills.length > 0 ||
+            unavailableAlwaysOnSkills.length > 0) && (
             <div className="flex min-w-0 select-none flex-wrap items-center gap-1.5 rounded-sm bg-card px-1 py-0.5 text-[12px] text-gray-11">
               <span className="shrink-0 text-gray-10">Using:</span>
               <AlwaysOnSkillChips
                 skills={includedAlwaysOnSkills}
                 onExclude={excludeAlwaysOnSkill}
+                disabled={isBusy}
               />
+              <UnavailableAlwaysOnSkills skills={unavailableAlwaysOnSkills} />
             </div>
           )}
         </div>

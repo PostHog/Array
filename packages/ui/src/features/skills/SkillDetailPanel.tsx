@@ -335,6 +335,10 @@ export function SkillDetailPanel({
                         "bundled"
                       >,
                       path: skill.path,
+                      ...(skill.repoPath ? { repoPath: skill.repoPath } : {}),
+                      ...(skill.repository
+                        ? { repository: skill.repository }
+                        : {}),
                     },
                     checked,
                   )

@@ -1,6 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { SKILL_EXISTS_MARKER, stripFrontmatter } from "@posthog/shared";
+import {
+  normalizeRepoKey,
+  SKILL_EXISTS_MARKER,
+  stripFrontmatter,
+} from "@posthog/shared";
 import { inject, injectable } from "inversify";
 import { WATCHER_SERVICE } from "../../di/tokens";
 import type { FoldersService } from "../folders/folders";
@@ -56,7 +60,7 @@ const SKILL_MD_TEMPLATE_BODY = `Explain when this skill applies and how to use i
 interface SkillRoot {
   dir: string;
   source: SkillSource;
-  repoName?: string;
+  repo?: { name: string; path: string; repository?: string };
 }
 
 @injectable()
@@ -74,7 +78,7 @@ export class SkillsService {
     const roots = await this.getSkillRoots();
     const results = await Promise.all(
       roots.map((root) =>
-        readSkillMetadataFromDir(root.dir, root.source, root.repoName),
+        readSkillMetadataFromDir(root.dir, root.source, root.repo),
       ),
     );
     const skills = results.flat();
@@ -417,7 +421,11 @@ export class SkillsService {
       ...folders.map((f) => ({
         dir: path.join(f.path, ".claude", "skills"),
         source: "repo" as const,
-        repoName: f.name,
+        repo: {
+          name: f.name,
+          path: f.path,
+          ...(f.remoteUrl ? { repository: normalizeRepoKey(f.remoteUrl) } : {}),
+        },
       })),
       ...marketplacePaths.map((p) => ({
         dir: path.join(p, "skills"),

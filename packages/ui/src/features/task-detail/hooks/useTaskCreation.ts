@@ -97,7 +97,7 @@ interface UseTaskCreationOptions {
    * injected context address CONTEXT.md upkeep writes by a stable id.
    */
   channelContextId?: string;
-  excludedAlwaysOnSkillKeys?: ReadonlySet<string>;
+  alwaysOnSkills?: AlwaysOnSkillRef[];
   /**
    * Channels "generic chat box" mode: drop the repo/branch requirement so a
    * task can be submitted without picking a repo. The agent decides at runtime
@@ -196,7 +196,7 @@ export function useTaskCreation({
   channelName,
   channelId,
   channelContextId,
-  excludedAlwaysOnSkillKeys,
+  alwaysOnSkills = [],
   allowNoRepo,
   onTaskCreated,
   onTaskCreatedEffect,
@@ -327,11 +327,6 @@ export function useTaskCreation({
       const serializedContent = contentToXml(content).trim();
       const filePaths = extractFilePaths(content);
       const settings = useSettingsStore.getState();
-      const alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills.filter(
-        (skill) =>
-          !excludedAlwaysOnSkillKeys?.has(`${skill.source}:${skill.path}`),
-      );
-
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
         ? generatePendingTaskKey()
@@ -575,7 +570,7 @@ export function useTaskCreation({
       channelName,
       channelId,
       channelContextId,
-      excludedAlwaysOnSkillKeys,
+      alwaysOnSkills,
       allowNoRepo,
       bluebirdEnabled,
       personalChannel?.id,

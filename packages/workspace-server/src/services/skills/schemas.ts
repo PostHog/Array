@@ -15,6 +15,8 @@ export const skillInfo = z.object({
   source: skillSource,
   path: z.string(),
   repoName: z.string().optional(),
+  repoPath: z.string().optional(),
+  repository: z.string().optional(),
   editable: z.boolean(),
   skillMdBytes: z.number(),
 });

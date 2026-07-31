@@ -14,6 +14,8 @@ export interface AlwaysOnSkillRef {
   name: string;
   source: "user" | "repo" | "marketplace" | "codex";
   path: string;
+  repoPath?: string;
+  repository?: string;
 }
 
 // Host-agnostic input/output for the task-creation flow. The renderer

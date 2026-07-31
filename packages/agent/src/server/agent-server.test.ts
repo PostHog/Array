@@ -2378,6 +2378,9 @@ describe("AgentServer HTTP Mode", () => {
       expect(sentMeta?.localSkillContext).toContain(
         "always-on skills apply for the entire session",
       );
+      expect(sentMeta?.localSkillContext).toContain(
+        "User request:\nwith context",
+      );
       expect(
         String(sentMeta?.localSkillContext).match(/LOCAL_SKILL_MARKER/g),
       ).toHaveLength(1);
