@@ -187,4 +187,42 @@ describe("GatewayServerDetail", () => {
       screen.queryByRole("button", { name: /Disconnect/ }),
     ).not.toBeInTheDocument();
   });
+
+  it("shows a single scope-aware bulk trio when a member views an agent scope", () => {
+    const serverWithAgent = {
+      ...server,
+      agents: [
+        {
+          service_account_id: "sa-1",
+          name: "Deploy bot",
+          handle: "deploy-bot",
+          status: "active",
+          last_active_at: null,
+          granted_by: null,
+        },
+      ],
+    } as McpGatewayServer;
+    mocks.gateway.servers = [serverWithAgent];
+
+    render(
+      <Theme>
+        <GatewayServerDetail
+          serverId={server.id}
+          initialScope={{
+            scopeType: "agent",
+            scopeServiceAccountId: "sa-1",
+            label: "Deploy bot",
+          }}
+          isAdmin={false}
+          canManageAgentAccess
+          onNavigate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    // The scope switcher carries the only bulk trio; the top-level one
+    // (label "Set all") must not render alongside it.
+    expect(screen.getByText("Set all for Deploy bot")).toBeInTheDocument();
+    expect(screen.queryByText("Set all")).not.toBeInTheDocument();
+  });
 });

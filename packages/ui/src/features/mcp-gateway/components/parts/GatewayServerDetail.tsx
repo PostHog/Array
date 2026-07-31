@@ -425,12 +425,12 @@ export function GatewayServerDetail({
             )}
           </Flex>
         </Flex>
-        {!isAdmin && scopeEditable && (
+        {!isAdmin && scopeEditable && scopes.length <= 1 && (
           <BulkTrio
             label="Set all"
             filtered={hasToolSearch}
             disabled={tools.setAllPending || bulkEditableCount === 0}
-            allowNeedsApproval
+            allowNeedsApproval={!agentScope}
             onSet={setBulkPolicy}
           />
         )}
