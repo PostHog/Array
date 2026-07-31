@@ -133,7 +133,6 @@ export interface ItemBuilder {
    *  reads it after to detect a card being mutated inside an already frozen
    *  (completed) turn, which would otherwise go unseen. */
   lowestTouchedProgressIndex: number;
-  lowestCompletedTurnIndex: number;
   /** Count of tool calls that have reached a terminal status (completed /
    *  failed / cancelled). Increments once per tool call when it first settles.
    *  Drives the generating indicator's status word so it advances on real work
@@ -156,7 +155,6 @@ export function createItemBuilder(): ItemBuilder {
     nextId: () => idCounter++,
     progressCards: new Map(),
     lowestTouchedProgressIndex: Number.POSITIVE_INFINITY,
-    lowestCompletedTurnIndex: Number.POSITIVE_INFINITY,
     completedToolCallCount: 0,
     runStartedRunIds: new Set(),
   };
@@ -610,10 +608,7 @@ function completePromptTurn(
 
 function replaceTurnContextRows(b: ItemBuilder, context: TurnContext): void {
   const visited = new Set<ConversationItem[]>();
-  const replaceRows = (
-    items: ConversationItem[],
-    trackIndex: boolean,
-  ): void => {
+  const replaceRows = (items: ConversationItem[]): void => {
     if (visited.has(items)) return;
     visited.add(items);
     for (let index = 0; index < items.length; index++) {
@@ -621,19 +616,13 @@ function replaceTurnContextRows(b: ItemBuilder, context: TurnContext): void {
       if (item.type !== "session_update") continue;
       if (item.turnContext === context) {
         items[index] = { ...item };
-        if (trackIndex) {
-          b.lowestCompletedTurnIndex = Math.min(
-            b.lowestCompletedTurnIndex,
-            index,
-          );
-        }
       }
       for (const children of item.turnContext.childItems.values()) {
-        replaceRows(children, false);
+        replaceRows(children);
       }
     }
   };
-  replaceRows(b.items, true);
+  replaceRows(b.items);
 }
 
 function handleNotification(
@@ -994,6 +983,7 @@ function pushChildItem(b: ItemBuilder, parentId: string, update: RenderItem) {
     update,
     turnContext: turn.context,
   });
+  reissueToolCallRow(b, parentId);
 }
 
 function appendTextChunkToChildren(
@@ -1032,6 +1022,7 @@ function appendTextChunkToChildren(
         },
       },
     };
+    reissueToolCallRow(b, parentId);
   } else {
     turn.itemCount++;
     children.push({
@@ -1040,7 +1031,44 @@ function appendTextChunkToChildren(
       update: { ...update, content: { ...update.content } },
       turnContext: turn.context,
     });
+    reissueToolCallRow(b, parentId);
   }
+}
+
+function reissueToolCallRow(
+  b: ItemBuilder,
+  toolCallId: string,
+  nextUpdate?: ToolCall,
+): void {
+  const turn = b.currentTurn;
+  if (!turn) return;
+  const current = turn.toolCalls.get(toolCallId);
+  const update = nextUpdate ?? (current ? { ...current } : undefined);
+  if (!update) return;
+  turn.toolCalls.set(toolCallId, update);
+
+  const visited = new Set<ConversationItem[]>();
+  const replace = (items: ConversationItem[]): void => {
+    if (visited.has(items)) return;
+    visited.add(items);
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (item.type !== "session_update") continue;
+      if (
+        item.update.sessionUpdate === "tool_call" &&
+        item.update.toolCallId === toolCallId
+      ) {
+        items[index] = {
+          ...item,
+          update: { ...update, sessionUpdate: "tool_call" },
+        };
+      }
+      for (const children of item.turnContext.childItems.values()) {
+        replace(children);
+      }
+    }
+  };
+  replace(b.items);
 }
 
 function processSessionUpdate(
@@ -1072,8 +1100,9 @@ function processSessionUpdate(
       const existing = turn.toolCalls.get(update.toolCallId);
       if (existing) {
         const wasTerminal = isTerminalToolStatus(existing.status);
-        Object.assign(existing, update);
-        if (!wasTerminal && isTerminalToolStatus(existing.status)) {
+        const merged = { ...existing, ...update };
+        reissueToolCallRow(b, update.toolCallId, merged);
+        if (!wasTerminal && isTerminalToolStatus(merged.status)) {
           b.completedToolCallCount++;
         }
       } else {
@@ -1099,8 +1128,25 @@ function processSessionUpdate(
       if (existing) {
         const wasTerminal = isTerminalToolStatus(existing.status);
         const { sessionUpdate: _, ...rest } = update;
-        Object.assign(existing, rest);
-        if (!wasTerminal && isTerminalToolStatus(existing.status)) {
+        const merged: ToolCall = {
+          ...existing,
+          ...rest,
+          toolCallId: existing.toolCallId,
+          title: rest.title ?? existing.title,
+          content:
+            rest.content === null
+              ? undefined
+              : (rest.content ?? existing.content),
+          kind: rest.kind === null ? undefined : (rest.kind ?? existing.kind),
+          locations:
+            rest.locations === null
+              ? undefined
+              : (rest.locations ?? existing.locations),
+          status:
+            rest.status === null ? undefined : (rest.status ?? existing.status),
+        };
+        reissueToolCallRow(b, update.toolCallId, merged);
+        if (!wasTerminal && isTerminalToolStatus(merged.status)) {
           b.completedToolCallCount++;
         }
       }
