@@ -94,6 +94,7 @@ async function waitFor(
 
 describe("CloudTaskEngine", () => {
   let service: CloudTaskEngine;
+  let analyticsMock: { track: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     const scopedLog = {
@@ -103,7 +104,7 @@ describe("CloudTaskEngine", () => {
       error: vi.fn(),
     };
     const loggerMock = { ...scopedLog, scope: vi.fn(() => scopedLog) };
-    const analyticsMock = { track: vi.fn() };
+    analyticsMock = { track: vi.fn() };
     service = createCloudTaskEngine({
       auth: mockAuthService as never,
       analytics: analyticsMock as never,
@@ -2394,6 +2395,115 @@ describe("CloudTaskEngine", () => {
     const watcher = getWatcher();
     expect(watcher?.failed).toBe(false);
     expect(watcher?.reconnectAttempts).toBe(0);
+    expect(
+      updates.some(
+        (u) =>
+          typeof u === "object" &&
+          u !== null &&
+          (u as { kind?: string }).kind === "error",
+      ),
+    ).toBe(false);
+  });
+
+  it("aborts and reconnects a stream that goes silent with no bytes or keepalives", async () => {
+    vi.useFakeTimers();
+
+    const updates: unknown[] = [];
+    service.on(CloudTaskEvent.Update, (payload) => updates.push(payload));
+
+    const makeInProgressRun = () =>
+      createJsonResponse({
+        id: "run-1",
+        status: "in_progress",
+        stage: null,
+        output: null,
+        error_message: null,
+        branch: "main",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+
+    mockNetFetch
+      .mockResolvedValueOnce(makeInProgressRun())
+      .mockResolvedValueOnce(
+        createJsonResponse([], 200, { "X-Has-More": "false" }),
+      )
+      .mockImplementation(() => Promise.resolve(makeInProgressRun()));
+
+    // First connection hangs forever: no bytes, no error, no EOF, simulating a half-open
+    // socket (laptop sleep, NAT rebind). The second connection stays open and delivers a
+    // keepalive so recovery is observable once the idle watchdog aborts the first.
+    let streamCall = 0;
+    const encoder = new TextEncoder();
+    const abortedFirstConnection = { value: false };
+    mockStreamFetch.mockImplementation(
+      (_input: unknown, init?: RequestInit) => {
+        streamCall += 1;
+        if (streamCall === 1) {
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              // Never enqueue or close on our own; the read() promise awaits forever until the
+              // idle watchdog aborts it below, mirroring how a real fetch's reader rejects once
+              // its AbortSignal fires.
+              init?.signal?.addEventListener("abort", () => {
+                abortedFirstConnection.value = true;
+                controller.error(new DOMException("Aborted", "AbortError"));
+              });
+            },
+          });
+          return Promise.resolve(
+            new Response(stream, {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            }),
+          );
+        }
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                'event: keepalive\ndata: {"type":"keepalive"}\n\n',
+              ),
+            );
+          },
+        });
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        );
+      },
+    );
+
+    service.watch({
+      taskId: "task-1",
+      runId: "run-1",
+      apiHost: "https://app.example.com",
+      teamId: 2,
+    });
+
+    await waitFor(() => mockStreamFetch.mock.calls.length === 1);
+
+    // Nothing throws or EOFs; without the idle watchdog this would hang forever.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(abortedFirstConnection.value).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(40_000);
+    await waitFor(() => abortedFirstConnection.value, 20_000);
+    await waitFor(() => mockStreamFetch.mock.calls.length >= 2, 20_000);
+
+    expect(
+      analyticsMock.track.mock.calls.some(
+        ([eventName]) => eventName === "Cloud stream idle timeout",
+      ),
+    ).toBe(true);
+
+    const watcher = (
+      service as unknown as {
+        watchers: Map<string, { failed: boolean }>;
+      }
+    ).watchers.get("task-1:run-1");
+    expect(watcher?.failed).toBe(false);
     expect(
       updates.some(
         (u) =>
