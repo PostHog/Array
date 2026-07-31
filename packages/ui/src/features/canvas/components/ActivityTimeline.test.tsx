@@ -128,4 +128,22 @@ describe("ActivityTimeline", () => {
     expect(screen.getByText("Saved workspace context")).toBeVisible();
     expect(useThreadNavigationStore.getState().scrollRequests).toEqual({});
   });
+
+  it("hides injected custom instructions from conversation previews", () => {
+    renderTimeline(true, [
+      {
+        type: "user_message",
+        id: "custom-instructions-message",
+        content:
+          "Review this PR\n\n<user_custom_instructions>Never update an existing PR description.</user_custom_instructions>",
+        timestamp: Date.parse("2026-07-17T09:05:00Z"),
+      },
+    ]);
+
+    expect(screen.getByText("Review this PR")).toBeInTheDocument();
+    expect(screen.queryByText(/user_custom_instructions/)).toBeNull();
+    expect(
+      screen.queryByText("Never update an existing PR description."),
+    ).toBeNull();
+  });
 });
