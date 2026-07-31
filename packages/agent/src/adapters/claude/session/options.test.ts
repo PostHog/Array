@@ -461,8 +461,7 @@ describe("buildSessionOptions", () => {
       expect(env?.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://127.0.0.1:9");
     });
 
-    it("honors caller-supplied OTEL exporter settings", () => {
-      process.env.OTEL_TRACES_EXPORTER = "otlp";
+    it("honors a caller-supplied OTLP endpoint", () => {
       process.env.OTEL_EXPORTER_OTLP_ENDPOINT =
         "http://collector.internal:4318";
 
@@ -471,6 +470,16 @@ describe("buildSessionOptions", () => {
       expect(env?.OTEL_EXPORTER_OTLP_ENDPOINT).toBe(
         "http://collector.internal:4318",
       );
+    });
+
+    it("pins exporter and protocol so an inherited none can't disable tracing", () => {
+      process.env.OTEL_TRACES_EXPORTER = "none";
+      process.env.OTEL_EXPORTER_OTLP_PROTOCOL = "grpc";
+
+      const env = buildSessionOptions({ ...makeParams(), gatewayEnv }).env;
+
+      expect(env?.OTEL_TRACES_EXPORTER).toBe("otlp");
+      expect(env?.OTEL_EXPORTER_OTLP_PROTOCOL).toBe("http/json");
     });
 
     it("strips inherited TRACEPARENT so turns keep distinct trace ids", () => {

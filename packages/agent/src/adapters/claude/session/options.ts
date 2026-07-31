@@ -191,17 +191,23 @@ function buildEnvironment(
   // sessions that genuinely need MCP tools available on turn 1.
   const mcpNonblocking = process.env.MCP_CONNECTION_NONBLOCKING;
 
-  // Every var is load-bearing (ablation-tested): the header is only stamped
-  // once the OTel tracer initializes, and the dead endpoint keeps spans from
-  // leaking to a local collector on the default port. Export never matters.
+  // Every var is load-bearing (ablation-tested): the CLI stamps the per-turn
+  // traceparent only once its OTel tracer initializes, and the dead endpoint
+  // keeps the throwaway spans off any local collector. Exporter and protocol
+  // are pinned rather than inherited — an ambient OTEL_TRACES_EXPORTER=none or
+  // unknown protocol registers no tracer and silently drops the traceparent;
+  // the endpoint stays overridable for a real collector.
+  // Residual risk: a repo's .claude/settings.json `env` is applied over these
+  // inside the CLI and can redirect the endpoint or turn on content capture
+  // (OTEL_LOG_TOOL_CONTENT, …) — pre-existing settingSources exposure, not
+  // closable from here; hardening tracked separately.
   const gatewayTracing: Record<string, string> = gateway?.anthropicBaseUrl
     ? {
         CLAUDE_CODE_ENABLE_TELEMETRY: "1",
         CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
         CLAUDE_CODE_PROPAGATE_TRACEPARENT: "1",
-        OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER ?? "otlp",
-        OTEL_EXPORTER_OTLP_PROTOCOL:
-          process.env.OTEL_EXPORTER_OTLP_PROTOCOL ?? "http/json",
+        OTEL_TRACES_EXPORTER: "otlp",
+        OTEL_EXPORTER_OTLP_PROTOCOL: "http/json",
         OTEL_EXPORTER_OTLP_ENDPOINT:
           process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://127.0.0.1:9",
       }
