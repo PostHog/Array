@@ -46,7 +46,7 @@ export function formatRetryStatus({
   message?: string;
   remainingMs: number;
 }): string {
-  const rateLimited = /\b(429|rate limit|too many requests)\b/i.test(
+  const rateLimited = /\b429\b|rate[ _]limit(?:ed)?|too many requests/i.test(
     message ?? "",
   );
   const retryAt =

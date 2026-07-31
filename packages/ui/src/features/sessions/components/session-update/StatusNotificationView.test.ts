@@ -35,6 +35,15 @@ describe("formatRetryStatus", () => {
       input: {
         attempt: 2,
         maxAttempts: 3,
+        message: "Rate limited",
+        remainingMs: 2_000,
+      },
+      expected: "Rate limit reached. Retrying in 2s (attempt 2 of 3)",
+    },
+    {
+      input: {
+        attempt: 2,
+        maxAttempts: 3,
         message: "Server overloaded",
         remainingMs: 2_000,
       },
