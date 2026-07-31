@@ -152,9 +152,7 @@ export function GatewayServerDetail({
     );
   }
 
-  const shared = server.auth_mode === "shared";
   const yourConnection = server.your_connection;
-  const personal = yourConnection?.scope === "personal";
   const selfEnabled = yourConnection ? yourConnection.is_enabled : true;
   const needsReconnect =
     !!yourConnection &&
@@ -187,10 +185,7 @@ export function GatewayServerDetail({
     scope.scopeType === "member" ||
     (scope.scopeType === "agent" && canManageAgentAccess);
   // Refreshing tools needs a live installation to ask the upstream server.
-  const refreshInstallationId =
-    yourConnection?.installation_id ??
-    server.shared_credential?.installation_id ??
-    null;
+  const refreshInstallationId = yourConnection?.installation_id ?? null;
 
   const setBulkPolicy = (state: McpApprovalState) => {
     tools.setAll(
@@ -221,8 +216,7 @@ export function GatewayServerDetail({
     </Button>
   ) : (
     <Button variant="solid" size="2" onClick={() => gateway.connect(server)}>
-      <Key size={12} />{" "}
-      {shared ? "Connect personal account" : "Connect your account"}
+      <Key size={12} /> Connect your account
     </Button>
   );
 
@@ -242,11 +236,6 @@ export function GatewayServerDetail({
             <Text truncate className="font-bold text-xl">
               {server.name}
             </Text>
-            {shared && isAdmin && (
-              <Badge color="gray" variant="soft" size="1">
-                <Key size={10} /> Shared credential
-              </Badge>
-            )}
             {isAdmin && !server.is_team_enabled && (
               <Badge color="gray" variant="soft" size="1">
                 Off
@@ -290,7 +279,7 @@ export function GatewayServerDetail({
               </IconButton>
             </Tooltip>
           )}
-          {!isAdmin && shared && yourConnection && (
+          {yourConnection && (
             <Tooltip
               content={
                 selfEnabled
@@ -298,69 +287,53 @@ export function GatewayServerDetail({
                   : "Enable this server for you"
               }
             >
-              <Switch
-                size="1"
-                checked={selfEnabled}
-                onCheckedChange={(enabled) =>
-                  gateway.toggleYourConnection({
-                    installationId: yourConnection.installation_id,
-                    enabled,
-                  })
-                }
-              />
+              {/* Tooltip stamps its own data-state on its child, which would
+                  overwrite the Switch's checked/unchecked state and leave the
+                  track stuck on the accent color. Give it a span to stamp. */}
+              <span className="inline-flex">
+                <Switch
+                  size="1"
+                  checked={selfEnabled}
+                  onCheckedChange={(enabled) =>
+                    gateway.toggleYourConnection({
+                      installationId: yourConnection.installation_id,
+                      enabled,
+                    })
+                  }
+                />
+              </span>
             </Tooltip>
           )}
-          {!shared &&
-            (yourConnection ? (
-              <Flex direction="column" align="end" gap="2">
-                {!deletesForEveryone && !deleteInstallationId && (
-                  <Button
-                    variant="ghost"
-                    color="gray"
-                    size="2"
-                    disabled={gateway.disconnectPending}
-                    onClick={() =>
-                      gateway.disconnect({
-                        installationId: yourConnection.installation_id,
-                        serverName: server.name,
-                      })
-                    }
-                  >
-                    <X size={12} /> Disconnect
-                  </Button>
-                )}
-                {needsReconnect && connectButton}
-              </Flex>
-            ) : (
-              connectButton
-            ))}
-          {shared &&
-            !isAdmin &&
-            server.allow_personal_connections &&
-            (personal && !needsReconnect ? (
-              <Button
-                variant="ghost"
-                color="gray"
-                size="2"
-                onClick={() =>
-                  gateway.disconnect({
-                    installationId: yourConnection.installation_id,
-                    serverName: server.name,
-                  })
-                }
-              >
-                <X size={12} /> Disconnect personal account
-              </Button>
-            ) : (
-              connectButton
-            ))}
+          {yourConnection ? (
+            <Flex direction="column" align="end" gap="2">
+              {!deletesForEveryone && !deleteInstallationId && (
+                <Button
+                  variant="ghost"
+                  color="gray"
+                  size="2"
+                  disabled={gateway.disconnectPending}
+                  onClick={() =>
+                    gateway.disconnect({
+                      installationId: yourConnection.installation_id,
+                      serverName: server.name,
+                    })
+                  }
+                >
+                  <X size={12} /> Disconnect
+                </Button>
+              )}
+              {needsReconnect && connectButton}
+            </Flex>
+          ) : (
+            connectButton
+          )}
         </Flex>
       </Flex>
 
       <Separator size="4" />
 
-      {/* Member on a shared server: credential state card */}
-      {!isAdmin && shared && (
+      {/* Your connection exists but you switched it off for yourself. */}
+      {yourConnection && !selfEnabled && (
         <Flex
           align="start"
           gap="3"
@@ -374,23 +347,10 @@ export function GatewayServerDetail({
             <Key size={15} />
           </Flex>
           <Flex direction="column" gap="1">
-            <Text className="font-medium text-sm">
-              {!selfEnabled
-                ? "Disabled for you"
-                : personal
-                  ? "Connected with your personal account"
-                  : "Pre-authorized for you"}
-            </Text>
+            <Text className="font-medium text-sm">Disabled for you</Text>
             <Text color="gray" className="text-[13px]">
-              {!selfEnabled
-                ? `${server.name} tools won't be offered to you until you turn it back on.`
-                : personal
-                  ? `Your calls use your own ${server.name} credential instead of the team one.`
-                  : `Your admins share one credential with the whole team — nothing to set up.${
-                      server.allow_personal_connections
-                        ? " Prefer your own account? Connect personally above."
-                        : ""
-                    }`}
+              {server.name} tools won't be offered to you until you turn it back
+              on.
             </Text>
           </Flex>
         </Flex>
@@ -767,7 +727,6 @@ function AccessSection({
   onSetMemberAccess,
   onRevokeAgent,
 }: AccessSectionProps) {
-  const shared = server.auth_mode === "shared";
   const yourInstallationId = server.your_connection?.installation_id;
 
   return (
@@ -788,9 +747,7 @@ function AccessSection({
               </Text>
               <Text as="div" color="gray" className="text-[13px]">
                 {server.is_team_enabled
-                  ? shared
-                    ? `Members use ${server.name} through the shared credential — nothing for them to set up.`
-                    : `Members can connect their own ${server.name} account.`
+                  ? `Members can connect their own ${server.name} account.`
                   : `Turned off — members can't see or call ${server.name}.`}
               </Text>
             </div>
@@ -814,94 +771,6 @@ function AccessSection({
             />
           </Flex>
 
-          {shared && server.shared_credential && (
-            <Flex
-              align="start"
-              gap="3"
-              className="rounded-md border border-gray-5 bg-gray-2 p-3"
-            >
-              <Flex
-                align="center"
-                justify="center"
-                className="h-[32px] w-[32px] shrink-0 rounded-full bg-gray-3 text-gray-11"
-              >
-                <Key size={15} />
-              </Flex>
-              <Flex direction="column" gap="1" className="min-w-0 flex-1">
-                <Text className="font-mono text-sm">
-                  {server.shared_credential.managed_by?.email ??
-                    "Shared credential"}
-                </Text>
-                <Text color="gray" className="text-[13px]">
-                  Shared credential
-                  {server.shared_credential.managed_by
-                    ? ` — managed by ${gatewayUserName(server.shared_credential.managed_by)}`
-                    : ""}
-                  . Everyone on the team calls {server.name} through this
-                  account.
-                </Text>
-              </Flex>
-              <Button
-                variant="ghost"
-                color="gray"
-                size="1"
-                disabled={gateway.reconnectPending}
-                onClick={() =>
-                  gateway.reconnect({
-                    installationId: server.shared_credential
-                      ? server.shared_credential.installation_id
-                      : "",
-                    serverName: server.name,
-                  })
-                }
-              >
-                <ArrowClockwise size={12} /> Rotate
-              </Button>
-            </Flex>
-          )}
-
-          {shared && (
-            <Flex
-              align="center"
-              justify="between"
-              gap="3"
-              className="rounded-md border border-gray-5 bg-gray-2 p-3"
-            >
-              <div>
-                <Text as="div" className="font-medium text-sm">
-                  Personal connections
-                </Text>
-                <Text as="div" color="gray" className="text-[13px]">
-                  Let members authenticate their own {server.name} account on
-                  top of the shared credential.
-                </Text>
-              </div>
-              <Switch
-                checked={server.allow_personal_connections}
-                onCheckedChange={(allowed) => {
-                  gateway.updateServer(
-                    {
-                      serverId: server.id,
-                      updates: { allow_personal_connections: allowed },
-                    },
-                    {
-                      onSuccess: () => {
-                        if (allowed)
-                          toast.success(
-                            `Members can now connect personal ${server.name} accounts`,
-                          );
-                        else
-                          toast.info(
-                            `Personal connections turned off for ${server.name}`,
-                          );
-                      },
-                    },
-                  );
-                }}
-              />
-            </Flex>
-          )}
-
           <Flex align="center" gap="2" mt="1" className="tracking-[0.06em]">
             <Text
               color="gray"
@@ -915,9 +784,7 @@ function AccessSection({
           </Flex>
           {server.connections.length === 0 ? (
             <Text color="gray" className="px-1 text-[13px] italic">
-              {shared
-                ? "No one has connected a personal account — everyone uses the shared credential."
-                : "No one has connected yet."}
+              No one has connected yet.
             </Text>
           ) : (
             <div className="overflow-hidden rounded-md border border-gray-5 bg-gray-2">

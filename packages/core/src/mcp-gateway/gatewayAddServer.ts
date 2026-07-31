@@ -46,9 +46,10 @@ export interface GatewayInstallRequest extends McpGatewayInstallSharingOptions {
 }
 
 /**
- * install_custom payload for registering a server with the gateway. Sharing
- * Team-wide options are attached only for admins. Agent grants are attached
- * whenever the team allows this member to manage agent access.
+ * install_custom payload for registering a server with the gateway. The
+ * credential is always personal to the installer. Team-wide options are
+ * attached only for admins; agent grants are attached whenever the team
+ * allows this member to manage agent access.
  */
 export function buildGatewayInstallRequest(
   values: GatewayAddServerValues,
@@ -59,7 +60,6 @@ export function buildGatewayInstallRequest(
     url: values.url.trim(),
     description: values.description.trim(),
     auth_type: values.authType,
-    scope: "personal",
     ...(values.authType === "api_key" && values.apiKey
       ? { api_key: values.apiKey }
       : {}),

@@ -103,11 +103,9 @@ export function GatewayMemberDetail({
           const usedAgo = formatAgo(memberConnection?.last_used_at ?? null);
           const sub = !on
             ? `Access turned off for ${firstName}`
-            : server.auth_mode === "shared"
-              ? "Shared credential — pre-authorized"
-              : connected.has(server.id) || memberConnection
-                ? `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`
-                : "Not connected yet";
+            : connected.has(server.id) || memberConnection
+              ? `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`
+              : "Not connected yet";
           return (
             <Flex
               key={server.id}

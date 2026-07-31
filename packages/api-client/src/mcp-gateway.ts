@@ -8,7 +8,6 @@ import type { McpApprovalState, McpCategory } from "./types";
 
 export type McpGatewayUser = Schemas.UserBasic;
 
-export type McpGatewayAuthMode = "individual" | "shared";
 export type McpGatewayScopeType = "team" | "member" | "agent";
 export type McpPolicyPreset = "allow" | "user" | "ask" | "block";
 export type McpServiceAccountStatus = "active" | "paused";
@@ -24,7 +23,7 @@ export type McpPolicyDecidedBy =
   | "legacy"
   | "default";
 
-/** One member's personal connection to a gateway server. */
+/** One member's connection to a gateway server. */
 export interface McpGatewayConnection {
   installation_id: string;
   user: McpGatewayUser;
@@ -36,18 +35,7 @@ export interface McpGatewayConnection {
 /** The requesting user's own connection to a gateway server. */
 export interface McpGatewayYourConnection {
   installation_id: string;
-  scope: "personal" | "shared";
   /** Per-connection switch — false when self-disabled. */
-  is_enabled: boolean;
-  pending_oauth: boolean;
-  needs_reauth: boolean;
-  last_used_at: string | null;
-}
-
-/** The admin-managed shared credential of a shared-auth server. */
-export interface McpGatewaySharedCredential {
-  installation_id: string;
-  managed_by: McpGatewayUser | null;
   is_enabled: boolean;
   pending_oauth: boolean;
   needs_reauth: boolean;
@@ -72,18 +60,14 @@ export interface McpGatewayServer {
   url: string;
   description: string;
   category: McpCategory;
-  auth_mode: McpGatewayAuthMode;
   is_team_enabled: boolean;
-  allow_personal_connections: boolean;
   icon_key: string;
   docs_url: string;
   template_id: string | null;
   tool_count: number;
-  /** Members with a personal connection to this server. */
+  /** Members with a connection to this server. Admin-only; empty for members. */
   connections: McpGatewayConnection[];
   your_connection: McpGatewayYourConnection | null;
-  /** Set when auth_mode is "shared", else null. */
-  shared_credential: McpGatewaySharedCredential | null;
   agents: McpGatewayAgentAccess[];
   /** Ids of members whose access an admin has turned off. */
   revoked_user_ids: number[];
@@ -99,8 +83,6 @@ export interface McpGatewayServerUpdate {
   category?: McpCategory;
   /** Master switch — off means members and agents can neither see nor call the server. */
   is_team_enabled?: boolean;
-  /** Shared-credential servers: whether members may also connect their own account. */
-  allow_personal_connections?: boolean;
 }
 
 /** Which policy scope a tools query or policy upsert targets. */
@@ -224,14 +206,13 @@ export interface McpGatewayMemberSummary {
   revoked_server_ids: string[];
 }
 
-/** Sharing options accepted by install_custom / install_template. */
+/**
+ * Gateway options accepted by install_custom / install_template. Credentials
+ * are always personal to the installer; agents reach them through grants.
+ */
 export interface McpGatewayInstallSharingOptions {
-  /** "personal" is per-user; "shared" is team-wide (the shared credential). */
-  scope?: "personal" | "shared";
   /** Whether the server starts enabled for the whole team. */
   team_enabled?: boolean;
-  /** Shared-credential servers: whether members may also connect personal accounts. */
-  allow_personal?: boolean;
-  /** Service accounts to share the server with at install time, when team settings allow it. */
+  /** Service accounts to grant the server to at install time, when team settings allow it. */
   agent_ids?: string[];
 }

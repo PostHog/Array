@@ -28,7 +28,7 @@ describe("canSubmitGatewayServer", () => {
 });
 
 describe("buildGatewayInstallRequest", () => {
-  it("builds an individual oauth install with admin sharing options", () => {
+  it("builds an oauth install with admin team options", () => {
     const request = buildGatewayInstallRequest(
       values({ description: "  Wiki tools  ", agentIds: ["svc-1"] }),
       { isAdmin: true, canManageAgentAccess: true },
@@ -38,21 +38,18 @@ describe("buildGatewayInstallRequest", () => {
       url: "https://mcp.example.com/sse",
       description: "Wiki tools",
       auth_type: "oauth",
-      scope: "personal",
       team_enabled: true,
       agent_ids: ["svc-1"],
     });
   });
 
-  it("keeps api-key installs personal and includes the key", () => {
+  it("includes the key on api-key installs", () => {
     const request = buildGatewayInstallRequest(
       values({ authType: "api_key", apiKey: "sk-123" }),
       { isAdmin: true, canManageAgentAccess: true },
     );
     expect(request.auth_type).toBe("api_key");
     expect(request.api_key).toBe("sk-123");
-    expect(request.scope).toBe("personal");
-    expect(request.allow_personal).toBeUndefined();
   });
 
   it("includes oauth client credentials only when provided", () => {
@@ -74,9 +71,7 @@ describe("buildGatewayInstallRequest", () => {
       values({ agentIds: ["svc-1"] }),
       { isAdmin: false, canManageAgentAccess: true },
     );
-    expect(request.scope).toBe("personal");
     expect(request.team_enabled).toBeUndefined();
-    expect(request.allow_personal).toBeUndefined();
     expect(request.agent_ids).toEqual(["svc-1"]);
   });
 

@@ -197,9 +197,8 @@ export function GatewayTeamSettings({ onNavigate }: GatewayTeamSettingsProps) {
                   {server.name}
                 </Text>
                 <Text color="gray" className="text-xs">
-                  {server.auth_mode === "shared"
-                    ? "Shared credential"
-                    : "Individual accounts"}
+                  {server.tool_count}{" "}
+                  {server.tool_count === 1 ? "tool" : "tools"}
                 </Text>
               </Flex>
             </button>

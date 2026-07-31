@@ -16,7 +16,7 @@ import {
   isAgentPolicyState,
   isConnectedForYou,
   isPolicyStateAllowedByCeiling,
-  partitionRailServers,
+  railConnectedServers,
   resolvePolicyStateForScope,
 } from "./gatewayServers";
 
@@ -62,7 +62,6 @@ function connection(
 ): McpGatewayYourConnection {
   return {
     installation_id: "inst-1",
-    scope: "personal",
     is_enabled: true,
     pending_oauth: false,
     needs_reauth: false,
@@ -78,16 +77,13 @@ function server(overrides: Partial<McpGatewayServer>): McpGatewayServer {
     url: "https://mcp.example.com",
     description: "",
     category: "dev",
-    auth_mode: "individual",
     is_team_enabled: true,
-    allow_personal_connections: true,
     icon_key: "",
     docs_url: "",
     template_id: null,
     tool_count: 0,
     connections: [],
     your_connection: null,
-    shared_credential: null,
     agents: [],
     revoked_user_ids: [],
     is_revoked_for_you: false,
@@ -98,35 +94,24 @@ function server(overrides: Partial<McpGatewayServer>): McpGatewayServer {
   };
 }
 
-describe("partitionRailServers", () => {
+describe("railConnectedServers", () => {
   const servers = [
     server({ id: "a", name: "Alpha", your_connection: connection() }),
     server({ id: "b", name: "Beta" }),
-    server({ id: "c", name: "Gamma", auth_mode: "shared" }),
-    server({
-      id: "d",
-      name: "Delta",
-      auth_mode: "shared",
-      your_connection: connection(),
-    }),
+    server({ id: "c", name: "Gamma", your_connection: connection() }),
   ];
 
-  it("splits individual installations from shared servers", () => {
-    const { yourConnections, sharedWithYou } = partitionRailServers(
-      servers,
-      "",
-    );
-    expect(yourConnections.map((s) => s.id)).toEqual(["a"]);
-    expect(sharedWithYou.map((s) => s.id)).toEqual(["c", "d"]);
+  it("lists only the servers the caller has connected", () => {
+    expect(railConnectedServers(servers, "").map((s) => s.id)).toEqual([
+      "a",
+      "c",
+    ]);
   });
 
-  it("filters both sections by name", () => {
-    const { yourConnections, sharedWithYou } = partitionRailServers(
-      servers,
-      "gam",
-    );
-    expect(yourConnections).toEqual([]);
-    expect(sharedWithYou.map((s) => s.id)).toEqual(["c"]);
+  it("filters by name", () => {
+    expect(railConnectedServers(servers, "gam").map((s) => s.id)).toEqual([
+      "c",
+    ]);
   });
 });
 
@@ -171,34 +156,20 @@ describe("countGatewayServersByCategory", () => {
 
 describe("isConnectedForYou", () => {
   it.each([
-    [
-      "personal connection",
-      server({ your_connection: connection() }),
-      false,
-      true,
-    ],
+    ["own connection", server({ your_connection: connection() }), true],
     [
       "pending oauth does not count",
       server({ your_connection: connection({ pending_oauth: true }) }),
-      false,
       false,
     ],
     [
       "connection needing reauth does not count",
       server({ your_connection: connection({ needs_reauth: true }) }),
       false,
-      false,
     ],
-    ["member on shared server", server({ auth_mode: "shared" }), false, true],
-    [
-      "admin on shared server without own connection",
-      server({ auth_mode: "shared" }),
-      true,
-      false,
-    ],
-    ["not connected", server({}), false, false],
-  ] as const)("%s", (_label, srv, isAdmin, expected) => {
-    expect(isConnectedForYou(srv, isAdmin)).toBe(expected);
+    ["not connected", server({}), false],
+  ] as const)("%s", (_label, srv, expected) => {
+    expect(isConnectedForYou(srv)).toBe(expected);
   });
 });
 
@@ -270,25 +241,6 @@ describe("getGatewayServerRemovalAction", () => {
       "disconnects from a catalog server",
       server({
         template_id: "template-1",
-        created_by: gatewayUser(1),
-        your_connection: connection(),
-        connections: [
-          {
-            installation_id: "inst-1",
-            user: gatewayUser(1),
-            last_used_at: null,
-            pending_oauth: false,
-            needs_reauth: false,
-          },
-        ],
-      }),
-      false,
-      "disconnect",
-    ],
-    [
-      "disconnects a personal override from a shared custom server",
-      server({
-        auth_mode: "shared",
         created_by: gatewayUser(1),
         your_connection: connection(),
         connections: [

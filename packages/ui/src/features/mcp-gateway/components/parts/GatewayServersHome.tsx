@@ -1,7 +1,6 @@
 import {
   CaretRight,
   Check,
-  Key,
   MagnifyingGlass,
   Plus,
   X,
@@ -25,7 +24,6 @@ import {
 import {
   AvatarStack,
   gatewayUserName,
-  UserAvatar,
 } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
@@ -212,13 +210,11 @@ function GatewayServerCard({
   onOpen: () => void;
   onConnect: () => void;
 }) {
-  const shared = server.auth_mode === "shared";
   const off = !server.is_team_enabled;
-  const personal =
+  const connectedForYou =
     !!server.your_connection &&
     getGatewayConnectionStatus(server.your_connection) === "connected";
-  const connectedForYou = personal || (shared && !isAdmin);
-  const needsAuth = !shared && !personal && !off;
+  const needsAuth = !connectedForYou && !off;
 
   return (
     <div
@@ -244,19 +240,12 @@ function GatewayServerCard({
                 Off
               </Badge>
             ) : connectedForYou ? (
-              <Tooltip
-                content={shared && !isAdmin ? "Pre-authorized" : "Connected"}
-              >
+              <Tooltip content="Connected">
                 <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-(--green-9) text-white">
                   <Check size={9} weight="bold" />
                 </span>
               </Tooltip>
             ) : null}
-            {!off && shared && isAdmin && (
-              <Badge color="gray" variant="soft" size="1">
-                <Key size={9} /> Shared
-              </Badge>
-            )}
           </Flex>
           <Text
             color="gray"
@@ -312,22 +301,6 @@ function CardPeopleRow({
       <Text color="gray" className="text-xs">
         Disabled — enable it in Team settings
       </Text>
-    );
-  }
-  if (server.auth_mode === "shared") {
-    const manager = server.shared_credential?.managed_by;
-    return (
-      <Flex align="center" gap="2" className="text-xs">
-        {manager && <UserAvatar user={manager} size="sm" />}
-        <Text color="gray" className="text-xs">
-          {manager ? (
-            <span className="font-mono text-[11px]">{manager.email}</span>
-          ) : (
-            "Shared credential"
-          )}{" "}
-          · everyone on the team
-        </Text>
-      </Flex>
     );
   }
   const connections = server.connections;

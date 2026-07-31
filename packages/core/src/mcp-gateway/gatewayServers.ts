@@ -8,32 +8,17 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 
-export interface GatewayRailPartition {
-  /** Individual-auth servers with an installation for the current user. */
-  yourConnections: McpGatewayServer[];
-  /** Shared-credential servers — pre-authorized for the whole team. */
-  sharedWithYou: McpGatewayServer[];
-}
-
-/** Split servers into the two rail sections, filtered by the rail search. */
-export function partitionRailServers(
+/** The rail lists the servers the caller has connected, under the rail search. */
+export function railConnectedServers(
   servers: McpGatewayServer[],
   search: string,
-): GatewayRailPartition {
+): McpGatewayServer[] {
   const query = search.trim().toLowerCase();
-  const matches = (server: McpGatewayServer) =>
-    !query || server.name.toLowerCase().includes(query);
-  return {
-    yourConnections: servers.filter(
-      (server) =>
-        server.auth_mode === "individual" &&
-        server.your_connection !== null &&
-        matches(server),
-    ),
-    sharedWithYou: servers.filter(
-      (server) => server.auth_mode === "shared" && matches(server),
-    ),
-  };
+  return servers.filter(
+    (server) =>
+      server.your_connection !== null &&
+      (!query || server.name.toLowerCase().includes(query)),
+  );
 }
 
 /** Home-screen filter: search over name/description/url plus category chip. */
@@ -65,21 +50,14 @@ export function countGatewayServersByCategory(
 }
 
 /**
- * Whether the current user can call this server without connecting first:
- * they hold a working personal connection, or (for non-admin members) the
- * shared credential pre-authorizes them.
+ * Whether the current user can call this server without connecting first —
+ * every credential is the caller's own, so this is their connection's state.
  */
-export function isConnectedForYou(
-  server: McpGatewayServer,
-  isAdmin: boolean,
-): boolean {
-  if (
-    server.your_connection &&
+export function isConnectedForYou(server: McpGatewayServer): boolean {
+  return (
+    !!server.your_connection &&
     getGatewayConnectionStatus(server.your_connection) === "connected"
-  ) {
-    return true;
-  }
-  return server.auth_mode === "shared" && !isAdmin;
+  );
 }
 
 export type GatewayConnectionStatus =
@@ -115,7 +93,7 @@ export function getGatewayServerRemovalAction(
   if (isAdmin && server.template_id === null) return "delete_for_everyone";
 
   const yourConnection = server.your_connection;
-  if (!yourConnection || yourConnection.scope !== "personal") return null;
+  if (!yourConnection) return null;
 
   const yourConnectionSummary = server.connections.find(
     (connection) =>
@@ -123,7 +101,6 @@ export function getGatewayServerRemovalAction(
   );
   const personallyAddedCustomServer =
     server.template_id === null &&
-    server.auth_mode === "individual" &&
     server.created_by?.id === yourConnectionSummary?.user.id;
 
   return personallyAddedCustomServer ? "delete_for_you" : "disconnect";

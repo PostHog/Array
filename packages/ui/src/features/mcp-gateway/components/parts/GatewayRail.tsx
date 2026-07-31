@@ -1,6 +1,5 @@
 import {
   Gear,
-  Key,
   MagnifyingGlass,
   Plugs,
   Plus,
@@ -16,7 +15,7 @@ import {
   formatAgo,
   type GatewayConnectionStatus,
   getGatewayConnectionStatus,
-  partitionRailServers,
+  railConnectedServers,
 } from "@posthog/core/mcp-gateway/gatewayServers";
 import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute";
 import { ServerIcon } from "@posthog/ui/features/mcp-servers/components/parts/icons";
@@ -49,8 +48,8 @@ export function GatewayRail({
 }: GatewayRailProps) {
   const [search, setSearch] = useState("");
 
-  const { yourConnections, sharedWithYou } = useMemo(
-    () => partitionRailServers(servers, search),
+  const yourConnections = useMemo(
+    () => railConnectedServers(servers, search),
     [servers, search],
   );
 
@@ -115,7 +114,7 @@ export function GatewayRail({
               color="gray"
               className="px-[10px] py-[8px] text-[13px] italic"
             >
-              No personal connections yet.
+              No connections yet.
             </Text>
           ) : (
             yourConnections.map((server) => {
@@ -145,34 +144,6 @@ export function GatewayRail({
                 />
               );
             })
-          )}
-
-          {sharedWithYou.length > 0 && (
-            <>
-              <RailSectionLabel
-                label="Shared with you"
-                count={sharedWithYou.length}
-              />
-              {sharedWithYou.map((server) => (
-                <RailServerRow
-                  key={server.id}
-                  server={server}
-                  templatesById={templatesById}
-                  active={activeServerId === server.id}
-                  sub={
-                    isAdmin
-                      ? (server.shared_credential?.managed_by?.email ??
-                        "Shared credential")
-                      : "Pre-authorized"
-                  }
-                  subMono={isAdmin && !!server.shared_credential?.managed_by}
-                  shared
-                  onClick={() =>
-                    onNavigate({ view: "server", serverId: server.id })
-                  }
-                />
-              ))}
-            </>
           )}
 
           <div className="mx-2 my-3 border-gray-5 border-t" />
@@ -246,8 +217,6 @@ function RailServerRow({
   templatesById,
   active,
   sub,
-  subMono,
-  shared,
   connectionStatus,
   onClick,
 }: {
@@ -255,8 +224,6 @@ function RailServerRow({
   templatesById: Map<string, McpRecommendedServer>;
   active: boolean;
   sub: string;
-  subMono?: boolean;
-  shared?: boolean;
   connectionStatus?: GatewayConnectionStatus;
   onClick: () => void;
 }) {
@@ -282,17 +249,11 @@ function RailServerRow({
         <Text truncate className="font-medium text-[13px]">
           {server.name}
         </Text>
-        <Text
-          color="gray"
-          truncate
-          className={`text-[10px] leading-none ${subMono ? "font-mono" : ""}`}
-        >
+        <Text color="gray" truncate className="text-[10px] leading-none">
           {sub}
         </Text>
       </Flex>
-      {shared ? (
-        <Key size={11} className="text-gray-10" />
-      ) : connectionStatus ? (
+      {connectionStatus ? (
         <span
           aria-hidden="true"
           className="h-[6px] w-[6px] rounded-full"
