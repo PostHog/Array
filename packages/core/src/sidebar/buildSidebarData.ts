@@ -83,6 +83,7 @@ export function filterVisibleTasks(
 }
 
 export interface TaskSession {
+  status?: string;
   isPromptPending?: boolean;
   pendingPermissions?: { size: number };
   cloudStatus?: TaskRunStatus;
@@ -105,7 +106,7 @@ export function computeSidebarSessionSignature(
       typeof session.cloudOutput?.pr_url === "string"
         ? session.cloudOutput.pr_url
         : "";
-    signature += `${session.taskId}:${session.isPromptPending ? 1 : 0}:${
+    signature += `${session.taskId}:${session.status ?? ""}:${session.isPromptPending ? 1 : 0}:${
       session.pendingPermissions?.size ?? 0
     }:${session.cloudStatus ?? ""}:${prUrl};`;
   }

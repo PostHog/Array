@@ -29,7 +29,7 @@ import {
   useFreeformThread,
 } from "@posthog/ui/features/canvas/stores/freeformChatStore";
 import type { EditorHandle } from "@posthog/ui/features/message-editor/types";
-import { useSessionForTask } from "@posthog/ui/features/sessions/useSession";
+import { useSessionSelector } from "@posthog/ui/features/sessions/useSession";
 import { taskDetailQuery } from "@posthog/ui/features/tasks/queries";
 import { ResizableSidebar } from "@posthog/ui/primitives/ResizableSidebar";
 import {
@@ -44,6 +44,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { shallow } from "zustand/shallow";
 import { CanvasFramePlaceholder } from "./CanvasFramePlaceholder";
 import { CanvasGenerateHero } from "./CanvasGenerateHero";
 import { CanvasPermissionDialog } from "./CanvasPermissionDialog";
@@ -139,7 +140,18 @@ export function FreeformCanvasView({
     enabled: !!effectiveTaskId,
     refetchInterval: effectiveTaskId ? 5000 : false,
   });
-  const genSession = useSessionForTask(effectiveTaskId ?? undefined);
+  const genSession = useSessionSelector(
+    effectiveTaskId ?? undefined,
+    (session) =>
+      session
+        ? {
+            status: session.status,
+            cloudStatus: session.cloudStatus,
+            isPromptPending: session.isPromptPending,
+          }
+        : undefined,
+    shallow,
+  );
   // Whether the run's session is still alive. Drives record polling so a freshly
   // published canvas gets picked up. A local ACP session stays "connected" after
   // its generation prompt finishes, so this keeps syncing until it disconnects.

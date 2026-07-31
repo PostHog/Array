@@ -252,6 +252,8 @@ See [docs/conventions.md](./docs/conventions.md).
 
 ## Testing
 
+Measure the live process tree before fixing sustained resource-use reports.
+
 - Unit tests: Vitest.
 - E2E tests: Playwright.
 - Test core/UI services and stores with faked injected dependencies and explicit props.

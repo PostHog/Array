@@ -4,7 +4,7 @@ import { SessionService, type SessionServiceDeps } from "./sessionService";
 
 const TASK_ID = "task-1";
 const RUN_ID = "run-1";
-const FLUSH_MS = 16;
+const FLUSH_MS = 50;
 
 /** A plain streamed agent-message chunk — the common per-token event that just
  * gets appended to the transcript. */
@@ -175,6 +175,7 @@ describe("streamed event batching", () => {
     // A single flush tick drains the whole burst, in arrival order.
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events().map(chunkText)).toEqual(["a", "b", "c"]);
+    expect(h.appendEvents).toHaveBeenCalledOnce();
   });
 
   it("flushes buffered events synchronously on teardown", () => {

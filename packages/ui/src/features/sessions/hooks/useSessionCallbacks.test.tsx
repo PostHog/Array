@@ -87,7 +87,6 @@ function renderCallbacks() {
     useSessionCallbacks({
       taskId: TASK,
       task,
-      session: undefined,
       repoPath: "/repo",
     }),
   );

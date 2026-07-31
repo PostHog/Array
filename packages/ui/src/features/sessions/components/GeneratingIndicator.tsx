@@ -61,7 +61,7 @@ export function GeneratingIndicator({
     const startTime = startedAt ?? Date.now();
     const interval = setInterval(() => {
       setElapsed(Math.max(0, Date.now() - startTime - pausedRef.current));
-    }, 100);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [startedAt]);
@@ -94,7 +94,7 @@ export function GeneratingIndicator({
           className="mx-1 inline-block align-middle text-gray-9"
         />
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatDuration(elapsed, 1)})
+          {formatDuration(elapsed, 0)})
         </span>
       </Text>
     </Flex>

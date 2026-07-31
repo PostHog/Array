@@ -124,10 +124,10 @@ const MAX_RESPONDED_PERMISSION_REQUEST_IDS = 500;
  * Streamed events are buffered and flushed on this cadence so a burst of tokens
  * coalesces into one processing pass (and roughly one render) instead of one
  * per event. Electron IPC delivers each event as its own task, so a microtask
- * flush wouldn't batch across them — a short timer does. One frame is
- * imperceptible for streamed text.
+ * flush wouldn't batch across them — a short timer does. A 50ms presentation
+ * delay is imperceptible for streamed text and cuts update churn substantially.
  */
-const SESSION_EVENT_FLUSH_MS = 16;
+const SESSION_EVENT_FLUSH_MS = 50;
 /**
  * A backgrounded session's transcript is freed this long after it stops being
  * viewed, and reloaded from disk on return. Only disconnected (idle, no live
@@ -1537,6 +1537,18 @@ function classifyTurnEventKind(
   return "other";
 }
 
+function isPassiveStreamEvent(acpMsg: AcpMessage): boolean {
+  const msg = acpMsg.message;
+  if (!("method" in msg) || msg.method !== "session/update") return false;
+  const sessionUpdate = (
+    msg as { params?: { update?: { sessionUpdate?: string } } }
+  ).params?.update?.sessionUpdate;
+  return (
+    sessionUpdate === "agent_message_chunk" ||
+    sessionUpdate === "agent_thought_chunk"
+  );
+}
+
 export class SessionService {
   private connectingTasks = new Map<string, Promise<void>>();
   private reconcilingTasks = new Set<string>();
@@ -2593,9 +2605,7 @@ export class SessionService {
     const batches = this.pendingSessionEvents;
     this.pendingSessionEvents = new Map();
     for (const [taskRunId, events] of batches) {
-      for (const acpMsg of events) {
-        this.handleSessionEvent(taskRunId, acpMsg);
-      }
+      this.handleSessionEventBatch(taskRunId, events);
     }
   }
 
@@ -2605,9 +2615,36 @@ export class SessionService {
     const events = this.pendingSessionEvents.get(taskRunId);
     if (!events) return;
     this.pendingSessionEvents.delete(taskRunId);
-    for (const acpMsg of events) {
-      this.handleSessionEvent(taskRunId, acpMsg);
+    this.handleSessionEventBatch(taskRunId, events);
+  }
+
+  private handleSessionEventBatch(
+    taskRunId: string,
+    events: AcpMessage[],
+  ): void {
+    let passive: AcpMessage[] = [];
+    const flushPassive = () => {
+      if (passive.length === 0) return;
+      const session = this.d.store.getSessions()[taskRunId];
+      if (session) {
+        if (session.initialPrompt?.length) {
+          this.d.store.updateSession(taskRunId, { initialPrompt: undefined });
+        }
+        this.d.store.appendEvents(taskRunId, passive);
+        this.updatePromptStateFromEvents(taskRunId, passive, { isLive: true });
+      }
+      passive = [];
+    };
+
+    for (const event of events) {
+      if (isPassiveStreamEvent(event)) {
+        passive.push(event);
+      } else {
+        flushPassive();
+        this.handleSessionEvent(taskRunId, event);
+      }
     }
+    flushPassive();
   }
 
   // --- Transcript residency (memory eviction) ---
@@ -2713,7 +2750,13 @@ export class SessionService {
       { taskRunId },
       {
         onData: (payload: unknown) => {
-          this.enqueueSessionEvent(taskRunId, payload as AcpMessage);
+          const event = payload as AcpMessage;
+          if (isPassiveStreamEvent(event)) {
+            this.enqueueSessionEvent(taskRunId, event);
+          } else {
+            this.flushSessionEventsForTask(taskRunId);
+            this.handleSessionEvent(taskRunId, event);
+          }
         },
         onError: (err) => {
           this.d.log.error("Session subscription error", {

@@ -2,8 +2,9 @@ import { deriveCloudRunState } from "@posthog/core/task-detail/cloudRunState";
 import { extractCloudToolChangedFiles } from "@posthog/core/task-detail/cloudToolChanges";
 import type { Task } from "@posthog/shared/domain-types";
 import { useMemo } from "react";
+import { shallow } from "zustand/shallow";
 import { resolveCloudPrUrl } from "../../git-interaction/cloudPrUrl";
-import { useSessionForTask } from "../../sessions/useSession";
+import { useSessionSelector } from "../../sessions/useSession";
 import { pickFreshestTask } from "../../tasks/taskFreshness";
 import { useTasks } from "../../tasks/useTasks";
 import { useCloudEventSummary } from "./useCloudEventSummary";
@@ -19,7 +20,19 @@ export function useCloudRunState(taskId: string, task: Task) {
     [task, taskId, tasks],
   );
 
-  const session = useSessionForTask(taskId);
+  const session = useSessionSelector(
+    taskId,
+    (current) =>
+      current
+        ? {
+            taskRunId: current.taskRunId,
+            cloudBranch: current.cloudBranch,
+            cloudStatus: current.cloudStatus,
+            cloudOutput: current.cloudOutput,
+          }
+        : undefined,
+    shallow,
+  );
 
   const prUrl = resolveCloudPrUrl(freshTask, session);
   const { effectiveBranch, repo, cloudStatus, isRunActive } =

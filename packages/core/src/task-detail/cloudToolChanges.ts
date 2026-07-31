@@ -8,6 +8,7 @@ import {
   isJsonRpcNotification,
 } from "@posthog/shared";
 import type { ChangedFile } from "@posthog/shared/domain-types";
+import { createAppendOnlyTracker } from "../sessions/appendOnlyTracker";
 
 function getContentText(
   content: ToolCallContent[] | undefined,
@@ -180,6 +181,46 @@ export interface CloudEventSummary {
   toolCalls: Map<string, ParsedToolCall>;
 }
 
+function applyCloudEvent(
+  toolCalls: Map<string, ParsedToolCall>,
+  event: AcpMessage,
+): void {
+  const message = event.message;
+  if (!isJsonRpcNotification(message) || message.method !== "session/update") {
+    return;
+  }
+  const params = message.params as
+    | { update?: Record<string, unknown> }
+    | undefined;
+  const update = params?.update;
+  if (!update || typeof update !== "object") return;
+
+  const sessionUpdate = update.sessionUpdate;
+  if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update") {
+    return;
+  }
+
+  const toolCallId =
+    typeof update.toolCallId === "string" ? update.toolCallId : undefined;
+  if (!toolCallId) return;
+
+  const patch: Partial<ParsedToolCall> = {
+    toolCallId,
+    kind: typeof update.kind === "string" ? update.kind : null,
+    title: typeof update.title === "string" ? update.title : undefined,
+    status: typeof update.status === "string" ? update.status : null,
+    locations: Array.isArray(update.locations)
+      ? (update.locations as ToolCallLocation[])
+      : undefined,
+    content: Array.isArray(update.content)
+      ? (update.content as ToolCallContent[])
+      : undefined,
+    rawOutput: update.rawOutput,
+  };
+
+  toolCalls.set(toolCallId, mergeToolCall(toolCalls.get(toolCallId), patch));
+}
+
 /**
  * Single-pass extraction of tool calls from events.
  */
@@ -189,48 +230,23 @@ export function buildCloudEventSummary(
   const toolCalls = new Map<string, ParsedToolCall>();
 
   for (const event of events) {
-    const message = event.message;
-    if (!isJsonRpcNotification(message)) continue;
-
-    if (message.method === "session/update") {
-      const params = message.params as
-        | { update?: Record<string, unknown> }
-        | undefined;
-      const update = params?.update;
-      if (!update || typeof update !== "object") continue;
-
-      const sessionUpdate = update.sessionUpdate;
-      if (
-        sessionUpdate !== "tool_call" &&
-        sessionUpdate !== "tool_call_update"
-      ) {
-        continue;
-      }
-
-      const toolCallId =
-        typeof update.toolCallId === "string" ? update.toolCallId : undefined;
-      if (!toolCallId) continue;
-
-      const patch: Partial<ParsedToolCall> = {
-        toolCallId,
-        kind: typeof update.kind === "string" ? update.kind : null,
-        title: typeof update.title === "string" ? update.title : undefined,
-        status: typeof update.status === "string" ? update.status : null,
-        locations: Array.isArray(update.locations)
-          ? (update.locations as ToolCallLocation[])
-          : undefined,
-        content: Array.isArray(update.content)
-          ? (update.content as ToolCallContent[])
-          : undefined,
-        rawOutput: update.rawOutput,
-      };
-
-      const merged = mergeToolCall(toolCalls.get(toolCallId), patch);
-      toolCalls.set(toolCallId, merged);
-    }
+    applyCloudEvent(toolCalls, event);
   }
 
   return { toolCalls };
+}
+
+export function createCloudEventSummaryTracker(): {
+  update(events: AcpMessage[]): CloudEventSummary;
+} {
+  return createAppendOnlyTracker<
+    Map<string, ParsedToolCall>,
+    CloudEventSummary
+  >({
+    init: () => new Map(),
+    processEvent: applyCloudEvent,
+    getResult: (toolCalls) => ({ toolCalls: new Map(toolCalls) }),
+  });
 }
 
 export function extractCloudFileDiff(

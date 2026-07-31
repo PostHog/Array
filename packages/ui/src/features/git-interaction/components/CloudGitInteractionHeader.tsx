@@ -14,7 +14,7 @@ import { useFeatureFlag } from "../../feature-flags/useFeatureFlag";
 import { DirtyTreeDialog } from "../../sessions/components/DirtyTreeDialog";
 import { HandoffConfirmDialog } from "../../sessions/components/HandoffConfirmDialog";
 import { useHandoffDialogStore } from "../../sessions/handoffDialogStore";
-import { useSessionForTask } from "../../sessions/useSession";
+import { useSessionSelector } from "../../sessions/useSession";
 import {
   GIT_CACHE_KEY_PROVIDER,
   type GitCacheKeyProvider,
@@ -35,7 +35,14 @@ export function CloudGitInteractionHeader({
   taskId,
   task,
 }: CloudGitInteractionHeaderProps) {
-  const session = useSessionForTask(taskId);
+  const inProgress = useSessionSelector(
+    taskId,
+    (session) => session?.handoffInProgress ?? false,
+  );
+  const cloudBranch = useSessionSelector(
+    taskId,
+    (session) => session?.cloudBranch ?? null,
+  );
   const queryClient = useQueryClient();
   const cacheKeyProvider = useService<GitCacheKeyProvider>(
     GIT_CACHE_KEY_PROVIDER,
@@ -112,8 +119,6 @@ export function CloudGitInteractionHeader({
   if (!cloudHandoffEnabled || !localWorkspaces) return null;
   if (task.origin_product === "image_builder") return null;
 
-  const inProgress = session?.handoffInProgress ?? false;
-
   return (
     <>
       <div className="no-drag flex items-center">
@@ -121,9 +126,7 @@ export function CloudGitInteractionHeader({
           variant="outline"
           size="sm"
           disabled={inProgress}
-          onClick={() =>
-            localHandoff.openConfirm(taskId, session?.cloudBranch ?? null)
-          }
+          onClick={() => localHandoff.openConfirm(taskId, cloudBranch)}
         >
           {inProgress ? (
             <Spinner size={14} className="shrink-0 animate-spin" />

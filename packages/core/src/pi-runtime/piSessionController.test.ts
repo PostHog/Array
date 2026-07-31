@@ -1360,4 +1360,68 @@ describe("PiSessionController", () => {
       status: { isCompacting: true },
     });
   });
+
+  it("batches streamed chunks into one store update", async () => {
+    vi.useFakeTimers();
+    const first: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "hello" },
+    };
+    const second: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 2,
+      content: { type: "text", text: " world" },
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const client = createClient();
+    vi.mocked(client.subscribe).mockImplementation((_taskId, handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(client);
+    await controller.connect("task-1");
+    const listener = vi.fn();
+    controller.store.subscribe(listener);
+
+    onEvent(first);
+    onEvent(second);
+
+    expect(listener).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      first,
+      second,
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("flushes streamed chunks before a turn completes", async () => {
+    const chunk: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 1,
+      content: { type: "text", text: "done" },
+    };
+    const completed: AgentConversationEvent = {
+      type: "turn_completed",
+      timestamp: 2,
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const client = createClient();
+    vi.mocked(client.subscribe).mockImplementation((_taskId, handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(client);
+    await controller.connect("task-1");
+
+    onEvent(chunk);
+    onEvent(completed);
+
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      chunk,
+      completed,
+    ]);
+  });
 });
