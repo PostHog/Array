@@ -31,9 +31,13 @@ export function extractPrNumber(subject: string): number | null {
 export function parseGithubRemote(
   remoteUrl: string,
 ): { owner: string; repo: string } | null {
-  const match = remoteUrl.match(
-    /^(?:https:\/\/github\.com\/|git@github\.com:)([^/]+)\/([^/]+?)(?:\.git)?\/?$/,
-  );
+  // `git remote get-url` output arrives with a trailing newline; without the
+  // trim the repo group swallows ".git" and every PR URL 404s.
+  const match = remoteUrl
+    .trim()
+    .match(
+      /^(?:https:\/\/github\.com\/|(?:ssh:\/\/)?git@github\.com[:/])([^/]+)\/([^/]+?)(?:\.git)?\/?$/,
+    );
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
 }

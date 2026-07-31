@@ -67,6 +67,13 @@ export function useProductViewSlot(input: {
   const setBoundsMutate = setBounds.mutate;
   const setVisibleMutate = setVisible.mutate;
 
+  // url/dataProjectId are only consumed when the view is first opened; they
+  // must NOT be effect deps. The url is the environment's persisted currentUrl,
+  // which updates (via query refetch) as the user browses — re-running the
+  // effect on that would hide/reopen the live view mid-session.
+  const openParamsRef = useRef({ url, dataProjectId });
+  openParamsRef.current = { url, dataProjectId };
+
   useEffect(() => {
     const slot = slotRef.current;
     if (!slot) return;
@@ -89,7 +96,14 @@ export function useProductViewSlot(input: {
       lastRect = key;
       if (!openedRef.current) {
         openedRef.current = true;
-        void openMutate({ viewId, url, bounds, dataProjectId }).catch(() => {
+        const { url: openUrl, dataProjectId: openProjectId } =
+          openParamsRef.current;
+        void openMutate({
+          viewId,
+          url: openUrl,
+          bounds,
+          dataProjectId: openProjectId,
+        }).catch(() => {
           openedRef.current = false;
         });
       } else {
@@ -117,14 +131,7 @@ export function useProductViewSlot(input: {
       setVisibleMutate({ viewId, visible: false });
       openedRef.current = false;
     };
-  }, [
-    viewId,
-    url,
-    dataProjectId,
-    openMutate,
-    setBoundsMutate,
-    setVisibleMutate,
-  ]);
+  }, [viewId, openMutate, setBoundsMutate, setVisibleMutate]);
 
   // Renderer overlays (command menu, toolbar menus) cannot paint over the
   // native view — hide the view while any of them is open.

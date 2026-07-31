@@ -32,6 +32,16 @@ describe("parseGithubRemote", () => {
       "https://github.com/PostHog/posthog",
       { owner: "PostHog", repo: "posthog" },
     ],
+    // `git remote get-url` output has a trailing newline — must not leak
+    // ".git" into the repo name (broken /pull/ URLs).
+    [
+      "https://github.com/PostHog/posthog.git\n",
+      { owner: "PostHog", repo: "posthog" },
+    ],
+    [
+      "ssh://git@github.com/PostHog/posthog.git",
+      { owner: "PostHog", repo: "posthog" },
+    ],
     ["https://gitlab.com/x/y.git", null],
     ["nonsense", null],
   ])("%s", (remote, expected) => {

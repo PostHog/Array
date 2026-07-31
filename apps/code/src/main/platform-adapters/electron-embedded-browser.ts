@@ -77,13 +77,14 @@ export class ElectronEmbeddedBrowser
   async create(options: EmbeddedBrowserCreateOptions): Promise<void> {
     const existing = this.views.get(options.viewId);
     if (existing) {
-      // Re-opening a kept-alive view (tab switch back): re-glue and re-show it;
-      // only navigate when the caller actually wants a different page.
+      // Re-opening a kept-alive view (tab switch back): re-glue and re-show
+      // it exactly where the user left it. Never navigate here — options.url
+      // is the environment's SAVED url, which lags the live page (it's
+      // debounce-persisted), so "restoring" it would yank an in-progress
+      // flow (a multi-step login, a checkout) back to a stale page.
+      // Explicit navigation goes through navigate().
       this.setBounds(options.viewId, options.bounds);
       existing.setVisible(true);
-      if (existing.webContents.getURL() !== options.url) {
-        await this.navigate(options.viewId, options.url);
-      }
       this.emitPageState(options.viewId, existing);
       return;
     }

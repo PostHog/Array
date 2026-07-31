@@ -186,7 +186,9 @@ function ProductBrowser(props: {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1 border-gray-4 border-b px-2 py-1.5">
+      {/* flex-wrap: with several environments (or a narrow window) the row
+          flows onto a second line instead of crushing the URL bar. */}
+      <div className="flex flex-wrap items-center gap-1 border-gray-4 border-b px-2 py-1.5">
         <Button
           size="icon-sm"
           aria-label="Back"
@@ -211,7 +213,7 @@ function ProductBrowser(props: {
           <ArrowClockwiseIcon size={14} />
         </Button>
         <Input
-          className="h-7 flex-1 font-mono text-xs"
+          className="h-7 min-w-48 flex-1 font-mono text-xs"
           value={draftUrl ?? currentUrl}
           onChange={(e) => setDraftUrl(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -259,9 +261,9 @@ function ProductBrowser(props: {
         </Button>
         <Badge
           variant="default"
-          title="Analytics overlaid on this page come from this PostHog project"
+          title={`Analytics overlaid on this page come from the "${dataProjectName}" PostHog project`}
         >
-          Data: {dataProjectName}
+          <span className="max-w-40 truncate">Data: {dataProjectName}</span>
         </Badge>
       </div>
       <div className="flex min-h-0 flex-1 flex-row">
@@ -323,7 +325,7 @@ function EnvironmentPill(props: {
             ) : (
               <GlobeIcon size={14} />
             )}
-            {environment.label}
+            <span className="max-w-32 truncate">{environment.label}</span>
           </Button>
         }
       />
