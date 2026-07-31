@@ -23,7 +23,6 @@ import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
-import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
 import {
   CloudStreamDisconnectedBanner,
   ConnectingToAgent,
@@ -39,6 +38,7 @@ import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStat
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
+import { SessionInitializingView } from "@posthog/ui/features/sessions/components/SessionInitializingView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import {
@@ -620,7 +620,10 @@ export function SessionView({
               </>
             ) : isInitializing ? (
               isCloud ? (
-                <CloudInitializingView cloudStatus={cloudStatus} />
+                <SessionInitializingView
+                  executionTarget="cloud"
+                  cloudStatus={cloudStatus}
+                />
               ) : pendingTaskPrompt?.promptText ? (
                 <PendingChatView
                   promptText={pendingTaskPrompt.promptText}
