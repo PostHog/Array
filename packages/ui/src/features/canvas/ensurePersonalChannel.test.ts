@@ -80,3 +80,15 @@ it("lets a later caller retry after a failed create", async () => {
   await expect(ensure([], create)).resolves.toEqual(channel("1"));
   expect(create).toHaveBeenCalledTimes(2);
 });
+
+it("does not share a created folder between scopes", async () => {
+  const { ensurePersonalChannel: ensure } = await import(
+    "./ensurePersonalChannel"
+  );
+  const createFirst = vi.fn(async () => channel("1"));
+  const createSecond = vi.fn(async () => channel("2"));
+
+  await expect(ensure([], createFirst, {})).resolves.toEqual(channel("1"));
+  await expect(ensure([], createSecond, {})).resolves.toEqual(channel("2"));
+  expect(createSecond).toHaveBeenCalledOnce();
+});

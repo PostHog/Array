@@ -17,13 +17,18 @@ export type PersonalChannelClient = Pick<
 // points are trivially concurrent (Cmd+T's new tab, the sidebar row, its "+"
 // menu), so they share one in-flight create rather than guarding separately:
 // per-caller guards would still race each other.
-let inFlight: Promise<PersonalChannel> | null = null;
+interface PersonalChannelState {
+  inFlight: Promise<PersonalChannel> | null;
+  created: PersonalChannel | null;
+}
+
+const sharedScope = {};
+const stateByScope = new WeakMap<object, PersonalChannelState>();
 // The in-flight promise alone isn't enough: it settles the moment the POST
 // returns, but callers pass the `channels` from their last render, which hasn't
 // re-rendered with the seeded cache yet. A click landing in that gap sees
 // neither an existing "me" nor an in-flight create, and makes a second one.
 // Remember what was created until the list catches up.
-let created: PersonalChannel | null = null;
 
 /**
  * The user's "me" folder, creating it once if it doesn't exist yet. Concurrent
@@ -33,26 +38,29 @@ let created: PersonalChannel | null = null;
 export async function ensurePersonalChannel(
   channels: readonly PersonalChannel[],
   createChannel: (name: string) => Promise<PersonalChannel>,
+  scope: object = sharedScope,
 ): Promise<PersonalChannel> {
+  const state = stateByScope.get(scope) ?? { inFlight: null, created: null };
+  stateByScope.set(scope, state);
   const existing = channels.find((c) => c.name === PERSONAL_CHANNEL_NAME);
   if (existing) {
     // The list is authoritative once it carries the folder: drop the memo, so a
     // deleted-then-recreated "me" resolves fresh rather than to a dead id.
-    created = null;
+    state.created = null;
     return existing;
   }
-  if (created) return created;
-  if (!inFlight) {
-    inFlight = createChannel(PERSONAL_CHANNEL_NAME)
+  if (state.created) return state.created;
+  if (!state.inFlight) {
+    state.inFlight = createChannel(PERSONAL_CHANNEL_NAME)
       .then((channel) => {
-        created = channel;
+        state.created = channel;
         return channel;
       })
       .finally(() => {
-        inFlight = null;
+        state.inFlight = null;
       });
   }
-  return inFlight;
+  return state.inFlight;
 }
 
 export async function ensurePersonalChannelFromClient(
@@ -65,7 +73,10 @@ export async function ensurePersonalChannelFromClient(
   const channels = (await client.getDesktopFileSystemChannels())
     .filter((channel) => channel.type === "folder")
     .map(toPersonalChannel);
-  return await ensurePersonalChannel(channels, async (name) =>
-    toPersonalChannel(await client.createDesktopFileSystemChannel(name)),
+  return await ensurePersonalChannel(
+    channels,
+    async (name) =>
+      toPersonalChannel(await client.createDesktopFileSystemChannel(name)),
+    client,
   );
 }
