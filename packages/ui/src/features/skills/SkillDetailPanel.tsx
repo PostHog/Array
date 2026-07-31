@@ -15,7 +15,6 @@ import { stripFrontmatter } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
 import { useSettingsStore } from "@posthog/ui/features/settings/settingsStore";
-import { ExternalAppsOpener } from "@posthog/ui/features/task-detail/components/ExternalAppsOpener";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   AlertDialog,
