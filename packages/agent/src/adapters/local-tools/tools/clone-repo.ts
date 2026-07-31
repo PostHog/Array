@@ -110,12 +110,14 @@ export const cloneRepoTool = defineLocalTool({
       const result = await new CloneSaga().run({
         repoUrl: cloneUrl,
         targetPath,
+        branch,
+        shallow: true,
       });
       if (!result.success) {
         return fail(`clone_repo failed: ${redact(result.error)}`);
       }
 
-      return (await checkout()) ?? (await done());
+      return done();
     } catch (err) {
       return fail(
         `clone_repo failed: ${redact(

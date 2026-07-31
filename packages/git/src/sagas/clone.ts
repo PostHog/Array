@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import path from "node:path";
 import { Saga } from "@posthog/shared";
 import { createGitClient } from "../client";
 import { getCleanEnv, getGitOperationManager } from "../operation-manager";
@@ -6,6 +7,8 @@ import { getCleanEnv, getGitOperationManager } from "../operation-manager";
 export interface CloneInput {
   repoUrl: string;
   targetPath: string;
+  branch?: string;
+  shallow?: boolean;
   signal?: AbortSignal;
   onProgress?: (
     stage: string,
@@ -23,11 +26,13 @@ export class CloneSaga extends Saga<CloneInput, CloneOutput> {
   readonly sagaName = "CloneSaga";
 
   protected async execute(input: CloneInput): Promise<CloneOutput> {
-    const { repoUrl, targetPath, signal, onProgress } = input;
+    const { repoUrl, targetPath, branch, shallow, signal, onProgress } = input;
     const manager = getGitOperationManager();
+    const targetParent = path.dirname(targetPath);
+    await fs.mkdir(targetParent, { recursive: true });
 
     await manager.executeWrite(
-      targetPath,
+      targetParent,
       async () => {
         await this.step({
           name: "clone",
@@ -39,9 +44,14 @@ export class CloneSaga extends Saga<CloneInput, CloneOutput> {
                     onProgress(stage, progress, processed, total)
                 : undefined,
             });
-            await git
-              .env(getCleanEnv())
-              .clone(repoUrl, targetPath, ["--progress"]);
+            const cloneArgs = ["--progress"];
+            if (shallow) {
+              cloneArgs.push("--depth", "1", "--single-branch", "--no-tags");
+            }
+            if (branch) {
+              cloneArgs.push("--branch", branch);
+            }
+            await git.env(getCleanEnv()).clone(repoUrl, targetPath, cloneArgs);
           },
           rollback: async () => {
             try {
