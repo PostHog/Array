@@ -23,7 +23,7 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 interface GiveAccessDialogProps {
   open: boolean;
@@ -38,7 +38,13 @@ interface GiveAccessDialogProps {
 }
 
 /** "Share <server> with an agent" — agent picker plus per-tool starting policies. */
-export function GiveAccessDialog({
+export function GiveAccessDialog(props: GiveAccessDialogProps) {
+  return (
+    <GiveAccessDialogDraft key={props.open ? "open" : "closed"} {...props} />
+  );
+}
+
+function GiveAccessDialogDraft({
   open,
   server,
   accounts,
@@ -51,16 +57,6 @@ export function GiveAccessDialog({
   const [policyMap, setPolicyMap] = useState<Record<string, AgentPolicyState>>(
     {},
   );
-
-  // The dialog stays mounted while `open` toggles (including the parent
-  // closing it after a successful grant), so clear the draft on close —
-  // otherwise one agent's policy overrides seed the next grant.
-  useEffect(() => {
-    if (!open) {
-      setSelectedId(null);
-      setPolicyMap({});
-    }
-  }, [open]);
 
   const selectAgent = (accountId: string) => {
     setSelectedId(accountId);
