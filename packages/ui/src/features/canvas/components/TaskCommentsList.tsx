@@ -123,6 +123,7 @@ function ResourceThreadRow({
   thread,
   source,
   root,
+  taskId,
   members,
   selected,
   pulsing,
@@ -132,13 +133,14 @@ function ResourceThreadRow({
   thread: TaskCommentThread;
   source: CommentSource;
   root: ResourceComment;
+  taskId: string;
   members: UserBasic[];
   selected: boolean;
   pulsing: boolean;
   resolution?: HighlightResolution;
   onOpen: () => void;
 }) {
-  const createComment = useCreateComment(source.target);
+  const createComment = useCreateComment(source.target, taskId);
   const setResolved = useSetCommentResolved(source.target);
 
   return (
@@ -278,7 +280,7 @@ export function TaskCommentsList({
 
   const taskTarget = useMemo(() => taskCommentTarget(task.id), [task.id]);
   const taskSourceKey = commentTargetKey(taskTarget);
-  const createTaskComment = useCreateComment(taskTarget);
+  const createTaskComment = useCreateComment(taskTarget, task.id);
 
   const threads = useMemo(() => {
     const reviewByUrl = new Map(prReviews.byUrl);
@@ -531,6 +533,7 @@ export function TaskCommentsList({
                 thread={thread}
                 source={thread.origin.source}
                 root={thread.origin.root}
+                taskId={task.id}
                 members={members}
                 selected={thread.id === focusedThreadId}
                 pulsing={thread.id === pulseThreadId}

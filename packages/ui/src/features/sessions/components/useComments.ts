@@ -133,15 +133,26 @@ export function useCommentsForTargetsQuery(
   });
 }
 
-export function useCreateComment(target: CommentTarget) {
+/**
+ * @param taskId Names the task the resource belongs to, so a mention on it reaches that
+ * task's activity feed — the server can't resolve an artifact or canvas id back to a task.
+ */
+export function useCreateComment(target: CommentTarget, taskId?: string) {
   const service = useService<SessionService>(SESSION_SERVICE);
   const queryClient = useQueryClient();
   const caches = commentCachesCoveringTarget(target);
+  const contextWithTask = (context: unknown) =>
+    taskId ? { ...(context as Record<string, unknown>), taskId } : context;
 
   return useMutation({
     mutationFn: (
       request: Omit<CreateResourceCommentRequest, "scope" | "itemId">,
-    ) => service.createResourceComment({ ...request, ...target }),
+    ) =>
+      service.createResourceComment({
+        ...request,
+        ...target,
+        context: contextWithTask(request.context),
+      }),
     onMutate: async (request) => {
       await queryClient.cancelQueries(caches);
       const previous = queryClient.getQueriesData<ResourceComment[]>(caches);
@@ -151,7 +162,7 @@ export function useCreateComment(target: CommentTarget) {
         content: request.content,
         created_at: new Date().toISOString(),
         item_id: target.itemId,
-        item_context: request.context,
+        item_context: contextWithTask(request.context),
         scope: target.scope,
         source_comment: request.sourceCommentId ?? null,
         completed_at: null,
