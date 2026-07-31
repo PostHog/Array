@@ -57,6 +57,13 @@ const toolPolicy: McpResolvedToolPolicy = {
   rule_description: "",
 };
 
+const secondAccount: McpServiceAccount = {
+  ...account,
+  id: "agent-2",
+  name: "Docs agent",
+  handle: "posthog-docs",
+};
+
 describe("GiveAccessDialog", () => {
   it("only offers allow or block when configuring an agent", async () => {
     const user = userEvent.setup();
@@ -84,6 +91,85 @@ describe("GiveAccessDialog", () => {
       screen.queryByRole("radio", { name: "Needs Approval" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Blocked" })).toBeInTheDocument();
+  });
+
+  it("resets the agent and policy overrides when the dialog closes", async () => {
+    const user = userEvent.setup();
+    const view = render(
+      <Theme>
+        <GiveAccessDialog
+          open
+          server={server}
+          accounts={[account]}
+          toolPolicies={[toolPolicy]}
+          pending={false}
+          onClose={vi.fn()}
+          onGrant={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    screen.getByRole("combobox").focus();
+    await user.keyboard("{ArrowDown}{Enter}");
+    await user.click(screen.getByRole("radio", { name: "Blocked" }));
+    expect(screen.getByRole("radio", { name: "Blocked" })).toBeChecked();
+
+    const rerenderDialog = (open: boolean) =>
+      view.rerender(
+        <Theme>
+          <GiveAccessDialog
+            open={open}
+            server={server}
+            accounts={[account]}
+            toolPolicies={[toolPolicy]}
+            pending={false}
+            onClose={vi.fn()}
+            onGrant={vi.fn()}
+          />
+        </Theme>,
+      );
+    rerenderDialog(false);
+    rerenderDialog(true);
+
+    expect(screen.getByRole("combobox")).toHaveTextContent("Choose an agent…");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+
+    screen.getByRole("combobox").focus();
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByRole("radio", { name: "Blocked" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Always Allow" })).toBeChecked();
+  });
+
+  it("does not carry one agent's policy overrides over to another agent", async () => {
+    const user = userEvent.setup();
+    const onGrant = vi.fn();
+    render(
+      <Theme>
+        <GiveAccessDialog
+          open
+          server={server}
+          accounts={[account, secondAccount]}
+          toolPolicies={[toolPolicy]}
+          pending={false}
+          onClose={vi.fn()}
+          onGrant={onGrant}
+        />
+      </Theme>,
+    );
+
+    screen.getByRole("combobox").focus();
+    await user.keyboard("{ArrowDown}{Enter}");
+    await user.click(screen.getByRole("radio", { name: "Blocked" }));
+    expect(screen.getByRole("radio", { name: "Blocked" })).toBeChecked();
+
+    screen.getByRole("combobox").focus();
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    expect(screen.getByRole("radio", { name: "Blocked" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Share access" }));
+    expect(onGrant).toHaveBeenCalledWith("agent-2", [
+      { tool_name: "search_pages", policy_state: "approved" },
+    ]);
   });
 
   it("shows a spinner and prevents closing while access is being shared", () => {

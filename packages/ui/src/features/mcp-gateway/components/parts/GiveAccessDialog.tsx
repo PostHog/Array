@@ -23,7 +23,7 @@ import {
   Text,
   Tooltip,
 } from "@radix-ui/themes";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface GiveAccessDialogProps {
   open: boolean;
@@ -51,6 +51,21 @@ export function GiveAccessDialog({
   const [policyMap, setPolicyMap] = useState<Record<string, AgentPolicyState>>(
     {},
   );
+
+  // The dialog stays mounted while `open` toggles (including the parent
+  // closing it after a successful grant), so clear the draft on close —
+  // otherwise one agent's policy overrides seed the next grant.
+  useEffect(() => {
+    if (!open) {
+      setSelectedId(null);
+      setPolicyMap({});
+    }
+  }, [open]);
+
+  const selectAgent = (accountId: string) => {
+    setSelectedId(accountId);
+    setPolicyMap({});
+  };
 
   const available = useMemo(() => {
     const withAccess = new Set(
@@ -104,7 +119,7 @@ export function GiveAccessDialog({
         <Flex direction="column" gap="3" mt="4">
           <Select.Root
             value={selectedId ?? undefined}
-            onValueChange={setSelectedId}
+            onValueChange={selectAgent}
             disabled={pending}
           >
             <Select.Trigger placeholder="Choose an agent…" />
