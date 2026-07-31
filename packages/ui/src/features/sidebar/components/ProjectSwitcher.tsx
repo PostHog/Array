@@ -198,7 +198,7 @@ export function ProjectSwitcher() {
         render={
           <Item
             size="xs"
-            className="hover:bg-fill-hover aria-expanded:bg-fill-active"
+            className="border-transparent bg-fill-hover py-1.5 hover:bg-fill-selected aria-expanded:bg-fill-active"
           >
             <ItemContent className="select-none gap-0">
               <ItemTitle>
