@@ -2,7 +2,6 @@ import {
   ArrowClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
-  CaretDownIcon,
   CursorClickIcon,
   GlobeIcon,
   MonitorIcon,
@@ -13,11 +12,10 @@ import { useHostTRPC } from "@posthog/host-router/react";
 import {
   Badge,
   Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -29,9 +27,10 @@ import type { ProductEnvironment } from "@posthog/shared";
 import { useProjects } from "@posthog/ui/features/projects/useProjects";
 import { useHostCapabilities } from "@posthog/ui/shell/useHostCapabilities";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ElementDetailsPanel } from "./ElementDetailsPanel";
 import { ProductEnvironmentPicker } from "./ProductEnvironmentPicker";
+import { useProductViewObscuredStore } from "./productViewObscuredStore";
 import {
   useProductEnvironments,
   useRemoveProductEnvironment,
@@ -238,51 +237,26 @@ function ProductBrowser(props: {
           <CursorClickIcon size={14} />
           Inspect
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="outline" size="sm">
-                {isLocalOrigin(environment.pageOrigin) ? (
-                  <MonitorIcon size={14} />
-                ) : (
-                  <GlobeIcon size={14} />
-                )}
-                {environment.label}
-                <CaretDownIcon size={12} />
-              </Button>
-            }
+        {/* One pill per environment: a click switches instantly (each
+            environment keeps its own live view). Inline — a popover here
+            would be hidden under the native page view. */}
+        {environments.map((env) => (
+          <EnvironmentPill
+            key={env.id}
+            environment={env}
+            active={env.id === environment.id}
+            onSelect={() => onSwitchEnvironment(env.id)}
+            onRemove={() => removeEnvironment.mutate({ id: env.id })}
           />
-          <DropdownMenuContent align="end">
-            {environments.map((env) => (
-              <DropdownMenuItem
-                key={env.id}
-                onClick={() => onSwitchEnvironment(env.id)}
-              >
-                {isLocalOrigin(env.pageOrigin) ? (
-                  <MonitorIcon size={14} />
-                ) : (
-                  <GlobeIcon size={14} />
-                )}
-                {env.label}
-                <span className="ml-auto pl-4 text-gray-11 text-xs">
-                  {env.pageOrigin.replace(/^https?:\/\//, "")}
-                </span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onAddEnvironment}>
-              <PlusIcon size={14} />
-              Add environment…
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => removeEnvironment.mutate({ id: environment.id })}
-            >
-              <TrashIcon size={14} />
-              Remove this environment
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        ))}
+        <Button
+          size="icon-sm"
+          aria-label="Add environment"
+          title="Add environment"
+          onClick={onAddEnvironment}
+        >
+          <PlusIcon size={14} />
+        </Button>
         <Badge
           variant="default"
           title="Analytics overlaid on this page come from this PostHog project"
@@ -304,5 +278,61 @@ function ProductBrowser(props: {
         )}
       </div>
     </div>
+  );
+}
+
+/** Toolbar pill for one environment. Right-click for management actions;
+ * the context menu hides the native view while open (z-order). */
+function EnvironmentPill(props: {
+  environment: ProductEnvironment;
+  active: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  const { environment, active, onSelect, onRemove } = props;
+  const acquire = useProductViewObscuredStore((s) => s.acquire);
+  const release = useProductViewObscuredStore((s) => s.release);
+  // Balance the counter if the pill unmounts while its menu is open (e.g.
+  // "Remove environment" removes the pill itself) — a leaked acquire would
+  // keep the page hidden forever.
+  const holdingRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (holdingRef.current) release();
+    },
+    [release],
+  );
+  return (
+    <ContextMenu
+      onOpenChange={(open) => {
+        holdingRef.current = open;
+        if (open) acquire();
+        else release();
+      }}
+    >
+      <ContextMenuTrigger
+        render={
+          <Button
+            variant={active ? "primary" : "outline"}
+            size="sm"
+            title={environment.pageOrigin}
+            onClick={onSelect}
+          >
+            {isLocalOrigin(environment.pageOrigin) ? (
+              <MonitorIcon size={14} />
+            ) : (
+              <GlobeIcon size={14} />
+            )}
+            {environment.label}
+          </Button>
+        }
+      />
+      <ContextMenuContent>
+        <ContextMenuItem variant="destructive" onClick={onRemove}>
+          <TrashIcon size={14} />
+          Remove environment
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

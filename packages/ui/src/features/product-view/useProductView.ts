@@ -3,6 +3,7 @@ import { useCommandMenuStore } from "@posthog/ui/shell/commandMenuStore";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { useEffect, useRef, useState } from "react";
+import { useProductViewObscuredStore } from "./productViewObscuredStore";
 
 export interface ProductViewPageState {
   viewId: string;
@@ -60,6 +61,7 @@ export function useProductViewSlot(input: {
   const setBounds = useMutation(trpc.productView.setBounds.mutationOptions());
   const setVisible = useMutation(trpc.productView.setVisible.mutationOptions());
   const commandMenuOpen = useCommandMenuStore((s) => s.isOpen);
+  const obscuredCount = useProductViewObscuredStore((s) => s.count);
 
   const openMutate = open.mutateAsync;
   const setBoundsMutate = setBounds.mutate;
@@ -124,12 +126,15 @@ export function useProductViewSlot(input: {
     setVisibleMutate,
   ]);
 
-  // The command menu is a renderer overlay and cannot paint over the native
-  // view — hide the view while the menu is open.
+  // Renderer overlays (command menu, toolbar menus) cannot paint over the
+  // native view — hide the view while any of them is open.
   useEffect(() => {
     if (!openedRef.current) return;
-    setVisibleMutate({ viewId, visible: !commandMenuOpen });
-  }, [commandMenuOpen, viewId, setVisibleMutate]);
+    setVisibleMutate({
+      viewId,
+      visible: !commandMenuOpen && obscuredCount === 0,
+    });
+  }, [commandMenuOpen, obscuredCount, viewId, setVisibleMutate]);
 
   return slotRef;
 }
