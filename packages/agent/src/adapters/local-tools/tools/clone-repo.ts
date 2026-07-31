@@ -78,15 +78,36 @@ export const cloneRepoTool = defineLocalTool({
 
     const checkout = async (): Promise<LocalToolResult | null> => {
       if (!branch) return null;
+      const git = createGitClient(targetPath);
       try {
-        await createGitClient(targetPath).checkout(branch);
+        await git.checkout(branch);
         return null;
-      } catch (err) {
-        return fail(
-          `Cloned ${slug} to ${targetPath} but failed to check out branch "${branch}": ${redact(
-            err instanceof Error ? err.message : String(err),
-          )}. The default branch is checked out instead.`,
-        );
+      } catch {
+        try {
+          const refspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
+          await git.raw([
+            "fetch",
+            "--depth",
+            "1",
+            "--no-tags",
+            "origin",
+            refspec,
+          ]);
+          const configuredRefspecs = (
+            await git.raw(["config", "--get-all", "remote.origin.fetch"])
+          ).split("\n");
+          if (!configuredRefspecs.includes(refspec)) {
+            await git.raw(["config", "--add", "remote.origin.fetch", refspec]);
+          }
+          await git.checkout(["-b", branch, "--track", `origin/${branch}`]);
+          return null;
+        } catch (err) {
+          return fail(
+            `Cloned ${slug} to ${targetPath} but failed to check out branch "${branch}": ${redact(
+              err instanceof Error ? err.message : String(err),
+            )}. The previously checked out branch is still active.`,
+          );
+        }
       }
     };
 
