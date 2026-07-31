@@ -53,9 +53,14 @@ const log = logger.scope("pi-session-view");
 interface PiSessionViewProps {
   taskId: string;
   taskRunId?: string;
+  isCloud: boolean;
 }
 
-export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
+export function PiSessionView({
+  taskId,
+  taskRunId,
+  isCloud,
+}: PiSessionViewProps) {
   const piSessionController = useService<PiSessionController>(
     PI_SESSION_CONTROLLER,
   );
@@ -304,7 +309,7 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   );
   const sessionAvailable =
     session.connectionState === "connected" || hasTranscript;
-  const executionTarget = session.cloudStatus === undefined ? "local" : "cloud";
+  const executionTarget = isCloud ? "cloud" : "local";
   if (isConnecting && !hasTranscript) {
     return (
       <Box className="relative h-full">

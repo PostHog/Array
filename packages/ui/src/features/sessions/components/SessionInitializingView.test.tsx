@@ -16,6 +16,11 @@ describe("SessionInitializingView", () => {
     },
     {
       executionTarget: "cloud" as const,
+      heading: "Getting things ready…",
+      subtitle: "Connecting to your cloud runner.",
+    },
+    {
+      executionTarget: "cloud" as const,
       cloudStatus: "in_progress" as const,
       heading: "Starting the sandbox…",
       subtitle: "Connecting to your cloud runner.",
