@@ -46,8 +46,12 @@ export function useProductViewPageState(viewId: string) {
  * ABOVE the renderer, so visibility must be driven from here — nothing in the
  * DOM can cover it.
  */
-export function useProductViewSlot(input: { viewId: string; url: string }) {
-  const { viewId, url } = input;
+export function useProductViewSlot(input: {
+  viewId: string;
+  url: string;
+  dataProjectId: number;
+}) {
+  const { viewId, url, dataProjectId } = input;
   const trpc = useHostTRPC();
   const slotRef = useRef<HTMLDivElement | null>(null);
   const openedRef = useRef(false);
@@ -83,7 +87,7 @@ export function useProductViewSlot(input: { viewId: string; url: string }) {
       lastRect = key;
       if (!openedRef.current) {
         openedRef.current = true;
-        void openMutate({ viewId, url, bounds }).catch(() => {
+        void openMutate({ viewId, url, bounds, dataProjectId }).catch(() => {
           openedRef.current = false;
         });
       } else {
@@ -111,7 +115,14 @@ export function useProductViewSlot(input: { viewId: string; url: string }) {
       setVisibleMutate({ viewId, visible: false });
       openedRef.current = false;
     };
-  }, [viewId, url, openMutate, setBoundsMutate, setVisibleMutate]);
+  }, [
+    viewId,
+    url,
+    dataProjectId,
+    openMutate,
+    setBoundsMutate,
+    setVisibleMutate,
+  ]);
 
   // The command menu is a renderer overlay and cannot paint over the native
   // view — hide the view while the menu is open.

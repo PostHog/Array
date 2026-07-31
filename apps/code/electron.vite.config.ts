@@ -180,11 +180,18 @@ export default defineConfig(({ mode }) => {
         emptyOutDir: false,
         sourcemap: true,
         rollupOptions: {
-          input: { preload: path.resolve(__dirname, "src/main/preload.ts") },
+          input: {
+            preload: path.resolve(__dirname, "src/main/preload.ts"),
+            // Injected into the Product View's embedded WebContentsView (the
+            // user's own site) — isolated-world inspector + overlay renderer.
+            productViewPreload: path.resolve(
+              __dirname,
+              "src/preload/product-view-preload.ts",
+            ),
+          },
           output: {
             format: "cjs",
-            inlineDynamicImports: true,
-            entryFileNames: "preload.js",
+            entryFileNames: "[name].js",
             chunkFileNames: "[name].js",
             assetFileNames: "[name].[ext]",
           },

@@ -3,6 +3,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CaretDownIcon,
+  CursorClickIcon,
   GlobeIcon,
   MonitorIcon,
   PlusIcon,
@@ -121,7 +122,11 @@ function ProductBrowser(props: {
   const viewId = `product-${environment.id}`;
   const initialUrl = environment.currentUrl ?? environment.pageOrigin;
 
-  const slotRef = useProductViewSlot({ viewId, url: initialUrl });
+  const slotRef = useProductViewSlot({
+    viewId,
+    url: initialUrl,
+    dataProjectId: environment.dataProjectId,
+  });
   const pageState = useProductViewPageState(viewId);
 
   const navigate = useMutation(trpc.productView.navigate.mutationOptions());
@@ -131,8 +136,12 @@ function ProductBrowser(props: {
   const touch = useMutation(
     trpc.productView.touchEnvironment.mutationOptions(),
   );
+  const setInspectMode = useMutation(
+    trpc.productView.setInspectMode.mutationOptions(),
+  );
   const removeEnvironment = useRemoveProductEnvironment();
 
+  const [inspecting, setInspecting] = useState(false);
   const [draftUrl, setDraftUrl] = useState<string | null>(null);
   const currentUrl = pageState?.url || initialUrl;
 
@@ -194,6 +203,20 @@ function ProductBrowser(props: {
           aria-label="Page URL"
           spellCheck={false}
         />
+        <Button
+          variant={inspecting ? "primary" : "outline"}
+          size="sm"
+          aria-pressed={inspecting}
+          title="Inspect: hover to see element analytics, click to select"
+          onClick={() => {
+            const next = !inspecting;
+            setInspecting(next);
+            setInspectMode.mutate({ viewId, enabled: next });
+          }}
+        >
+          <CursorClickIcon size={14} />
+          Inspect
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={

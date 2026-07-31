@@ -24,7 +24,25 @@ export const openProductViewInput = z.object({
   viewId: z.string(),
   url: z.string(),
   bounds: embeddedBrowserBoundsSchema,
+  /** PostHog project whose analytics overlay onto this view's pages.
+   * Defaults to the signed-in user's current project. */
+  dataProjectId: z.number().optional(),
 });
+
+/** A reported in-page element descriptor. Everything here comes from the
+ * user's product page and is untrusted: capped and validated before use. */
+export const reportedElementSchema = z.object({
+  selectorHash: z.string().min(1).max(64),
+  tag: z.string().min(1).max(64),
+  dataAttr: z.string().max(300).nullable(),
+  id: z.string().max(300).nullable(),
+  classes: z.array(z.string().max(200)).max(10),
+  href: z.string().max(2000).nullable(),
+  text: z.string().max(200).nullable(),
+  nthChildPath: z.string().max(500),
+});
+
+export const reportedElementsSchema = z.array(reportedElementSchema).max(400);
 
 export const navigateProductViewInput = z.object({
   viewId: z.string(),

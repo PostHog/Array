@@ -31,12 +31,10 @@ function makeBrowser() {
 
 function makeAuth(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    getValidAccessToken: vi
-      .fn()
-      .mockResolvedValue({
-        accessToken: "t",
-        apiHost: "https://us.posthog.com",
-      }),
+    getValidAccessToken: vi.fn().mockResolvedValue({
+      accessToken: "t",
+      apiHost: "https://us.posthog.com",
+    }),
     getState: vi.fn().mockReturnValue({ currentProjectId: 2 }),
     authenticatedFetch: vi.fn(),
     ...overrides,
@@ -76,6 +74,92 @@ describe("ProductViewService navigation guards", () => {
   it("refuses to navigate to a non-web URL", async () => {
     await expect(service.navigate("v1", "file:///x")).rejects.toThrow(/http/i);
     expect(browser.navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProductViewService overlay pipeline", () => {
+  it("matches reported elements against elements/stats for the data project and pushes halos", async () => {
+    vi.useFakeTimers();
+    const statsResponse = {
+      results: [
+        {
+          count: 32413,
+          hash: "h",
+          type: "$autocapture",
+          elements: [
+            {
+              text: "Open PostHog",
+              tag_name: "a",
+              attr_class: [],
+              href: "https://us.posthog.com",
+              attr_id: null,
+              nth_child: 1,
+              nth_of_type: 1,
+              attributes: {},
+              order: 0,
+            },
+          ],
+        },
+      ],
+    };
+    const authenticatedFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => statsResponse,
+    });
+    const browser = makeBrowser();
+    const reported = {
+      type: "elements-reported" as const,
+      viewId: "v1",
+      pageUrl: "https://posthog.com/",
+      elements: [
+        {
+          selectorHash: "anchor-us",
+          tag: "a",
+          dataAttr: null,
+          id: null,
+          classes: [],
+          href: "https://us.posthog.com",
+          text: "Open PostHog",
+          nthChildPath: "a:1",
+        },
+      ],
+    };
+    browser.events.mockImplementation(async function* () {
+      yield reported;
+      await new Promise(() => {});
+    });
+
+    const service = new ProductViewService(
+      browser,
+      makeAuth({ authenticatedFetch }),
+      fakeLogger,
+    );
+    await service.open({
+      viewId: "v1",
+      url: "https://posthog.com",
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      dataProjectId: 2,
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    vi.useRealTimers();
+    // Give the fetch → match → push chain a real tick to settle.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("/api/projects/2/elements/stats/"),
+    );
+    expect(browser.pushOverlayData).toHaveBeenCalledWith({
+      viewId: "v1",
+      items: [
+        {
+          selectorHash: "anchor-us",
+          halo: "green",
+          label: "32K clicks",
+        },
+      ],
+    });
   });
 });
 
