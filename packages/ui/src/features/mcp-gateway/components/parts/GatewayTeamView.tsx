@@ -1,4 +1,4 @@
-import { CaretRight, Plus } from "@phosphor-icons/react";
+import { CaretRight, MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import type {
   McpGatewayMemberSummary,
   McpGatewayServer,
@@ -18,8 +18,18 @@ import type { GatewayRoute } from "@posthog/ui/features/mcp-gateway/gatewayRoute
 import { useGatewayMembers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayMembers";
 import { useGatewayServers } from "@posthog/ui/features/mcp-gateway/hooks/useGatewayServers";
 import { useServiceAccounts } from "@posthog/ui/features/mcp-gateway/hooks/useServiceAccounts";
-import { Badge, Button, Flex, Switch, Text, TextField } from "@radix-ui/themes";
+import {
+  Badge,
+  Button,
+  Flex,
+  IconButton,
+  Switch,
+  Text,
+  TextField,
+} from "@radix-ui/themes";
 import { useState } from "react";
+
+const MEMBER_PREVIEW_LIMIT = 10;
 
 /** Admin roster: agent service accounts first, then members. */
 export function GatewayTeamView({
@@ -31,6 +41,22 @@ export function GatewayTeamView({
   const serviceAccounts = useServiceAccounts();
   const { members } = useGatewayMembers({ enabled: true });
   const [creating, setCreating] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [membersExpanded, setMembersExpanded] = useState(false);
+  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
+  const filteredMembers = normalizedMemberSearch
+    ? members.filter((member) => {
+        const name = gatewayUserName(member.user).toLowerCase();
+        const email = member.user.email?.toLowerCase() ?? "";
+        return (
+          name.includes(normalizedMemberSearch) ||
+          email.includes(normalizedMemberSearch)
+        );
+      })
+    : members;
+  const displayedMembers = membersExpanded
+    ? filteredMembers
+    : filteredMembers.slice(0, MEMBER_PREVIEW_LIMIT);
 
   return (
     <Flex direction="column" gap="4" className="min-w-0">
@@ -109,8 +135,36 @@ export function GatewayTeamView({
           {members.length}
         </Badge>
       </Flex>
+      <TextField.Root
+        value={memberSearch}
+        onChange={(event) => {
+          setMemberSearch(event.target.value);
+          setMembersExpanded(false);
+        }}
+        placeholder="Search members..."
+        size="2"
+      >
+        <TextField.Slot>
+          <MagnifyingGlass size={14} />
+        </TextField.Slot>
+        {memberSearch && (
+          <TextField.Slot>
+            <IconButton
+              variant="ghost"
+              size="1"
+              aria-label="Clear member search"
+              onClick={() => {
+                setMemberSearch("");
+                setMembersExpanded(false);
+              }}
+            >
+              <X size={12} />
+            </IconButton>
+          </TextField.Slot>
+        )}
+      </TextField.Root>
       <div className="rounded-[10px] border border-gray-5">
-        {members.map((member) => (
+        {displayedMembers.map((member) => (
           <MemberRow
             key={member.user.id}
             member={member}
@@ -124,6 +178,20 @@ export function GatewayTeamView({
           <Text color="gray" className="block px-3 py-3 text-[13px] italic">
             No members found.
           </Text>
+        )}
+        {members.length > 0 && filteredMembers.length === 0 && (
+          <Text color="gray" className="block px-3 py-3 text-[13px]">
+            No members match &ldquo;{memberSearch}&rdquo;
+          </Text>
+        )}
+        {filteredMembers.length > MEMBER_PREVIEW_LIMIT && (
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-center font-medium text-gray-11 text-xs transition-colors hover:bg-gray-3 hover:text-gray-12"
+            onClick={() => setMembersExpanded((expanded) => !expanded)}
+          >
+            {membersExpanded ? "View less" : "View more"}
+          </button>
         )}
       </div>
 
