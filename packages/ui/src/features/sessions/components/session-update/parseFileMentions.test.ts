@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapsePiSkillInvocation } from "./parseFileMentions";
+import { collapsePiSkillInvocation } from "./piSkillInvocation";
 
 describe("collapsePiSkillInvocation", () => {
   it("replaces Pi skill instructions with the command and user request", () => {

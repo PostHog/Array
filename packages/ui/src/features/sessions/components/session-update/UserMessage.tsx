@@ -20,11 +20,11 @@ import { extractCanvasInstructions } from "./canvasInstructions";
 import { extractChannelContext } from "./channelContext";
 import { extractCustomInstructions } from "./customInstructions";
 import {
-  collapsePiSkillInvocation,
   hasFileMentions,
   MentionChip,
   parseFileMentions,
 } from "./parseFileMentions";
+import { collapsePiSkillInvocation } from "./piSkillInvocation";
 
 interface UserMessageProps {
   content: string;
