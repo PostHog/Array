@@ -16,7 +16,6 @@ import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CaretDown,
-  CaretRight,
   ChatCircle,
   Lightning,
   Play,
@@ -47,6 +46,7 @@ import {
 } from "@/features/inbox/components/DismissReportSheet";
 import { ReportActivity } from "@/features/inbox/components/ReportActivity";
 import { ReportFeedbackFooter } from "@/features/inbox/components/ReportFeedbackFooter";
+import { ReportSection } from "@/features/inbox/components/ReportSection";
 import { SignalCard } from "@/features/inbox/components/SignalCard";
 import {
   type ReviewerActionExtra,
@@ -156,6 +156,7 @@ export default function ReportDetailScreen() {
   const [dismissOpen, setDismissOpen] = useState(false);
   const [discussOpen, setDiscussOpen] = useState(false);
   const [createPrFeedbackOpen, setCreatePrFeedbackOpen] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(true);
   const [signalsExpanded, setSignalsExpanded] = useState(false);
 
   const artefactsQuery = useInboxReportArtefacts(reportId ?? null);
@@ -519,11 +520,17 @@ export default function ReportDetailScreen() {
 
         {/* Summary */}
         {report.summary && (
-          <View className="mb-4" style={{ opacity: isReady ? 1 : 0.7 }}>
-            <MarkdownText
-              content={formatSignalReportSummaryMarkdown(report.summary)}
-            />
-          </View>
+          <ReportSection
+            title="Summary"
+            expanded={summaryExpanded}
+            onToggle={() => setSummaryExpanded((prev) => !prev)}
+          >
+            <View style={{ opacity: isReady ? 1 : 0.7 }}>
+              <MarkdownText
+                content={formatSignalReportSummaryMarkdown(report.summary)}
+              />
+            </View>
+          </ReportSection>
         )}
 
         {/* Suggested reviewers */}
@@ -538,35 +545,22 @@ export default function ReportDetailScreen() {
 
         {/* Signals */}
         {signals.length > 0 && (
-          <View className="mb-4">
-            <Pressable
-              onPress={handleToggleSignals}
-              hitSlop={6}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: signalsExpanded }}
-              className="mb-2 flex-row items-center gap-1.5 self-start py-1 active:opacity-60"
-            >
-              {signalsExpanded ? (
-                <CaretDown size={14} color={themeColors.gray[12]} />
-              ) : (
-                <CaretRight size={14} color={themeColors.gray[12]} />
-              )}
-              <Text className="font-semibold text-[14px] text-gray-12">
-                Signals ({signals.length})
-              </Text>
-            </Pressable>
-            {signalsExpanded && (
-              <View className="gap-2">
-                {signals.map((signal) => (
-                  <SignalCard
-                    key={signal.signal_id}
-                    signal={signal}
-                    finding={findingsBySignalId.get(signal.signal_id)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
+          <ReportSection
+            title="Signals"
+            count={signals.length}
+            expanded={signalsExpanded}
+            onToggle={handleToggleSignals}
+          >
+            <View className="gap-2">
+              {signals.map((signal) => (
+                <SignalCard
+                  key={signal.signal_id}
+                  signal={signal}
+                  finding={findingsBySignalId.get(signal.signal_id)}
+                />
+              ))}
+            </View>
+          </ReportSection>
         )}
         {signalsQuery.isLoading && (
           <Text className="text-[12px] text-gray-9">Loading signals…</Text>

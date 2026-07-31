@@ -26,6 +26,7 @@ import { openExternalUrl } from "@/lib/openExternalUrl";
 import { useThemeColors } from "@/lib/theme";
 import { useUpdateSuggestedReviewers } from "../hooks/useInboxReports";
 import { EditReviewersSheet } from "./EditReviewersSheet";
+import { ReportSection } from "./ReportSection";
 
 export type ReviewerActionExtra = Pick<
   InboxReportActionProperties,
@@ -50,6 +51,7 @@ export function SuggestedReviewers({
 }: SuggestedReviewersProps) {
   const themeColors = useThemeColors();
   const [editOpen, setEditOpen] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const { mutate: updateReviewers, isPending } =
     useUpdateSuggestedReviewers(reportId);
 
@@ -108,96 +110,99 @@ export function SuggestedReviewers({
   };
 
   return (
-    <View className="mb-4">
-      <View className="mb-2 flex-row items-center gap-2">
-        <Text className="font-semibold text-[12px] text-gray-10 uppercase tracking-wide">
-          Suggested reviewers
-        </Text>
-        {isPending && (
-          <ActivityIndicator size="small" color={themeColors.gray[9]} />
-        )}
-        <View className="flex-1" />
-        <Pressable
-          onPress={() => setEditOpen(true)}
-          disabled={isPending}
-          accessibilityLabel="Add suggested reviewer"
-          hitSlop={6}
-          className="flex-row items-center gap-1 rounded-full border border-gray-6 px-2.5 py-1 active:opacity-70 disabled:opacity-50"
-        >
-          <Plus size={12} color={themeColors.gray[11]} weight="bold" />
-          <Text className="text-[12px] text-gray-11">Add</Text>
-        </Pressable>
-      </View>
-
-      {displayReviewers.length === 0 ? (
-        <Text className="text-[13px] text-gray-9">
-          No reviewers assigned. Use “Add” to suggest one.
-        </Text>
-      ) : (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
-        >
-          {displayReviewers.map((reviewer) => {
-            const isMe =
-              !!reviewer.user?.uuid &&
-              !!meUuid &&
-              reviewer.user.uuid === meUuid;
-            const displayName =
-              reviewer.user?.first_name ??
-              reviewer.github_name ??
-              reviewer.github_login;
-            return (
-              <View
-                key={reviewer.user?.uuid ?? reviewer.github_login}
-                className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-gray-2 py-1.5 pr-1.5 pl-1.5"
-              >
-                <Pressable
-                  onPress={() => {
-                    fireAction("click_suggested_reviewer", {
-                      suggested_reviewer_login: reviewer.github_login,
-                    });
-                    openExternalUrl(
-                      `https://github.com/${reviewer.github_login}`,
-                    );
-                  }}
-                  hitSlop={4}
-                  className="flex-row items-center gap-2 active:opacity-70"
+    <>
+      <ReportSection
+        title="Suggested reviewers"
+        expanded={expanded}
+        onToggle={() => setExpanded((prev) => !prev)}
+        rightSlot={
+          <View className="flex-row items-center gap-2">
+            {isPending && (
+              <ActivityIndicator size="small" color={themeColors.gray[9]} />
+            )}
+            <Pressable
+              onPress={() => setEditOpen(true)}
+              disabled={isPending}
+              accessibilityLabel="Add suggested reviewer"
+              hitSlop={6}
+              className="flex-row items-center gap-1 rounded-full border border-gray-6 px-2.5 py-1 active:opacity-70 disabled:opacity-50"
+            >
+              <Plus size={12} color={themeColors.gray[11]} weight="bold" />
+              <Text className="text-[12px] text-gray-11">Add</Text>
+            </Pressable>
+          </View>
+        }
+      >
+        {displayReviewers.length === 0 ? (
+          <Text className="text-[13px] text-gray-9">
+            No reviewers assigned. Use “Add” to suggest one.
+          </Text>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {displayReviewers.map((reviewer) => {
+              const isMe =
+                !!reviewer.user?.uuid &&
+                !!meUuid &&
+                reviewer.user.uuid === meUuid;
+              const displayName =
+                reviewer.user?.first_name ??
+                reviewer.github_name ??
+                reviewer.github_login;
+              return (
+                <View
+                  key={reviewer.user?.uuid ?? reviewer.github_login}
+                  className="flex-row items-center gap-2 rounded-full border border-gray-6 bg-gray-2 py-1.5 pr-1.5 pl-1.5"
                 >
-                  <Image
-                    source={{
-                      uri: `https://github.com/${reviewer.github_login}.png?size=48`,
+                  <Pressable
+                    onPress={() => {
+                      fireAction("click_suggested_reviewer", {
+                        suggested_reviewer_login: reviewer.github_login,
+                      });
+                      openExternalUrl(
+                        `https://github.com/${reviewer.github_login}`,
+                      );
                     }}
-                    className="h-6 w-6 rounded-full bg-gray-4"
-                  />
-                  <Text className="text-[13px] text-gray-12">
-                    {displayName}
-                  </Text>
-                  {isMe && (
-                    <View className="rounded bg-status-warning/20 px-1 py-0.5">
-                      <Eye
-                        size={10}
-                        color={themeColors.status.warning}
-                        weight="bold"
-                      />
-                    </View>
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={() => removeReviewer(reviewer)}
-                  disabled={isPending}
-                  accessibilityLabel={`Remove ${displayName}`}
-                  hitSlop={6}
-                  className="h-5 w-5 items-center justify-center rounded-full active:bg-gray-4 disabled:opacity-50"
-                >
-                  <X size={12} color={themeColors.gray[10]} weight="bold" />
-                </Pressable>
-              </View>
-            );
-          })}
-        </ScrollView>
-      )}
+                    hitSlop={4}
+                    className="flex-row items-center gap-2 active:opacity-70"
+                  >
+                    <Image
+                      source={{
+                        uri: `https://github.com/${reviewer.github_login}.png?size=48`,
+                      }}
+                      className="h-6 w-6 rounded-full bg-gray-4"
+                    />
+                    <Text className="text-[13px] text-gray-12">
+                      {displayName}
+                    </Text>
+                    {isMe && (
+                      <View className="rounded bg-status-warning/20 px-1 py-0.5">
+                        <Eye
+                          size={10}
+                          color={themeColors.status.warning}
+                          weight="bold"
+                        />
+                      </View>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => removeReviewer(reviewer)}
+                    disabled={isPending}
+                    accessibilityLabel={`Remove ${displayName}`}
+                    hitSlop={6}
+                    className="h-5 w-5 items-center justify-center rounded-full active:bg-gray-4 disabled:opacity-50"
+                  >
+                    <X size={12} color={themeColors.gray[10]} weight="bold" />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </ReportSection>
 
       <EditReviewersSheet
         visible={editOpen}
@@ -206,6 +211,6 @@ export function SuggestedReviewers({
         onClose={() => setEditOpen(false)}
         onToggle={toggleReviewer}
       />
-    </View>
+    </>
   );
 }
