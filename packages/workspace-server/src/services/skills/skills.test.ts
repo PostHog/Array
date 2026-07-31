@@ -913,7 +913,7 @@ describe("resolveSkillBundleDependencies", () => {
 });
 
 describe("renderAlwaysOnSkillInstructions", () => {
-  it("renders validated skills in canonical order without frontmatter", async () => {
+  it("renders validated skill paths in canonical order", async () => {
     const first = await createSkill(repoSkillsDir, "first");
     const second = await createSkill(repoSkillsDir, "second");
 
@@ -922,11 +922,10 @@ describe("renderAlwaysOnSkillInstructions", () => {
       { name: "first", source: "repo", path: first },
     ]);
 
-    expect(rendered.instructions?.indexOf("## first")).toBeLessThan(
-      rendered.instructions?.indexOf("## second") ?? -1,
+    expect(rendered.instructions?.indexOf("/first:")).toBeLessThan(
+      rendered.instructions?.indexOf("/second:") ?? -1,
     );
-    expect(rendered.instructions).toContain(`Installed at: ${first}`);
-    expect(rendered.instructions).not.toContain("description: about first");
+    expect(rendered.instructions).toContain(`${first}/SKILL.md`);
     expect(rendered.failures).toEqual([]);
   });
 
@@ -942,7 +941,7 @@ describe("renderAlwaysOnSkillInstructions", () => {
       { name: "readable", source: "repo", path: readable },
     ]);
 
-    expect(rendered.instructions).toContain("## readable");
+    expect(rendered.instructions).toContain("/readable:");
     expect(rendered.failures).toHaveLength(1);
     expect(rendered.failures[0]?.skill.name).toBe("missing");
   });

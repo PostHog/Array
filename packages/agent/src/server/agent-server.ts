@@ -395,6 +395,7 @@ export class AgentServer {
   private warmAutoPublishResolved = false;
   private installedSkillBundles = new Set<string>();
   private installedSkillBundleInfo = new Map<string, InstalledSkillBundle>();
+  private alwaysOnSkillsActivatedSessionId: string | null = null;
   private installingSkillBundles = new Map<string, Promise<void>>();
   // Guards against concurrent session initialization. autoInitializeSession() and
   // the GET /events SSE handler can both call initializeSession() — the SSE connection
@@ -2858,19 +2859,22 @@ export class AgentServer {
         ),
       )
       .filter((skill): skill is InstalledSkillBundle => !!skill);
-    const alwaysOnContext =
-      alwaysOnSkills.length > 0
-        ? [
-            "The following always-on skills apply for the entire session. Follow each skill in the listed order.",
-            ...alwaysOnSkills.flatMap((skill) => [
-              "",
-              `--- BEGIN ALWAYS-ON SKILL ${skill.skillName} ---`,
-              skill.skillDefinition.trim(),
-              `--- END ALWAYS-ON SKILL ${skill.skillName} ---`,
-              `Installed skill path: ${skill.skillRoot}`,
-            ]),
-          ].join("\n")
-        : null;
+    const sessionId = this.session?.acpSessionId;
+    const shouldActivateAlwaysOnSkills =
+      alwaysOnSkills.length > 0 &&
+      !!sessionId &&
+      this.alwaysOnSkillsActivatedSessionId !== sessionId;
+    const alwaysOnContext = shouldActivateAlwaysOnSkills
+      ? [
+          "Always-on skills apply for the entire session. Before proceeding, read each SKILL.md below from the filesystem in the listed order and follow its instructions for the entire session.",
+          ...alwaysOnSkills.map(
+            (skill) => `- /${skill.skillName}: ${skill.skillRoot}/SKILL.md`,
+          ),
+        ].join("\n")
+      : null;
+    if (shouldActivateAlwaysOnSkills && sessionId) {
+      this.alwaysOnSkillsActivatedSessionId = sessionId;
+    }
     if (contentBlocks.length === 0) {
       return alwaysOnContext ? { context: alwaysOnContext } : null;
     }

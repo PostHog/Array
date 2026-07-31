@@ -531,12 +531,8 @@ export class SkillsService {
         .map(async (ref) => {
           try {
             const skillDir = await this.resolveKnownSkillDir(ref.path);
-            const manifest = await fs.promises.readFile(
-              path.join(skillDir, "SKILL.md"),
-              "utf-8",
-            );
             return {
-              block: `## ${ref.name}\n\nInstalled at: ${skillDir}\n\n${stripFrontmatter(manifest).trim()}`,
+              block: `- /${ref.name}: ${path.join(skillDir, "SKILL.md")}`,
             };
           } catch (error) {
             return {
@@ -554,7 +550,7 @@ export class SkillsService {
     return {
       instructions:
         blocks.length > 0
-          ? `Always-on skills apply for the entire session. Follow every skill below in the listed order. Supporting files are available at each installed path. Do not execute scripts unless the task requires them.\n\n${blocks.join("\n\n---\n\n")}`
+          ? `Always-on skills apply for the entire session. Before proceeding, read each SKILL.md below from the filesystem in the listed order and follow its instructions for the entire session. Do not execute scripts unless the task requires them.\n${blocks.join("\n")}`
           : undefined,
       failures: results.flatMap((result) =>
         result.failure ? [result.failure] : [],
