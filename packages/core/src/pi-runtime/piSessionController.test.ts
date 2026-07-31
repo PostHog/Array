@@ -1424,4 +1424,50 @@ describe("PiSessionController", () => {
       completed,
     ]);
   });
+
+  it("does not append a chunk twice when it arrives during conversation refresh", async () => {
+    vi.useFakeTimers();
+    let resolveConversation: (events: AgentConversationEvent[]) => void =
+      () => {};
+    const refreshedConversation = new Promise<AgentConversationEvent[]>(
+      (resolve) => {
+        resolveConversation = resolve;
+      },
+    );
+    const completed: AgentConversationEvent = {
+      type: "turn_completed",
+      timestamp: 1,
+    };
+    const nextChunk: AgentConversationEvent = {
+      type: "assistant_message_chunk",
+      timestamp: 2,
+      content: { type: "text", text: "next" },
+    };
+    let onEvent: (event: AgentConversationEvent) => void = () => {};
+    const client = createClient();
+    vi.mocked(client.subscribe).mockImplementation((_taskId, handler) => {
+      onEvent = handler;
+      return () => {};
+    });
+    const controller = createController(client);
+    await controller.connect("task-1");
+    vi.mocked(client.conversation).mockReturnValue(refreshedConversation);
+
+    onEvent(completed);
+    onEvent(nextChunk);
+    resolveConversation([completed]);
+    await vi.waitFor(() => {
+      expect(controller.store.getState().sessions["task-1"].events).toEqual([
+        completed,
+        nextChunk,
+      ]);
+    });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(controller.store.getState().sessions["task-1"].events).toEqual([
+      completed,
+      nextChunk,
+    ]);
+    vi.useRealTimers();
+  });
 });

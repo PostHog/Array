@@ -117,10 +117,21 @@ export function createIncrementalChatRowGrouper() {
         cachedItems[rebuildStart - 1] === items[rebuildStart - 1];
       if (!prefixUnchanged) rebuildStart = 0;
 
-      const boundaryId = items[rebuildStart]?.id;
-      const cachedBoundaryIndex = boundaryId
+      let boundaryId = items[rebuildStart]?.id;
+      let cachedBoundaryIndex = boundaryId
         ? cachedRows.findIndex((row) => row.id === boundaryId)
         : -1;
+      if (
+        rebuildStart > 0 &&
+        rebuildStart < cachedItems.length &&
+        cachedBoundaryIndex < 0
+      ) {
+        rebuildStart = 0;
+        boundaryId = items[0]?.id;
+        cachedBoundaryIndex = boundaryId
+          ? cachedRows.findIndex((row) => row.id === boundaryId)
+          : -1;
+      }
       const prefixRowCount =
         rebuildStart === 0
           ? 0

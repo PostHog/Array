@@ -184,25 +184,25 @@ export interface CloudEventSummary {
 function applyCloudEvent(
   toolCalls: Map<string, ParsedToolCall>,
   event: AcpMessage,
-): void {
+): boolean {
   const message = event.message;
   if (!isJsonRpcNotification(message) || message.method !== "session/update") {
-    return;
+    return false;
   }
   const params = message.params as
     | { update?: Record<string, unknown> }
     | undefined;
   const update = params?.update;
-  if (!update || typeof update !== "object") return;
+  if (!update || typeof update !== "object") return false;
 
   const sessionUpdate = update.sessionUpdate;
   if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update") {
-    return;
+    return false;
   }
 
   const toolCallId =
     typeof update.toolCallId === "string" ? update.toolCallId : undefined;
-  if (!toolCallId) return;
+  if (!toolCallId) return false;
 
   const patch: Partial<ParsedToolCall> = {
     toolCallId,
@@ -219,6 +219,7 @@ function applyCloudEvent(
   };
 
   toolCalls.set(toolCallId, mergeToolCall(toolCalls.get(toolCallId), patch));
+  return true;
 }
 
 /**
@@ -239,13 +240,28 @@ export function buildCloudEventSummary(
 export function createCloudEventSummaryTracker(): {
   update(events: AcpMessage[]): CloudEventSummary;
 } {
-  return createAppendOnlyTracker<
-    Map<string, ParsedToolCall>,
-    CloudEventSummary
-  >({
-    init: () => new Map(),
-    processEvent: applyCloudEvent,
-    getResult: (toolCalls) => ({ toolCalls: new Map(toolCalls) }),
+  interface TrackerState {
+    toolCalls: Map<string, ParsedToolCall>;
+    revision: number;
+  }
+
+  let projectedState: TrackerState | undefined;
+  let projectedRevision = -1;
+  let projectedResult: CloudEventSummary = { toolCalls: new Map() };
+
+  return createAppendOnlyTracker<TrackerState, CloudEventSummary>({
+    init: () => ({ toolCalls: new Map(), revision: 0 }),
+    processEvent: (state, event) => {
+      if (applyCloudEvent(state.toolCalls, event)) state.revision++;
+    },
+    getResult: (state) => {
+      if (state !== projectedState || state.revision !== projectedRevision) {
+        projectedState = state;
+        projectedRevision = state.revision;
+        projectedResult = { toolCalls: new Map(state.toolCalls) };
+      }
+      return projectedResult;
+    },
   });
 }
 

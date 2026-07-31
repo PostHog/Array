@@ -53,4 +53,23 @@ describe("createIncrementalChatRowGrouper", () => {
       { type: "agent_turn", items: [{ id: "x2" }] },
     ]);
   });
+
+  it("replaces an optimistic boundary whose confirmed item has a new id", () => {
+    const grouper = createIncrementalChatRowGrouper();
+    const prefix = [userMessage("u1"), agentMessage("a1")];
+    grouper.update([...prefix, userMessage("optimistic-u2")]);
+
+    expect(
+      grouper.update([
+        ...prefix,
+        userMessage("confirmed-u2"),
+        agentMessage("a2"),
+      ]),
+    ).toMatchObject([
+      { id: "u1" },
+      { type: "agent_turn", items: [{ id: "a1" }] },
+      { id: "confirmed-u2" },
+      { type: "agent_turn", items: [{ id: "a2" }] },
+    ]);
+  });
 });

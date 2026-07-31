@@ -32,6 +32,25 @@ function chunkText(event: AcpMessage): string {
   return params.update.content.text;
 }
 
+function toolCall(id: string): AcpMessage {
+  return {
+    ts: 2,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: RUN_ID,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: id,
+          title: "Read file",
+          status: "in_progress",
+        },
+      },
+    },
+  } as unknown as AcpMessage;
+}
+
 function createHarness() {
   const sessions: Record<string, AgentSession> = {
     [RUN_ID]: {
@@ -192,6 +211,20 @@ describe("streamed event batching", () => {
     // The flush timer was cleared, so advancing does not re-apply anything.
     vi.advanceTimersByTime(FLUSH_MS);
     expect(h.events()).toHaveLength(2);
+  });
+
+  it("flushes passive events in order before an active event", () => {
+    const h = createHarness();
+    const streamed = chunk("a");
+    const active = toolCall("tool-1");
+
+    h.emit(streamed);
+    h.emit(active);
+
+    expect(h.events()).toEqual([streamed, active]);
+    expect(h.appendEvents).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(FLUSH_MS);
+    expect(h.events()).toEqual([streamed, active]);
   });
 
   it("keeps the turn duration when the prompt mutation clears state before the response flushes", () => {

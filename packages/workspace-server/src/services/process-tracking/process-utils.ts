@@ -3,10 +3,11 @@ import { platform } from "node:os";
 
 const SIGKILL_GRACE_MS = 5_000;
 
-interface ProcessEntry {
+export interface ProcessEntry {
   pid: number;
   ppid: number;
   pgid: number;
+  startedAt: string;
 }
 
 export function findProcessTree(
@@ -34,24 +35,91 @@ export function findProcessTree(
   return tree;
 }
 
-function snapshotUnixProcessTree(rootPid: number): ProcessEntry[] {
+function snapshotUnixProcesses(): ProcessEntry[] {
   try {
-    const output = execFileSync("ps", ["-axo", "pid=,ppid=,pgid="], {
+    const output = execFileSync("ps", ["-axo", "pid=,ppid=,pgid=,lstart="], {
       encoding: "utf8",
     });
-    const entries = output
+    return output
       .trim()
       .split("\n")
-      .map((line) => line.trim().split(/\s+/).map(Number))
-      .filter(
-        (parts) =>
-          parts.length === 3 && parts.every((part) => Number.isInteger(part)),
-      )
-      .map(([pid, ppid, pgid]) => ({ pid, ppid, pgid }));
-    return findProcessTree(rootPid, entries);
+      .map((line): ProcessEntry | null => {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+        if (!match) return null;
+        return {
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          pgid: Number(match[3]),
+          startedAt: match[4],
+        };
+      })
+      .filter((entry): entry is ProcessEntry => entry !== null);
   } catch {
     return [];
   }
+}
+
+export function findMatchingProcessTargets(
+  originalTree: readonly ProcessEntry[],
+  currentProcesses: readonly ProcessEntry[],
+  excludedPgid: number | undefined,
+): number[] {
+  const originalByPid = new Map(
+    originalTree.map((entry) => [entry.pid, entry]),
+  );
+  const matching = currentProcesses.filter((entry) => {
+    const original = originalByPid.get(entry.pid);
+    return (
+      original?.pgid === entry.pgid && original.startedAt === entry.startedAt
+    );
+  });
+  const groups = new Set(
+    matching
+      .map((entry) => entry.pgid)
+      .filter((pgid) => pgid > 0 && pgid !== excludedPgid),
+  );
+  return [
+    ...Array.from(groups, (pgid) => -pgid),
+    ...matching.map((entry) => entry.pid),
+  ];
+}
+
+export interface UnixProcessKillerDeps {
+  currentProcesses: () => ProcessEntry[];
+  signal: (targets: readonly number[], signal: NodeJS.Signals) => void;
+  schedule: (callback: () => void, delayMs: number) => void;
+}
+
+export function killUnixProcessTrees(
+  rootPids: readonly number[],
+  initialProcesses: readonly ProcessEntry[],
+  ownPgid: number | undefined,
+  deps: UnixProcessKillerDeps,
+): void {
+  const trees = rootPids
+    .map((pid) => findProcessTree(pid, initialProcesses))
+    .filter((tree) => tree.length > 0);
+  const originalTree = Array.from(
+    new Map(trees.flat().map((entry) => [entry.pid, entry])).values(),
+  );
+  if (originalTree.length === 0) return;
+
+  const targets = findMatchingProcessTargets(
+    originalTree,
+    initialProcesses,
+    ownPgid,
+  );
+  deps.signal(targets, "SIGTERM");
+  deps.schedule(() => {
+    deps.signal(
+      findMatchingProcessTargets(
+        originalTree,
+        deps.currentProcesses(),
+        ownPgid,
+      ),
+      "SIGKILL",
+    );
+  }, SIGKILL_GRACE_MS);
 }
 
 function signalTargets(
@@ -70,33 +138,32 @@ function signalTargets(
  * their own process groups.
  * On Windows, we use taskkill with /T flag to kill the process tree.
  */
-export function killProcessTree(pid: number): void {
+export function killProcessTrees(pids: readonly number[]): void {
+  if (pids.length === 0) return;
   try {
     if (platform() === "win32") {
       // Windows: use taskkill with /T to kill process tree
-      execSync(`taskkill /PID ${pid} /T /F`, { stdio: "ignore" });
+      for (const pid of pids) {
+        execSync(`taskkill /PID ${pid} /T /F`, { stdio: "ignore" });
+      }
     } else {
-      const tree = snapshotUnixProcessTree(pid);
-      const ownProcess = snapshotUnixProcessTree(process.pid).at(-1);
-      const groups = new Set(
-        tree
-          .map((entry) => entry.pgid)
-          .filter((pgid) => pgid > 0 && pgid !== ownProcess?.pgid),
-      );
-      const targets = [
-        ...Array.from(groups, (pgid) => -pgid),
-        ...tree.map((entry) => entry.pid),
-      ];
-      if (targets.length === 0) targets.push(-pid, pid);
-
-      signalTargets(targets, "SIGTERM");
-
-      // Force kill after a grace period — unref so the timer doesn't delay app exit.
-      setTimeout(() => {
-        signalTargets(targets, "SIGKILL");
-      }, SIGKILL_GRACE_MS).unref();
+      const processes = snapshotUnixProcesses();
+      const ownPgid = processes.find(
+        (entry) => entry.pid === process.pid,
+      )?.pgid;
+      killUnixProcessTrees(pids, processes, ownPgid, {
+        currentProcesses: snapshotUnixProcesses,
+        signal: signalTargets,
+        schedule: (callback, delayMs) => {
+          setTimeout(callback, delayMs).unref();
+        },
+      });
     }
   } catch {}
+}
+
+export function killProcessTree(pid: number): void {
+  killProcessTrees([pid]);
 }
 
 /**

@@ -26,6 +26,23 @@ function toolEvent(
   } as AcpMessage;
 }
 
+function textEvent(text: string): AcpMessage {
+  return {
+    ts: 1,
+    message: {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "run-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      },
+    },
+  } as AcpMessage;
+}
+
 describe("createCloudEventSummaryTracker", () => {
   it("merges appended tool updates and resets when the transcript is replaced", () => {
     const tracker = createCloudEventSummaryTracker();
@@ -43,6 +60,14 @@ describe("createCloudEventSummaryTracker", () => {
       toolEvent("tool-2", { title: "Write file" }),
     ]);
     expect([...replacement.toolCalls.keys()]).toEqual(["tool-2"]);
+  });
+
+  it("reuses the projected summary when appended events do not change tools", () => {
+    const tracker = createCloudEventSummaryTracker();
+    const started = toolEvent("tool-1", { title: "Edit file" });
+    const first = tracker.update([started]);
+
+    expect(tracker.update([started, textEvent("hello")])).toBe(first);
   });
 });
 
