@@ -6,7 +6,7 @@ import type { HighlightResolution } from "@posthog/ui/features/sessions/componen
 import { create } from "zustand";
 
 /** Which thread the task's comment surfaces are pointed at right now. */
-export type CommentFocus = {
+type CommentFocus = {
   target: CommentTarget;
   threadId: string;
   /** Bumped on every request so re-picking the same thread scrolls again. */

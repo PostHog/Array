@@ -42,7 +42,7 @@ export const regionCommentAnchorSchema = z.object({
   height: z.number().min(0).max(1),
 });
 
-export const documentCommentAnchorSchema = z.object({
+const documentCommentAnchorSchema = z.object({
   kind: z.literal("document"),
 });
 

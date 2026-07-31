@@ -5,7 +5,7 @@ const BRIDGE_MARKER = "__POSTHOG_ARTIFACT_COMMENT_BRIDGE__";
  * credentials or writes to the API: selection and highlight traffic goes
  * through the trusted parent with a per-view channel.
  */
-export function artifactHtmlCommentBridge(channel: string): string {
+function artifactHtmlCommentBridge(channel: string): string {
   const safeChannel = JSON.stringify(channel);
   return `<script data-posthog-artifact-comments>(function(){
 "use strict";

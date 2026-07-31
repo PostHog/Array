@@ -24,7 +24,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-export function commentsQueryKey(
+function commentsQueryKey(
   authIdentity: string | null,
   target: CommentTarget | null,
 ) {
@@ -57,7 +57,7 @@ export function commentCacheCoversTarget(
 }
 
 /** Filter for every cached comment list an optimistic write has to patch. */
-export function commentCachesCoveringTarget(target: CommentTarget) {
+function commentCachesCoveringTarget(target: CommentTarget) {
   return {
     queryKey: ["comments"] as const,
     predicate: (query: { queryKey: readonly unknown[] }) =>

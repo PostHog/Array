@@ -38,12 +38,6 @@ export type ArtifactRow =
     }
   | { kind: "slack"; key: string; url: string };
 
-/** The row kinds that can carry comments. */
-export type CommentSourceRow = Extract<
-  ArtifactRow,
-  { kind: "file" | "canvas" }
->;
-
 /**
  * Somewhere a task's comment threads live. Artifacts and canvases come from the
  * task's rows; the task itself is always one, holding the threads that belong
@@ -107,7 +101,7 @@ export function openCanvasFromUrl(
 }
 
 /** Where a row's comments live, or null when the row can't carry any. */
-export function targetForRow(row: ArtifactRow): CommentTarget | null {
+function targetForRow(row: ArtifactRow): CommentTarget | null {
   if (row.kind === "file" && row.artifactId) {
     return { scope: "task_artifact", itemId: row.artifactId };
   }
