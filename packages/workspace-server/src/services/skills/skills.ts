@@ -510,11 +510,15 @@ export class SkillsService {
   }
 
   async renderAlwaysOnSkillInstructions(
-    refs: Array<SkillBundleRef & { order: number }>,
+    refs: SkillBundleRef[],
   ): Promise<string> {
     const blocks = await Promise.all(
       [...refs]
-        .sort((left, right) => left.order - right.order)
+        .sort((left, right) =>
+          `${left.source}:${left.name}`.localeCompare(
+            `${right.source}:${right.name}`,
+          ),
+        )
         .map(async (ref) => {
           const skillDir = await this.resolveKnownSkillDir(ref.path);
           const manifest = await fs.promises.readFile(

@@ -77,7 +77,7 @@ function collectSkillBundleRefs(prompt: string): CloudSkillBundleRef[] {
       continue;
     }
     seen.add(key);
-    refs.push({ ...tag, activation: "explicit" });
+    refs.push(tag);
   }
 
   return refs;

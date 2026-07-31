@@ -18,7 +18,6 @@ describe("alwaysOnSkillsFailureStore", () => {
         name: "example",
         source: "user" as const,
         path: "/skills/example",
-        order: 0,
       };
       const result = useAlwaysOnSkillsFailureStore
         .getState()

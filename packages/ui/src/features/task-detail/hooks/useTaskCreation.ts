@@ -326,9 +326,7 @@ export function useTaskCreation({
       const serializedContent = contentToXml(content).trim();
       const filePaths = extractFilePaths(content);
       const settings = useSettingsStore.getState();
-      let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills.map(
-        (skill, order) => ({ ...skill, order }),
-      );
+      let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills;
       while (alwaysOnSkills.length > 0) {
         try {
           await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);

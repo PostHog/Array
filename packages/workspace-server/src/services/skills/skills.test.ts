@@ -913,13 +913,13 @@ describe("resolveSkillBundleDependencies", () => {
 });
 
 describe("renderAlwaysOnSkillInstructions", () => {
-  it("renders validated skills in configured order without frontmatter", async () => {
+  it("renders validated skills in canonical order without frontmatter", async () => {
     const first = await createSkill(repoSkillsDir, "first");
     const second = await createSkill(repoSkillsDir, "second");
 
     const rendered = await makeService().renderAlwaysOnSkillInstructions([
-      { name: "second", source: "repo", path: second, order: 1 },
-      { name: "first", source: "repo", path: first, order: 0 },
+      { name: "second", source: "repo", path: second },
+      { name: "first", source: "repo", path: first },
     ]);
 
     expect(rendered.indexOf("## first")).toBeLessThan(
