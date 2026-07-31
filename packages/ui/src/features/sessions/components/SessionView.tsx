@@ -767,7 +767,7 @@ export function SessionView({
                           enableBashMode={!isCloudRun}
                           modelSelector={null}
                           reasoningSelector={
-                            thoughtOption ? (
+                            thoughtOption || sessionModelOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
                                 modelOption={sessionModelOption}
