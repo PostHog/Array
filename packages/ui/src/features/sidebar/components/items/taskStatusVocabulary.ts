@@ -107,9 +107,10 @@ export interface TaskDot {
  * the reader actually gets is output they haven't seen, which is `isUnread`, and
  * the run's real story lives in the task detail where there's room to tell it.
  *
- * Queued is folded into working for the same reason. "Waiting on a sandbox" and
- * "a sandbox is writing code" are one fact to the reader — it's happening — so
- * they share the spinner rather than teaching a distinction only we care about.
+ * Queued is folded into pending for the same reason. "Waiting on a sandbox" and
+ * "a run that hasn't been closed out" are one fact to the reader — it's live but
+ * nothing is moving — so they share the still yellow dot. Only a prompt in
+ * flight spins.
  *
  * And a run that has already opened a PR is not working, whatever its status
  * says. The cloud workflow keeps the run `in_progress` while it babysits CI
@@ -127,17 +128,29 @@ export function taskDot(props: TaskStatusInput): TaskDot {
       label: "Needs permission — blocked on you",
     };
   }
-  // A live local session streaming output still counts as working — that's the
-  // agent typing right now, not a run status we inferred.
-  const runClaimsWork =
-    props.taskRunStatus === "in_progress" || props.taskRunStatus === "queued";
-  if (props.isGenerating || (runClaimsWork && !hasPullRequest(props))) {
+  // The spinner is reserved for a prompt actually in flight — the agent typing
+  // right now. A run status can't earn it: nothing writes a terminal status when
+  // a local agent goes idle, and the cloud workflow holds `in_progress` while it
+  // babysits CI, so both keep claiming work for as long as the row exists. A
+  // spinner that never stops is a lie about the machine, so the claim gets the
+  // still dot below instead.
+  if (props.isGenerating) {
     return {
       tone: "yellow",
       style: "solid",
       pulse: false,
       spinner: true,
       label: "Working",
+    };
+  }
+  const runClaimsWork =
+    props.taskRunStatus === "in_progress" || props.taskRunStatus === "queued";
+  if (runClaimsWork && !hasPullRequest(props)) {
+    return {
+      tone: "yellow",
+      style: "solid",
+      pulse: false,
+      label: "Pending — no work in flight",
     };
   }
   if (props.isUnread) {
