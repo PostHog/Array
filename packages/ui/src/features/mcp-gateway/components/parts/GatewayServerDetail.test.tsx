@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   gateway: {} as Record<string, unknown>,
   setMemberAccess: vi.fn(),
   currentUser: null as { id: number } | null,
+  refresh: vi.fn(),
 }));
 
 vi.mock("@posthog/ui/features/auth/authClient", () => ({
@@ -27,7 +28,7 @@ vi.mock(
       setPolicy: vi.fn(),
       setAll: vi.fn(),
       setAllPending: false,
-      refresh: vi.fn(),
+      refresh: mocks.refresh,
       refreshPending: false,
     }),
   }),
@@ -259,5 +260,37 @@ describe("GatewayServerDetail", () => {
         clientSecret: "",
       },
     });
+  });
+
+  it("lets a connected plain member refresh tools", async () => {
+    const connectedServer = {
+      ...server,
+      your_connection: {
+        installation_id: "installation-2",
+        is_enabled: true,
+        pending_oauth: false,
+        needs_reauth: false,
+        last_used_at: null,
+      },
+    } as McpGatewayServer;
+    mocks.gateway.servers = [connectedServer];
+
+    const user = userEvent.setup();
+    render(
+      <Theme>
+        <GatewayServerDetail
+          serverId={connectedServer.id}
+          isAdmin={false}
+          canManageAgentAccess={false}
+          onNavigate={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Refresh tools from server" }),
+    );
+
+    expect(mocks.refresh).toHaveBeenCalledWith("installation-2");
   });
 });

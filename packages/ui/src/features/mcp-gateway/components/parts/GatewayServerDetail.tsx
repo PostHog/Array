@@ -210,6 +210,7 @@ export function GatewayServerDetail({
   // Any connected member can re-list — it runs against their own credential,
   // and it is the manual retry when auto-discovery failed.
   const refreshInstallationId = liveInstallationId;
+  const showScopeBar = (isAdmin || canManageAgentAccess) && scopes.length > 1;
 
   const setBulkPolicy = (state: McpApprovalState) => {
     tools.setAll(
@@ -447,18 +448,26 @@ export function GatewayServerDetail({
             )}
           </Flex>
         </Flex>
-        {!isAdmin && scopeEditable && scopes.length <= 1 && (
-          <BulkTrio
-            label="Set all"
-            filtered={hasToolSearch}
-            disabled={tools.setAllPending || bulkEditableCount === 0}
-            allowNeedsApproval={!agentScope}
-            onSet={setBulkPolicy}
-          />
-        )}
+        <Flex align="center" gap="2">
+          {!isAdmin && scopeEditable && scopes.length <= 1 && (
+            <BulkTrio
+              label="Set all"
+              filtered={hasToolSearch}
+              disabled={tools.setAllPending || bulkEditableCount === 0}
+              allowNeedsApproval={!agentScope}
+              onSet={setBulkPolicy}
+            />
+          )}
+          {!showScopeBar && refreshInstallationId && (
+            <RefreshToolsButton
+              pending={tools.refreshPending}
+              onRefresh={() => tools.refresh(refreshInstallationId)}
+            />
+          )}
+        </Flex>
       </Flex>
 
-      {(isAdmin || canManageAgentAccess) && scopes.length > 1 && (
+      {showScopeBar && (
         <Flex
           align="center"
           gap="2"
@@ -502,21 +511,10 @@ export function GatewayServerDetail({
               onSet={setBulkPolicy}
             />
             {refreshInstallationId && (
-              <Tooltip content="Refresh tools from server">
-                <IconButton
-                  variant="soft"
-                  color="gray"
-                  size="1"
-                  disabled={tools.refreshPending}
-                  onClick={() => tools.refresh(refreshInstallationId)}
-                >
-                  {tools.refreshPending ? (
-                    <Spinner size="1" />
-                  ) : (
-                    <ArrowClockwise size={11} weight="bold" />
-                  )}
-                </IconButton>
-              </Tooltip>
+              <RefreshToolsButton
+                pending={tools.refreshPending}
+                onRefresh={() => tools.refresh(refreshInstallationId)}
+              />
             )}
           </div>
         </Flex>
@@ -688,6 +686,33 @@ function BackButton({
         Back to servers
       </Button>
     </Flex>
+  );
+}
+
+function RefreshToolsButton({
+  pending,
+  onRefresh,
+}: {
+  pending: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <Tooltip content="Refresh tools from server">
+      <IconButton
+        variant="soft"
+        color="gray"
+        size="1"
+        aria-label="Refresh tools from server"
+        disabled={pending}
+        onClick={onRefresh}
+      >
+        {pending ? (
+          <Spinner size="1" />
+        ) : (
+          <ArrowClockwise size={11} weight="bold" />
+        )}
+      </IconButton>
+    </Tooltip>
   );
 }
 
