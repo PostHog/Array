@@ -5,6 +5,10 @@ import type {
 } from "@posthog/api-client/posthog-client";
 import { recommendedCatalogTemplates } from "@posthog/core/mcp-gateway/gatewayServers";
 import {
+  discoverGatewayTools,
+  type GatewayServerMatch,
+} from "@posthog/core/mcp-gateway/gatewayToolDiscovery";
+import {
   installCustomWithOAuth,
   installTemplateWithOAuth,
   reauthorizeWithOAuth,
@@ -61,6 +65,26 @@ export function useGatewayServers() {
     queryClient.invalidateQueries({ queryKey: mcpKeys.installations });
   }, [queryClient]);
 
+  // Connecting stores a credential but discovers nothing, so a server's first
+  // connection has to list the upstream tools itself — otherwise the registry
+  // row sits at zero tools until an admin hits the manual refresh.
+  const discoverToolsMutation = useAuthenticatedMutation(
+    (client, match: GatewayServerMatch) => discoverGatewayTools(client, match),
+    {
+      onSuccess: (result) => {
+        if (!result.discovered || !result.serverId) return;
+        queryClient.invalidateQueries({
+          queryKey: gatewayKeys.serverTools(result.serverId),
+        });
+        queryClient.invalidateQueries({ queryKey: gatewayKeys.servers });
+      },
+      // A failed listing must not read as a failed connect. The detail page
+      // still shows its empty state and retries on mount.
+      onError: () => {},
+    },
+  );
+  const discoverTools = discoverToolsMutation.mutate;
+
   const connectMutation = useAuthenticatedMutation(
     (client, server: McpGatewayServer) =>
       server.template_id
@@ -77,6 +101,7 @@ export function useGatewayServers() {
       onSuccess: (data, server) => {
         if (data && "success" in data && data.success) {
           toast.success(`Authenticated with ${server.name} as you`);
+          discoverTools({ serverId: server.id });
         } else if (data && "error" in data && data.error) {
           toast.error(data.error);
         }
@@ -96,6 +121,7 @@ export function useGatewayServers() {
       onSuccess: (data, vars) => {
         if (data && "success" in data && data.success) {
           toast.success(`Authenticated with ${vars.serverName} as you`);
+          discoverTools({ installationId: vars.installationId });
         } else if (data && "error" in data && data.error) {
           toast.error(data.error);
         }
@@ -156,6 +182,7 @@ export function useGatewayServers() {
       onSuccess: (data, template) => {
         if (data && "success" in data && data.success) {
           toast.success(`Authenticated with ${template.name} as you`);
+          discoverTools({ templateId: template.id, url: template.url });
         } else if (data && "error" in data && data.error) {
           toast.error(data.error);
         }

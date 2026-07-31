@@ -6,6 +6,7 @@ import {
   isAgentPolicyState,
   isPolicyStateAllowedByCeiling,
 } from "@posthog/core/mcp-gateway/gatewayServers";
+import { shouldAutoRefreshTools } from "@posthog/core/mcp-servers/toolRefresh";
 import {
   type GatewayPolicyScope,
   gatewayKeys,
@@ -14,7 +15,17 @@ import { useAuthenticatedMutation } from "@posthog/ui/hooks/useAuthenticatedMuta
 import { useAuthenticatedQuery } from "@posthog/ui/hooks/useAuthenticatedQuery";
 import { toast } from "@posthog/ui/primitives/toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
+
+// Module-scoped on purpose: this must survive remounts so revisiting a server
+// whose catalog is genuinely empty doesn't re-list on every visit. Entries are
+// dropped on failure so a transient error isn't a permanent dead end. Tests
+// that exercise auto-discovery clear it in beforeEach.
+const autoDiscovered = new Set<string>();
+
+export function resetGatewayToolAutoDiscovery(): void {
+  autoDiscovered.clear();
+}
 
 function scopeParams(scope: GatewayPolicyScope) {
   return {
@@ -28,7 +39,15 @@ function scopeParams(scope: GatewayPolicyScope) {
 export function useGatewayToolPolicies(
   serverId: string,
   scope: GatewayPolicyScope,
-  options: { enabled?: boolean } = {},
+  options: {
+    enabled?: boolean;
+    /**
+     * The caller's own installation. When set, an empty catalog lists tools
+     * from the upstream server once — the backstop for connections made
+     * before this existed, or whose connect-time listing failed.
+     */
+    autoDiscoverWith?: string | null;
+  } = {},
 ) {
   const queryClient = useQueryClient();
   const queryKey = gatewayKeys.tools(serverId, scope);
@@ -107,20 +126,61 @@ export function useGatewayToolPolicies(
   );
 
   // Re-lists tools from the upstream server via the caller's installation.
+  const silentRefreshRef = useRef(false);
   const refreshMutation = useAuthenticatedMutation(
     (client, installationId: string) =>
       client.refreshMcpInstallationTools(installationId),
     {
       onSuccess: () => {
+        silentRefreshRef.current = false;
         queryClient.invalidateQueries({
           queryKey: gatewayKeys.serverTools(serverId),
         });
         queryClient.invalidateQueries({ queryKey: gatewayKeys.servers });
       },
-      onError: (error: Error) =>
-        toast.error(error.message || "Failed to refresh tools"),
+      onError: (error: Error, installationId) => {
+        // Auto-discovery is background work: no toast, but drop the marker so
+        // the next mount tries again instead of leaving the page empty forever.
+        if (silentRefreshRef.current) {
+          silentRefreshRef.current = false;
+          autoDiscovered.delete(installationId);
+          return;
+        }
+        toast.error(error.message || "Failed to refresh tools");
+      },
     },
   );
+
+  const autoDiscoverWith = options.autoDiscoverWith ?? null;
+  const policyCount = (policies ?? []).length;
+  // Undefined means the catalog query hasn't resolved (or is disabled) — an
+  // empty array is what proves there is nothing to show.
+  const catalogResolved = policies !== undefined;
+  const refreshIsPending = refreshMutation.isPending;
+  const refreshMutate = refreshMutation.mutate;
+
+  useEffect(() => {
+    if (!autoDiscoverWith || !catalogResolved) return;
+    const fire = shouldAutoRefreshTools({
+      autoRefreshIfEmpty: true,
+      installationId: autoDiscoverWith,
+      isLoading,
+      toolsLength: policyCount,
+      alreadyRefreshed: autoDiscovered.has(autoDiscoverWith),
+      refreshPending: refreshIsPending,
+    });
+    if (!fire) return;
+    autoDiscovered.add(autoDiscoverWith);
+    silentRefreshRef.current = true;
+    refreshMutate(autoDiscoverWith);
+  }, [
+    autoDiscoverWith,
+    catalogResolved,
+    isLoading,
+    policyCount,
+    refreshIsPending,
+    refreshMutate,
+  ]);
 
   return {
     policies: policies ?? [],

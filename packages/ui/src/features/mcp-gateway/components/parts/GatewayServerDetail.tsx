@@ -23,6 +23,7 @@ import {
   formatAgo,
   getGatewayServerRemovalAction,
 } from "@posthog/core/mcp-gateway/gatewayServers";
+import { usableInstallationId } from "@posthog/core/mcp-gateway/gatewayToolDiscovery";
 import {
   gatewayUserName,
   RobotAvatar,
@@ -92,8 +93,13 @@ export function GatewayServerDetail({
   const [toolSearch, setToolSearch] = useState("");
   const [toolsExpanded, setToolsExpanded] = useState(false);
 
+  // Listing tools from the upstream server needs a live credential of the
+  // caller's own — it is what the gateway authenticates the list call with.
+  const liveInstallationId = usableInstallationId(server ?? null);
+
   const tools = useGatewayToolPolicies(serverId, scope, {
     enabled: !!server,
+    autoDiscoverWith: liveInstallationId,
   });
   const filteredPolicies = useMemo(() => {
     const search = toolSearch.trim().toLowerCase();
@@ -184,8 +190,9 @@ export function GatewayServerDetail({
     isAdmin ||
     scope.scopeType === "member" ||
     (scope.scopeType === "agent" && canManageAgentAccess);
-  // Refreshing tools needs a live installation to ask the upstream server.
-  const refreshInstallationId = yourConnection?.installation_id ?? null;
+  // Any connected member can re-list — it runs against their own credential,
+  // and it is the manual retry when auto-discovery failed.
+  const refreshInstallationId = liveInstallationId;
 
   const setBulkPolicy = (state: McpApprovalState) => {
     tools.setAll(
@@ -462,7 +469,7 @@ export function GatewayServerDetail({
               allowNeedsApproval={!agentScope}
               onSet={setBulkPolicy}
             />
-            {isAdmin && refreshInstallationId && (
+            {refreshInstallationId && (
               <Tooltip content="Refresh tools from server">
                 <IconButton
                   variant="soft"
@@ -528,7 +535,9 @@ export function GatewayServerDetail({
         >
           <Text className="font-medium text-sm">No tools discovered yet.</Text>
           <Text color="gray" className="text-[13px]">
-            Connect the server, then refresh its tools.
+            {refreshInstallationId
+              ? "This server listed no tools. Refresh to try again."
+              : "Connect your account to list this server's tools."}
           </Text>
         </Flex>
       ) : filteredPolicies.length === 0 ? (

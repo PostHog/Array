@@ -27,7 +27,12 @@ vi.mock("@posthog/ui/primitives/toast", () => ({
   toast: { error: vi.fn() },
 }));
 
-import { useGatewayToolPolicies } from "./useGatewayToolPolicies";
+import { toast } from "@posthog/ui/primitives/toast";
+
+import {
+  resetGatewayToolAutoDiscovery,
+  useGatewayToolPolicies,
+} from "./useGatewayToolPolicies";
 
 const serverId = "server-1";
 
@@ -56,6 +61,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("useGatewayToolPolicies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetGatewayToolAutoDiscovery();
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -97,5 +103,79 @@ describe("useGatewayToolPolicies", () => {
       queryClient.getQueryState(gatewayKeys.tools(serverId, TEAM_SCOPE))
         ?.isInvalidated,
     ).toBe(false);
+  });
+
+  describe("auto-discovery", () => {
+    it("lists tools once when the catalog resolves empty", async () => {
+      mocks.getPolicies.mockResolvedValue([]);
+      mocks.refreshTools.mockResolvedValue([]);
+
+      const { result, rerender } = renderHook(
+        () =>
+          useGatewayToolPolicies(serverId, YOU_SCOPE, {
+            autoDiscoverWith: "inst-1",
+          }),
+        { wrapper },
+      );
+
+      await waitFor(() =>
+        expect(mocks.refreshTools).toHaveBeenCalledWith("inst-1"),
+      );
+      await waitFor(() => expect(result.current.refreshPending).toBe(false));
+
+      rerender();
+      expect(mocks.refreshTools).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["the catalog already has tools", [policy("approved")], "inst-1"],
+      ["there is no live connection", [], null],
+    ])("stays put when %s", async (_label, policies, installationId) => {
+      mocks.getPolicies.mockResolvedValue(policies);
+
+      const { result } = renderHook(
+        () =>
+          useGatewayToolPolicies(serverId, YOU_SCOPE, {
+            autoDiscoverWith: installationId,
+          }),
+        { wrapper },
+      );
+
+      await waitFor(() => expect(result.current.policiesLoading).toBe(false));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mocks.refreshTools).not.toHaveBeenCalled();
+    });
+
+    it("retries on a later mount when the listing fails", async () => {
+      mocks.getPolicies.mockResolvedValue([]);
+      mocks.refreshTools.mockRejectedValue(new Error("upstream down"));
+
+      const first = renderHook(
+        () =>
+          useGatewayToolPolicies(serverId, YOU_SCOPE, {
+            autoDiscoverWith: "inst-1",
+          }),
+        { wrapper },
+      );
+      await waitFor(() => expect(mocks.refreshTools).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(first.result.current.refreshPending).toBe(false),
+      );
+      first.unmount();
+
+      renderHook(
+        () =>
+          useGatewayToolPolicies(serverId, YOU_SCOPE, {
+            autoDiscoverWith: "inst-1",
+          }),
+        { wrapper },
+      );
+
+      await waitFor(() => expect(mocks.refreshTools).toHaveBeenCalledTimes(2));
+      expect(toast.error).not.toHaveBeenCalled();
+    });
   });
 });

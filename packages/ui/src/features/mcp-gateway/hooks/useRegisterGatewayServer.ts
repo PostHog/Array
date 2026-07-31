@@ -1,6 +1,7 @@
 import type { McpGatewayServer } from "@posthog/api-client/posthog-client";
 import type { GatewayInstallRequest } from "@posthog/core/mcp-gateway/gatewayAddServer";
 import { registerGatewayServerWithOAuth } from "@posthog/core/mcp-gateway/gatewayInstallFlow";
+import { discoverGatewayTools } from "@posthog/core/mcp-gateway/gatewayToolDiscovery";
 import { useHostTRPCClient } from "@posthog/host-router/react";
 import { gatewayKeys } from "@posthog/ui/features/mcp-gateway/hooks/gatewayKeys";
 import {
@@ -19,6 +20,8 @@ function normalizeUrl(url: string): string {
 interface RegisterGatewayServerResult {
   /** The gateway registration for the just-added server, when resolvable. */
   created: McpGatewayServer | null;
+  /** Whether the install also listed the server's tools. */
+  discoveredTools: boolean;
   error: string | null;
 }
 
@@ -42,18 +45,25 @@ export function useRegisterGatewayServer() {
         vars.request,
       );
       if (result?.error) {
-        return { created: null, error: result.error };
+        return { created: null, discoveredTools: false, error: result.error };
       }
       // Re-read the registry to find the registration for the new server —
       // the gateway keys servers by (team, url).
       const servers = await client.getMcpGatewayServers();
       queryClient.setQueryData(gatewayKeys.servers, servers);
       const target = normalizeUrl(vars.request.url);
-      return {
-        created:
-          servers.find((server) => normalizeUrl(server.url) === target) ?? null,
-        error: null,
-      };
+      const created =
+        servers.find((server) => normalizeUrl(server.url) === target) ?? null;
+      // Registering stores the credential but discovers no tools, and this
+      // flow lands the user straight on the server's detail page — list them
+      // now so that page isn't empty. A failure here is not a failed install;
+      // the detail page retries on mount.
+      const discovery = await discoverGatewayTools(
+        client,
+        { serverId: created?.id, url: vars.request.url },
+        { servers },
+      ).catch(() => null);
+      return { created, discoveredTools: !!discovery?.discovered, error: null };
     },
     {
       onSuccess: (data, vars) => {
@@ -61,6 +71,12 @@ export function useRegisterGatewayServer() {
           toast.error(data.error);
         } else {
           toast.success(`${vars.request.name} added to the gateway`);
+        }
+        if (data.discoveredTools && data.created) {
+          queryClient.invalidateQueries({
+            queryKey: gatewayKeys.serverTools(data.created.id),
+          });
+          queryClient.invalidateQueries({ queryKey: gatewayKeys.servers });
         }
         queryClient.invalidateQueries({ queryKey: mcpKeys.installations });
       },

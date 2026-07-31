@@ -138,7 +138,13 @@ export function useMcpInstallationTools(
       onError: (error: Error) => {
         const silent = silentRefreshRef.current;
         silentRefreshRef.current = false;
-        if (!silent) toast.error(error.message || "Failed to refresh tools");
+        if (!silent) {
+          toast.error(error.message || "Failed to refresh tools");
+          return;
+        }
+        // A silent refresh reports nothing, so leaving the id marked would
+        // strand the page empty for the session. Let the next mount retry.
+        if (installationId) autoRefreshedInstallations.delete(installationId);
       },
     },
   );
