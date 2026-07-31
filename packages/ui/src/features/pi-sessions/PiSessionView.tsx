@@ -23,13 +23,13 @@ import type { AgentConversationEvent } from "@posthog/shared";
 import { useUsageLimitStore } from "@posthog/ui/features/billing/usageLimitStore";
 import { PromptInput } from "@posthog/ui/features/message-editor/components/PromptInput";
 import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
-import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
 import {
   CloudConnectionBanner,
   CloudStreamDisconnectedBanner,
 } from "@posthog/ui/features/sessions/components/CloudSessionLifecycle";
 import { ChatThread } from "@posthog/ui/features/sessions/components/chat-thread/ChatThread";
 import type { PromptRecallHandler } from "@posthog/ui/features/sessions/components/chat-thread/composerPromptRecall";
+import { SessionInitializingView } from "@posthog/ui/features/sessions/components/SessionInitializingView";
 import { CHAT_CONTENT_MAX_WIDTH } from "@posthog/ui/features/sessions/constants";
 import { useMessagingModeStore } from "@posthog/ui/features/sessions/messagingModeStore";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
@@ -304,11 +304,13 @@ export function PiSessionView({ taskId, taskRunId }: PiSessionViewProps) {
   );
   const sessionAvailable =
     session.connectionState === "connected" || hasTranscript;
+  const executionTarget = session.cloudStatus === undefined ? "local" : "cloud";
   if (isConnecting && !hasTranscript) {
     return (
       <Box className="relative h-full">
-        <CloudInitializingView
-          cloudStatus={session.cloudStatus ?? null}
+        <SessionInitializingView
+          executionTarget={executionTarget}
+          cloudStatus={session.cloudStatus}
           heading={latestProgress?.label}
           subtitle={latestProgress?.detail}
         />
