@@ -1,4 +1,4 @@
-import { FileText, Lightbulb, X } from "@phosphor-icons/react";
+import { FileText, X } from "@phosphor-icons/react";
 import type { AutoresearchService } from "@posthog/core/autoresearch/autoresearch";
 import { AUTORESEARCH_SERVICE } from "@posthog/core/autoresearch/identifiers";
 import { buildKickoffPreamble } from "@posthog/core/autoresearch/prompts";
@@ -16,7 +16,6 @@ import { ButtonGroup } from "@posthog/quill";
 import { type AgentRuntime, ANALYTICS_EVENTS } from "@posthog/shared";
 import type { Task } from "@posthog/shared/domain-types";
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
-import { useSkillsSelectionActions } from "@posthog/ui/features/skills/skillsSelectionStore";
 import type { TaskInputReportAssociation } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { useTaskInputPrefillStore } from "@posthog/ui/features/task-detail/stores/taskInputPrefillStore";
 import { navigateToInbox } from "@posthog/ui/router/navigationBridge";
@@ -98,6 +97,10 @@ import { useTaskCreation } from "../hooks/useTaskCreation";
 import { useWarmTask } from "../hooks/useWarmTask";
 import { resolveWorkspaceModePreference } from "../hooks/workspaceModePreference";
 import { AgentRuntimeSelect } from "./AgentRuntimeSelect";
+import {
+  AlwaysOnSkillChips,
+  useAlwaysOnSkillSelection,
+} from "./AlwaysOnSkillChips";
 import { CloudGithubMissingNotice } from "./CloudGithubMissingNotice";
 import { NewTaskSuggestions } from "./ContinueCliSessions";
 import {
@@ -224,10 +227,8 @@ export function TaskInput({
     lastUsedPiModel,
     setLastUsedPiModel,
     _hasHydrated: settingsHydrated,
-    alwaysOnSkills,
   } = useSettingsStore();
   const { data: skills } = useSkills();
-  const { requestSkill } = useSkillsSelectionActions();
 
   const editorRef = useRef<EditorHandle>(null);
   const handleAddSelectionToPrompt = useCallback(
@@ -283,9 +284,12 @@ export function TaskInput({
   // from this task's prompt. Re-include whenever the source context changes
   // (e.g. switching channels) so a dismissal doesn't stick across channels.
   const [channelContextDismissed, setChannelContextDismissed] = useState(false);
-  const [excludedAlwaysOnSkillKeys, setExcludedAlwaysOnSkillKeys] = useState(
-    () => new Set<string>(),
-  );
+  const {
+    includedSkills: includedAlwaysOnSkills,
+    excludedKeys: excludedAlwaysOnSkillKeys,
+    exclude: excludeAlwaysOnSkill,
+    reset: resetAlwaysOnSkillSelection,
+  } = useAlwaysOnSkillSelection();
   const lastChannelContextRef = useRef(channelContext);
   useEffect(() => {
     if (lastChannelContextRef.current !== channelContext) {
@@ -294,28 +298,6 @@ export function TaskInput({
     }
   }, [channelContext]);
   const includeChannelContext = !!channelContext && !channelContextDismissed;
-  const includedAlwaysOnSkills = alwaysOnSkills.filter(
-    (skill) => !excludedAlwaysOnSkillKeys.has(`${skill.source}:${skill.path}`),
-  );
-
-  const handleOpenAlwaysOnSkill = useCallback(
-    (name: string) => {
-      requestSkill(name);
-      openSettings("skills");
-    },
-    [requestSkill],
-  );
-
-  const handleExcludeAlwaysOnSkill = useCallback(
-    (source: string, path: string) => {
-      setExcludedAlwaysOnSkillKeys((current) => {
-        const next = new Set(current);
-        next.add(`${source}:${path}`);
-        return next;
-      });
-    },
-    [],
-  );
 
   const adapter = lastUsedAdapter;
   const prefillRequestKey = initialPromptKey ?? initialPrompt;
@@ -988,10 +970,10 @@ export function TaskInput({
   const handleSubmit = useCallback(
     async (contentOverride?: EditorContent) => {
       const submitted = await createTask(contentOverride);
-      if (submitted) setExcludedAlwaysOnSkillKeys(new Set());
+      if (submitted) resetAlwaysOnSkillSelection();
       return submitted;
     },
-    [createTask],
+    [createTask, resetAlwaysOnSkillSelection],
   );
 
   // Wraps the prompt in the autoresearch kickoff: protocol preamble first,
@@ -1555,40 +1537,10 @@ export function TaskInput({
                         </Tooltip>
                       </span>
                     )}
-                    {includedAlwaysOnSkills.map((skill) => (
-                      <span
-                        key={`${skill.source}:${skill.path}`}
-                        className="inline-flex items-center gap-1 rounded-[var(--radius-1)] bg-[var(--gray-a3)] px-1.5 py-px font-medium text-[var(--gray-11)]"
-                      >
-                        <Tooltip content={`View ${skill.name}`}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAlwaysOnSkill(skill.name)}
-                            className="inline-flex min-w-0 items-center gap-1 rounded text-[var(--gray-11)] hover:text-gray-12"
-                          >
-                            <Lightbulb size={12} />
-                            <span className="truncate">{skill.name}</span>
-                          </button>
-                        </Tooltip>
-                        <Tooltip
-                          content={`Don't include ${skill.name} in this task`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleExcludeAlwaysOnSkill(
-                                skill.source,
-                                skill.path,
-                              )
-                            }
-                            aria-label={`Remove ${skill.name} from this task`}
-                            className="ml-0.5 inline-flex size-3.5 items-center justify-center rounded text-gray-10 hover:bg-gray-5 hover:text-gray-12"
-                          >
-                            <X size={12} />
-                          </button>
-                        </Tooltip>
-                      </span>
-                    ))}
+                    <AlwaysOnSkillChips
+                      skills={includedAlwaysOnSkills}
+                      onExclude={excludeAlwaysOnSkill}
+                    />
                   </div>
                 )}
                 {effectiveWorkspaceMode === "cloud" &&

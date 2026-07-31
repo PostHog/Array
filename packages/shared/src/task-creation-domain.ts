@@ -90,7 +90,6 @@ export interface TaskCreationInput {
    */
   customInstructions?: string;
   alwaysOnSkills?: AlwaysOnSkillRef[];
-  alwaysOnSkillInstructions?: string;
   /**
    * Local (~/.claude.json) MCP servers classified as importable, forwarded to
    * the cloud sandbox in the run-creation payload. Cloud-only; local sessions

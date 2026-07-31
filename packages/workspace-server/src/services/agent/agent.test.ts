@@ -249,6 +249,12 @@ function createMockDependencies() {
     foldersService: {
       getFolders: vi.fn().mockResolvedValue([]),
     },
+    skillsService: {
+      renderAlwaysOnSkillInstructions: vi.fn().mockResolvedValue({
+        instructions: undefined,
+        failures: [],
+      }),
+    },
     loggerFactory: {
       scope: () => ({
         info: vi.fn(),
@@ -294,6 +300,7 @@ describe("AgentService", () => {
       deps.workspaceRepository as never,
       deps.workspaceSettings as never,
       deps.foldersService as never,
+      deps.skillsService as never,
       deps.loggerFactory as never,
     );
     vi.spyOn(service, "emit");
@@ -645,6 +652,36 @@ describe("AgentService", () => {
         }),
       );
     });
+
+    it("loads always-on skills into the local agent system prompt", async () => {
+      deps.skillsService.renderAlwaysOnSkillInstructions.mockResolvedValue({
+        instructions: "ALWAYS_ON_SKILL_BODY",
+        failures: [],
+      });
+
+      await service.startSession({
+        ...baseSessionParams,
+        adapter: "codex",
+        alwaysOnSkills: [
+          { name: "concise", source: "user", path: "/skills/concise" },
+        ],
+      });
+
+      expect(
+        deps.skillsService.renderAlwaysOnSkillInstructions,
+      ).toHaveBeenCalledWith([
+        { name: "concise", source: "user", path: "/skills/concise" },
+      ]);
+      expect(mockAgentRun).toHaveBeenCalledWith(
+        "task-1",
+        "run-1",
+        expect.objectContaining({
+          developerInstructions: expect.stringContaining(
+            "ALWAYS_ON_SKILL_BODY",
+          ),
+        }),
+      );
+    });
   });
 
   describe("session meta", () => {
@@ -945,6 +982,7 @@ describe("AgentService", () => {
             credentials: { apiHost: string; projectId: number },
             taskId: string,
             customInstructions?: string,
+            alwaysOnSkillInstructions?: string,
             additionalDirectories?: string[],
             systemPromptOverride?: string,
             channelMode?: boolean,
@@ -954,6 +992,7 @@ describe("AgentService", () => {
       ).buildSystemPrompt(
         credentials,
         "task-1",
+        undefined,
         undefined,
         undefined,
         undefined,

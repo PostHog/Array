@@ -60,7 +60,6 @@ import { useCreateTask } from "../../tasks/useTaskCrudMutations";
 import { useTasks } from "../../tasks/useTasks";
 import { useTourStore } from "../../tour/tourStore";
 import { createFirstTaskTour } from "../../tour/tours/createFirstTaskTour";
-import { useAlwaysOnSkillsFailureStore } from "../stores/alwaysOnSkillsFailureStore";
 import { useExistingWorktreeConfirmStore } from "../stores/existingWorktreeConfirmStore";
 import { useRemoteBranchConfirmStore } from "../stores/remoteBranchConfirmStore";
 
@@ -328,43 +327,10 @@ export function useTaskCreation({
       const serializedContent = contentToXml(content).trim();
       const filePaths = extractFilePaths(content);
       const settings = useSettingsStore.getState();
-      let alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills.filter(
+      const alwaysOnSkills: AlwaysOnSkillRef[] = settings.alwaysOnSkills.filter(
         (skill) =>
           !excludedAlwaysOnSkillKeys?.has(`${skill.source}:${skill.path}`),
       );
-      let alwaysOnSkillInstructions: string | undefined;
-      while (alwaysOnSkills.length > 0) {
-        const rendered =
-          await hostClient.skills.renderAlwaysOn.query(alwaysOnSkills);
-        alwaysOnSkillInstructions = rendered.instructions;
-        if (rendered.failures.length === 0) {
-          break;
-        }
-        const failedSkills = rendered.failures.map(({ skill }) => skill);
-        const action = await useAlwaysOnSkillsFailureStore
-          .getState()
-          .confirm(
-            rendered.failures.map(({ error }) => error).join("\n"),
-            failedSkills,
-          );
-        if (action === "retry") continue;
-        if (action === "cancel") {
-          setIsCreatingTask(false);
-          return false;
-        }
-        if (action === "disable") {
-          for (const skill of failedSkills) {
-            useSettingsStore.getState().setSkillAlwaysOn(skill, false);
-          }
-        }
-        const failedKeys = new Set(
-          failedSkills.map((skill) => `${skill.source}:${skill.path}`),
-        );
-        alwaysOnSkills = alwaysOnSkills.filter(
-          (skill) => !failedKeys.has(`${skill.source}:${skill.path}`),
-        );
-        break;
-      }
 
       const shouldShowPendingView = !onTaskCreated && !!plainPromptText;
       const pendingTaskKey = shouldShowPendingView
@@ -433,7 +399,6 @@ export function useTaskCreation({
           channelContextId,
           customInstructions: getEffectiveCustomInstructions(settings),
           alwaysOnSkills,
-          alwaysOnSkillInstructions,
           autoPublishCloudRuns: settings.autoPublishCloudRuns,
           rtkEnabledCloud: settings.rtkEnabledCloud,
           allowNoRepo,
