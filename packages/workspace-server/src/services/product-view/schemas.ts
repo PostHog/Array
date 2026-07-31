@@ -28,3 +28,24 @@ export const touchProductEnvironmentInput = z.object({
   id: z.string(),
   currentUrl: z.string().max(4000),
 });
+
+export const elementCodeContextInput = z.object({
+  repoPath: z.string().min(1),
+  needles: z.array(z.string().max(300)).max(5),
+});
+
+export const elementCodeContextSchema = z.object({
+  files: z.array(z.string()),
+  mergedPrs: z.array(
+    z.object({
+      number: z.number(),
+      title: z.string(),
+      url: z.string(),
+      lastCommitDate: z.string(),
+    }),
+  ),
+  openPrs: z.array(
+    z.object({ number: z.number(), title: z.string(), url: z.string() }),
+  ),
+  openPrsAvailable: z.boolean(),
+});

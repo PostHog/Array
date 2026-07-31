@@ -13,8 +13,14 @@ import {
 } from "@posthog/core/product-view/schemas";
 import type { ServiceResolver } from "@posthog/host-trpc/context";
 import { publicProcedure, router } from "@posthog/host-trpc/trpc";
-import { PRODUCT_ENVIRONMENTS_SERVICE } from "@posthog/workspace-server/di/tokens";
 import {
+  PRODUCT_CODE_CONTEXT_SERVICE,
+  PRODUCT_ENVIRONMENTS_SERVICE,
+} from "@posthog/workspace-server/di/tokens";
+import type { IProductCodeContextService } from "@posthog/workspace-server/services/product-view/code-context";
+import {
+  elementCodeContextInput,
+  elementCodeContextSchema,
   listProductEnvironmentsInput,
   productEnvironmentSchema,
   removeProductEnvironmentInput,
@@ -28,6 +34,8 @@ const view = (container: ServiceResolver) =>
   container.get<IProductViewService>(PRODUCT_VIEW_SERVICE);
 const envs = (container: ServiceResolver) =>
   container.get<IProductEnvironmentsService>(PRODUCT_ENVIRONMENTS_SERVICE);
+const codeContext = (container: ServiceResolver) =>
+  container.get<IProductCodeContextService>(PRODUCT_CODE_CONTEXT_SERVICE);
 
 export const productViewRouter = router({
   // ── Environments: which sites this project's Product tab can browse ──
@@ -110,6 +118,13 @@ export const productViewRouter = router({
     .input(getElementDetailInput)
     .output(elementDetailSchema)
     .query(({ ctx, input }) => view(ctx.container).getElementDetail(input)),
+
+  getElementCodeContext: publicProcedure
+    .input(elementCodeContextInput)
+    .output(elementCodeContextSchema)
+    .query(({ ctx, input }) =>
+      codeContext(ctx.container).getElementCodeContext(input),
+    ),
 
   onEvents: publicProcedure.subscription(async function* (opts) {
     for await (const event of view(opts.ctx.container).events(opts.signal)) {

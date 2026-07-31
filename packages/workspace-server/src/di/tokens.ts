@@ -20,3 +20,6 @@ export const BROWSER_TABS_SERVICE = Symbol.for(
 export const PRODUCT_ENVIRONMENTS_SERVICE = Symbol.for(
   "posthog.workspace.product-environments-service",
 );
+export const PRODUCT_CODE_CONTEXT_SERVICE = Symbol.for(
+  "posthog.workspace.product-code-context-service",
+);

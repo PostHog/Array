@@ -280,6 +280,7 @@ function ProductBrowser(props: {
             viewId={viewId}
             selected={selected}
             dataProjectId={environment.dataProjectId}
+            environmentLabel={environment.label}
             onClose={clearSelected}
           />
         )}

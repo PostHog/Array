@@ -14,6 +14,7 @@ import {
 } from "@posthog/ui/utils/posthogLinks";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { InvestigateSection } from "./InvestigateSection";
 import type { SelectedElement } from "./useSelectedElement";
 
 const compact = (value: number): string =>
@@ -60,10 +61,10 @@ export function ElementDetailsPanel(props: {
   viewId: string;
   selected: SelectedElement;
   dataProjectId: number;
+  environmentLabel: string;
   onClose: () => void;
-  investigateSlot?: ReactNode;
 }) {
-  const { viewId, selected, dataProjectId, onClose } = props;
+  const { viewId, selected, dataProjectId, environmentLabel, onClose } = props;
   const trpc = useHostTRPC();
   const { data: detail, isLoading } = useQuery(
     trpc.productView.getElementDetail.queryOptions({
@@ -244,7 +245,11 @@ export function ElementDetailsPanel(props: {
               )}
             </Section>
 
-            {props.investigateSlot}
+            <InvestigateSection
+              selected={selected}
+              detail={detail}
+              environmentLabel={environmentLabel}
+            />
           </>
         )}
       </div>
