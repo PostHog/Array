@@ -150,7 +150,7 @@ describe("ChannelItemRow", () => {
 
     renderRow(item());
 
-    expect(screen.getByRole("img", { name: "Cloud run" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Cloud" })).not.toBeNull();
     expect(screen.getByRole("img", { name: "Merged" })).not.toBeNull();
     expect(screen.queryByText(formatRelativeTimeShort(item().ts))).toBeNull();
   });
@@ -177,7 +177,7 @@ describe("ChannelItemRow", () => {
     renderRow(item({ pinned: true }));
 
     expect(screen.getByRole("img", { name: "Pinned" })).not.toBeNull();
-    expect(screen.getByRole("img", { name: "Cloud run" })).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Cloud" })).not.toBeNull();
   });
 
   it("leaves an unpinned row without one", () => {
