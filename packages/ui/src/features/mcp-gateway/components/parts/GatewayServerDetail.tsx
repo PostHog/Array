@@ -751,7 +751,7 @@ function AccessSection({
         align="center"
         justify="between"
         gap="3"
-        className="rounded-md border border-gray-5 p-3"
+        className="rounded-md border border-gray-5 bg-gray-2 p-3"
       >
         <div>
           <Text as="div" className="font-medium text-sm">
@@ -786,7 +786,7 @@ function AccessSection({
         <Flex
           align="start"
           gap="3"
-          className="rounded-md border border-gray-5 p-3"
+          className="rounded-md border border-gray-5 bg-gray-2 p-3"
         >
           <Flex
             align="center"
@@ -832,7 +832,7 @@ function AccessSection({
           align="center"
           justify="between"
           gap="3"
-          className="rounded-md border border-gray-5 p-3"
+          className="rounded-md border border-gray-5 bg-gray-2 p-3"
         >
           <div>
             <Text as="div" className="font-medium text-sm">
@@ -887,7 +887,7 @@ function AccessSection({
             : "No one has connected yet."}
         </Text>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-5">
+        <div className="overflow-hidden rounded-md border border-gray-5 bg-gray-2">
           {server.connections.map((connection) => {
             const isYou = connection.installation_id === yourInstallationId;
             const usedAgo = formatAgo(connection.last_used_at);
@@ -985,7 +985,7 @@ function AccessSection({
           call {server.name} under its own tool policies.
         </Text>
       ) : (
-        <div className="rounded-md border border-gray-5">
+        <div className="rounded-md border border-gray-5 bg-gray-2">
           {server.agents.map((agent) => (
             <Flex
               key={agent.service_account_id}

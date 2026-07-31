@@ -30,7 +30,7 @@ export function GatewayToolRow({
   const blocked = policy.policy_state === "do_not_use";
 
   return (
-    <div className="rounded border border-border bg-gray-1 transition-colors">
+    <div className="rounded border border-border bg-gray-2 transition-colors">
       <div className="flex w-full min-w-0 items-center gap-3 px-3 py-2">
         <button
           type="button"
