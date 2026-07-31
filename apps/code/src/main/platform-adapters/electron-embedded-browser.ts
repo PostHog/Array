@@ -31,6 +31,24 @@ function isWebUrl(raw: string): boolean {
 }
 
 /**
+ * A standard-Chrome user agent for the embedded product page. Identity
+ * providers (notably Google) reject OAuth from anything that identifies as an
+ * embedded webview — the default UA carries `Electron/…` and the app token,
+ * which triggers `disallowed_useragent`. Stripping those tokens leaves the
+ * plain Chrome UA this build actually is.
+ */
+function browserlikeUserAgent(defaultUserAgent: string): string {
+  return defaultUserAgent
+    .split(" ")
+    .filter(
+      (token) =>
+        !token.startsWith("Electron/") &&
+        !token.toLowerCase().includes("posthog"),
+    )
+    .join(" ");
+}
+
+/**
  * Desktop implementation of the Product View browser surface: one
  * `WebContentsView` per view id, attached to the single main window. The view
  * paints natively above the renderer, so the renderer only ever drives bounds
@@ -82,6 +100,9 @@ export class ElectronEmbeddedBrowser
         preload: path.join(__dirname, "productViewPreload.js"),
       },
     });
+    view.webContents.setUserAgent(
+      browserlikeUserAgent(view.webContents.getUserAgent()),
+    );
     this.views.set(options.viewId, view);
     this.wireEvents(options.viewId, view);
     window.contentView.addChildView(view);
@@ -207,14 +228,42 @@ export class ElectronEmbeddedBrowser
     wc.on("did-start-loading", push);
     wc.on("did-stop-loading", push);
 
-    // The guest stays a plain web page: block non-web schemes and keep
-    // popups/new windows in the system browser rather than spawning windows.
+    // The guest stays a plain web page: block non-web schemes.
     wc.on("will-navigate", (event, url) => {
       if (!isWebUrl(url)) event.preventDefault();
     });
+    // Allow http(s) popups as real (sandboxed, preload-less) child windows on
+    // the SAME cookie partition — popup-based SSO (Google sign-in) needs the
+    // popup and the page to share a session, so bouncing it to the system
+    // browser can never complete the login. Non-web schemes stay denied.
     wc.setWindowOpenHandler(({ url }) => {
-      if (isWebUrl(url)) void shell.openExternal(url);
-      return { action: "deny" };
+      if (!isWebUrl(url)) return { action: "deny" };
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          webPreferences: {
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            partition: "persist:product-view",
+          },
+        },
+      };
+    });
+    wc.on("did-create-window", (child) => {
+      // Popups need the same identity-provider-friendly UA as the view.
+      child.webContents.setUserAgent(
+        browserlikeUserAgent(child.webContents.getUserAgent()),
+      );
+      child.webContents.on("will-navigate", (event, url) => {
+        if (!isWebUrl(url)) event.preventDefault();
+      });
+      // No nested popups from a popup; open anything further externally.
+      child.webContents.setWindowOpenHandler(({ url }) => {
+        if (isWebUrl(url)) void shell.openExternal(url);
+        return { action: "deny" };
+      });
     });
 
     // Preload → host messages (inspector reports). Validated downstream by
