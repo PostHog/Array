@@ -14,7 +14,7 @@ export interface GatewayAddServerValues {
   apiKey: string;
   clientId: string;
   clientSecret: string;
-  /** Admin-only sharing options; ignored for non-admin members. */
+  /** Team sharing options are admin-only; agentIds follows the team setting. */
   teamEnabled: boolean;
   credentialMode: GatewayCredentialMode;
   allowPersonal: boolean;
@@ -60,12 +60,12 @@ export interface GatewayInstallRequest extends McpGatewayInstallSharingOptions {
 
 /**
  * install_custom payload for registering a server with the gateway. Sharing
- * options are attached only for admins — the backend rejects non-default
- * values from members.
+ * Team-wide options are attached only for admins. Agent grants are attached
+ * whenever the team allows this member to manage agent access.
  */
 export function buildGatewayInstallRequest(
   values: GatewayAddServerValues,
-  options: { isAdmin: boolean },
+  options: { isAdmin: boolean; canManageAgentAccess: boolean },
 ): GatewayInstallRequest {
   const credentialMode = effectiveCredentialMode(values);
   return {
@@ -89,8 +89,10 @@ export function buildGatewayInstallRequest(
           ...(credentialMode === "shared"
             ? { allow_personal: values.allowPersonal }
             : {}),
-          ...(values.agentIds.length ? { agent_ids: values.agentIds } : {}),
         }
+      : {}),
+    ...(options.canManageAgentAccess && values.agentIds.length
+      ? { agent_ids: values.agentIds }
       : {}),
   };
 }

@@ -3,6 +3,11 @@ import type {
   McpApprovalState,
   McpResolvedToolPolicy,
 } from "@posthog/api-client/posthog-client";
+import {
+  AGENT_POLICY_STATES,
+  isPolicyStateAllowedByCeiling,
+  resolvePolicyStateForScope,
+} from "@posthog/core/mcp-gateway/gatewayServers";
 import { ToolPolicyToggle } from "@posthog/ui/features/mcp-servers/components/parts/ToolPolicyToggle";
 import { Badge, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useState } from "react";
@@ -10,6 +15,8 @@ import { useState } from "react";
 interface GatewayToolRowProps {
   policy: McpResolvedToolPolicy;
   editable: boolean;
+  teamScope?: boolean;
+  agentScope?: boolean;
   onChange: (state: McpApprovalState) => void;
 }
 
@@ -21,13 +28,30 @@ interface GatewayToolRowProps {
 export function GatewayToolRow({
   policy,
   editable,
+  teamScope = false,
+  agentScope = false,
   onChange,
 }: GatewayToolRowProps) {
   const [open, setOpen] = useState(false);
   const hasDescription = !!policy.description?.trim();
   const ruleLocked = policy.locked && policy.decided_by === "rule";
-  const adminLocked = policy.locked && policy.decided_by !== "rule";
-  const blocked = policy.policy_state === "do_not_use";
+  const setByTeamAdmin =
+    !teamScope &&
+    (policy.decided_by === "team" || policy.decided_by === "preset");
+  const displayState = resolvePolicyStateForScope(
+    policy.policy_state,
+    agentScope ? "agent" : teamScope ? "team" : "member",
+  );
+  const blocked = displayState === "do_not_use";
+  const disabledStates: Partial<Record<McpApprovalState, string>> = {};
+  for (const state of ["approved", "needs_approval", "do_not_use"] as const) {
+    if (
+      !teamScope &&
+      !isPolicyStateAllowedByCeiling(state, policy.team_state)
+    ) {
+      disabledStates[state] = "Unavailable because of the team admin ceiling";
+    }
+  }
 
   return (
     <div className="rounded border border-border bg-gray-2 transition-colors">
@@ -79,34 +103,26 @@ export function GatewayToolRow({
                 <Lock size={11} />
                 {blocked
                   ? "Blocked by team policy"
-                  : "Approval required by team policy"}
+                  : "Needs Approval by team policy"}
               </Badge>
             </Tooltip>
-          ) : adminLocked ? (
-            <Flex align="center" gap="2">
-              <Tooltip
-                content={`Set by your admin — locked at "${
-                  blocked ? "Blocked" : "Requires approval"
-                }". Ask an admin to change it.`}
-              >
-                <Badge color="gray" variant="soft" size="1">
-                  <Lock size={11} />
-                </Badge>
-              </Tooltip>
-              <div className="opacity-55">
-                <ToolPolicyToggle
-                  value={policy.policy_state}
-                  onChange={() => {}}
-                  disabled
-                />
-              </div>
-            </Flex>
           ) : (
-            <ToolPolicyToggle
-              value={policy.policy_state}
-              onChange={onChange}
-              disabled={!editable}
-            />
+            <Flex align="center" gap="2">
+              {setByTeamAdmin && (
+                <Tooltip content="This effective state is capped by the team admin ceiling.">
+                  <Badge color="gray" variant="soft" size="1">
+                    <Lock size={11} /> Set by team admin
+                  </Badge>
+                </Tooltip>
+              )}
+              <ToolPolicyToggle
+                value={displayState}
+                onChange={onChange}
+                disabled={!editable}
+                disabledStates={disabledStates}
+                allowedStates={agentScope ? AGENT_POLICY_STATES : undefined}
+              />
+            </Flex>
           )}
         </div>
       </div>

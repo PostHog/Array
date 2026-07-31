@@ -1,6 +1,7 @@
 import type {
   McpApprovalState,
   McpAuditDecision,
+  McpGatewayScopeType,
   McpGatewayServer,
   McpGatewayYourConnection,
   McpResolvedToolPolicy,
@@ -130,8 +131,51 @@ export function getGatewayServerRemovalAction(
 
 export type GatewayPolicyCounts = Record<McpApprovalState, number>;
 
+export const AGENT_POLICY_STATES = [
+  "approved",
+  "do_not_use",
+] as const satisfies readonly McpApprovalState[];
+
+export type AgentPolicyState = (typeof AGENT_POLICY_STATES)[number];
+
+export function isAgentPolicyState(
+  state: McpApprovalState,
+): state is AgentPolicyState {
+  return state !== "needs_approval";
+}
+
+/**
+ * Agents have no approval responder. A policy that would wait for approval is
+ * therefore unavailable to the agent, just like an explicit block.
+ */
+export function resolvePolicyStateForScope(
+  state: McpApprovalState,
+  scopeType: McpGatewayScopeType,
+): McpApprovalState {
+  return scopeType === "agent" && state === "needs_approval"
+    ? "do_not_use"
+    : state;
+}
+
+const POLICY_STRICTNESS: Record<McpApprovalState, number> = {
+  approved: 0,
+  needs_approval: 1,
+  do_not_use: 2,
+};
+
+/** A scope may match the team ceiling or choose a more restrictive state. */
+export function isPolicyStateAllowedByCeiling(
+  state: McpApprovalState,
+  ceiling: McpApprovalState | null | undefined,
+): boolean {
+  return ceiling === null || ceiling === undefined
+    ? true
+    : POLICY_STRICTNESS[state] >= POLICY_STRICTNESS[ceiling];
+}
+
 export function countPoliciesByState(
   policies: McpResolvedToolPolicy[],
+  scopeType: McpGatewayScopeType = "member",
 ): GatewayPolicyCounts {
   const counts: GatewayPolicyCounts = {
     approved: 0,
@@ -139,7 +183,7 @@ export function countPoliciesByState(
     do_not_use: 0,
   };
   for (const policy of policies) {
-    counts[policy.policy_state] += 1;
+    counts[resolvePolicyStateForScope(policy.policy_state, scopeType)] += 1;
   }
   return counts;
 }
@@ -182,6 +226,6 @@ const DESTRUCTIVE_TOOL_RE =
   /delete|update|post|write|create|run-migration|close|drop|send/;
 
 /** Default policy offered when granting an agent access to a tool. */
-export function defaultAgentGrantPolicy(toolName: string): McpApprovalState {
+export function defaultAgentGrantPolicy(toolName: string): AgentPolicyState {
   return DESTRUCTIVE_TOOL_RE.test(toolName) ? "do_not_use" : "approved";
 }

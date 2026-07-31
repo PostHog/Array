@@ -53,7 +53,7 @@ describe("buildGatewayInstallRequest", () => {
   it("builds an individual oauth install with admin sharing options", () => {
     const request = buildGatewayInstallRequest(
       values({ description: "  Wiki tools  ", agentIds: ["svc-1"] }),
-      { isAdmin: true },
+      { isAdmin: true, canManageAgentAccess: true },
     );
     expect(request).toEqual({
       name: "Internal Wiki",
@@ -69,7 +69,7 @@ describe("buildGatewayInstallRequest", () => {
   it("marks shared-credential installs and carries allow_personal", () => {
     const request = buildGatewayInstallRequest(
       values({ credentialMode: "shared", allowPersonal: false }),
-      { isAdmin: true },
+      { isAdmin: true, canManageAgentAccess: true },
     );
     expect(request.scope).toBe("shared");
     expect(request.allow_personal).toBe(false);
@@ -78,7 +78,7 @@ describe("buildGatewayInstallRequest", () => {
   it("api-key installs share the key and include it", () => {
     const request = buildGatewayInstallRequest(
       values({ authType: "api_key", apiKey: "sk-123" }),
-      { isAdmin: true },
+      { isAdmin: true, canManageAgentAccess: true },
     );
     expect(request.auth_type).toBe("api_key");
     expect(request.api_key).toBe("sk-123");
@@ -86,24 +86,35 @@ describe("buildGatewayInstallRequest", () => {
   });
 
   it("includes oauth client credentials only when provided", () => {
-    const bare = buildGatewayInstallRequest(values(), { isAdmin: true });
+    const bare = buildGatewayInstallRequest(values(), {
+      isAdmin: true,
+      canManageAgentAccess: true,
+    });
     expect(bare.client_id).toBeUndefined();
     const withCreds = buildGatewayInstallRequest(
       values({ clientId: " id ", clientSecret: "secret" }),
-      { isAdmin: true },
+      { isAdmin: true, canManageAgentAccess: true },
     );
     expect(withCreds.client_id).toBe("id");
     expect(withCreds.client_secret).toBe("secret");
   });
 
-  it("omits every sharing option for non-admin members", () => {
+  it("lets permitted members share with agents without team-wide options", () => {
     const request = buildGatewayInstallRequest(
       values({ credentialMode: "shared", agentIds: ["svc-1"] }),
-      { isAdmin: false },
+      { isAdmin: false, canManageAgentAccess: true },
     );
     expect(request.scope).toBeUndefined();
     expect(request.team_enabled).toBeUndefined();
     expect(request.allow_personal).toBeUndefined();
+    expect(request.agent_ids).toEqual(["svc-1"]);
+  });
+
+  it("omits agent grants when team settings make them admin-only", () => {
+    const request = buildGatewayInstallRequest(
+      values({ agentIds: ["svc-1"] }),
+      { isAdmin: false, canManageAgentAccess: false },
+    );
     expect(request.agent_ids).toBeUndefined();
   });
 });

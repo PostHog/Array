@@ -53,6 +53,10 @@ export function useGatewayConfig() {
     configLoading: isLoading,
     isAdmin: config?.is_admin ?? false,
     allowCustomServers: config?.allow_custom_servers ?? true,
+    allowMemberAgentAccess: config?.allow_member_agent_access ?? true,
+    canManageAgentAccess:
+      (config?.is_admin ?? false) ||
+      (config?.allow_member_agent_access ?? true),
     updateSettings: updateSettingsMutation.mutate,
     applyPreset: applyPresetMutation.mutate,
     applyPresetPending: applyPresetMutation.isPending,

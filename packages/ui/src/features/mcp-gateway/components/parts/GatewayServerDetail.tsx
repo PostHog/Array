@@ -63,6 +63,7 @@ interface GatewayServerDetailProps {
   serverId: string;
   initialScope?: GatewayPolicyScope;
   isAdmin: boolean;
+  canManageAgentAccess: boolean;
   onNavigate: (route: GatewayRoute) => void;
 }
 
@@ -78,6 +79,7 @@ export function GatewayServerDetail({
   serverId,
   initialScope,
   isAdmin,
+  canManageAgentAccess,
   onNavigate,
 }: GatewayServerDetailProps) {
   const gateway = useGatewayServers();
@@ -105,29 +107,33 @@ export function GatewayServerDetail({
     : filteredPolicies.slice(0, TOOL_PREVIEW_LIMIT);
   // Team-scope rows seed the give-access dialog's per-tool defaults.
   const teamTools = useGatewayToolPolicies(serverId, TEAM_SCOPE, {
-    enabled: !!server && isAdmin,
+    enabled: !!server && canManageAgentAccess,
   });
   const members = useGatewayMembers({ enabled: isAdmin });
   const serviceAccounts = useServiceAccounts();
 
   const scopes = useMemo<GatewayPolicyScope[]>(() => {
-    if (!server || !isAdmin) return [];
-    const list: GatewayPolicyScope[] = [TEAM_SCOPE, YOU_SCOPE];
+    if (!server) return [];
+    const list: GatewayPolicyScope[] = isAdmin
+      ? [TEAM_SCOPE, YOU_SCOPE]
+      : [YOU_SCOPE];
     if (
       initialScope?.scopeType === "member" &&
       initialScope.scopeUserId !== undefined
     ) {
       list.push(initialScope);
     }
-    for (const agent of server.agents) {
-      list.push({
-        scopeType: "agent",
-        scopeServiceAccountId: agent.service_account_id,
-        label: agent.name,
-      });
+    if (canManageAgentAccess) {
+      for (const agent of server.agents) {
+        list.push({
+          scopeType: "agent",
+          scopeServiceAccountId: agent.service_account_id,
+          label: agent.name,
+        });
+      }
     }
     return list;
-  }, [server, isAdmin, initialScope]);
+  }, [server, isAdmin, canManageAgentAccess, initialScope]);
 
   if (!server) {
     return (
@@ -164,7 +170,8 @@ export function GatewayServerDetail({
       ? (yourConnection?.installation_id ?? null)
       : null;
 
-  const counts = countPoliciesByState(tools.policies);
+  const agentScope = scope.scopeType === "agent";
+  const counts = countPoliciesByState(tools.policies, scope.scopeType);
   const editableCount = tools.policies.filter(
     (policy) => !policy.locked,
   ).length;
@@ -175,7 +182,10 @@ export function GatewayServerDetail({
   const bulkEditableCount = hasToolSearch
     ? filteredEditablePolicies.length
     : editableCount;
-  const scopeEditable = isAdmin || editableCount > 0;
+  const scopeEditable =
+    isAdmin ||
+    scope.scopeType === "member" ||
+    (scope.scopeType === "agent" && canManageAgentAccess);
   // Refreshing tools needs a live installation to ask the upstream server.
   const refreshInstallationId =
     yourConnection?.installation_id ??
@@ -386,10 +396,11 @@ export function GatewayServerDetail({
         </Flex>
       )}
 
-      {isAdmin && (
+      {(isAdmin || canManageAgentAccess) && (
         <AccessSection
           server={server}
           gateway={gateway}
+          isAdmin={isAdmin}
           onShareWithAgent={() => setGiveAccessOpen(true)}
           onRevokeMember={(userId, name) =>
             members.setMemberAccess({
@@ -420,12 +431,12 @@ export function GatewayServerDetail({
           <Flex gap="2">
             {counts.approved > 0 && (
               <Badge color="green" variant="soft" size="1">
-                {counts.approved} auto
+                {counts.approved} Always Allow
               </Badge>
             )}
             {counts.needs_approval > 0 && (
               <Badge color="amber" variant="soft" size="1">
-                {counts.needs_approval} approval
+                {counts.needs_approval} Needs Approval
               </Badge>
             )}
             {counts.do_not_use > 0 && (
@@ -440,12 +451,13 @@ export function GatewayServerDetail({
             label="Set all"
             filtered={hasToolSearch}
             disabled={tools.setAllPending || bulkEditableCount === 0}
+            allowNeedsApproval
             onSet={setBulkPolicy}
           />
         )}
       </Flex>
 
-      {isAdmin && (
+      {(isAdmin || canManageAgentAccess) && scopes.length > 1 && (
         <Flex
           align="center"
           gap="2"
@@ -485,9 +497,10 @@ export function GatewayServerDetail({
               label={`Set all for ${scope.label}`}
               filtered={hasToolSearch}
               disabled={tools.setAllPending || bulkEditableCount === 0}
+              allowNeedsApproval={!agentScope}
               onSet={setBulkPolicy}
             />
-            {refreshInstallationId && (
+            {isAdmin && refreshInstallationId && (
               <Tooltip content="Refresh tools from server">
                 <IconButton
                   variant="soft"
@@ -569,6 +582,8 @@ export function GatewayServerDetail({
               key={policy.tool_name}
               policy={policy}
               editable={scopeEditable && !policy.locked}
+              teamScope={scope.scopeType === "team"}
+              agentScope={agentScope}
               onChange={(state) =>
                 tools.setPolicy({ toolName: policy.tool_name, state })
               }
@@ -668,11 +683,13 @@ function BulkTrio({
   label,
   filtered,
   disabled,
+  allowNeedsApproval,
   onSet,
 }: {
   label: string;
   filtered?: boolean;
   disabled: boolean;
+  allowNeedsApproval: boolean;
   onSet: (state: McpApprovalState) => void;
 }) {
   return (
@@ -681,7 +698,7 @@ function BulkTrio({
         {label}
       </Text>
       <Tooltip
-        content={filtered ? "Auto-approve filtered" : "Auto-approve all"}
+        content={filtered ? "Always Allow filtered" : "Always Allow all"}
       >
         <IconButton
           variant="soft"
@@ -693,23 +710,25 @@ function BulkTrio({
           <Check size={11} weight="bold" />
         </IconButton>
       </Tooltip>
-      <Tooltip
-        content={
-          filtered
-            ? "Require approval for filtered"
-            : "Require approval for all"
-        }
-      >
-        <IconButton
-          variant="soft"
-          color="amber"
-          size="1"
-          disabled={disabled}
-          onClick={() => onSet("needs_approval")}
+      {allowNeedsApproval && (
+        <Tooltip
+          content={
+            filtered
+              ? "Set filtered to Needs Approval"
+              : "Set all to Needs Approval"
+          }
         >
-          <Shield size={11} weight="bold" />
-        </IconButton>
-      </Tooltip>
+          <IconButton
+            variant="soft"
+            color="amber"
+            size="1"
+            disabled={disabled}
+            onClick={() => onSet("needs_approval")}
+          >
+            <Shield size={11} weight="bold" />
+          </IconButton>
+        </Tooltip>
+      )}
       <Tooltip content={filtered ? "Block filtered" : "Block all"}>
         <IconButton
           variant="soft"
@@ -728,6 +747,7 @@ function BulkTrio({
 interface AccessSectionProps {
   server: McpGatewayServer;
   gateway: ReturnType<typeof useGatewayServers>;
+  isAdmin: boolean;
   onShareWithAgent: () => void;
   onRevokeMember: (userId: number, firstName: string) => void;
   onRevokeAgent: (accountId: string, name: string) => void;
@@ -736,6 +756,7 @@ interface AccessSectionProps {
 function AccessSection({
   server,
   gateway,
+  isAdmin,
   onShareWithAgent,
   onRevokeMember,
   onRevokeAgent,
@@ -747,216 +768,224 @@ function AccessSection({
     <Flex direction="column" gap="2">
       <Text className="font-medium text-base">Access</Text>
 
-      <Flex
-        align="center"
-        justify="between"
-        gap="3"
-        className="rounded-md border border-gray-5 bg-gray-2 p-3"
-      >
-        <div>
-          <Text as="div" className="font-medium text-sm">
-            Available to team members
-          </Text>
-          <Text as="div" color="gray" className="text-[13px]">
-            {server.is_team_enabled
-              ? shared
-                ? `Members use ${server.name} through the shared credential — nothing for them to set up.`
-                : `Members can connect their own ${server.name} account.`
-              : `Turned off — members can't see or call ${server.name}.`}
-          </Text>
-        </div>
-        <Switch
-          checked={server.is_team_enabled}
-          onCheckedChange={(enabled) => {
-            gateway.updateServer(
-              { serverId: server.id, updates: { is_team_enabled: enabled } },
-              {
-                onSuccess: () => {
-                  if (enabled)
-                    toast.success(`${server.name} enabled for the team`);
-                  else toast.info(`${server.name} disabled`);
-                },
-              },
-            );
-          }}
-        />
-      </Flex>
-
-      {shared && server.shared_credential && (
-        <Flex
-          align="start"
-          gap="3"
-          className="rounded-md border border-gray-5 bg-gray-2 p-3"
-        >
+      {isAdmin && (
+        <>
           <Flex
             align="center"
-            justify="center"
-            className="h-[32px] w-[32px] shrink-0 rounded-full bg-gray-3 text-gray-11"
+            justify="between"
+            gap="3"
+            className="rounded-md border border-gray-5 bg-gray-2 p-3"
           >
-            <Key size={15} />
-          </Flex>
-          <Flex direction="column" gap="1" className="min-w-0 flex-1">
-            <Text className="font-mono text-sm">
-              {server.shared_credential.managed_by?.email ??
-                "Shared credential"}
-            </Text>
-            <Text color="gray" className="text-[13px]">
-              Shared credential
-              {server.shared_credential.managed_by
-                ? ` — managed by ${gatewayUserName(server.shared_credential.managed_by)}`
-                : ""}
-              . Everyone on the team calls {server.name} through this account.
-            </Text>
-          </Flex>
-          <Button
-            variant="ghost"
-            color="gray"
-            size="1"
-            disabled={gateway.reconnectPending}
-            onClick={() =>
-              gateway.reconnect({
-                installationId: server.shared_credential
-                  ? server.shared_credential.installation_id
-                  : "",
-                serverName: server.name,
-              })
-            }
-          >
-            <ArrowClockwise size={12} /> Rotate
-          </Button>
-        </Flex>
-      )}
-
-      {shared && (
-        <Flex
-          align="center"
-          justify="between"
-          gap="3"
-          className="rounded-md border border-gray-5 bg-gray-2 p-3"
-        >
-          <div>
-            <Text as="div" className="font-medium text-sm">
-              Personal connections
-            </Text>
-            <Text as="div" color="gray" className="text-[13px]">
-              Let members authenticate their own {server.name} account on top of
-              the shared credential.
-            </Text>
-          </div>
-          <Switch
-            checked={server.allow_personal_connections}
-            onCheckedChange={(allowed) => {
-              gateway.updateServer(
-                {
-                  serverId: server.id,
-                  updates: { allow_personal_connections: allowed },
-                },
-                {
-                  onSuccess: () => {
-                    if (allowed)
-                      toast.success(
-                        `Members can now connect personal ${server.name} accounts`,
-                      );
-                    else
-                      toast.info(
-                        `Personal connections turned off for ${server.name}`,
-                      );
+            <div>
+              <Text as="div" className="font-medium text-sm">
+                Available to team members
+              </Text>
+              <Text as="div" color="gray" className="text-[13px]">
+                {server.is_team_enabled
+                  ? shared
+                    ? `Members use ${server.name} through the shared credential — nothing for them to set up.`
+                    : `Members can connect their own ${server.name} account.`
+                  : `Turned off — members can't see or call ${server.name}.`}
+              </Text>
+            </div>
+            <Switch
+              checked={server.is_team_enabled}
+              onCheckedChange={(enabled) => {
+                gateway.updateServer(
+                  {
+                    serverId: server.id,
+                    updates: { is_team_enabled: enabled },
                   },
-                },
-              );
-            }}
-          />
-        </Flex>
-      )}
+                  {
+                    onSuccess: () => {
+                      if (enabled)
+                        toast.success(`${server.name} enabled for the team`);
+                      else toast.info(`${server.name} disabled`);
+                    },
+                  },
+                );
+              }}
+            />
+          </Flex>
 
-      <Flex align="center" gap="2" mt="1" className="tracking-[0.06em]">
-        <Text
-          color="gray"
-          className="font-medium text-xs uppercase leading-none"
-        >
-          People connected
-        </Text>
-        <Badge color="gray" variant="soft" size="1">
-          {server.connections.length}
-        </Badge>
-      </Flex>
-      {server.connections.length === 0 ? (
-        <Text color="gray" className="px-1 text-[13px] italic">
-          {shared
-            ? "No one has connected a personal account — everyone uses the shared credential."
-            : "No one has connected yet."}
-        </Text>
-      ) : (
-        <div className="overflow-hidden rounded-md border border-gray-5 bg-gray-2">
-          {server.connections.map((connection) => {
-            const isYou = connection.installation_id === yourInstallationId;
-            const usedAgo = formatAgo(connection.last_used_at);
-            return (
+          {shared && server.shared_credential && (
+            <Flex
+              align="start"
+              gap="3"
+              className="rounded-md border border-gray-5 bg-gray-2 p-3"
+            >
               <Flex
-                key={connection.installation_id}
                 align="center"
-                gap="3"
-                className="group border-gray-5 border-b px-3 py-2 last:border-b-0"
+                justify="center"
+                className="h-[32px] w-[32px] shrink-0 rounded-full bg-gray-3 text-gray-11"
               >
-                <UserAvatar user={connection.user} />
-                <Flex direction="column" className="min-w-0 flex-1">
-                  <Flex align="center" gap="2">
-                    <Text truncate className="font-medium text-sm">
-                      {gatewayUserName(connection.user)}
-                    </Text>
-                    {isYou && (
-                      <Badge
-                        color="indigo"
-                        variant="soft"
-                        size="1"
-                        className="px-1 py-0 text-[10px] leading-4"
-                      >
-                        You
-                      </Badge>
-                    )}
-                  </Flex>
-                  <Text color="gray" truncate className="text-xs">
-                    {connection.user.email}
-                  </Text>
-                </Flex>
-                {!isYou && (
-                  <Button
-                    variant="ghost"
-                    color="red"
-                    size="1"
-                    className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-                    onClick={() =>
-                      onRevokeMember(
-                        connection.user.id,
-                        gatewayUserName(connection.user).split(" ")[0],
-                      )
-                    }
-                  >
-                    <X size={11} /> Revoke
-                  </Button>
-                )}
-                <Flex align="center" gap="2" className="shrink-0">
-                  <span
-                    className={`h-[6px] w-[6px] rounded-full ${
-                      connection.needs_reauth
-                        ? "bg-(--red-9)"
-                        : connection.pending_oauth
-                          ? "bg-(--amber-9)"
-                          : "bg-(--green-9)"
-                    }`}
-                  />
-                  <Text color="gray" className="text-xs">
-                    {connection.needs_reauth
-                      ? "Needs reauth"
-                      : connection.pending_oauth
-                        ? "Finishing setup"
-                        : `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`}
-                  </Text>
-                </Flex>
+                <Key size={15} />
               </Flex>
-            );
-          })}
-        </div>
+              <Flex direction="column" gap="1" className="min-w-0 flex-1">
+                <Text className="font-mono text-sm">
+                  {server.shared_credential.managed_by?.email ??
+                    "Shared credential"}
+                </Text>
+                <Text color="gray" className="text-[13px]">
+                  Shared credential
+                  {server.shared_credential.managed_by
+                    ? ` — managed by ${gatewayUserName(server.shared_credential.managed_by)}`
+                    : ""}
+                  . Everyone on the team calls {server.name} through this
+                  account.
+                </Text>
+              </Flex>
+              <Button
+                variant="ghost"
+                color="gray"
+                size="1"
+                disabled={gateway.reconnectPending}
+                onClick={() =>
+                  gateway.reconnect({
+                    installationId: server.shared_credential
+                      ? server.shared_credential.installation_id
+                      : "",
+                    serverName: server.name,
+                  })
+                }
+              >
+                <ArrowClockwise size={12} /> Rotate
+              </Button>
+            </Flex>
+          )}
+
+          {shared && (
+            <Flex
+              align="center"
+              justify="between"
+              gap="3"
+              className="rounded-md border border-gray-5 bg-gray-2 p-3"
+            >
+              <div>
+                <Text as="div" className="font-medium text-sm">
+                  Personal connections
+                </Text>
+                <Text as="div" color="gray" className="text-[13px]">
+                  Let members authenticate their own {server.name} account on
+                  top of the shared credential.
+                </Text>
+              </div>
+              <Switch
+                checked={server.allow_personal_connections}
+                onCheckedChange={(allowed) => {
+                  gateway.updateServer(
+                    {
+                      serverId: server.id,
+                      updates: { allow_personal_connections: allowed },
+                    },
+                    {
+                      onSuccess: () => {
+                        if (allowed)
+                          toast.success(
+                            `Members can now connect personal ${server.name} accounts`,
+                          );
+                        else
+                          toast.info(
+                            `Personal connections turned off for ${server.name}`,
+                          );
+                      },
+                    },
+                  );
+                }}
+              />
+            </Flex>
+          )}
+
+          <Flex align="center" gap="2" mt="1" className="tracking-[0.06em]">
+            <Text
+              color="gray"
+              className="font-medium text-xs uppercase leading-none"
+            >
+              People connected
+            </Text>
+            <Badge color="gray" variant="soft" size="1">
+              {server.connections.length}
+            </Badge>
+          </Flex>
+          {server.connections.length === 0 ? (
+            <Text color="gray" className="px-1 text-[13px] italic">
+              {shared
+                ? "No one has connected a personal account — everyone uses the shared credential."
+                : "No one has connected yet."}
+            </Text>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-gray-5 bg-gray-2">
+              {server.connections.map((connection) => {
+                const isYou = connection.installation_id === yourInstallationId;
+                const usedAgo = formatAgo(connection.last_used_at);
+                return (
+                  <Flex
+                    key={connection.installation_id}
+                    align="center"
+                    gap="3"
+                    className="group border-gray-5 border-b px-3 py-2 last:border-b-0"
+                  >
+                    <UserAvatar user={connection.user} />
+                    <Flex direction="column" className="min-w-0 flex-1">
+                      <Flex align="center" gap="2">
+                        <Text truncate className="font-medium text-sm">
+                          {gatewayUserName(connection.user)}
+                        </Text>
+                        {isYou && (
+                          <Badge
+                            color="indigo"
+                            variant="soft"
+                            size="1"
+                            className="px-1 py-0 text-[10px] leading-4"
+                          >
+                            You
+                          </Badge>
+                        )}
+                      </Flex>
+                      <Text color="gray" truncate className="text-xs">
+                        {connection.user.email}
+                      </Text>
+                    </Flex>
+                    {!isYou && (
+                      <Button
+                        variant="ghost"
+                        color="red"
+                        size="1"
+                        className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                        onClick={() =>
+                          onRevokeMember(
+                            connection.user.id,
+                            gatewayUserName(connection.user).split(" ")[0],
+                          )
+                        }
+                      >
+                        <X size={11} /> Revoke
+                      </Button>
+                    )}
+                    <Flex align="center" gap="2" className="shrink-0">
+                      <span
+                        className={`h-[6px] w-[6px] rounded-full ${
+                          connection.needs_reauth
+                            ? "bg-(--red-9)"
+                            : connection.pending_oauth
+                              ? "bg-(--amber-9)"
+                              : "bg-(--green-9)"
+                        }`}
+                      />
+                      <Text color="gray" className="text-xs">
+                        {connection.needs_reauth
+                          ? "Needs reauth"
+                          : connection.pending_oauth
+                            ? "Finishing setup"
+                            : `Connected${usedAgo ? ` · used ${usedAgo}` : ""}`}
+                      </Text>
+                    </Flex>
+                  </Flex>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       <Flex align="center" gap="2" mt="4" className="tracking-[0.06em]">
@@ -981,8 +1010,8 @@ function AccessSection({
       </Flex>
       {server.agents.length === 0 ? (
         <Text color="gray" className="px-1 text-[13px] italic">
-          No agents have access. Sharing from your admin account lets an agent
-          call {server.name} under its own tool policies.
+          No agents have access. Share a connection available to you and choose
+          which {server.name} tools the agent may call.
         </Text>
       ) : (
         <div className="rounded-md border border-gray-5 bg-gray-2">
@@ -999,8 +1028,10 @@ function AccessSection({
                   {agent.name}
                 </Text>
                 <Text color="gray" truncate className="text-xs">
-                  <span className="font-mono">{agent.handle}</span> · shared
-                  from your admin account
+                  <span className="font-mono">{agent.handle}</span>
+                  {agent.granted_by
+                    ? ` · shared by ${gatewayUserName(agent.granted_by)}`
+                    : " · shared with this agent"}
                 </Text>
               </Flex>
               <Button

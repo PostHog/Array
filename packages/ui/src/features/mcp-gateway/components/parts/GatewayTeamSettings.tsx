@@ -19,7 +19,8 @@ const SERVER_PREVIEW_LIMIT = 10;
 
 /** Admin settings: custom-server gate and server access. */
 export function GatewayTeamSettings() {
-  const { allowCustomServers, updateSettings } = useGatewayConfig();
+  const { allowCustomServers, allowMemberAgentAccess, updateSettings } =
+    useGatewayConfig();
   const { servers, updateServer, setAllEnabled } = useGatewayServers();
   const [serverSearch, setServerSearch] = useState("");
   const [serversExpanded, setServersExpanded] = useState(false);
@@ -70,6 +71,40 @@ export function GatewayTeamSettings() {
                   if (allowed)
                     toast.success("Members can now add custom servers");
                   else toast.info("Custom servers are admin-only again");
+                },
+              },
+            )
+          }
+        />
+      </Flex>
+
+      <Text className="font-medium text-base">Agent access</Text>
+      <Flex
+        align="center"
+        justify="between"
+        gap="3"
+        className="rounded-md border border-gray-5 bg-gray-2 p-3"
+      >
+        <div>
+          <Text as="div" className="font-medium text-sm">
+            Allow members to manage agent access
+          </Text>
+          <Text as="div" color="gray" className="text-[13px]">
+            Members can share connections with agents and choose which tools
+            those agents may call. Turn this off to make those controls
+            admin-only.
+          </Text>
+        </div>
+        <Switch
+          checked={allowMemberAgentAccess}
+          onCheckedChange={(allowed) =>
+            updateSettings(
+              { allow_member_agent_access: allowed },
+              {
+                onSuccess: () => {
+                  if (allowed)
+                    toast.success("Members can now manage agent access");
+                  else toast.info("Agent access is admin-only again");
                 },
               },
             )

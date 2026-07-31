@@ -31,7 +31,8 @@ export function McpGatewayView() {
     view: "servers",
   });
 
-  const { isAdmin, allowCustomServers, configLoading } = useGatewayConfig();
+  const { isAdmin, allowCustomServers, canManageAgentAccess, configLoading } =
+    useGatewayConfig();
   const canAddServers = isAdmin || allowCustomServers;
   const gateway = useGatewayServers();
   const serviceAccounts = useServiceAccounts();
@@ -66,6 +67,7 @@ export function McpGatewayView() {
         return (
           <GatewayAddServer
             isAdmin={isAdmin}
+            canManageAgentAccess={canManageAgentAccess}
             accounts={serviceAccounts.accounts}
             onNavigate={setRoute}
           />
@@ -77,6 +79,7 @@ export function McpGatewayView() {
             serverId={route.serverId}
             initialScope={route.scope}
             isAdmin={isAdmin}
+            canManageAgentAccess={canManageAgentAccess}
             onNavigate={setRoute}
           />
         );

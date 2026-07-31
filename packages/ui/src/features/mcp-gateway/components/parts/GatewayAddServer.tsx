@@ -32,6 +32,7 @@ import { type FormEvent, useState } from "react";
 
 interface GatewayAddServerProps {
   isAdmin: boolean;
+  canManageAgentAccess: boolean;
   accounts: McpServiceAccount[];
   onNavigate: (route: GatewayRoute) => void;
 }
@@ -39,6 +40,7 @@ interface GatewayAddServerProps {
 /** Register a custom MCP server with the gateway. */
 export function GatewayAddServer({
   isAdmin,
+  canManageAgentAccess,
   accounts,
   onNavigate,
 }: GatewayAddServerProps) {
@@ -62,7 +64,10 @@ export function GatewayAddServer({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSave || registerPending) return;
-    const request = buildGatewayInstallRequest(values, { isAdmin });
+    const request = buildGatewayInstallRequest(values, {
+      isAdmin,
+      canManageAgentAccess,
+    });
     register(
       { request },
       {
@@ -236,7 +241,7 @@ export function GatewayAddServer({
           )}
         </Flex>
 
-        {isAdmin && (
+        {(isAdmin || canManageAgentAccess) && (
           <>
             <SectionHeader label="Sharing" />
             <Text color="gray" className="text-[13px]">
@@ -244,109 +249,117 @@ export function GatewayAddServer({
               approvals for each agent.
             </Text>
             <Flex direction="column" gap="3">
-              <ToggleRow
-                title="Enable for the whole team"
-                sub={
-                  values.teamEnabled
-                    ? "Every member will see this server once it's added."
-                    : "Only admins will see it until you enable it in Team settings."
-                }
-                checked={values.teamEnabled}
-                onChange={(checked) => set("teamEnabled", checked)}
-              />
-
-              {values.authType === "oauth" ? (
-                <Flex gap="2">
-                  <CredentialModeCard
-                    active={values.credentialMode === "individual"}
-                    icon={<Users size={14} />}
-                    title="Everyone connects their own account"
-                    sub="Members authenticate individually — calls run as each person."
-                    onClick={() => set("credentialMode", "individual")}
+              {isAdmin && (
+                <>
+                  <ToggleRow
+                    title="Enable for the whole team"
+                    sub={
+                      values.teamEnabled
+                        ? "Every member will see this server once it's added."
+                        : "Only admins will see it until you enable it in Team settings."
+                    }
+                    checked={values.teamEnabled}
+                    onChange={(checked) => set("teamEnabled", checked)}
                   />
-                  <CredentialModeCard
-                    active={values.credentialMode === "shared"}
-                    icon={<Key size={14} />}
-                    title="One shared credential"
-                    sub="You connect a service account once; the whole team is pre-authorized."
-                    onClick={() => set("credentialMode", "shared")}
-                  />
-                </Flex>
-              ) : (
-                <Flex
-                  align="center"
-                  gap="2"
-                  className="rounded-md border border-gray-5 bg-gray-2 px-3 py-2"
-                >
-                  <Key size={13} className="shrink-0 text-gray-11" />
-                  <Text color="gray" className="text-[13px]">
-                    API-key servers always use one shared credential — everyone
-                    with access calls through the key above.
-                  </Text>
-                </Flex>
-              )}
 
-              {sharedCredential && (
-                <ToggleRow
-                  title="Allow personal connections"
-                  sub="Let members authenticate their own account on top of the shared credential."
-                  checked={values.allowPersonal}
-                  onChange={(checked) => set("allowPersonal", checked)}
-                />
-              )}
-
-              <Flex direction="column" gap="2">
-                <Text className="font-medium text-base">Share with agents</Text>
-                <div className="overflow-hidden rounded border border-gray-5 bg-gray-2">
-                  {accounts.map((account) => {
-                    const on = values.agentIds.includes(account.id);
-                    return (
-                      <Flex
-                        key={account.id}
-                        align="center"
-                        gap="3"
-                        className="border-gray-5 border-b px-3 py-2 last:border-b-0"
-                      >
-                        <RobotAvatar />
-                        <Flex direction="column" className="min-w-0 flex-1">
-                          <Text truncate className="font-medium text-sm">
-                            {account.name}
-                          </Text>
-                          <Text
-                            color="gray"
-                            truncate
-                            className="font-mono text-xs"
-                          >
-                            {account.handle}
-                          </Text>
-                        </Flex>
-                        <Switch
-                          size="1"
-                          checked={on}
-                          onCheckedChange={(checked) =>
-                            set(
-                              "agentIds",
-                              checked
-                                ? [...values.agentIds, account.id]
-                                : values.agentIds.filter(
-                                    (id) => id !== account.id,
-                                  ),
-                            )
-                          }
-                        />
-                      </Flex>
-                    );
-                  })}
-                  {accounts.length === 0 && (
-                    <Text
-                      color="gray"
-                      className="block px-3 py-3 text-[13px] italic"
+                  {values.authType === "oauth" ? (
+                    <Flex gap="2">
+                      <CredentialModeCard
+                        active={values.credentialMode === "individual"}
+                        icon={<Users size={14} />}
+                        title="Everyone connects their own account"
+                        sub="Members authenticate individually — calls run as each person."
+                        onClick={() => set("credentialMode", "individual")}
+                      />
+                      <CredentialModeCard
+                        active={values.credentialMode === "shared"}
+                        icon={<Key size={14} />}
+                        title="One shared credential"
+                        sub="You connect a service account once; the whole team is pre-authorized."
+                        onClick={() => set("credentialMode", "shared")}
+                      />
+                    </Flex>
+                  ) : (
+                    <Flex
+                      align="center"
+                      gap="2"
+                      className="rounded-md border border-gray-5 bg-gray-2 px-3 py-2"
                     >
-                      No agents yet — create one under Team &amp; agents.
-                    </Text>
+                      <Key size={13} className="shrink-0 text-gray-11" />
+                      <Text color="gray" className="text-[13px]">
+                        API-key servers always use one shared credential —
+                        everyone with access calls through the key above.
+                      </Text>
+                    </Flex>
                   )}
-                </div>
-              </Flex>
+
+                  {sharedCredential && (
+                    <ToggleRow
+                      title="Allow personal connections"
+                      sub="Let members authenticate their own account on top of the shared credential."
+                      checked={values.allowPersonal}
+                      onChange={(checked) => set("allowPersonal", checked)}
+                    />
+                  )}
+                </>
+              )}
+
+              {canManageAgentAccess && (
+                <Flex direction="column" gap="2">
+                  <Text className="font-medium text-base">
+                    Share with agents
+                  </Text>
+                  <div className="overflow-hidden rounded border border-gray-5 bg-gray-2">
+                    {accounts.map((account) => {
+                      const on = values.agentIds.includes(account.id);
+                      return (
+                        <Flex
+                          key={account.id}
+                          align="center"
+                          gap="3"
+                          className="border-gray-5 border-b px-3 py-2 last:border-b-0"
+                        >
+                          <RobotAvatar />
+                          <Flex direction="column" className="min-w-0 flex-1">
+                            <Text truncate className="font-medium text-sm">
+                              {account.name}
+                            </Text>
+                            <Text
+                              color="gray"
+                              truncate
+                              className="font-mono text-xs"
+                            >
+                              {account.handle}
+                            </Text>
+                          </Flex>
+                          <Switch
+                            size="1"
+                            checked={on}
+                            onCheckedChange={(checked) =>
+                              set(
+                                "agentIds",
+                                checked
+                                  ? [...values.agentIds, account.id]
+                                  : values.agentIds.filter(
+                                      (id) => id !== account.id,
+                                    ),
+                              )
+                            }
+                          />
+                        </Flex>
+                      );
+                    })}
+                    {accounts.length === 0 && (
+                      <Text
+                        color="gray"
+                        className="block px-3 py-3 text-[13px] italic"
+                      >
+                        No agents yet — create one under Team &amp; agents.
+                      </Text>
+                    )}
+                  </div>
+                </Flex>
+              )}
             </Flex>
           </>
         )}

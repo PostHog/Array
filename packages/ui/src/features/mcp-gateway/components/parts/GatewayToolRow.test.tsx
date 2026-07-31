@@ -44,4 +44,88 @@ describe("GatewayToolRow", () => {
       JSON.stringify(policy.input_schema, null, 2),
     );
   });
+
+  it("shows the team-admin badge and only disables states above the ceiling", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <Theme>
+        <GatewayToolRow
+          policy={{
+            ...policy,
+            policy_state: "needs_approval",
+            team_state: "needs_approval",
+            decided_by: "team",
+          }}
+          editable
+          onChange={onChange}
+        />
+      </Theme>,
+    );
+
+    expect(screen.getByText("Set by team admin")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Always Allow" })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Needs Approval" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "Blocked" })).toBeEnabled();
+
+    await user.click(screen.getByRole("radio", { name: "Blocked" }));
+    expect(onChange).toHaveBeenCalledWith("do_not_use");
+  });
+
+  it("uses the exact approval names", () => {
+    render(
+      <Theme>
+        <GatewayToolRow policy={policy} editable onChange={vi.fn()} />
+      </Theme>,
+    );
+
+    expect(
+      screen.getByRole("radio", { name: "Always Allow" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Needs Approval" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Blocked" })).toBeInTheDocument();
+  });
+
+  it("removes approval from agent settings and treats legacy approval as blocked", () => {
+    render(
+      <Theme>
+        <GatewayToolRow
+          policy={policy}
+          editable
+          agentScope
+          onChange={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(
+      screen.getByRole("radio", { name: "Always Allow" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: "Needs Approval" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Blocked" })).toBeChecked();
+  });
+
+  it("lets an admin raise the team ceiling while editing the team scope", () => {
+    render(
+      <Theme>
+        <GatewayToolRow
+          policy={{
+            ...policy,
+            team_state: "needs_approval",
+            decided_by: "team",
+          }}
+          editable
+          teamScope
+          onChange={vi.fn()}
+        />
+      </Theme>,
+    );
+
+    expect(screen.queryByText("Set by team admin")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Always Allow" })).toBeEnabled();
+  });
 });

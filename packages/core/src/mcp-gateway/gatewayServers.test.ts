@@ -13,9 +13,49 @@ import {
   formatAuditTime,
   getGatewayConnectionStatus,
   getGatewayServerRemovalAction,
+  isAgentPolicyState,
   isConnectedForYou,
+  isPolicyStateAllowedByCeiling,
   partitionRailServers,
+  resolvePolicyStateForScope,
 } from "./gatewayServers";
+
+describe("agent tool policies", () => {
+  it.each([
+    ["approved", true],
+    ["needs_approval", false],
+    ["do_not_use", true],
+  ] as const)("allows %s for agents: %s", (state, expected) => {
+    expect(isAgentPolicyState(state)).toBe(expected);
+  });
+
+  it("treats approval-gated tools as blocked for agents only", () => {
+    expect(resolvePolicyStateForScope("needs_approval", "agent")).toBe(
+      "do_not_use",
+    );
+    expect(resolvePolicyStateForScope("needs_approval", "member")).toBe(
+      "needs_approval",
+    );
+    expect(resolvePolicyStateForScope("needs_approval", "team")).toBe(
+      "needs_approval",
+    );
+  });
+});
+
+describe("isPolicyStateAllowedByCeiling", () => {
+  it.each([
+    ["approved", "needs_approval", false],
+    ["needs_approval", "needs_approval", true],
+    ["do_not_use", "needs_approval", true],
+    ["approved", "do_not_use", false],
+    ["needs_approval", "do_not_use", false],
+    ["do_not_use", "do_not_use", true],
+    ["approved", "approved", true],
+    ["approved", null, true],
+  ] as const)("%s under a %s ceiling is %s", (state, ceiling, expected) => {
+    expect(isPolicyStateAllowedByCeiling(state, ceiling)).toBe(expected);
+  });
+});
 
 function connection(
   overrides: Partial<McpGatewayYourConnection> = {},
@@ -308,6 +348,27 @@ describe("countPoliciesByState", () => {
         policy("do_not_use"),
       ]),
     ).toEqual({ approved: 2, needs_approval: 0, do_not_use: 1 });
+  });
+
+  it("counts approval-gated agent tools as blocked", () => {
+    expect(
+      countPoliciesByState(
+        [
+          {
+            tool_name: "send_message",
+            description: "",
+            input_schema: {},
+            policy_state: "needs_approval",
+            team_state: null,
+            locked: false,
+            decided_by: "scope",
+            rule_name: "",
+            rule_description: "",
+          },
+        ],
+        "agent",
+      ),
+    ).toEqual({ approved: 0, needs_approval: 0, do_not_use: 1 });
   });
 });
 

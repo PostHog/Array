@@ -125,7 +125,7 @@ export interface McpResolvedToolPolicy {
   policy_state: McpApprovalState;
   /** What the team-level chain yields, ignoring the scope. Null when the team imposes nothing. */
   team_state: McpApprovalState | null;
-  /** True when the requester can't change this row (rule match, or admin-imposed for a member). */
+  /** True when a rule or Blocked team ceiling leaves no editable state. */
   locked: boolean;
   decided_by: McpPolicyDecidedBy;
   /** Matching org rule name, when decided_by is "rule". */
@@ -198,6 +198,8 @@ export interface McpAuditPage {
 
 export interface TeamMcpGatewayConfig {
   allow_custom_servers: boolean;
+  /** Whether members may share MCP connections with agents and manage agent tool policies. */
+  allow_member_agent_access: boolean;
   /** Empty string until an admin applies a preset from Team settings. */
   member_default_preset: McpPolicyPreset | "";
   agent_default_preset: McpPolicyPreset | "";
@@ -207,6 +209,7 @@ export interface TeamMcpGatewayConfig {
 
 export interface TeamMcpGatewayConfigUpdate {
   allow_custom_servers?: boolean;
+  allow_member_agent_access?: boolean;
   member_default_preset?: McpPolicyPreset;
   agent_default_preset?: McpPolicyPreset;
 }
@@ -221,8 +224,7 @@ export interface McpGatewayMemberSummary {
   revoked_server_ids: string[];
 }
 
-/** Sharing options accepted by install_custom / install_template (admin-only
- * except `scope`), used when registering a server with the gateway. */
+/** Sharing options accepted by install_custom / install_template. */
 export interface McpGatewayInstallSharingOptions {
   /** "personal" is per-user; "shared" is team-wide (the shared credential). */
   scope?: "personal" | "shared";
@@ -230,6 +232,6 @@ export interface McpGatewayInstallSharingOptions {
   team_enabled?: boolean;
   /** Shared-credential servers: whether members may also connect personal accounts. */
   allow_personal?: boolean;
-  /** Service accounts to share the server with at install time. */
+  /** Service accounts to share the server with at install time, when team settings allow it. */
   agent_ids?: string[];
 }

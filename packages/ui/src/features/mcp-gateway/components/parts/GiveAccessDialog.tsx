@@ -1,12 +1,16 @@
-import { Check, Prohibit, Shield } from "@phosphor-icons/react";
+import { Check, Prohibit } from "@phosphor-icons/react";
 import type {
-  McpApprovalState,
   McpGatewayServer,
   McpResolvedToolPolicy,
   McpServiceAccount,
   McpToolPolicyEntry,
 } from "@posthog/api-client/posthog-client";
-import { defaultAgentGrantPolicy } from "@posthog/core/mcp-gateway/gatewayServers";
+import {
+  AGENT_POLICY_STATES,
+  type AgentPolicyState,
+  defaultAgentGrantPolicy,
+  isAgentPolicyState,
+} from "@posthog/core/mcp-gateway/gatewayServers";
 import { RobotAvatar } from "@posthog/ui/features/mcp-gateway/components/parts/avatars";
 import { ToolPolicyToggle } from "@posthog/ui/features/mcp-servers/components/parts/ToolPolicyToggle";
 import {
@@ -44,7 +48,7 @@ export function GiveAccessDialog({
   onGrant,
 }: GiveAccessDialogProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [policyMap, setPolicyMap] = useState<Record<string, McpApprovalState>>(
+  const [policyMap, setPolicyMap] = useState<Record<string, AgentPolicyState>>(
     {},
   );
 
@@ -57,13 +61,13 @@ export function GiveAccessDialog({
 
   const selected = available.find((account) => account.id === selectedId);
 
-  const policyFor = (toolName: string): McpApprovalState =>
+  const policyFor = (toolName: string): AgentPolicyState =>
     policyMap[toolName] ?? defaultAgentGrantPolicy(toolName);
 
-  const setToolPolicy = (toolName: string, state: McpApprovalState) =>
+  const setToolPolicy = (toolName: string, state: AgentPolicyState) =>
     setPolicyMap((map) => ({ ...map, [toolName]: state }));
 
-  const bulkSet = (state: McpApprovalState) =>
+  const bulkSet = (state: AgentPolicyState) =>
     setPolicyMap((map) => {
       const next = { ...map };
       for (const policy of toolPolicies) {
@@ -87,20 +91,21 @@ export function GiveAccessDialog({
     <Dialog.Root
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next && !pending) onClose();
       }}
     >
       <Dialog.Content maxWidth="440px">
         <Dialog.Title>Share {server.name} with an agent</Dialog.Title>
         <Dialog.Description color="gray" className="text-sm">
-          You're granting this from your admin account. The agent calls{" "}
-          {server.name} as itself, under the tool policies you set below.
+          The agent uses a connection available to you and calls {server.name}{" "}
+          under the tool policies you set below.
         </Dialog.Description>
 
         <Flex direction="column" gap="3" mt="4">
           <Select.Root
             value={selectedId ?? undefined}
             onValueChange={setSelectedId}
+            disabled={pending}
           >
             <Select.Trigger placeholder="Choose an agent…" />
             <Select.Content>
@@ -135,24 +140,15 @@ export function GiveAccessDialog({
                   <Text color="gray" className="text-xs">
                     Set all
                   </Text>
-                  <Tooltip content="Auto-approve all">
+                  <Tooltip content="Always Allow all">
                     <IconButton
                       variant="soft"
                       color="green"
                       size="1"
+                      disabled={pending}
                       onClick={() => bulkSet("approved")}
                     >
                       <Check size={11} weight="bold" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip content="Require approval for all">
-                    <IconButton
-                      variant="soft"
-                      color="amber"
-                      size="1"
-                      onClick={() => bulkSet("needs_approval")}
-                    >
-                      <Shield size={11} weight="bold" />
                     </IconButton>
                   </Tooltip>
                   <Tooltip content="Block all">
@@ -160,6 +156,7 @@ export function GiveAccessDialog({
                       variant="soft"
                       color="red"
                       size="1"
+                      disabled={pending}
                       onClick={() => bulkSet("do_not_use")}
                     >
                       <Prohibit size={11} weight="bold" />
@@ -181,17 +178,18 @@ export function GiveAccessDialog({
                     </Text>
                     {policy.decided_by === "rule" ? (
                       <Badge color="gray" variant="soft" size="1">
-                        {policy.policy_state === "do_not_use"
-                          ? "Blocked"
-                          : "Approval required"}{" "}
-                        by team policy
+                        Blocked by team policy
                       </Badge>
                     ) : (
                       <ToolPolicyToggle
                         value={policyFor(policy.tool_name)}
-                        onChange={(state) =>
-                          setToolPolicy(policy.tool_name, state)
-                        }
+                        disabled={pending}
+                        allowedStates={AGENT_POLICY_STATES}
+                        onChange={(state) => {
+                          if (isAgentPolicyState(state)) {
+                            setToolPolicy(policy.tool_name, state);
+                          }
+                        }}
                       />
                     )}
                   </Flex>
@@ -208,12 +206,18 @@ export function GiveAccessDialog({
         </Flex>
 
         <Flex gap="3" mt="4" justify="end">
-          <Button variant="soft" color="gray" onClick={onClose}>
+          <Button
+            variant="soft"
+            color="gray"
+            disabled={pending}
+            onClick={onClose}
+          >
             Cancel
           </Button>
           <Button
             variant="solid"
             disabled={!selected || pending}
+            loading={pending}
             onClick={grant}
           >
             <Check size={12} weight="bold" /> Share access

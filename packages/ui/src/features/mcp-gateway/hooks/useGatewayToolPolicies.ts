@@ -3,6 +3,10 @@ import type {
   McpResolvedToolPolicy,
 } from "@posthog/api-client/posthog-client";
 import {
+  isAgentPolicyState,
+  isPolicyStateAllowedByCeiling,
+} from "@posthog/core/mcp-gateway/gatewayServers";
+import {
   type GatewayPolicyScope,
   gatewayKeys,
 } from "@posthog/ui/features/mcp-gateway/hooks/gatewayKeys";
@@ -40,16 +44,25 @@ export function useGatewayToolPolicies(
   const applyResult = useCallback(
     (result: McpResolvedToolPolicy[]) => {
       queryClient.setQueryData(queryKey, result);
+      queryClient.invalidateQueries({
+        queryKey: gatewayKeys.serverTools(serverId),
+      });
     },
-    [queryClient, queryKey],
+    [queryClient, queryKey, serverId],
   );
 
   const setPolicyMutation = useAuthenticatedMutation(
-    (client, vars: { toolName: string; state: McpApprovalState }) =>
-      client.upsertMcpGatewayToolPolicies(serverId, {
+    (client, vars: { toolName: string; state: McpApprovalState }) => {
+      if (scope.scopeType === "agent" && !isAgentPolicyState(vars.state)) {
+        return Promise.reject(
+          new Error("Agents cannot use approval-gated tool policies"),
+        );
+      }
+      return client.upsertMcpGatewayToolPolicies(serverId, {
         ...scopeParams(scope),
         policies: [{ tool_name: vars.toolName, policy_state: vars.state }],
-      }),
+      });
+    },
     {
       onSuccess: applyResult,
       onError: (error: Error) =>
@@ -62,10 +75,18 @@ export function useGatewayToolPolicies(
       client,
       vars: { state: McpApprovalState; toolNames?: readonly string[] },
     ) => {
+      if (scope.scopeType === "agent" && !isAgentPolicyState(vars.state)) {
+        return Promise.reject(
+          new Error("Agents cannot use approval-gated tool policies"),
+        );
+      }
       const targetNames = vars.toolNames ? new Set(vars.toolNames) : null;
       const editable = (policies ?? []).filter(
         (policy) =>
-          !policy.locked && (!targetNames || targetNames.has(policy.tool_name)),
+          !policy.locked &&
+          (scope.scopeType === "team" ||
+            isPolicyStateAllowedByCeiling(vars.state, policy.team_state)) &&
+          (!targetNames || targetNames.has(policy.tool_name)),
       );
       return client.upsertMcpGatewayToolPolicies(serverId, {
         ...scopeParams(scope),
