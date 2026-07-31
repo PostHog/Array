@@ -1,10 +1,9 @@
 import type { ConversationItem } from "@posthog/ui/features/sessions/components/buildConversationItems";
-import type { ToolGroupItem } from "@posthog/ui/features/sessions/components/chat-thread/ToolGroup";
-
-export type ThreadItem = ConversationItem | ToolGroupItem;
-export type AgentTurn = { type: "agent_turn"; id: string; items: ThreadItem[] };
-
-export type TurnRow = ThreadItem | AgentTurn;
+import type {
+  ThreadItem,
+  TurnRow,
+} from "@posthog/ui/features/sessions/components/chat-thread/threadVirtualization";
+import { isUserInitiatedConversationItem } from "@posthog/ui/features/sessions/components/isUserInitiatedConversationItem";
 
 type SessionUpdateItem = Extract<ConversationItem, { type: "session_update" }>;
 
@@ -76,11 +75,7 @@ function groupIntoTurns(rows: ThreadItem[]): TurnRow[] {
     }
   };
   for (const row of rows) {
-    if (
-      row.type === "user_message" ||
-      row.type === "git_action" ||
-      row.type === "skill_button_action"
-    ) {
+    if (isUserInitiatedConversationItem(row)) {
       flush();
       out.push(row);
     } else {
@@ -101,12 +96,7 @@ export function createIncrementalChatRowGrouper() {
 
       let rebuildStart = 0;
       for (let index = items.length - 1; index >= 0; index--) {
-        const item = items[index];
-        if (
-          item.type === "user_message" ||
-          item.type === "git_action" ||
-          item.type === "skill_button_action"
-        ) {
+        if (isUserInitiatedConversationItem(items[index])) {
           rebuildStart = index;
           break;
         }
