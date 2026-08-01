@@ -24,7 +24,14 @@ import { track } from "@posthog/ui/shell/analytics";
 import { Box, Flex, Text, Tooltip } from "@radix-ui/themes";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useConnectivity } from "../../../hooks/useConnectivity";
 import { DotPatternBackground } from "../../../primitives/DotPatternBackground";
 import { toast } from "../../../primitives/toast";
@@ -151,6 +158,12 @@ interface TaskInputProps {
    * the chip is non-interactive (only dismissable).
    */
   onContextChipClick?: () => void;
+  /**
+   * A space picker chip rendered first in the selector row above the composer
+   * (beside the workspace-mode chip). Channels new-task screen only — /code
+   * has no spaces to pick.
+   */
+  spaceSelector?: ReactNode;
 }
 
 export function TaskInput({
@@ -170,6 +183,7 @@ export function TaskInput({
   suggestions,
   onSuggestionSelect,
   onContextChipClick,
+  spaceSelector,
 }: TaskInputProps = {}) {
   const cloudRegion = useAuthStateValue((s) => s.cloudRegion);
   const trpc = useHostTRPC();
@@ -1204,6 +1218,7 @@ export function TaskInput({
                 align="center"
                 className="absolute bottom-full left-0 mb-2 min-w-0"
               >
+                {spaceSelector}
                 {piHarnessEnabled && (
                   <AgentRuntimeSelect
                     value={runtime}
