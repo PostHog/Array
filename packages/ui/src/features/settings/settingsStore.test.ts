@@ -286,6 +286,61 @@ describe("feature settingsStore cloud selections", () => {
   });
 });
 
+describe("feature settingsStore migrate v1 reset", () => {
+  beforeEach(async () => {
+    await resetPersistenceMocks();
+
+    useSettingsStore.setState({
+      lastUsedModel: "claude-opus-5",
+      lastUsedReasoningEffort: "high",
+      lastUsedContextWindow: "1m",
+      lastUsedFastMode: true,
+    });
+  });
+
+  it("resets last-used model/effort/context/fast mode when migrating from version 0", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: {
+          lastUsedModel: "claude-sonnet-5",
+          lastUsedReasoningEffort: "medium",
+          lastUsedContextWindow: "200k",
+          lastUsedFastMode: true,
+        },
+        version: 0,
+      }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().lastUsedModel).toBeNull();
+    expect(useSettingsStore.getState().lastUsedReasoningEffort).toBeNull();
+    expect(useSettingsStore.getState().lastUsedContextWindow).toBeNull();
+    expect(useSettingsStore.getState().lastUsedFastMode).toBeNull();
+  });
+
+  it("passes last-used model/effort/context/fast mode through unchanged at version 1", async () => {
+    getItem.mockResolvedValue(
+      JSON.stringify({
+        state: {
+          lastUsedModel: "claude-sonnet-5",
+          lastUsedReasoningEffort: "medium",
+          lastUsedContextWindow: "200k",
+          lastUsedFastMode: true,
+        },
+        version: 1,
+      }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState().lastUsedModel).toBe("claude-sonnet-5");
+    expect(useSettingsStore.getState().lastUsedReasoningEffort).toBe("medium");
+    expect(useSettingsStore.getState().lastUsedContextWindow).toBe("200k");
+    expect(useSettingsStore.getState().lastUsedFastMode).toBe(true);
+  });
+});
+
 describe("feature settingsStore custom sounds", () => {
   beforeEach(async () => {
     await resetPersistenceMocks();
@@ -518,5 +573,29 @@ describe("feature settingsStore terminal font", () => {
     expect(useSettingsStore.getState().terminalCustomFontFamily).toBe(
       "Cascadia Code",
     );
+  });
+});
+
+describe("feature settingsStore hydration", () => {
+  beforeEach(async () => {
+    await resetPersistenceMocks();
+  });
+
+  it("marks the store hydrated after a successful rehydration", async () => {
+    getItem.mockResolvedValue(JSON.stringify({ state: {}, version: 1 }));
+    useSettingsStore.setState({ _hasHydrated: false });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()._hasHydrated).toBe(true);
+  });
+
+  it("marks the store hydrated when rehydration fails", async () => {
+    getItem.mockRejectedValue(new Error("storage unavailable"));
+    useSettingsStore.setState({ _hasHydrated: false });
+
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()._hasHydrated).toBe(true);
   });
 });

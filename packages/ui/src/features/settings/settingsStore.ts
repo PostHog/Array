@@ -5,6 +5,7 @@ import type {
   ExecutionMode,
   WorkspaceMode,
 } from "@posthog/shared";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import {
   COLLAPSE_MODE_DEFAULT,
   type CollapseMode,
@@ -22,13 +23,7 @@ export const DEFAULT_WORKSPACE_MODE: WorkspaceMode = "cloud";
 export type AgentAdapter = Adapter;
 export type DefaultInitialTaskMode = "plan" | "last_used";
 export type DefaultMessagingMode = "queue" | "steer";
-export type DefaultReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "last_used";
+export type DefaultReasoningEffort = EffortLevel | "last_used";
 
 export type SendMessagesWith = "enter" | "cmd+enter";
 export type AutoConvertLongText = "off" | "1000" | "2500" | "5000" | "10000";
@@ -113,6 +108,8 @@ interface SettingsStore {
   lastUsedModel: string | null;
   lastUsedPiModel: string | null;
   lastUsedReasoningEffort: string | null;
+  lastUsedContextWindow: "200k" | "1m" | null;
+  lastUsedFastMode: boolean | null;
   lastUsedCloudRepository: string | null;
   cachedCloudRepositoryMap: Record<string, UserRepositoryIntegrationRef>;
   // Last-known default ("trunk") branch per cloud repo, keyed by lowercased
@@ -126,7 +123,9 @@ interface SettingsStore {
   lastPlanApprovalMode: ExecutionMode | null;
   defaultReasoningEffort: DefaultReasoningEffort;
   defaultMessagingMode: DefaultMessagingMode;
+  defaultCloudMessagingMode: DefaultMessagingMode;
   setDefaultMessagingMode: (mode: DefaultMessagingMode) => void;
+  setDefaultCloudMessagingMode: (mode: DefaultMessagingMode) => void;
   setDefaultRunMode: (mode: DefaultRunMode) => void;
   setLastUsedRunMode: (mode: "local" | "cloud") => void;
   setLastUsedLocalWorkspaceMode: (mode: LocalWorkspaceMode) => void;
@@ -136,6 +135,8 @@ interface SettingsStore {
   setLastUsedModel: (model: string) => void;
   setLastUsedPiModel: (model: string) => void;
   setLastUsedReasoningEffort: (effort: string) => void;
+  setLastUsedContextWindow: (value: "200k" | "1m") => void;
+  setLastUsedFastMode: (enabled: boolean) => void;
   setLastUsedCloudRepository: (repo: string | null) => void;
   setCachedCloudRepositoryMap: (
     map: Record<string, UserRepositoryIntegrationRef>,
@@ -310,6 +311,8 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUsedModel: null,
       lastUsedPiModel: null,
       lastUsedReasoningEffort: null,
+      lastUsedContextWindow: null,
+      lastUsedFastMode: null,
       lastUsedCloudRepository: null,
       cachedCloudRepositoryMap: {},
       cachedCloudDefaultBranchMap: {},
@@ -319,6 +322,7 @@ export const useSettingsStore = create<SettingsStore>()(
       lastPlanApprovalMode: null,
       defaultReasoningEffort: "last_used",
       defaultMessagingMode: "queue",
+      defaultCloudMessagingMode: "steer",
       setDefaultRunMode: (mode) => set({ defaultRunMode: mode }),
       setLastUsedRunMode: (mode) => set({ lastUsedRunMode: mode }),
       setLastUsedLocalWorkspaceMode: (mode) =>
@@ -331,6 +335,9 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastUsedPiModel: (model) => set({ lastUsedPiModel: model }),
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
+      setLastUsedContextWindow: (value) =>
+        set({ lastUsedContextWindow: value }),
+      setLastUsedFastMode: (enabled) => set({ lastUsedFastMode: enabled }),
       setLastUsedCloudRepository: (repo) =>
         set({ lastUsedCloudRepository: repo }),
       setCachedCloudRepositoryMap: (map) =>
@@ -365,6 +372,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setDefaultReasoningEffort: (effort) =>
         set({ defaultReasoningEffort: effort }),
       setDefaultMessagingMode: (mode) => set({ defaultMessagingMode: mode }),
+      setDefaultCloudMessagingMode: (mode) =>
+        set({ defaultCloudMessagingMode: mode }),
 
       // Notifications
       ...NOTIFICATION_DEFAULTS,
@@ -529,6 +538,19 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: "settings-storage",
       storage: electronStorage,
+      version: 1,
+      // v1 ships the merged model/reasoning control: bust everyone's saved
+      // selection state once so all users start on the new defaults.
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 1) {
+          state.lastUsedModel = null;
+          state.lastUsedReasoningEffort = null;
+          state.lastUsedContextWindow = null;
+          state.lastUsedFastMode = null;
+        }
+        return state;
+      },
       partialize: (state) => ({
         // Run mode + last-used flow defaults
         defaultRunMode: state.defaultRunMode,
@@ -540,6 +562,8 @@ export const useSettingsStore = create<SettingsStore>()(
         lastUsedModel: state.lastUsedModel,
         lastUsedPiModel: state.lastUsedPiModel,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
+        lastUsedContextWindow: state.lastUsedContextWindow,
+        lastUsedFastMode: state.lastUsedFastMode,
         lastUsedCloudRepository: state.lastUsedCloudRepository,
         cachedCloudRepositoryMap: state.cachedCloudRepositoryMap,
         cachedCloudDefaultBranchMap: state.cachedCloudDefaultBranchMap,
@@ -549,6 +573,7 @@ export const useSettingsStore = create<SettingsStore>()(
         lastPlanApprovalMode: state.lastPlanApprovalMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         defaultMessagingMode: state.defaultMessagingMode,
+        defaultCloudMessagingMode: state.defaultCloudMessagingMode,
 
         // Notifications
         desktopNotifications: state.desktopNotifications,
@@ -608,8 +633,12 @@ export const useSettingsStore = create<SettingsStore>()(
         // Onboarding hints
         hints: state.hints,
       }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          useSettingsStore.getState().setHasHydrated(true);
+        } else {
+          state?.setHasHydrated(true);
+        }
       },
       merge: (persisted, current) => {
         const merged = {

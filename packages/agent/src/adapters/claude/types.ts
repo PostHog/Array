@@ -10,6 +10,7 @@ import type {
   Query,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import type { PostHogProductId } from "../../posthog-products";
 import type { AgentMode } from "../../types";
 import type { Pushable } from "../../utils/streams";
@@ -20,7 +21,7 @@ import type { McpToolApprovals } from "./mcp/tool-metadata";
 import type { SettingsManager } from "./session/settings";
 import type { CodeExecutionMode } from "./tools";
 
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+export type { EffortLevel };
 
 export type AccumulatedUsage = {
   inputTokens: number;
@@ -197,6 +198,10 @@ export type NewSessionMeta = {
   allowedDomains?: string[];
   /** Model ID to use for this session (e.g. "claude-sonnet-4-6") */
   model?: string;
+  /** Context window choice for 1M-capable models; unset means the 1M default. */
+  contextWindow?: "200k" | "1m";
+  /** Start the session with fast mode enabled (supported models only). */
+  fastMode?: boolean;
   /** Base branch of the task's repo (e.g. "master"), for the signed-git tools. */
   baseBranch?: string;
   /**

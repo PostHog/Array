@@ -113,6 +113,39 @@ describe("archiveTask", () => {
     expect(harness.deps.togglePin).toHaveBeenCalledWith(TASK_ID);
   });
 
+  it("archives when reading task pins fails", async () => {
+    harness.deps.getPinnedTaskIds = vi
+      .fn()
+      .mockRejectedValue(new Error("pins unavailable"));
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
+  });
+
+  it("preserves pin state when reading task pins and archiving fail", async () => {
+    harness.deps.getPinnedTaskIds = vi
+      .fn()
+      .mockRejectedValue(new Error("pins unavailable"));
+    harness.deps.archive = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(archiveTask(TASK_ID, harness.deps)).rejects.toThrow("boom");
+
+    expect(harness.deps.unpin).not.toHaveBeenCalled();
+    expect(harness.deps.togglePin).not.toHaveBeenCalled();
+  });
+
+  it("archives when unpinning fails", async () => {
+    harness.deps.getPinnedTaskIds = vi.fn().mockResolvedValue([TASK_ID]);
+    harness.deps.unpin = vi
+      .fn()
+      .mockRejectedValue(new Error("pins unavailable"));
+
+    await archiveTask(TASK_ID, harness.deps);
+
+    expect(harness.deps.archive).toHaveBeenCalledWith(TASK_ID);
+  });
+
   it("destroys terminals only after the archive succeeds", async () => {
     let clearedWhenArchiveCalled = true;
     harness.deps.archive = vi.fn().mockImplementation(async () => {

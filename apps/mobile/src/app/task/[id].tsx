@@ -16,6 +16,7 @@ import {
   isModalModelId,
   isSupportedReasoningEffort,
   KIMI_MODEL_FLAG,
+  readPrUrls,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
   type Task,
@@ -44,6 +45,10 @@ import { StopRunButton } from "@/features/tasks/components/StopRunButton";
 import { TaskSessionView } from "@/features/tasks/components/TaskSessionView";
 import { buildCloudPromptBlocks } from "@/features/tasks/composer/attachments/buildCloudPrompt";
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
+import {
+  type ContextWindow,
+  DEFAULT_CONTEXT_WINDOW,
+} from "@/features/tasks/composer/options";
 import { QueuedMessagesDock } from "@/features/tasks/composer/QueuedMessagesDock";
 import { TaskChatComposer } from "@/features/tasks/composer/TaskChatComposer";
 import {
@@ -214,6 +219,13 @@ export default function TaskDetailScreen() {
     )
       ? requestedComposerReasoning
       : DEFAULT_REASONING_EFFORT;
+  const composerContextWindow: ContextWindow =
+    (composerConfigMatchesAdapter
+      ? composerConfig?.contextWindow
+      : undefined) ?? DEFAULT_CONTEXT_WINDOW;
+  const composerFastMode: boolean =
+    (composerConfigMatchesAdapter ? composerConfig?.fastMode : undefined) ??
+    false;
 
   const messagingMode = useMessagingMode(taskId);
   const queuedCount = useQueuedCount(taskId);
@@ -367,6 +379,8 @@ export default function TaskDetailScreen() {
               mode: composerMode,
               model: composerModel,
               reasoning: composerReasoning,
+              contextWindow: composerContextWindow,
+              fastMode: composerFastMode,
             }),
             rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
           },
@@ -396,6 +410,8 @@ export default function TaskDetailScreen() {
       composerAdapter,
       composerModel,
       composerReasoning,
+      composerContextWindow,
+      composerFastMode,
     ],
   );
 
@@ -553,10 +569,14 @@ export default function TaskDetailScreen() {
   const handleAdapterChange = useCallback(
     (selection: CloudComposerSelection) => {
       if (!taskId) return;
-      setComposerConfig(taskId, selection);
-      const preferences = usePreferencesStore.getState();
-      preferences.setLastNewTaskMode(selection.mode);
-      preferences.setLastUsedReasoningEffort(selection.reasoning);
+      setComposerConfig(taskId, {
+        ...selection,
+        contextWindow: DEFAULT_CONTEXT_WINDOW,
+        fastMode: false,
+      });
+      usePreferencesStore
+        .getState()
+        .resetLastUsedAgentConfig(selection.mode, selection.reasoning);
     },
     [taskId, setComposerConfig],
   );
@@ -582,6 +602,24 @@ export default function TaskDetailScreen() {
       usePreferencesStore.getState().setLastUsedReasoningEffort(value);
     },
     [taskId, composerAdapter, setComposerConfig, setConfigOption],
+  );
+
+  const handleContextWindowChange = useCallback(
+    (value: ContextWindow) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { contextWindow: value });
+      usePreferencesStore.getState().setLastUsedContextWindow(value);
+    },
+    [taskId, setComposerConfig],
+  );
+
+  const handleFastModeChange = useCallback(
+    (value: boolean) => {
+      if (!taskId) return;
+      setComposerConfig(taskId, { fastMode: value });
+      usePreferencesStore.getState().setLastUsedFastMode(value);
+    },
+    [taskId, setComposerConfig],
   );
 
   const handleStop = useCallback(() => {
@@ -638,6 +676,8 @@ export default function TaskDetailScreen() {
             mode: composerMode,
             model: composerModel,
             reasoning: composerReasoning,
+            contextWindow: composerContextWindow,
+            fastMode: composerFastMode,
           }),
           rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         },
@@ -665,6 +705,8 @@ export default function TaskDetailScreen() {
     composerModel,
     composerReasoning,
     composerMode,
+    composerContextWindow,
+    composerFastMode,
   ]);
 
   // Clear retrying once the agent finishes a turn or the run terminates.
@@ -696,7 +738,7 @@ export default function TaskDetailScreen() {
     [router],
   );
 
-  const prUrl = task?.latest_run?.output?.pr_url as string | undefined;
+  const prUrl = readPrUrls(task?.latest_run?.output)[0];
 
   const activityPhase = getSessionActivityPhase({ retrying, session });
   const isConnecting = activityPhase === "connecting";
@@ -795,6 +837,7 @@ export default function TaskDetailScreen() {
         <TaskSessionView
           events={session?.events ?? []}
           taskId={taskId}
+          runId={task?.latest_run?.id}
           pendingPermissions={session?.pendingPermissions}
           isConnecting={isConnecting}
           isThinking={isThinking}
@@ -875,10 +918,14 @@ export default function TaskDetailScreen() {
             mode={composerMode}
             model={composerModel}
             reasoning={composerReasoning}
+            contextWindow={composerContextWindow}
+            fastMode={composerFastMode}
             onAdapterChange={handleAdapterChange}
             onModeChange={handleModeChange}
             onModelChange={handleModelChange}
             onReasoningChange={handleReasoningChange}
+            onContextWindowChange={handleContextWindowChange}
+            onFastModeChange={handleFastModeChange}
             messagingMode={messagingMode}
             queuedCount={queuedCount}
             onToggleMessagingMode={toggleMessagingMode}

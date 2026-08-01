@@ -26,8 +26,32 @@ export const effortLevelSchema = z.enum([
   "high",
   "xhigh",
   "max",
+  "ultracode",
 ]);
 export type EffortLevel = z.infer<typeof effortLevelSchema>;
+
+/** All effort levels in ascending order of depth. */
+export const EFFORT_LEVELS = effortLevelSchema.options;
+
+export const EFFORT_LEVEL_LABELS: Record<EffortLevel, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Max",
+  ultracode: "Ultracode",
+};
+
+/** Claude Code docs for the tiers that need explaining. */
+export const EFFORT_LEVEL_DOCS_URLS: Partial<Record<EffortLevel, string>> = {
+  ultracode: "https://code.claude.com/docs/en/workflows",
+};
+
+/** Adapter-specific docs for the fast mode toggle. */
+export const FAST_MODE_DOCS_URLS: Record<string, string> = {
+  claude: "https://code.claude.com/docs/en/model-config",
+  codex: "https://developers.openai.com/codex",
+};
 
 export interface UserBasic {
   id: number;
@@ -249,7 +273,7 @@ export interface TaskRun {
   branch: string | null;
   runtime_adapter?: Adapter | null;
   model?: string | null;
-  reasoning_effort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
+  reasoning_effort?: EffortLevel | null;
   stage?: string | null; // Current stage (e.g., 'research', 'plan', 'build')
   environment?: TaskRunEnvironment;
   status: TaskRunStatus;

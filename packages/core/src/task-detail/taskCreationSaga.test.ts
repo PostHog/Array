@@ -453,8 +453,8 @@ describe("TaskCreationSaga", () => {
         branch: "main",
         adapter: undefined,
         piRuntime: true,
-        model: undefined,
-        reasoningLevel: undefined,
+        model: "gpt-5.4",
+        reasoningLevel: "high",
         initialPermissionMode: undefined,
       }),
     );
@@ -1351,4 +1351,68 @@ describe("TaskCreationSaga", () => {
     expect(mockHost.importClaudeCliSession).not.toHaveBeenCalled();
     expect(mockHost.recordClaudeCliImport).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      label: "forwards context window and fast mode for cloud runs",
+      input: { contextWindow: "200k" as const, fastMode: true },
+      expectedRunOptions: { contextWindow: "200k", fastMode: true },
+    },
+    {
+      label:
+        "forwards an explicit fastMode:false for cloud runs (the !== undefined guard)",
+      input: { fastMode: false },
+      expectedRunOptions: { fastMode: false },
+    },
+  ])("$label", async ({ input, expectedRunOptions }) => {
+    const createdTask = createTask();
+    const startedTask = createTask({ latest_run: createRun() });
+    const createTaskMock = vi.fn().mockResolvedValue(createdTask);
+    const createTaskRunMock = vi.fn().mockResolvedValue(createRun());
+    const startTaskRunMock = vi.fn().mockResolvedValue(startedTask);
+
+    const saga = makeSaga({
+      createTask: createTaskMock,
+      createTaskRun: createTaskRunMock,
+      startTaskRun: startTaskRunMock,
+    });
+
+    const result = await saga.run({
+      content: "Ship the fix",
+      repository: "posthog/posthog",
+      workspaceMode: "cloud",
+      branch: "main",
+      ...input,
+    });
+
+    expect(result.success).toBe(true);
+    expect(createTaskRunMock).toHaveBeenCalledWith(
+      "task-123",
+      expect.objectContaining(expectedRunOptions),
+    );
+  });
+
+  it.each(["local", "worktree"] as const)(
+    "forwards context window and fast mode to the agent session for workspaceMode=%s",
+    async (workspaceMode) => {
+      const createTaskMock = vi.fn().mockResolvedValue(createTask());
+      mockHost.addFolder.mockResolvedValue({ id: "folder-1", path: "/repo" });
+      mockHost.detectRepo.mockResolvedValue(null);
+
+      const saga = makeSaga({ createTask: createTaskMock });
+
+      const result = await saga.run({
+        content: "Ship the fix",
+        repoPath: "/repo",
+        workspaceMode,
+        contextWindow: "1m",
+        fastMode: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(sessionService.connectToTask).toHaveBeenCalledWith(
+        expect.objectContaining({ contextWindow: "1m", fastMode: true }),
+      );
+    },
+  );
 });

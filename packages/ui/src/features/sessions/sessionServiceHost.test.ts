@@ -5465,6 +5465,86 @@ describe("SessionService", () => {
       });
     });
 
+    it("does not inherit effort options from the preview default for an effort-less model", async () => {
+      const service = getSessionService();
+      const session = createMockSession({
+        taskRunId: "run-kimi-123",
+        taskId: "task-kimi-123",
+        isCloud: true,
+        adapter: "claude",
+        configOptions: [
+          {
+            id: "mode",
+            name: "Approval Preset",
+            type: "select",
+            category: "mode",
+            currentValue: "plan",
+            options: [],
+          },
+        ],
+      });
+      mockSessionStoreSetters.getSessions.mockReturnValue({
+        "run-kimi-123": session,
+      });
+      mockTrpcAgent.getPreviewConfigOptions.query.mockResolvedValueOnce([
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          category: "model",
+          currentValue: "claude-opus-4-8",
+          options: [
+            { value: "claude-opus-4-8", name: "Opus 4.8" },
+            { value: "moonshotai/kimi-k3", name: "Kimi K3" },
+          ],
+        },
+        {
+          id: "effort",
+          name: "Effort",
+          type: "select",
+          category: "thought_level",
+          currentValue: "high",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+            { value: "max", name: "Max" },
+          ],
+        },
+      ]);
+
+      service.watchCloudTask(
+        "task-kimi-123",
+        "run-kimi-123",
+        "https://api.example.com",
+        7,
+        undefined,
+        undefined,
+        "plan",
+        "claude",
+        "moonshotai/kimi-k3",
+      );
+
+      await vi.waitFor(() => {
+        const configUpdate = (
+          mockSessionStoreSetters.updateSession.mock.calls as Array<
+            [string, { configOptions?: SessionConfigOption[] }]
+          >
+        )
+          .filter(([runId]) => runId === "run-kimi-123")
+          .map(([, patch]) => patch.configOptions)
+          .find((options) =>
+            options?.some((option) => option.category === "model"),
+          );
+        expect(
+          configUpdate?.find((option) => option.category === "model")
+            ?.currentValue,
+        ).toBe("moonshotai/kimi-k3");
+        expect(
+          configUpdate?.some((option) => option.category === "thought_level"),
+        ).toBe(false);
+      });
+    });
+
     it("keeps model-specific max reasoning when generic preview options omit it", async () => {
       const service = getSessionService();
       const session = createMockSession({

@@ -5,7 +5,6 @@ import {
   DotsSixVertical,
   EnvelopeSimple,
   Lightning,
-  RepeatIcon,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { LOOPS_FLAG, PROJECT_BLUEBIRD_FLAG } from "@posthog/shared";
@@ -20,6 +19,7 @@ import {
   orderedNavItems,
 } from "@posthog/ui/features/sidebar/constants";
 import { useSidebarStore } from "@posthog/ui/features/sidebar/sidebarStore";
+import { LoopIcon } from "@posthog/ui/primitives/LoopIcon";
 import { track } from "@posthog/ui/shell/analytics";
 import { Button, Checkbox, Flex, Text } from "@radix-ui/themes";
 import { type RefCallback, useRef, useState } from "react";
@@ -32,7 +32,7 @@ const ITEM_ICONS: Record<
   "command-center": Lightning,
   activity: Bell,
   configure: SlidersHorizontal,
-  loops: RepeatIcon,
+  loops: LoopIcon,
 };
 
 function sameOrder(
@@ -195,7 +195,7 @@ function SortableNavItemRow({
           <DotsSixVertical size={14} />
         </button>
         <Text as="label" size="2" className="flex-1">
-          <Flex gap="2" align="center">
+          <Flex gap="2" align="center" className="group">
             <Checkbox
               checked={visible}
               onCheckedChange={(checked) => onVisibleChange(checked === true)}

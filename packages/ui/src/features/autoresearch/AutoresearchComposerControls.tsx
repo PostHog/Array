@@ -31,6 +31,7 @@ import { openExternalUrl } from "../../shell/openExternal";
 import {
   type AutoresearchModelOption,
   clampMaxIterations,
+  StageEffortDropdown,
   StageModelSelect,
   stageValueLabel,
 } from "./stageModels";
@@ -705,9 +706,9 @@ function StageFields({
           onChange={onModelChange}
         />
         {effortOptions.length > 0 && (
-          <StageModelSelect
-            className="w-28"
-            ariaLabel={`${legend} effort`}
+          <StageEffortDropdown
+            className="w-28 justify-between"
+            label={`${legend} effort`}
             noneLabel="Default effort"
             value={effort}
             options={effortOptions}

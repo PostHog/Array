@@ -80,6 +80,8 @@ interface UseTaskCreationOptions {
   runtime?: AgentRuntime;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   environmentId?: string | null;
   sandboxEnvironmentId?: string;
   customImageId?: string;
@@ -182,6 +184,8 @@ export function useTaskCreation({
   runtime = "acp",
   model,
   reasoningLevel,
+  contextWindow,
+  fastMode,
   environmentId,
   sandboxEnvironmentId,
   customImageId,
@@ -375,6 +379,8 @@ export function useTaskCreation({
           runtime,
           model,
           reasoningLevel,
+          contextWindow,
+          fastMode,
           environmentId,
           sandboxEnvironmentId,
           customImageId,
@@ -550,6 +556,8 @@ export function useTaskCreation({
       runtime,
       model,
       reasoningLevel,
+      contextWindow,
+      fastMode,
       environmentId,
       sandboxEnvironmentId,
       customImageId,

@@ -1,4 +1,4 @@
-import { Brain, CaretDown, Lightning, Stack } from "@phosphor-icons/react";
+import { CaretDown, Lightning, Stack } from "@phosphor-icons/react";
 import type {
   PiModelSelection,
   PiThinkingLevel,
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
   MenuLabel,
 } from "@posthog/quill";
+import { ReasoningLevelDropdown } from "@posthog/ui/features/sessions/components/ReasoningLevelDropdown";
 import type { MessagingMode } from "@posthog/ui/features/sessions/messagingModeStore";
 import { Fragment } from "react";
 
@@ -112,7 +113,7 @@ const thinkingLevelLabels: Record<PiThinkingLevel, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
-  xhigh: "Extra high",
+  xhigh: "Extra High",
   max: "Max",
 };
 
@@ -129,48 +130,18 @@ export function PiThinkingLevelSelector({
   disabled,
   onChange,
 }: PiThinkingLevelSelectorProps) {
-  const activeLabel = thinkingLevelLabels[level] ?? level;
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            disabled={disabled}
-            aria-label={`Thinking: ${activeLabel}`}
-          >
-            <Brain size={14} className="text-muted-foreground" />
-            {activeLabel}
-            <CaretDown
-              size={10}
-              weight="bold"
-              className="text-muted-foreground"
-            />
-          </Button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        side="top"
-        sideOffset={6}
-        className="min-w-[180px]"
-      >
-        <MenuLabel>Thinking</MenuLabel>
-        <DropdownMenuRadioGroup
-          value={level}
-          onValueChange={(value) => onChange(value as PiThinkingLevel)}
-        >
-          {levels.map((value) => (
-            <DropdownMenuRadioItem key={value} value={value}>
-              {thinkingLevelLabels[value] ?? value}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ReasoningLevelDropdown
+      value={level}
+      options={levels.map((value) => ({
+        value,
+        label: thinkingLevelLabels[value] ?? value,
+      }))}
+      onChange={(value) => onChange(value as PiThinkingLevel)}
+      variant="slider"
+      label="Thinking"
+      disabled={disabled}
+    />
   );
 }
 

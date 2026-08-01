@@ -1,7 +1,12 @@
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  type ContextWindow,
+  DEFAULT_CONTEXT_WINDOW,
+} from "@/features/tasks/composer/options";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -40,13 +45,7 @@ export type CompletionSound =
 
 export type InitialTaskMode = "plan" | "last_used";
 
-export type DefaultReasoningEffort =
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "last_used";
+export type DefaultReasoningEffort = EffortLevel | "last_used";
 
 interface PreferencesState {
   pingsEnabled: boolean;
@@ -80,6 +79,16 @@ interface PreferencesState {
    *  `defaultReasoningEffort === "last_used"` can pre-fill it next time. */
   lastUsedReasoningEffort: string;
   setLastUsedReasoningEffort: (effort: string) => void;
+
+  /** Most recent context window + fast mode picked in the merged agent config
+   *  control. Persisted so the next new-task composer restores them. */
+  lastUsedContextWindow: ContextWindow;
+  setLastUsedContextWindow: (contextWindow: ContextWindow) => void;
+  lastUsedFastMode: boolean;
+  setLastUsedFastMode: (enabled: boolean) => void;
+  /** Resets the last-used agent selection to a new harness's mode/effort with
+   *  default context window and fast mode off, in one write. */
+  resetLastUsedAgentConfig: (mode: string, reasoning: string) => void;
 
   autoPublishCloudRuns: boolean;
   setAutoPublishCloudRuns: (enabled: boolean) => void;
@@ -127,6 +136,19 @@ export const usePreferencesStore = create<PreferencesState>()(
       setLastUsedReasoningEffort: (effort) =>
         set({ lastUsedReasoningEffort: effort }),
 
+      lastUsedContextWindow: DEFAULT_CONTEXT_WINDOW,
+      setLastUsedContextWindow: (contextWindow) =>
+        set({ lastUsedContextWindow: contextWindow }),
+      lastUsedFastMode: false,
+      setLastUsedFastMode: (enabled) => set({ lastUsedFastMode: enabled }),
+      resetLastUsedAgentConfig: (mode, reasoning) =>
+        set({
+          lastNewTaskMode: mode,
+          lastUsedReasoningEffort: reasoning,
+          lastUsedContextWindow: DEFAULT_CONTEXT_WINDOW,
+          lastUsedFastMode: false,
+        }),
+
       autoPublishCloudRuns: true,
       setAutoPublishCloudRuns: (enabled) =>
         set({ autoPublishCloudRuns: enabled }),
@@ -137,6 +159,22 @@ export const usePreferencesStore = create<PreferencesState>()(
     {
       name: "posthog-preferences",
       storage: createJSONStorage(() => AsyncStorage),
+      // Bumped to 1 when the merged agent config control shipped: existing
+      // installs drop their stale last-used agent selection so they land on the
+      // new preset defaults instead of a model/effort pair off the new scale.
+      version: 1,
+      migrate: (persisted, fromVersion) => {
+        const state = (persisted ?? {}) as Partial<PreferencesState>;
+        if (fromVersion < 1) {
+          return {
+            ...state,
+            lastUsedReasoningEffort: "high",
+            lastUsedContextWindow: DEFAULT_CONTEXT_WINDOW,
+            lastUsedFastMode: false,
+          } as PreferencesState;
+        }
+        return state as PreferencesState;
+      },
       partialize: (state) => ({
         pingsEnabled: state.pingsEnabled,
         pushNotificationsEnabled: state.pushNotificationsEnabled,
@@ -149,6 +187,8 @@ export const usePreferencesStore = create<PreferencesState>()(
         lastNewTaskMode: state.lastNewTaskMode,
         defaultReasoningEffort: state.defaultReasoningEffort,
         lastUsedReasoningEffort: state.lastUsedReasoningEffort,
+        lastUsedContextWindow: state.lastUsedContextWindow,
+        lastUsedFastMode: state.lastUsedFastMode,
         autoPublishCloudRuns: state.autoPublishCloudRuns,
         rtkEnabledCloud: state.rtkEnabledCloud,
       }),

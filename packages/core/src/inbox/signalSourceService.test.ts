@@ -124,6 +124,17 @@ describe("SignalSourceService.toggleSource", () => {
     });
   });
 
+  it("creates an llm_analytics config with the evaluation_report source type", async () => {
+    const client = fakeClient();
+    const service = new SignalSourceService();
+    await service.toggleSource(client, 1, "llm_analytics", true, [], []);
+    expect(client.createSignalSourceConfig).toHaveBeenCalledWith(1, {
+      source_product: "llm_analytics",
+      source_type: "evaluation_report",
+      enabled: true,
+    });
+  });
+
   it("ensures the issues table syncs with full_refresh for github before enabling", async () => {
     const client = fakeClient();
     const service = new SignalSourceService();

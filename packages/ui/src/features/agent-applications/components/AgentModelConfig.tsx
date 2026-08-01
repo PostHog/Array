@@ -2,7 +2,6 @@ import { PointerSensor } from "@dnd-kit/dom";
 import { type DragDropEvents, DragDropProvider } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import {
-  BrainIcon,
   CaretDownIcon,
   GaugeIcon,
   MagnifyingGlassIcon,
@@ -19,6 +18,7 @@ import type {
   AgentSpec,
   ModelCatalogEntry,
 } from "@posthog/shared/agent-platform-types";
+import { ReasoningLevelDropdown } from "@posthog/ui/features/sessions/components/ReasoningLevelDropdown";
 import { Badge } from "@posthog/ui/primitives/Badge";
 import { Button } from "@posthog/ui/primitives/Button";
 import { Flex, Popover, Text } from "@radix-ui/themes";
@@ -178,16 +178,20 @@ export function AgentModelConfig({
               onChange={(v) => setLevel(v as AgentModelLevel)}
               options={LEVEL_OPTIONS}
             />
-            <Select
-              label="reasoning"
-              icon={<BrainIcon size={14} />}
+            <ReasoningLevelDropdown
               value={reasoning ?? "default"}
               onChange={(v) =>
                 setReasoning(
                   v === "default" ? undefined : (v as AgentReasoningEffort),
                 )
               }
-              options={REASONING_OPTIONS}
+              options={REASONING_OPTIONS.map((option) => ({
+                value: option.value,
+                label: option.title,
+                description: option.description,
+              }))}
+              side="bottom"
+              triggerVariant="outline"
             />
           </>
         ) : null}
