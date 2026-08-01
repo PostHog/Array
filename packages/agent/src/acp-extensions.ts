@@ -33,6 +33,9 @@ export const POSTHOG_NOTIFICATIONS = {
   /** Error occurred during task execution */
   ERROR: "_posthog/error",
 
+  /** Agent runtime failed before its session became ready */
+  INITIALIZATION_FAILED: "_posthog/initialization_failed",
+
   /** Console/log output from the agent */
   CONSOLE: "_posthog/console",
 

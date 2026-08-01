@@ -21,9 +21,10 @@ import {
   Stop,
 } from "phosphor-react-native";
 import { useFeatureFlag } from "posthog-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   Pressable,
   ScrollView,
@@ -37,7 +38,11 @@ import { useThemeColors } from "@/lib/theme";
 import type { MessagingMode } from "../stores/messagingModeStore";
 import { AgentConfigControls } from "./AgentConfigControls";
 import { AttachmentSheet } from "./attachments/AttachmentSheet";
-import { AttachmentsBar } from "./attachments/AttachmentsBar";
+import {
+  type AttachmentStatus,
+  AttachmentsBar,
+} from "./attachments/AttachmentsBar";
+import { attachmentPreparer } from "./attachments/buildCloudPrompt";
 import {
   captureFromCamera,
   pickDocument,
@@ -45,6 +50,7 @@ import {
 } from "./attachments/pickers";
 import type { PendingAttachment } from "./attachments/types";
 import {
+  type ContextWindow,
   filterKimiModelConfigOptions,
   getModelConfigOption,
   resolveComposerPrimaryAction,
@@ -72,11 +78,15 @@ interface TaskChatComposerProps {
   mode: ExecutionMode;
   model: string;
   reasoning: SupportedReasoningEffort;
+  contextWindow: ContextWindow;
+  fastMode: boolean;
   onAdapterChange: (selection: CloudComposerSelection) => void;
   canChangeAdapter?: boolean;
   onModeChange: (mode: ExecutionMode) => void;
   onModelChange: (model: string) => void;
   onReasoningChange: (reasoning: SupportedReasoningEffort) => void;
+  onContextWindowChange: (contextWindow: ContextWindow) => void;
+  onFastModeChange: (enabled: boolean) => void;
   /** Steer vs Queue behaviour for messages sent while a turn is running. */
   messagingMode: MessagingMode;
   queuedCount: number;
@@ -99,11 +109,15 @@ export function TaskChatComposer({
   mode,
   model,
   reasoning,
+  contextWindow,
+  fastMode,
   onAdapterChange,
   canChangeAdapter = true,
   onModeChange,
   onModelChange,
   onReasoningChange,
+  onContextWindowChange,
+  onFastModeChange,
   messagingMode,
   queuedCount,
   onToggleMessagingMode,
@@ -122,6 +136,9 @@ export function TaskChatComposer({
   const modelConfigOption = getModelConfigOption(configOptions);
   const [message, setMessage] = useState(() => initialMessage ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentStatus, setAttachmentStatus] = useState<
+    Record<string, AttachmentStatus>
+  >({});
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
 
   // Mirror composer state into refs so a failed send can read the current
@@ -132,6 +149,48 @@ export function TaskChatComposer({
   attachmentsRef.current = attachments;
   const submissionRef = useRef(0);
 
+  const clearStatus = useCallback((id: string) => {
+    setAttachmentStatus((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _dropped, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
+  // Encode eagerly so oversized/unsupported files fail at attach, not send.
+  const beginPreparing = useCallback(
+    (att: PendingAttachment) => {
+      setAttachmentStatus((prev) => ({ ...prev, [att.id]: "preparing" }));
+      attachmentPreparer.prepare(att).then(
+        () => {
+          if (attachmentsRef.current.some((a) => a.id === att.id)) {
+            clearStatus(att.id);
+          }
+        },
+        (error: unknown) => {
+          if (!attachmentsRef.current.some((a) => a.id === att.id)) return;
+          setAttachmentStatus((prev) => ({ ...prev, [att.id]: "error" }));
+          Alert.alert(
+            "Attachment can't be sent",
+            error instanceof Error
+              ? error.message
+              : "This file couldn't be prepared. Remove it and try another.",
+          );
+        },
+      );
+    },
+    [clearStatus],
+  );
+
+  const loadAttachments = useCallback(
+    (next: PendingAttachment[]) => {
+      setAttachments(next);
+      setAttachmentStatus({});
+      for (const att of next) beginPreparing(att);
+    },
+    [beginPreparing],
+  );
+
   useEffect(() => {
     if (!initialMessage) return;
     setMessage(initialMessage);
@@ -140,8 +199,17 @@ export function TaskChatComposer({
   useEffect(() => {
     if (!restoredDraft) return;
     setMessage(restoredDraft.text);
-    setAttachments(restoredDraft.attachments);
-  }, [restoredDraft]);
+    loadAttachments(restoredDraft.attachments);
+  }, [restoredDraft, loadAttachments]);
+
+  useEffect(
+    () => () => {
+      for (const att of attachmentsRef.current) {
+        attachmentPreparer.forget(att.id);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!hasLiveConfig) return;
@@ -174,9 +242,12 @@ export function TaskChatComposer({
   const isTranscribing = status === "transcribing";
 
   const hasContent = !isComposerEmpty({ text: message, attachments });
+  const statuses = Object.values(attachmentStatus);
+  const attachmentsPreparing = statuses.includes("preparing");
+  const sendBlocked = attachmentsPreparing || statuses.includes("error");
   const primaryAction = resolveComposerPrimaryAction({
     hasContent,
-    disabled,
+    disabled: disabled || sendBlocked,
     isRecording,
     isTranscribing,
     canStop: !isUserTurn && !!onStop,
@@ -187,7 +258,7 @@ export function TaskChatComposer({
 
   const applyContent = (content: ComposerContent) => {
     setMessage(content.text);
-    setAttachments(content.attachments);
+    loadAttachments(content.attachments);
   };
 
   const handleSend = () => {
@@ -214,7 +285,10 @@ export function TaskChatComposer({
   ) => {
     try {
       const att = await picker();
-      if (att) setAttachments((prev) => [...prev, att]);
+      if (att) {
+        setAttachments((prev) => [...prev, att]);
+        beginPreparing(att);
+      }
     } catch (err) {
       log.error("Failed to pick attachment", err);
     }
@@ -222,6 +296,8 @@ export function TaskChatComposer({
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
+    attachmentPreparer.forget(id);
+    clearStatus(id);
   };
 
   const handleMicPress = async () => {
@@ -282,6 +358,7 @@ export function TaskChatComposer({
             <AttachmentsBar
               attachments={attachments}
               onRemove={removeAttachment}
+              statuses={attachmentStatus}
             />
             <TextInput
               className="px-4 pt-3.5 pb-3 text-[15px] text-gray-12"
@@ -337,11 +414,15 @@ export function TaskChatComposer({
                   mode={mode}
                   model={model}
                   reasoning={reasoning}
+                  contextWindow={contextWindow}
+                  fastMode={fastMode}
                   configOptions={configOptions}
                   onAdapterChange={onAdapterChange}
                   onModeChange={onModeChange}
                   onModelChange={onModelChange}
                   onReasoningChange={onReasoningChange}
+                  onContextWindowChange={onContextWindowChange}
+                  onFastModeChange={onFastModeChange}
                   canChangeAdapter={canChangeAdapter}
                 />
 
@@ -368,20 +449,22 @@ export function TaskChatComposer({
                   canSend ? handleSend : showStop ? handleStop : handleMicPress
                 }
                 onLongPress={handleMicLongPress}
-                disabled={isTranscribing || disabled}
+                disabled={isTranscribing || disabled || sendBlocked}
                 className={`h-9 w-9 items-center justify-center rounded-lg ${
                   canSend ? "bg-gray-12" : "bg-gray-3"
                 }`}
               >
-                {isTranscribing ? (
+                {isTranscribing || attachmentsPreparing ? (
                   <ActivityIndicator
                     size="small"
                     color={themeColors.gray[12]}
                   />
-                ) : canSend ? (
+                ) : canSend || sendBlocked ? (
                   <ArrowUp
                     size={18}
-                    color={themeColors.background}
+                    color={
+                      canSend ? themeColors.background : themeColors.gray[9]
+                    }
                     weight="bold"
                   />
                 ) : isRecording || showStop ? (

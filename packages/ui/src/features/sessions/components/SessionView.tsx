@@ -5,10 +5,15 @@ import {
   SESSION_SERVICE,
   type SessionService,
 } from "@posthog/core/sessions/sessionService";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "@posthog/core/task-detail/previewConfig";
 import { useService } from "@posthog/di/react";
-import type { AcpMessage } from "@posthog/shared";
+import { type AcpMessage, FAST_MODE_FLAG } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { showOfflineToast } from "@posthog/ui/features/connectivity/connectivityToast";
+import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFlag";
 import type { AttachmentUploadStatus } from "@posthog/ui/features/message-editor/components/AttachmentsBar";
 import {
   PromptInput,
@@ -18,7 +23,6 @@ import { useDraftStore } from "@posthog/ui/features/message-editor/draftStore";
 import { useAutoFocusOnTyping } from "@posthog/ui/features/message-editor/useAutoFocusOnTyping";
 import { resolveAndAttachDroppedFiles } from "@posthog/ui/features/message-editor/utils/persistFile";
 import { PermissionSelector } from "@posthog/ui/features/permissions/PermissionSelector";
-import { CloudInitializingView } from "@posthog/ui/features/sessions/components/CloudInitializingView";
 import {
   CloudStreamDisconnectedBanner,
   ConnectingToAgent,
@@ -29,12 +33,13 @@ import {
   getGithubRefUrlFromEventTarget,
 } from "@posthog/ui/features/sessions/components/copyContextTarget";
 import { DropZoneOverlay } from "@posthog/ui/features/sessions/components/DropZoneOverlay";
-import { ModelSelector } from "@posthog/ui/features/sessions/components/ModelSelector";
+import { focusComposerOnPaneClick } from "@posthog/ui/features/sessions/components/focusComposerOnPaneClick";
 import { PendingChatView } from "@posthog/ui/features/sessions/components/PendingChatView";
 import { PlanStatusBar } from "@posthog/ui/features/sessions/components/PlanStatusBar";
 import { QueuedMessagesDock } from "@posthog/ui/features/sessions/components/QueuedMessagesDock";
 import { ReasoningLevelSelector } from "@posthog/ui/features/sessions/components/ReasoningLevelSelector";
 import { RawLogsView } from "@posthog/ui/features/sessions/components/raw-logs/RawLogsView";
+import { SessionInitializingView } from "@posthog/ui/features/sessions/components/SessionInitializingView";
 import { SessionResourcesBar } from "@posthog/ui/features/sessions/components/SessionResourcesBar";
 import { SteerQueueToggle } from "@posthog/ui/features/sessions/components/SteerQueueToggle";
 import {
@@ -49,7 +54,9 @@ import { useSessionEventsResidency } from "@posthog/ui/features/sessions/hooks/u
 import { useToggleMessagingMode } from "@posthog/ui/features/sessions/hooks/useToggleMessagingMode";
 import {
   useAdapterForTask,
+  useConfigOptionForTask,
   useModeConfigOptionForTask,
+  useModelConfigOptionForTask,
   usePendingPermissionsForTask,
   useSessionSelector,
   useThoughtLevelConfigOptionForTask,
@@ -116,7 +123,7 @@ function ComposerWidth({
 }) {
   return (
     <Box
-      className={compact ? "p-1" : "mx-auto pb-3"}
+      className={compact ? "p-1" : "mx-auto pb-2"}
       style={compact ? undefined : { maxWidth: CHAT_CONTENT_MAX_WIDTH }}
     >
       {children}
@@ -187,7 +194,18 @@ export function SessionView({
   const pendingPermissions = usePendingPermissionsForTask(taskId);
   const modeOption = useModeConfigOptionForTask(taskId);
   const thoughtOption = useThoughtLevelConfigOptionForTask(taskId);
+  const contextWindowOption = useConfigOptionForTask(
+    taskId,
+    CONTEXT_WINDOW_OPTION_CATEGORY,
+  );
+  const sessionModelOption = useModelConfigOptionForTask(taskId);
   const adapter = useAdapterForTask(taskId);
+  const fastModeFlagEnabled = useFeatureFlag(FAST_MODE_FLAG);
+  const liveFastModeOption = useConfigOptionForTask(
+    taskId,
+    FAST_MODE_OPTION_CATEGORY,
+  );
+  const fastModeOption = fastModeFlagEnabled ? liveFastModeOption : undefined;
   const toggleMessagingMode = useToggleMessagingMode(taskId);
   const { allowBypassPermissions } = useSettingsStore();
   const useNewChatThread = useSettingsStore((s) => s.useNewChatThread);
@@ -232,6 +250,14 @@ export function SessionView({
       sessionService.setSessionConfigOption(taskId, thoughtOption.id, value);
     },
     [taskId, thoughtOption, sessionService],
+  );
+
+  const handleConfigOptionChange = useCallback(
+    (configId: string, value: string) => {
+      if (!taskId) return;
+      sessionService.setSessionConfigOption(taskId, configId, value);
+    },
+    [taskId, sessionService],
   );
 
   const sessionId = taskId ?? "default";
@@ -477,21 +503,8 @@ export function SessionView({
       .catch(() => toast.error("Failed to attach files"));
   }, []);
 
-  const handlePaneClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    const interactiveSelector =
-      'button, a, input, textarea, select, [role="button"], [role="link"], [contenteditable="true"], [data-interactive]';
-    if (target.closest(interactiveSelector)) {
-      return;
-    }
-
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) {
-      return;
-    }
-
-    editorRef.current?.focus();
+  const handlePaneClick = useCallback((event: React.MouseEvent) => {
+    focusComposerOnPaneClick(event, () => editorRef.current?.focus());
   }, []);
 
   useAutoFocusOnTyping(editorRef, !isActiveSession);
@@ -595,7 +608,10 @@ export function SessionView({
               </>
             ) : isInitializing ? (
               isCloud ? (
-                <CloudInitializingView cloudStatus={cloudStatus} />
+                <SessionInitializingView
+                  executionTarget="cloud"
+                  cloudStatus={cloudStatus}
+                />
               ) : pendingTaskPrompt?.promptText ? (
                 <PendingChatView
                   promptText={pendingTaskPrompt.promptText}
@@ -740,18 +756,17 @@ export function SessionView({
                           }
                           allowBypassPermissions={allowBypassPermissions}
                           enableBashMode={!isCloudRun}
-                          modelSelector={
-                            <ModelSelector
-                              taskId={taskId}
-                              disabled={!isRunning}
-                            />
-                          }
+                          modelSelector={null}
                           reasoningSelector={
-                            thoughtOption ? (
+                            thoughtOption || sessionModelOption ? (
                               <ReasoningLevelSelector
                                 thoughtOption={thoughtOption}
+                                modelOption={sessionModelOption}
                                 adapter={adapter}
+                                contextWindowOption={contextWindowOption}
+                                fastModeOption={fastModeOption}
                                 onChange={handleThoughtChange}
+                                onConfigOptionChange={handleConfigOptionChange}
                                 disabled={!isRunning}
                               />
                             ) : null

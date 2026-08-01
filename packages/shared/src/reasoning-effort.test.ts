@@ -12,6 +12,10 @@ describe("isSupportedReasoningEffort", () => {
     ["claude", "@cf/zai-org/glm-5.2", "max", true],
     ["claude", "@cf/zai-org/glm-5.2", "medium", false],
     ["claude", "claude-opus-4-8", "minimal", false],
+    ["claude", "claude-opus-5", "ultracode", true],
+    ["claude", "claude-sonnet-5", "ultracode", true],
+    ["claude", "claude-sonnet-4-6", "ultracode", false],
+    ["codex", "gpt-5.6-sol", "ultracode", false],
   ] as const)(
     "validates %s %s effort %s",
     (adapter, modelId, effort, expected) => {

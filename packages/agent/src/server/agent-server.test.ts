@@ -448,6 +448,58 @@ describe("AgentServer HTTP Mode", () => {
     );
   };
 
+  it("exports safe telemetry when session initialization fails", async () => {
+    const append = vi.fn();
+    const shutdown = vi.fn(async () => {});
+    const testServer = createServer({
+      runtimeAdapter: "codex",
+      model: "gpt-5.2-codex",
+    }) as unknown as {
+      initializingTelemetry: {
+        append: typeof append;
+        shutdown: typeof shutdown;
+      };
+      _doInitializeSession(
+        payload: JwtPayload,
+        controller: null,
+      ): Promise<void>;
+      initializeSession(payload: JwtPayload, controller: null): Promise<void>;
+    };
+    testServer._doInitializeSession = vi.fn(async () => {
+      testServer.initializingTelemetry = { append, shutdown };
+      throw new Error("SECRET provider response");
+    });
+    const payload = {
+      task_id: "test-task-id",
+      run_id: "test-run-id",
+      team_id: 1,
+      user_id: 1,
+      distinct_id: "test-distinct-id",
+      mode: "interactive" as const,
+    };
+
+    await expect(testServer.initializeSession(payload, null)).rejects.toThrow(
+      "SECRET provider response",
+    );
+
+    expect(append).toHaveBeenCalledWith(
+      "test-run-id",
+      expect.objectContaining({
+        notification: expect.objectContaining({
+          method: POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED,
+          params: expect.objectContaining({
+            runtimeAdapter: "codex",
+            initializationPhase: "session_setup",
+            requestedModel: "gpt-5.2-codex",
+            errorType: "error",
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(append.mock.calls)).not.toContain("SECRET");
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
   it("replays ACP notifications emitted before cloud session assignment", () => {
     const testServer = createServer() as unknown as {
       session: { sseController: null } | null;
@@ -4011,6 +4063,13 @@ describe("AgentServer HTTP Mode", () => {
       expect(prompt).toContain("gh issue list --state open --search");
       expect(prompt).toContain("Closes #<n>");
       expect(prompt).toContain("Refs #<n>");
+      // Guard against turning a Slack name/handle into a GitHub @mention and
+      // tagging an unrelated account.
+      expect(prompt).toContain("Never guess a GitHub identity");
+      expect(prompt).toContain(
+        "A Slack display name or handle is NOT a GitHub username",
+      );
+      expect(prompt).toContain("These `<@U…>` tokens are Slack-only");
       delete process.env.POSTHOG_CODE_INTERACTION_ORIGIN;
     });
 

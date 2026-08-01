@@ -16,6 +16,8 @@ export interface CreateTaskRunClientOptions {
   piRuntime?: boolean;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   sandboxEnvironmentId?: string;
   customImageId?: string;
   prAuthorshipMode?: PrAuthorshipMode;

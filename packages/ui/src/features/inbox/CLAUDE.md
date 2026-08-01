@@ -4,13 +4,13 @@ The Inbox is the PostHog surface for **Self-driving**: agents that watch product
 
 ## Product Model
 
-The renderer still talks to backend endpoints and TypeScript types with the legacy `signals` naming. User-facing copy should say **Self-driving**, **Responder**, **report**, **run**, or **finding** depending on context. Do not rename backend paths or shared API fields unless the PostHog Cloud backend has changed too.
+The renderer still talks to backend endpoints and TypeScript types with the legacy `signals` naming. User-facing copy should say **Self-driving**, **agent**, **report**, **run**, or **signal** depending on context. Do not rename backend paths or shared API fields unless the PostHog Cloud backend has changed too.
 
 The main objects are:
 
 - `SignalReport`: the unit shown in all Inbox tabs.
 - Findings: the source observations that contributed to a report, fetched separately for detail screens.
-- Artefacts: structured agent output attached to a report, such as priority, actionability, suggested reviewers, repo selection, and findings from research.
+- Artefacts: structured agent output attached to a report, such as priority, actionability, suggested reviewers, repo selection, and signals from research.
 - Report tasks: links from a report to tasks created for research or implementation.
 
 ## Information Architecture
@@ -53,7 +53,7 @@ same artefact-lift pattern as `priority`/`actionability`/`already_addressed` —
 so cards avoid an N+1 per-card artefact fetch. Unknown reason codes fall back to
 the raw value; cards with no dismissal artefact simply omit the chip.
 
-Responder configuration is **not** an Inbox tab. It is the top-level Responders sidebar item at `/code/agents`. The legacy `/code/inbox/agents` route redirects there.
+Agent configuration is **not** an Inbox tab. It is the top-level Agents sidebar item at `/code/agents`. The legacy `/code/inbox/agents` route redirects there.
 
 Reviewer scope is a UI preference stored in `inboxReviewerScopeStore`. It filters the list between reports suggested for the current user and reports for someone else. It does not change tab membership; the tab predicates are independent.
 
@@ -90,7 +90,7 @@ Tab membership and counts live in `utils/reportMembership.ts`. Keep that file as
 Detail screens layer additional data on top of the base report:
 
 - `useInboxReportById(reportId)` for the report record.
-- `useInboxReportSignals(reportId)` for contributing findings.
+- `useInboxReportSignals(reportId)` for contributing signals.
 - `useInboxReportArtefacts(reportId)` for structured outputs such as suggested reviewers and repo selection.
 - `useReportTasks(reportId, status)` for linked research/implementation tasks.
 
@@ -102,7 +102,7 @@ The Inbox reads from PostHog Cloud's Self-driving backend, currently implemented
 
 - `GET /api/projects/{teamId}/signals/reports/`: paginated report list. Supports filters such as status, ordering, source product, suggested reviewers, and priority.
 - `GET /api/projects/{teamId}/signals/reports/{id}/`: single report detail.
-- `GET /api/projects/{teamId}/signals/reports/{id}/signals/`: contributing findings.
+- `GET /api/projects/{teamId}/signals/reports/{id}/signals/`: contributing signals.
 - `GET /api/projects/{teamId}/signals/reports/{id}/artefacts/`: structured report artefacts.
 - `GET /api/projects/{teamId}/signals/reports/{id}/tasks/`: tasks linked to a report.
 
@@ -112,7 +112,7 @@ Card headlines are derived client-side from `summary` by `utils/reportPresentati
 
 ## Configuration Surface
 
-Responder setup lives in `features/agents/components/AgentsView.tsx`, which mounts `ConfigureAgentsSection`. This surface composes existing GitHub, Slack, source-toggle, and MCP configuration pieces. Keep setup copy outcome-focused: the user is asking Self-driving to figure out what matters, not choosing internal artefact types.
+Agent setup lives in `features/agents/components/AgentsView.tsx`, which mounts `ConfigureAgentsSection`. This surface composes existing GitHub, Slack, source-toggle, and MCP configuration pieces. Keep setup copy outcome-focused: the user is asking Self-driving to figure out what matters, not choosing internal artefact types.
 
 Onboarding/setup should be task-backed when it starts work. Do not model it as a static checklist if the intended behavior is to launch an agent task.
 
@@ -124,7 +124,7 @@ Shared primitives exist to keep the surfaces consistent:
 
 - `InboxDetailPageHeader` for detail headers.
 - `DetailSection` for content sections inside detail screens.
-- `SignalsList` and the existing detail `SignalCard` for contributing findings.
+- `SignalsList` and the existing detail `SignalCard` for contributing signals.
 - Badge and metadata helpers in `components/utils/` and `InboxMetaRow`.
 - `SOURCE_PRODUCT_META` for source-product labels and icons.
 
@@ -134,7 +134,7 @@ When adding or changing UI, reuse those primitives first. Avoid encoding one-off
 
 - Do not reuse the deleted legacy `ReportListRow`, `ReportDetailPane`, or old list/detail stores.
 - Do not put page-level Inbox title or navigation into the global app header; `InboxView` owns the Inbox page chrome.
-- Do not add a configure shortcut back into the Inbox header; Responders configuration is a sidebar destination.
+- Do not add a configure shortcut back into the Inbox header; Agents configuration is a sidebar destination.
 - Scout (`signals_scout`) is a real Cloud source product. Keep it covered wherever source products surface: `INBOX_SOURCE_OPTIONS`, `SOURCE_PRODUCT_META`, and the scout-name display in `SignalCard`.
 - Scout management UI (fleet configuration, run history) lives in `features/scouts/` and is backed by the PostHog Cloud scout endpoints (`/api/projects/{teamId}/signals/scout/`). Do not add scout controls that have no backing endpoint there.
 - Do not put preview shims or mock report data in `apps/code/index.html`; the app shell should stay minimal.

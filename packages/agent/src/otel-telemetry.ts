@@ -19,6 +19,7 @@ import {
   entryTime,
   MAX_BODY_CHARS,
   normalizeMethod,
+  numAttr,
   strAttr,
   truncate,
   usageAttributes,
@@ -199,6 +200,19 @@ export function mapNotificationToLogRecord(
       strAttr(attrs, "error_source", params.source);
       strAttr(attrs, "stop_reason", params.stopReason);
       return record(ERROR, "run error", method, attrs);
+    }
+    case POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED: {
+      const attrs: Attributes = {};
+      strAttr(attrs, "runtime_adapter", params.runtimeAdapter);
+      strAttr(attrs, "initialization_phase", params.initializationPhase);
+      numAttr(attrs, "init_ms", params.initMs);
+      strAttr(attrs, "requested_model", params.requestedModel);
+      if (typeof params.gatewayConfigured === "boolean") {
+        attrs.gateway_configured = params.gatewayConfigured;
+      }
+      strAttr(attrs, "error_type", params.errorType);
+      numAttr(attrs, "timeout_ms", params.timeoutMs);
+      return record(ERROR, "agent initialization failed", method, attrs);
     }
     // POSTHOG_NOTIFICATIONS.CONSOLE is deliberately NOT exported: those are
     // free-text agent-server diagnostics that interpolate arbitrary data

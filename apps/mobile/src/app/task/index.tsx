@@ -14,6 +14,8 @@ import {
   KIMI_MODEL_FLAG,
   type SupportedReasoningEffort,
   serializeCloudPrompt,
+  supports1MContext,
+  supportsFastMode,
 } from "@posthog/shared";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -55,6 +57,8 @@ import {
 import type { PendingAttachment } from "@/features/tasks/composer/attachments/types";
 import { DotBackground } from "@/features/tasks/composer/DotBackground";
 import {
+  type ContextWindow,
+  DEFAULT_CONTEXT_WINDOW,
   filterKimiModelConfigOptions,
   getMobileExecutionModes,
   getModelConfigOption,
@@ -199,6 +203,12 @@ export default function NewTaskScreen() {
       ? desired
       : DEFAULT_REASONING_EFFORT;
   });
+  const [contextWindow, setContextWindow] = useState<ContextWindow>(
+    () => usePreferencesStore.getState().lastUsedContextWindow,
+  );
+  const [fastMode, setFastMode] = useState<boolean>(
+    () => usePreferencesStore.getState().lastUsedFastMode,
+  );
 
   useEffect(() => {
     if (!hasLiveConfig) return;
@@ -346,7 +356,14 @@ export default function NewTaskScreen() {
       // user picked here, so the task detail screen reflects them and every
       // subsequent run (resume-after-terminal) reuses the selected mode rather
       // than falling back to the default plan mode.
-      setComposerConfig(task.id, { adapter, mode, model, reasoning });
+      setComposerConfig(task.id, {
+        adapter,
+        mode,
+        model,
+        reasoning,
+        contextWindow,
+        fastMode,
+      });
 
       const pendingUserMessage =
         attachments.length > 0
@@ -357,7 +374,14 @@ export default function NewTaskScreen() {
 
       await client.runTaskInCloud(task.id, undefined, {
         pendingUserMessage,
-        ...buildCloudTaskRunConfig({ adapter, mode, model, reasoning }),
+        ...buildCloudTaskRunConfig({
+          adapter,
+          mode,
+          model,
+          reasoning,
+          contextWindow,
+          fastMode,
+        }),
         autoPublish: usePreferencesStore.getState().autoPublishCloudRuns,
         rtkEnabled: usePreferencesStore.getState().rtkEnabledCloud,
         ...(signalReport
@@ -384,6 +408,8 @@ export default function NewTaskScreen() {
     model,
     prompt,
     reasoning,
+    contextWindow,
+    fastMode,
     router,
     selection,
     signalReport,
@@ -410,6 +436,8 @@ export default function NewTaskScreen() {
     runtimeAdapter: adapter,
     model,
     reasoningEffort: showReasoningPill ? reasoning : null,
+    contextWindow: supports1MContext(model) ? contextWindow : null,
+    fastMode: supportsFastMode(model) ? fastMode : null,
   });
 
   if (isLoading && hasGithubIntegration === null) {
@@ -591,17 +619,22 @@ export default function NewTaskScreen() {
                         mode={mode}
                         model={model}
                         reasoning={reasoning}
+                        contextWindow={contextWindow}
+                        fastMode={fastMode}
                         configOptions={configOptions}
                         onAdapterChange={(next) => {
                           setAdapter(next.adapter);
                           setMode(next.mode);
                           setModel(next.model);
                           setReasoning(next.reasoning);
-                          const preferences = usePreferencesStore.getState();
-                          preferences.setLastNewTaskMode(next.mode);
-                          preferences.setLastUsedReasoningEffort(
-                            next.reasoning,
-                          );
+                          setContextWindow(DEFAULT_CONTEXT_WINDOW);
+                          setFastMode(false);
+                          usePreferencesStore
+                            .getState()
+                            .resetLastUsedAgentConfig(
+                              next.mode,
+                              next.reasoning,
+                            );
                         }}
                         onModeChange={(next) => {
                           setMode(next);
@@ -615,6 +648,18 @@ export default function NewTaskScreen() {
                           usePreferencesStore
                             .getState()
                             .setLastUsedReasoningEffort(next);
+                        }}
+                        onContextWindowChange={(next) => {
+                          setContextWindow(next);
+                          usePreferencesStore
+                            .getState()
+                            .setLastUsedContextWindow(next);
+                        }}
+                        onFastModeChange={(next) => {
+                          setFastMode(next);
+                          usePreferencesStore
+                            .getState()
+                            .setLastUsedFastMode(next);
                         }}
                       />
                     </ScrollView>

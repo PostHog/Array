@@ -8,8 +8,11 @@ import type {
   StoredLogEntry,
   TaskRunArtifact,
 } from "@posthog/shared";
+import { serializeError } from "@posthog/shared";
 import { Hono } from "hono";
 import { z } from "zod/v4";
+import { POSTHOG_NOTIFICATIONS } from "../acp-extensions";
+import { OtelRunTelemetry } from "../otel-telemetry";
 import { createPiRpcClient, type PiRpcClient } from "../pi/rpc-client";
 import { piRpcCommandSchema, type RpcCommand } from "../pi/rpc-transport";
 import { PiRuntime } from "../pi/runtime";
@@ -129,6 +132,37 @@ export class PiAgentServer {
         })
       : null;
     this.app = this.createApp();
+  }
+
+  private createRunTelemetry(
+    payload: JwtPayload,
+  ): OtelRunTelemetry | undefined {
+    const { otelLogsUrl, otelLogsToken } = this.config;
+    if (!otelLogsUrl || !otelLogsToken) return undefined;
+    try {
+      return new OtelRunTelemetry(
+        {
+          url: otelLogsUrl,
+          token: otelLogsToken,
+          tracesUrl: this.config.otelTracesUrl,
+        },
+        {
+          taskId: payload.task_id,
+          runId: payload.run_id,
+          deviceType: "cloud",
+          teamId: payload.team_id,
+          userId: payload.user_id,
+          distinctId: payload.distinct_id,
+          adapter: "pi",
+          mode: payload.mode ?? this.config.mode,
+          agentVersion: this.config.version,
+        },
+        new Logger({ debug: false, prefix: "[OtelRunTelemetry]" }),
+      );
+    } catch (error) {
+      this.logger.warn("Failed to initialize OTel run telemetry", error);
+      return undefined;
+    }
   }
 
   async start(): Promise<void> {
@@ -383,8 +417,46 @@ export class PiAgentServer {
 
     const initializationPromise = this.createSession(payload);
     this.initializationPromise = initializationPromise;
+    const initStartedAt = Date.now();
     try {
       await initializationPromise;
+    } catch (error) {
+      const telemetry = this.createRunTelemetry(payload);
+      telemetry?.append(payload.run_id, {
+        type: "notification",
+        timestamp: new Date().toISOString(),
+        notification: {
+          jsonrpc: "2.0",
+          method: POSTHOG_NOTIFICATIONS.INITIALIZATION_FAILED,
+          params: {
+            runtimeAdapter: "pi",
+            initializationPhase: "session_setup",
+            initMs: Date.now() - initStartedAt,
+            requestedModel: this.config.model,
+            gatewayConfigured: Boolean(
+              process.env.LLM_GATEWAY_URL || this.config.apiUrl,
+            ),
+            errorType:
+              error instanceof Error && error.name === "TimeoutError"
+                ? "timeout"
+                : "error",
+          },
+        },
+      });
+      await telemetry?.shutdown();
+      this.logger.error("Pi session initialization failed", {
+        runtimeAdapter: "pi",
+        initializationPhase: "session_setup",
+        initMs: Date.now() - initStartedAt,
+        requestedModel: this.config.model ?? null,
+        gatewayConfigured: Boolean(
+          process.env.LLM_GATEWAY_URL || this.config.apiUrl,
+        ),
+        taskId: payload.task_id,
+        taskRunId: payload.run_id,
+        errorDetail: serializeError(error),
+      });
+      throw error;
     } finally {
       if (this.initializationPromise === initializationPromise) {
         this.initializationPromise = null;
@@ -444,7 +516,12 @@ export class PiAgentServer {
     });
     await client.start();
     if (this.config.reasoningEffort) {
-      await client.setThinkingLevel(this.config.reasoningEffort);
+      // Pi's ThinkingLevel has no ultracode notch; run it at its xhigh equivalent.
+      await client.setThinkingLevel(
+        this.config.reasoningEffort === "ultracode"
+          ? "xhigh"
+          : this.config.reasoningEffort,
+      );
     }
     const runtimeState = await client.getState();
     this.sessionFile = runtimeState.sessionFile ?? restoredSessionFile ?? null;

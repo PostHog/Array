@@ -7,6 +7,7 @@
 // `/api/projects/{project_id}/loops` and is rerun against a live posthog
 // instance, `Schemas.Loop` and friends land in `generated.ts` and this file
 // can be deleted in favor of the generated equivalents.
+import type { EffortLevel } from "@posthog/shared/domain-types";
 import type { ApiClient, Method } from "./generated";
 
 export namespace LoopSchemas {
@@ -15,12 +16,7 @@ export namespace LoopSchemas {
   export type LoopTriggerTypeEnum = "schedule" | "github" | "api";
   export type LoopScheduleSyncStatusEnum = "pending" | "synced" | "failed";
   export type LoopRuntimeAdapterEnum = "claude" | "codex";
-  export type LoopReasoningEffortEnum =
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max";
+  export type LoopReasoningEffortEnum = EffortLevel;
   export type LoopPosthogMcpScopesEnum = "read_only" | "full";
   export type LoopNotificationEventEnum =
     | "run_completed"

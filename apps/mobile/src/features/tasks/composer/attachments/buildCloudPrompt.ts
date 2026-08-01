@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { createAttachmentPreparer } from "./attachmentPreparer";
 import type { CloudPromptBlock, PendingAttachment } from "./types";
 
 const MAX_EMBEDDED_TEXT_CHARS = 100_000;
@@ -92,7 +93,9 @@ function estimateBase64Bytes(base64: string): number {
   return Math.floor((base64.length * 3) / 4) - padding;
 }
 
-async function buildBlock(att: PendingAttachment): Promise<CloudPromptBlock> {
+export async function buildAttachmentBlock(
+  att: PendingAttachment,
+): Promise<CloudPromptBlock> {
   if (att.kind === "image") {
     const base64 = await FileSystem.readAsStringAsync(att.uri, {
       encoding: FileSystem.EncodingType.Base64,
@@ -129,6 +132,9 @@ async function buildBlock(att: PendingAttachment): Promise<CloudPromptBlock> {
   };
 }
 
+export const attachmentPreparer =
+  createAttachmentPreparer(buildAttachmentBlock);
+
 /**
  * Reads each attachment from disk and assembles the cloud-prompt block array
  * the agent server expects. Throws if any individual attachment fails so the
@@ -142,7 +148,9 @@ export async function buildCloudPromptBlocks(
   const trimmed = text.trim();
   if (trimmed) blocks.push({ type: "text", text: trimmed });
   for (const attachment of attachments) {
-    blocks.push(await buildBlock(attachment));
+    blocks.push(await attachmentPreparer.prepare(attachment));
+    // Base64/text payloads are large; release once folded into the prompt.
+    attachmentPreparer.forget(attachment.id);
   }
   if (blocks.length === 0) {
     throw new Error("Cloud prompt cannot be empty");

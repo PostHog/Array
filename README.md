@@ -1,9 +1,5 @@
 > [!IMPORTANT]
-> Interested in the PostHog desktop app? [Join the waitlist](https://posthog.com/code) or hop into our [Discord](https://discord.gg/aSrHKVNVdR).
-
-**[Download the latest version](https://github.com/PostHog/code/releases/latest)**
-
-Found a bug or have feedback? [Open an issue](https://github.com/PostHog/code/issues/new) on GitHub.
+> This repository has migrated to the [PostHog monorepo](https://github.com/PostHog/posthog/tree/master/products/desktop). Development, issues and pull requests now live there.
 
 # PostHog
 

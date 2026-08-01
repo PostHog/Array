@@ -56,6 +56,11 @@ vi.mock("./CloudMessageAttachment", () => ({
     createElement("CloudMessageAttachment", props),
 }));
 
+vi.mock("./TaskArtifacts", () => ({
+  TaskArtifacts: (props: Record<string, unknown>) =>
+    createElement("TaskArtifacts", props),
+}));
+
 function renderTaskSessionView(
   props: Parameters<typeof TaskSessionView>[0],
 ): ReturnType<typeof create> {
