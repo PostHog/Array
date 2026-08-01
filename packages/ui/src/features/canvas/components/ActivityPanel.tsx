@@ -173,16 +173,17 @@ function ActivityConversation({
   // Tracks the task too: this panel is reused across tasks without remounting,
   // so a nonce seen for the previous task says nothing about this one.
   const seenFocus = useRef({ taskId, nonce: commentFocus?.nonce });
-  useEffect(() => {
-    if (seenFocus.current.taskId !== taskId) {
-      seenFocus.current = { taskId, nonce: commentFocus?.nonce };
-      return;
-    }
-    if (!commentFocus || commentFocus.nonce === seenFocus.current.nonce) return;
+  // Adjust during render rather than in an effect, so the panel never commits a
+  // stale tab before switching. A new task resets the baseline (an old focus
+  // must not hijack it); a fresh focus nonce for this task brings the Comments
+  // tab with the pick.
+  if (seenFocus.current.taskId !== taskId) {
+    seenFocus.current = { taskId, nonce: commentFocus?.nonce };
+  } else if (commentFocus && commentFocus.nonce !== seenFocus.current.nonce) {
     seenFocus.current = { taskId, nonce: commentFocus.nonce };
     // Not handleTabChange: a programmatic switch isn't a user tab change.
     setTab("comments");
-  }, [commentFocus, taskId]);
+  }
 
   const scrollRef = useRef<HTMLDivElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when rendered thread content changes

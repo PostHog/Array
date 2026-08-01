@@ -326,12 +326,11 @@ export function TaskCommentsList({
   }, [sources, prUrls]);
 
   // A source that can't exist any more (its artifact left the task) can't stay
-  // selected, or the pane reads as empty with no hint why.
-  useEffect(() => {
-    if (sourceFilter !== ALL_SOURCES && !knownSourceKeys.has(sourceFilter)) {
-      setSourceFilter(ALL_SOURCES);
-    }
-  }, [sourceFilter, knownSourceKeys]);
+  // selected, or the pane reads as empty with no hint why. Adjust during render
+  // rather than in an effect, so the stale filter never commits first.
+  if (sourceFilter !== ALL_SOURCES && !knownSourceKeys.has(sourceFilter)) {
+    setSourceFilter(ALL_SOURCES);
+  }
 
   // Follow the artifact on screen until the reader picks a source themselves;
   // after that the filter is theirs, not the pane's.
@@ -358,7 +357,6 @@ export function TaskCommentsList({
   // filter is hiding it. Each request is honoured once, by nonce: resolving the
   // focused thread later must not drag the filters along with it.
   const focusedThreadId = focus?.threadId ?? null;
-  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handledNonceRef = useRef<number | null>(null);
   useEffect(() => {
     if (!focus || handledNonceRef.current === focus.nonce) return;
@@ -373,8 +371,6 @@ export function TaskCommentsList({
         : ALL_SOURCES,
     );
     setPulseThreadId(focus.threadId);
-    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-    pulseTimerRef.current = setTimeout(() => setPulseThreadId(null), PULSE_MS);
     requestAnimationFrame(() => {
       document
         .querySelector(
@@ -383,12 +379,13 @@ export function TaskCommentsList({
         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }, [focus, threads]);
-  useEffect(
-    () => () => {
-      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
-    },
-    [],
-  );
+  // The pulse fades on its own; owning the timer in its own effect keeps it
+  // cleaned up on the next pulse or on unmount, without a stray ref.
+  useEffect(() => {
+    if (!pulseThreadId) return;
+    const timer = setTimeout(() => setPulseThreadId(null), PULSE_MS);
+    return () => clearTimeout(timer);
+  }, [pulseThreadId]);
 
   const openThread = (thread: TaskCommentThread) => {
     const origin = thread.origin;
