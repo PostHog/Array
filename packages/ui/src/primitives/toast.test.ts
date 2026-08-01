@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const quill = vi.hoisted(() => {
   let n = 0;
@@ -32,6 +32,7 @@ import { toast } from "./toast";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
   quill._reset();
   settings.toastNotifications = true;
   // clearAllMocks resets the level fns to undefined returns; restore ids.
@@ -45,6 +46,12 @@ beforeEach(() => {
   ] as const) {
     quill[key].mockImplementation(() => `q${++n}`);
   }
+});
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("toast wrapper", () => {
@@ -127,5 +134,42 @@ describe("toast wrapper", () => {
     // Recreated (two creates), not updated.
     expect(quill.success).toHaveBeenCalledTimes(2);
     expect(quill.update).not.toHaveBeenCalled();
+  });
+
+  // base-ui pauses auto-dismiss while the window is unfocused, so on the desktop
+  // app a toast can hang until closed by hand. The wrapper backs it with a
+  // blur-only fallback.
+  describe("blur fallback", () => {
+    it("dismisses a duration toast once its time is up while the window is unfocused", () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      toast.success("Task archived", { id: "archive-x", duration: 8000 });
+      expect(quill.dismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(8000);
+      expect(quill.dismiss).toHaveBeenCalledWith("q1");
+    });
+
+    it("falls back on the provider default when no duration is set", () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      toast.success("Task deleted");
+      vi.advanceTimersByTime(4999);
+      expect(quill.dismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(quill.dismiss).toHaveBeenCalledWith("q1");
+    });
+
+    it("leaves base-ui's own timer in charge while the window is focused", () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      toast.success("Task archived", { duration: 8000 });
+      vi.advanceTimersByTime(8000);
+      expect(quill.dismiss).not.toHaveBeenCalled();
+    });
+
+    it("never force-dismisses loading or never-expiring toasts", () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      toast.loading("Working…");
+      toast.error("Offline", { duration: Number.POSITIVE_INFINITY });
+      vi.advanceTimersByTime(60_000);
+      expect(quill.dismiss).not.toHaveBeenCalled();
+    });
   });
 });

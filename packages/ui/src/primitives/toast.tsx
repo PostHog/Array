@@ -35,8 +35,40 @@ type Level = "success" | "error" | "info" | "warning" | "loading";
 // stacking; `dismiss(id)` resolves through here. Entries self-clean on close.
 const idRegistry = new Map<string, string>();
 
+// Mirrors quill's <ToastProvider> default; used to time the blur fallback for
+// toasts that don't set their own duration. Keep in sync with the provider in
+// App.tsx, which mounts <ToastProvider> without a timeout override.
+const PROVIDER_DEFAULT_TIMEOUT_MS = 5000;
+
 function normalize(detail?: Detail): ToastOptions {
   return typeof detail === "string" ? { description: detail } : (detail ?? {});
+}
+
+// base-ui pauses a toast's auto-dismiss timer whenever the app window isn't
+// OS-focused — not only while it's hovered. On the Electron app the window is
+// often not frontmost, so a toast can hang on screen until it's closed by hand.
+// Back base-ui's timer with one that still clears the toast once its time is up
+// while the window is unfocused; when the window is focused we do nothing and
+// leave base-ui's own timer (and its hover-to-pause) in charge.
+function armBlurDismiss(
+  level: Level,
+  timeout: number | undefined,
+  quillId: string,
+): void {
+  if (level === "loading" || typeof document === "undefined") {
+    return;
+  }
+  const dismissAfter =
+    typeof timeout === "number" ? timeout : PROVIDER_DEFAULT_TIMEOUT_MS;
+  // timeout 0 is the "never auto-dismiss" contract (e.g. the offline toast).
+  if (dismissAfter <= 0) {
+    return;
+  }
+  setTimeout(() => {
+    if (!document.hasFocus()) {
+      quillToast.dismiss(quillId);
+    }
+  }, dismissAfter);
 }
 
 function emit(
@@ -77,10 +109,13 @@ function emit(
       },
     });
     idRegistry.set(stableId, quillId);
+    armBlurDismiss(level, timeout, quillId);
     return stableId;
   }
 
-  return quillToast[level](fields);
+  const quillId = quillToast[level](fields);
+  armBlurDismiss(level, timeout, quillId);
+  return quillId;
 }
 
 export const toast = {
