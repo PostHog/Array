@@ -48,27 +48,43 @@ function normalize(detail?: Detail): ToastOptions {
 // OS-focused — not only while it's hovered. On the Electron app the window is
 // often not frontmost, so a toast can hang on screen until it's closed by hand.
 // Back base-ui's timer with one that still clears the toast once its time is up
-// while the window is unfocused; when the window is focused we do nothing and
-// leave base-ui's own timer (and its hover-to-pause) in charge.
+// while the window is unfocused; when the window is focused we leave base-ui's
+// own timer (and its hover-to-pause) in charge. Returns a cleanup to wire into
+// the toast's onClose so nothing is left pending once it goes away.
 function armBlurDismiss(
   level: Level,
   timeout: number | undefined,
   quillId: string,
-): void {
+): (() => void) | undefined {
   if (level === "loading" || typeof document === "undefined") {
-    return;
+    return undefined;
   }
   const dismissAfter =
     typeof timeout === "number" ? timeout : PROVIDER_DEFAULT_TIMEOUT_MS;
   // timeout 0 is the "never auto-dismiss" contract (e.g. the offline toast).
   if (dismissAfter <= 0) {
-    return;
+    return undefined;
   }
-  setTimeout(() => {
+  let onBlur: (() => void) | undefined;
+  const timer = setTimeout(() => {
     if (!document.hasFocus()) {
       quillToast.dismiss(quillId);
+      return;
     }
+    // Focused at the deadline (base-ui is holding it, e.g. hover-paused). Once
+    // it's no longer hovered while focused base-ui dismisses it — but if the
+    // window loses focus first, base-ui re-pauses and it would hang, so dismiss
+    // on the next blur instead of giving up after this single check.
+    onBlur = () => quillToast.dismiss(quillId);
+    window.addEventListener("blur", onBlur, { once: true });
   }, dismissAfter);
+  return () => {
+    clearTimeout(timer);
+    if (onBlur) {
+      window.removeEventListener("blur", onBlur);
+      onBlur = undefined;
+    }
+  };
 }
 
 function emit(
@@ -102,19 +118,25 @@ function emit(
       quillToast.update(existing, { type: level, ...fields });
       return stableId;
     }
+    let cleanupBlurDismiss: (() => void) | undefined;
     const quillId = quillToast[level]({
       ...fields,
       onClose: () => {
+        cleanupBlurDismiss?.();
         if (idRegistry.get(stableId) === quillId) idRegistry.delete(stableId);
       },
     });
     idRegistry.set(stableId, quillId);
-    armBlurDismiss(level, timeout, quillId);
+    cleanupBlurDismiss = armBlurDismiss(level, timeout, quillId);
     return stableId;
   }
 
-  const quillId = quillToast[level](fields);
-  armBlurDismiss(level, timeout, quillId);
+  let cleanupBlurDismiss: (() => void) | undefined;
+  const quillId = quillToast[level]({
+    ...fields,
+    onClose: () => cleanupBlurDismiss?.(),
+  });
+  cleanupBlurDismiss = armBlurDismiss(level, timeout, quillId);
   return quillId;
 }
 

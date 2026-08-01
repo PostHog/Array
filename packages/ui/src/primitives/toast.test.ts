@@ -162,6 +162,20 @@ describe("toast wrapper", () => {
       toast.success("Task archived", { duration: 8000 });
       vi.advanceTimersByTime(8000);
       expect(quill.dismiss).not.toHaveBeenCalled();
+      // Simulate the toast closing so its pending blur listener is cleaned up.
+      quill.success.mock.calls[0]?.[0]?.onClose?.();
+    });
+
+    it("dismisses on a later blur when the window was focused at the deadline", () => {
+      const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      toast.success("Task archived", { id: "archive-y", duration: 8000 });
+      vi.advanceTimersByTime(8000);
+      expect(quill.dismiss).not.toHaveBeenCalled();
+      // Window loses focus while the toast is still up — base-ui re-pauses, so
+      // the fallback must still clear it rather than having given up already.
+      hasFocus.mockReturnValue(false);
+      window.dispatchEvent(new Event("blur"));
+      expect(quill.dismiss).toHaveBeenCalledWith("q1");
     });
 
     it("never force-dismisses loading or never-expiring toasts", () => {
