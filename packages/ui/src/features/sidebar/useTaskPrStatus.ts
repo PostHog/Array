@@ -35,6 +35,11 @@ export function useTaskPrStatus(task: {
     ),
   );
 
-  if (!data || (!data.prState && !data.hasDiff)) return EMPTY;
+  // When the query is disabled, `data` can still be populated:
+  // `placeholderData: (prev) => prev` carries over whatever the previous
+  // task's query resolved to, and a disabled query never fetches to replace
+  // it. Without this guard, switching from a task with a PR to one without
+  // (e.g. a fresh cloud task) would keep showing the old task's PR status.
+  if (skipQuery || !data || (!data.prState && !data.hasDiff)) return EMPTY;
   return data;
 }

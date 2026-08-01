@@ -108,4 +108,18 @@ describe("useTaskPrStatus", () => {
     );
     expect(lastQueryOptions?.enabled).toBe(true);
   });
+
+  it("ignores leftover placeholder data from a previous task when the query is disabled", () => {
+    // Simulates switching from a cloud task with a PR (query data populated)
+    // to a fresh cloud task with no PR yet — TanStack's `placeholderData`
+    // would otherwise keep serving the previous task's resolved data since
+    // the disabled query never fetches to overwrite it.
+    queryData = { prState: "open", hasDiff: true };
+    const { result } = renderHook(() =>
+      useTaskPrStatus(
+        makeTask({ taskRunEnvironment: "cloud", cloudPrUrl: null }),
+      ),
+    );
+    expect(result.current).toEqual({ prState: null, hasDiff: false });
+  });
 });
