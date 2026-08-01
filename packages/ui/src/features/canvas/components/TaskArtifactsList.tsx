@@ -1,128 +1,39 @@
 import {
   ArrowSquareOutIcon,
+  ChatCircleIcon,
   PackageIcon,
   SlackLogoIcon,
 } from "@phosphor-icons/react";
-import {
-  OUTPUT_ARTIFACT_TYPES,
-  parseRunArtifacts,
-  type RunArtifact,
-} from "@posthog/core/canvas/runArtifactSchemas";
+import type { ResourceComment } from "@posthog/api-client/posthog-client";
 import type { ThreadTimelineRow } from "@posthog/core/canvas/threadTimeline";
 import {
+  Badge,
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@posthog/quill";
-import { readPrUrls } from "@posthog/shared";
-import type {
-  Task,
-  TaskRun,
-  TaskThreadMessage,
-} from "@posthog/shared/domain-types";
+import type { Task, TaskThreadMessage } from "@posthog/shared/domain-types";
 import { iconForTemplate } from "@posthog/ui/features/canvas/components/canvasTemplateIcon";
+import {
+  buildRows,
+  commentTargets,
+  openCanvasFromUrl,
+} from "@posthog/ui/features/canvas/components/taskArtifactRows";
 import { useTaskRuns } from "@posthog/ui/features/canvas/hooks/useTaskRuns";
 import { openPrInReview } from "@posthog/ui/features/code-review/openPrInReview";
 import { usePrArtifact } from "@posthog/ui/features/git-interaction/usePrArtifact";
 import { usePanelLayoutStore } from "@posthog/ui/features/panels/panelLayoutStore";
 import { usePrComments } from "@posthog/ui/features/pr-review/usePrComments";
 import { usePrReviewThreads } from "@posthog/ui/features/pr-review/usePrReviewThreads";
+import { buildCommentThreads } from "@posthog/ui/features/sessions/components/commentViewTypes";
+import { useCommentsForTargetsQuery } from "@posthog/ui/features/sessions/components/useComments";
 import { FileIcon } from "@posthog/ui/primitives/FileIcon";
 import { openExternalUrl } from "@posthog/ui/shell/openExternal";
-import { formatFileSize } from "@posthog/ui/utils/formatFileSize";
-import { parseHttpsUrl, parseShareLink } from "@posthog/ui/utils/posthogLinks";
-import { navigateToShareTarget } from "@posthog/ui/utils/shareLinks";
-import { getPostHogUrl } from "@posthog/ui/utils/urls";
 import { type ReactNode, useMemo, useState } from "react";
 
-type ArtifactRow =
-  | { kind: "pr"; key: string; url: string }
-  | { kind: "canvas"; key: string; name: string; url: string | null }
-  | {
-      kind: "file";
-      key: string;
-      artifactId: string | null;
-      name: string;
-      runId: string | null;
-      size: number | undefined;
-    }
-  | { kind: "slack"; key: string; url: string };
-
-function readRunOutputs(run: TaskRun): RunArtifact[] {
-  return parseRunArtifacts(
-    (run as { artifacts?: unknown }).artifacts,
-    OUTPUT_ARTIFACT_TYPES,
-  );
-}
-
-function buildRows(
-  task: Task,
-  timeline: ThreadTimelineRow<TaskThreadMessage>[],
-  runs: TaskRun[],
-): ArtifactRow[] {
-  const rows: ArtifactRow[] = [];
-  const seenPrUrls = new Set<string>();
-
-  const addPr = (url: string, key: string) => {
-    if (seenPrUrls.has(url)) return;
-    seenPrUrls.add(url);
-    rows.push({ kind: "pr", key, url });
-  };
-
-  for (const row of timeline) {
-    if (row.kind !== "artifact") continue;
-    if (row.artifact.kind === "pr") {
-      addPr(row.artifact.url, row.message.id);
-    } else {
-      rows.push({
-        kind: "canvas",
-        key: row.message.id,
-        name: row.artifact.name,
-        url: row.artifact.url,
-      });
-    }
-  }
-
-  const allRuns =
-    runs.length > 0 ? runs : task.latest_run ? [task.latest_run] : [];
-
-  // Re-uploading a file replaces it rather than adding a second one: agents
-  // revise a deliverable and upload it again under the same name, so keeping
-  // every copy would bury the current one under its own drafts.
-  const newestByName = new Map<string, { file: RunArtifact; runId: string }>();
-  for (const run of allRuns) {
-    for (const outputPr of readPrUrls(run.output)) {
-      addPr(outputPr, `output-pr:${outputPr}`);
-    }
-    for (const file of readRunOutputs(run)) {
-      if (!file.name) continue;
-      const previous = newestByName.get(file.name);
-      const isNewer =
-        !previous ||
-        (file.uploaded_at ?? "") >= (previous.file.uploaded_at ?? "");
-      if (isNewer) newestByName.set(file.name, { file, runId: run.id });
-    }
-  }
-  for (const [name, { file, runId }] of newestByName) {
-    rows.push({
-      kind: "file",
-      key: `file:${file.id ?? file.storage_path ?? name}`,
-      artifactId: file.id ?? null,
-      name,
-      runId,
-      size: file.size,
-    });
-  }
-
-  const slackUrl = task.latest_run?.state?.slack_thread_url;
-  if (typeof slackUrl === "string" && slackUrl) {
-    rows.push({ kind: "slack", key: "slack-thread", url: slackUrl });
-  }
-
-  return rows;
-}
+const EMPTY_COMMENTS: ResourceComment[] = [];
 
 function ArtifactListRow({
   icon,
@@ -135,7 +46,7 @@ function ArtifactListRow({
 }: {
   icon: ReactNode;
   title: string;
-  detail?: string | null;
+  detail?: ReactNode;
   external?: boolean;
   onOpen?: () => void;
   /** Renders a trailing button that leaves the app instead of opening the
@@ -229,29 +140,30 @@ function PrRow({
   );
 }
 
-function CanvasRow({ name, url }: { name: string; url: string | null }) {
-  const parsed = url ? parseHttpsUrl(url) : null;
-  const target = parsed ? parseShareLink(parsed.href) : null;
-  const open =
-    parsed && target
-      ? () => {
-          const currentPostHogUrl = getPostHogUrl("/");
-          const currentPostHogOrigin = currentPostHogUrl
-            ? parseHttpsUrl(currentPostHogUrl)?.origin
-            : null;
-          if (parsed.origin === currentPostHogOrigin) {
-            navigateToShareTarget(target);
-          } else {
-            openExternalUrl(parsed.href);
-          }
-        }
-      : undefined;
+function CanvasRow({
+  name,
+  url,
+  commentCount,
+}: {
+  name: string;
+  url: string | null;
+  commentCount: number;
+}) {
   return (
     <ArtifactListRow
       icon={iconForTemplate("", { size: 14, className: "text-violet-9" })}
       title={name}
-      detail="Canvas"
-      onOpen={open}
+      detail={
+        commentCount > 0 ? (
+          <Badge>
+            <ChatCircleIcon />
+            {commentCount}
+          </Badge>
+        ) : (
+          "Canvas"
+        )
+      }
+      onOpen={openCanvasFromUrl(url)}
     />
   );
 }
@@ -261,13 +173,14 @@ function FileRow({
   runId,
   artifactId,
   name,
-  size,
+  commentCount,
 }: {
   taskId: string;
   runId: string | null;
   artifactId: string | null;
   name: string;
-  size: number | undefined;
+  /** Supplied by the pane's single comments query so each row doesn't fetch. */
+  commentCount: number;
 }) {
   const openArtifactTab = usePanelLayoutStore((state) => state.openArtifactTab);
   const canOpen = !!runId && !!artifactId;
@@ -284,7 +197,12 @@ function FileRow({
     <ArtifactListRow
       icon={<FileIcon filename={name} size={14} />}
       title={name}
-      detail={["File", formatFileSize(size)].filter(Boolean).join(" · ")}
+      detail={
+        <Badge>
+          <ChatCircleIcon />
+          {commentCount}
+        </Badge>
+      }
       onOpen={onOpen}
     />
   );
@@ -306,6 +224,22 @@ export function TaskArtifactsList({
     () => buildRows(task, timeline, runs),
     [task, timeline, runs],
   );
+  // One query for every row's badge, so N resources cost one request rather
+  // than one per row. The threads themselves live in the Comments tab.
+  const targets = useMemo(() => commentTargets(rows), [rows]);
+  const commentsQuery = useCommentsForTargetsQuery(targets);
+  const comments = commentsQuery.data ?? EMPTY_COMMENTS;
+  // Open threads only, so a row's badge agrees with what the Comments tab
+  // shows on the same resource.
+  const openCountByItem = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const thread of buildCommentThreads(comments)) {
+      const itemId = thread.root.item_id;
+      if (thread.resolved || !itemId) continue;
+      counts.set(itemId, (counts.get(itemId) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
 
   if (rows.length === 0) {
     return (
@@ -334,7 +268,14 @@ export function TaskArtifactsList({
             openInPlaceTaskId={canOpenInPlace ? task.id : undefined}
           />
         ) : row.kind === "canvas" ? (
-          <CanvasRow key={row.key} name={row.name} url={row.url} />
+          <CanvasRow
+            key={row.key}
+            name={row.name}
+            url={row.url}
+            commentCount={
+              row.dashboardId ? (openCountByItem.get(row.dashboardId) ?? 0) : 0
+            }
+          />
         ) : row.kind === "file" ? (
           <FileRow
             key={row.key}
@@ -342,7 +283,9 @@ export function TaskArtifactsList({
             runId={row.runId}
             artifactId={row.artifactId}
             name={row.name}
-            size={row.size}
+            commentCount={
+              row.artifactId ? (openCountByItem.get(row.artifactId) ?? 0) : 0
+            }
           />
         ) : (
           <ArtifactListRow
