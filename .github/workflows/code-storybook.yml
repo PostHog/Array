@@ -169,7 +169,7 @@ jobs:
 
       - name: Install Visual Review CLI
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
-        run: cd vr-cli/products/visual_review/cli && npm ci && npm run build && npm link
+        run: cd vr-cli/products/visual_review/cli && (npm ci || npm install) && npm run build && npm link
 
       - name: Submit snapshots to Visual Review
         # Fork PRs can't read the token; their captures still ran above, so a

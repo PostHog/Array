@@ -408,8 +408,10 @@ export class TaskCreationSaga extends Saga<
             branch,
             adapter: cloudAdapter,
             ...(isPiRuntime ? { piRuntime: true } : {}),
-            model: isPiRuntime ? undefined : input.model,
-            reasoningLevel: isPiRuntime ? undefined : input.reasoningLevel,
+            model: input.model,
+            reasoningLevel: input.reasoningLevel,
+            contextWindow: isPiRuntime ? undefined : input.contextWindow,
+            fastMode: isPiRuntime ? undefined : input.fastMode,
             sandboxEnvironmentId: input.sandboxEnvironmentId,
             customImageId: input.customImageId,
             prAuthorshipMode,
@@ -547,6 +549,10 @@ export class TaskCreationSaga extends Saga<
           if (input.model) connectParams.model = input.model;
           if (input.reasoningLevel)
             connectParams.reasoningLevel = input.reasoningLevel;
+          if (input.contextWindow)
+            connectParams.contextWindow = input.contextWindow;
+          if (input.fastMode !== undefined)
+            connectParams.fastMode = input.fastMode;
           if (importedClaude) {
             connectParams.importedSessionId = importedClaude.importedSessionId;
             connectParams.adapter = "claude";

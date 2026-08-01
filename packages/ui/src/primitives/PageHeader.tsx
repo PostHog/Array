@@ -142,8 +142,15 @@ export function PageHeaderActions({
   className?: string;
   children: ReactNode;
 }) {
+  // -my-1 keeps a 32px control from stretching the title row past the
+  // title's own line box, which would shift the title and description down.
   return (
-    <div className={cn("ml-auto flex shrink-0 items-center gap-2", className)}>
+    <div
+      className={cn(
+        "-my-1 ml-auto flex shrink-0 items-center gap-2",
+        className,
+      )}
+    >
       {children}
     </div>
   );

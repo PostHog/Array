@@ -123,6 +123,8 @@ describe("SessionService.clearSessionError retry config", () => {
       adapter: "claude",
       executionMode: "auto",
       reasoningLevel: "high",
+      contextWindow: "1m",
+      fastMode: true,
     });
     const { service, createNewLocalSession } = createHarness(session);
 
@@ -138,6 +140,9 @@ describe("SessionService.clearSessionError retry config", () => {
       "claude", // adapter
       "claude-fable-5", // model
       "high", // reasoningLevel
+      undefined, // importedSessionId
+      "1m", // contextWindow
+      true, // fastMode
     );
   });
 

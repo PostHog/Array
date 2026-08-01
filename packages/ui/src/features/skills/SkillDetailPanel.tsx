@@ -14,7 +14,6 @@ import type { SkillInfo } from "@posthog/shared";
 import { stripFrontmatter } from "@posthog/shared";
 import { CodeMirrorEditor } from "@posthog/ui/features/code-editor/components/CodeMirrorEditor";
 import { MarkdownRenderer } from "@posthog/ui/features/editor/components/MarkdownRenderer";
-import { ExternalAppsOpener } from "@posthog/ui/features/task-detail/components/ExternalAppsOpener";
 import { toast } from "@posthog/ui/primitives/toast";
 import {
   AlertDialog,
@@ -297,9 +296,6 @@ export function SkillDetailPanel({
               <DownloadSimple size={12} />
               Import
             </Button>
-          )}
-          {skill.source !== "bundled" && (
-            <ExternalAppsOpener targetPath={skill.path} />
           )}
         </Flex>
 

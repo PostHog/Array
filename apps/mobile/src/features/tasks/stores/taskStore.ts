@@ -7,6 +7,7 @@ import type {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { ContextWindow } from "../composer/options";
 import type { RepositorySelection } from "../types";
 
 export type OrganizeMode = "by-project" | "chronological";
@@ -24,6 +25,8 @@ export interface TaskComposerConfig {
   mode?: ExecutionMode;
   model?: string;
   reasoning?: SupportedReasoningEffort;
+  contextWindow?: ContextWindow;
+  fastMode?: boolean;
 }
 
 interface TaskUIState {

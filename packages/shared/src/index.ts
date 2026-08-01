@@ -223,10 +223,14 @@ export {
   splitMentionSegments,
 } from "./mentions";
 export {
+  DEFAULT_OPTION_META_KEY,
   defaultEligibleModel,
+  isDefaultSelectOption,
   isRestrictedModelOption,
+  OPTION_DOCS_URL_META_KEY,
   RESTRICTED_MODEL_META_KEY,
   restrictedModelMeta,
+  selectOptionDocsUrl,
 } from "./models";
 export {
   getOauthClientIdFromRegion,
@@ -263,11 +267,15 @@ export {
   isPrivateIpv6Literal,
 } from "./private-network";
 export {
+  type CapabilityNotch,
   DEFAULT_REASONING_EFFORT,
+  getCapabilityLadder,
   getReasoningEffortOptions,
   isSupportedReasoningEffort,
   type ReasoningEffortOption,
   type SupportedReasoningEffort,
+  supports1MContext,
+  supportsFastMode,
 } from "./reasoning-effort";
 export {
   type CloudRegion,
@@ -351,9 +359,11 @@ export type {
 } from "./task-creation-domain";
 export {
   formatClockTime,
+  formatDaySeparatorLabel,
   formatRelativeTimeLong,
   formatRelativeTimeShort,
   getLocalDayDiff,
+  getLocalDayKey,
   getRelativeDateGroup,
 } from "./time";
 export {

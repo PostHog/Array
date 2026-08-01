@@ -20,6 +20,7 @@ import {
   getBackoffDelay,
   getCloudUrlFromRegion,
   getConfigOptionByCategory,
+  getReasoningEffortOptions,
   isFatalSessionError,
   isJsonRpcNotification,
   isJsonRpcRequest,
@@ -42,12 +43,17 @@ import { ANALYTICS_EVENTS } from "@posthog/shared/analytics-events";
 import {
   type CloudTaskPermissionRequestUpdate,
   type CloudTaskUpdatePayload,
+  EFFORT_LEVEL_LABELS,
   type EffortLevel,
   effortLevelSchema,
   isTerminalStatus,
   type Task,
 } from "@posthog/shared/domain-types";
 import type { SpeechKind, SpeechSource } from "../speech/identifiers";
+import {
+  CONTEXT_WINDOW_OPTION_CATEGORY,
+  FAST_MODE_OPTION_CATEGORY,
+} from "../task-detail/previewConfig";
 import {
   isNotification,
   POSTHOG_NOTIFICATIONS,
@@ -397,6 +403,8 @@ export interface ConnectParams {
   adapter?: Adapter;
   model?: string;
   reasoningLevel?: string;
+  contextWindow?: "200k" | "1m";
+  fastMode?: boolean;
   /**
    * Session ID of an imported Claude Code CLI transcript already copied into
    * the app's Claude config dir. The agent loads it and replays its history.
@@ -426,6 +434,7 @@ export interface ReconcileTaskConnectionParams {
   session: ReconcileSessionState | undefined;
   repoPath: string | null;
   isCloud: boolean;
+  isTaskAuthor?: boolean;
   isSuspended?: boolean;
   isOnline: boolean;
   cloudAuth: CloudConnectionAuth;
@@ -1705,6 +1714,8 @@ export class SessionService {
     session.model = params.model;
     session.executionMode = params.executionMode;
     session.reasoningLevel = params.reasoningLevel;
+    session.contextWindow = params.contextWindow;
+    session.fastMode = params.fastMode;
     if (params.initialPrompt?.length) {
       session.initialPrompt = params.initialPrompt;
     }
@@ -1719,6 +1730,8 @@ export class SessionService {
       adapter,
       model,
       reasoningLevel,
+      contextWindow,
+      fastMode,
       importedSessionId,
     } = params;
     const { id: taskId, latest_run: latestRun } = task;
@@ -1832,6 +1845,8 @@ export class SessionService {
           model,
           reasoningLevel,
           importedSessionId,
+          contextWindow,
+          fastMode,
         );
       }
     } catch (error) {
@@ -1995,6 +2010,33 @@ export class SessionService {
       const persistedModel =
         modelOpt?.type === "select" ? modelOpt.currentValue : undefined;
 
+      // Same for effort, context window and fast mode: the session's own
+      // persisted config is authoritative on resume.
+      const effortOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        "thought_level",
+      );
+      const persistedEffort =
+        effortOpt?.type === "select" &&
+        effortLevelSchema.safeParse(effortOpt.currentValue).success
+          ? (effortOpt.currentValue as EffortLevel)
+          : undefined;
+      const contextOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        CONTEXT_WINDOW_OPTION_CATEGORY,
+      );
+      const persistedContextWindow =
+        contextOpt?.type === "select" &&
+        (contextOpt.currentValue === "200k" || contextOpt.currentValue === "1m")
+          ? contextOpt.currentValue
+          : undefined;
+      const fastOpt = getConfigOptionByCategory(
+        persistedConfigOptions,
+        FAST_MODE_OPTION_CATEGORY,
+      );
+      const persistedFastMode =
+        fastOpt?.type === "select" ? fastOpt.currentValue === "on" : undefined;
+
       this.d.trpc.workspace.verify
         .query({ taskId })
         .then((workspaceResult) => {
@@ -2030,6 +2072,9 @@ export class SessionService {
         adapter: resolvedAdapter,
         permissionMode: persistedMode,
         model: persistedModel,
+        effort: persistedEffort,
+        contextWindow: persistedContextWindow,
+        fastMode: persistedFastMode,
         customInstructions: customInstructions || undefined,
       });
 
@@ -2346,6 +2391,8 @@ export class SessionService {
     model?: string,
     reasoningLevel?: string,
     importedSessionId?: string,
+    contextWindow?: "200k" | "1m",
+    fastMode?: boolean,
   ): Promise<void> {
     const { client } = auth;
     if (!client) {
@@ -2377,6 +2424,8 @@ export class SessionService {
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
+      contextWindow,
+      fastMode,
       model: preferredModel,
       importedSessionId,
     });
@@ -2388,6 +2437,8 @@ export class SessionService {
     session.model = model;
     session.executionMode = executionMode;
     session.reasoningLevel = reasoningLevel;
+    session.contextWindow = contextWindow;
+    session.fastMode = fastMode;
 
     // An imported CLI session had its history replayed during agent.start;
     // the replay is already in the local run log, so load it for the UI.
@@ -2919,13 +2970,15 @@ export class SessionService {
               stopReason === "end_turn" &&
               session.messageQueue.length === 0
             ) {
-              this.d.notifyPromptComplete(
-                session.taskTitle,
-                stopReason,
-                session.taskId,
-                turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
-              );
-              this.speakDeterministic(taskRunId, session, "done");
+              if (session.isTaskAuthor !== false) {
+                this.d.notifyPromptComplete(
+                  session.taskTitle,
+                  stopReason,
+                  session.taskId,
+                  turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
+                );
+                this.speakDeterministic(taskRunId, session, "done");
+              }
             }
             this.d.taskViewedApi.markActivity(session.taskId);
             this.finalizeTurnContent(taskRunId, "turn_complete", acpMsg.ts);
@@ -3089,7 +3142,11 @@ export class SessionService {
           : this.drainQueuedMessages(taskRunId, session);
 
       // Only notify when nothing is sendable - queued messages start a new turn
-      if (stopReason && !hasSendableMessages) {
+      if (
+        stopReason &&
+        !hasSendableMessages &&
+        session.isTaskAuthor !== false
+      ) {
         this.d.notifyPromptComplete(
           session.taskTitle,
           stopReason,
@@ -3335,8 +3392,10 @@ export class SessionService {
 
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
-    this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
-    this.speakDeterministic(taskRunId, session, "needs_input");
+    if (session.isTaskAuthor !== false) {
+      this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+      this.speakDeterministic(taskRunId, session, "needs_input");
+    }
   }
 
   private handleCloudPermissionRequest(
@@ -3393,8 +3452,10 @@ export class SessionService {
 
     this.d.store.setPendingPermissions(taskRunId, newPermissions);
     this.d.taskViewedApi.markActivity(session.taskId);
-    this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
-    this.speakDeterministic(taskRunId, session, "needs_input");
+    if (session.isTaskAuthor !== false) {
+      this.d.notifyPermissionRequest(session.taskTitle, session.taskId);
+      this.speakDeterministic(taskRunId, session, "needs_input");
+    }
   }
 
   private surfacePersistedPendingPermissions(
@@ -5250,6 +5311,8 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        contextWindow,
+        fastMode,
       } = session;
       await this.teardownSession(session.taskRunId);
       const authStatus = await this.getAuthCredentialsStatus();
@@ -5271,6 +5334,9 @@ export class SessionService {
         adapter,
         model,
         reasoningLevel,
+        undefined,
+        contextWindow,
+        fastMode,
       );
       return;
     }
@@ -5451,13 +5517,7 @@ export class SessionService {
         existingOption?.type === "select"
           ? flattenSelectOptions(existingOption.options)
           : [];
-      const reasoningLabels: Record<string, string> = {
-        low: "Low",
-        medium: "Medium",
-        high: "High",
-        xhigh: "Extra High",
-        max: "Max",
-      };
+      const reasoningLabels: Record<string, string> = EFFORT_LEVEL_LABELS;
       const selectedValue = existingValues.find(
         (value) => value.value === preferredValue,
       ) ?? {
@@ -5492,10 +5552,15 @@ export class SessionService {
         ],
       };
     };
+    const modelEffortOptions = preferredModel
+      ? getReasoningEffortOptions(adapter, preferredModel)
+      : undefined;
     const extras = previewOptions
-      .filter(
-        (opt) => opt.category === "model" || opt.category === "thought_level",
-      )
+      .filter((opt) => {
+        if (opt.category === "model") return true;
+        if (opt.category !== "thought_level") return false;
+        return modelEffortOptions !== null;
+      })
       .map((opt) => {
         if (opt.category === "model") {
           return applyPreferredValue(opt, preferredModel, existingModelOption);
@@ -5513,6 +5578,12 @@ export class SessionService {
     if (extras.length === 0) return;
 
     const previewCategories = new Set(extras.map((option) => option.category));
+    // The preview endpoint describes its default model. When the run uses an
+    // effort-less model, explicitly replace (and therefore remove) any stale
+    // thought-level option instead of inheriting the default model's choices.
+    if (preferredModel && modelEffortOptions === null) {
+      previewCategories.add("thought_level");
+    }
     const merged = [
       ...existingOptions.filter(
         (option) => !previewCategories.has(option.category),
@@ -5564,6 +5635,7 @@ export class SessionService {
     runStatus?: TaskRunStatus,
     initialReasoningEffort?: string,
     runState?: Record<string, unknown>,
+    isTaskAuthor = true,
   ): () => void {
     const taskRunId = runId;
     const persistedConfigOptions = this.d.getPersistedConfigOptions(taskRunId);
@@ -5628,6 +5700,9 @@ export class SessionService {
       // Ensure configOptions is populated on revisit
       const existing = this.d.store.getSessionByTaskId(taskId);
       if (existing) {
+        if (existing.isTaskAuthor !== isTaskAuthor) {
+          this.d.store.updateSession(existing.taskRunId, { isTaskAuthor });
+        }
         const existingMode = getConfigOptionByCategory(
           existing.configOptions,
           "mode",
@@ -5754,6 +5829,7 @@ export class SessionService {
       const session = createBaseSession(taskRunId, taskId, taskTitle);
       session.status = "disconnected";
       session.isCloud = true;
+      session.isTaskAuthor = isTaskAuthor;
       session.adapter = adapter;
       session.configOptions = buildInitialConfigOptions(
         initialMode,
@@ -5767,6 +5843,9 @@ export class SessionService {
     } else {
       // Ensure cloud flag and configOptions are set on existing sessions
       const updates: Partial<AgentSession> = {};
+      if (existing.isTaskAuthor !== isTaskAuthor) {
+        updates.isTaskAuthor = isTaskAuthor;
+      }
       if (!existing.isCloud) updates.isCloud = true;
       if (existing.adapter !== adapter) updates.adapter = adapter;
       if (!existing.configOptions?.length || existing.adapter !== adapter) {
@@ -6804,6 +6883,7 @@ export class SessionService {
       session,
       repoPath,
       isCloud,
+      isTaskAuthor = true,
       isSuspended,
       isOnline,
       cloudAuth,
@@ -6819,6 +6899,7 @@ export class SessionService {
         task,
         cloudAuth,
         onCloudStatusChange,
+        isTaskAuthor,
       );
     }
 
@@ -6905,6 +6986,7 @@ export class SessionService {
     task: Task,
     cloudAuth: CloudConnectionAuth,
     onCloudStatusChange?: () => void,
+    isTaskAuthor = true,
   ): () => void {
     this.updateSessionTaskTitle(
       task.id,
@@ -6942,6 +7024,7 @@ export class SessionService {
       task.latest_run?.status,
       initialReasoningEffort,
       task.latest_run?.state,
+      isTaskAuthor,
     );
   }
 
